@@ -17,8 +17,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import HrAssistantLayout from './pages/HrAssistant/HrAssistantLayout';
 import EmployeeRecords from './pages/HrAssistant/EmployeeRecords';
 
-import HRLeaveDashboard from './pages/hr/HRLeaveDashboard'; // ✅ HR Assistant leave view
-import EmployeeLeaveRequest from './components/Employee/EmployeeLeaveRequest'; // ✅ Employee leave form
+import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ New HR Assistant leave management
+import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
 import EvaluationForm from './pages/HrAssistant/Evaluations/EvaluationForm';
@@ -58,7 +58,7 @@ function App() {
         >
           <Route index element={<HrAssistantDashboard />} />
           <Route path="employee-records" element={<EmployeeRecords />} />
-          <Route path="leave" element={<HRLeaveDashboard />} />
+          <Route path="leave" element={<LeaveManagement />} />
           <Route path="evaluation" element={<EmployeeEvaluationList />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
@@ -104,7 +104,7 @@ function App() {
           }
         >
           <Route index element={<div>Welcome Employee</div>} />
-          <Route path="leave-request" element={<EmployeeLeaveRequest />} />
+          <Route path="leave-request" element={<LeaveApplicationForm />} />
         </Route>
       </Routes>
     </Router>

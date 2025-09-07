@@ -7,7 +7,6 @@ use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\JobPostingController;
 use App\Http\Controllers\Api\ApplicantController;
 use App\Http\Controllers\Api\LeaveRequestController;
-use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
 use App\Http\Controllers\API\EvaluationAdministrationController;
 
@@ -41,19 +40,15 @@ Route::get('/test', function () {
 });
 
 //Leave Requests
-
-    Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
     Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
-    Route::put('/leave-requests/{id}/status', [LeaveRequestController::class, 'updateStatus']); // hr assistant
+    Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
+    Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
+    Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
+    Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
 });
 
-// Employee Leave Requests
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/employee/leave-request', [LeaveController::class, 'store']); // employee submits
-    Route::get('/hr/leave-requests', [LeaveController::class, 'index']); // hr views all
-    Route::put('/hr/leave-requests/{id}/status', [LeaveController::class, 'updateStatus']); // hr updates status
-});
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant'])->group(function () {
     Route::get('/evaluations', [EmployeeEvaluationController::class, 'index']);

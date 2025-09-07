@@ -1,0 +1,245 @@
+/* Embedded Leave Form Styles */
+.embedded-leave-form {
+  background: white;
+  border-radius: 15px;
+  padding: 25px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  max-height: 75vh;
+  overflow-y: auto;
+  margin: 0;
+  border: 1px solid #e9ecef;
+}
+
+/* Form Labels */
+.embedded-leave-form .form-label {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 5px;
+  font-size: 0.85rem;
+}
+
+/* Underlined Inputs */
+.embedded-leave-form .underlined-input {
+  border: none;
+  border-bottom: 1px solid #ddd;
+  border-radius: 0;
+  background: transparent;
+  padding: 5px 2px;
+  font-size: 0.85rem;
+  box-shadow: none !important;
+  transition: border-bottom-color 0.3s ease;
+}
+
+.embedded-leave-form .underlined-input:focus {
+  border-bottom-color: #007bff;
+  background: transparent;
+}
+
+.embedded-leave-form .underlined-input[readonly] {
+  border-bottom-color: #e9ecef;
+  color: #6c757d;
+}
+
+/* Custom Select Dropdown */
+.embedded-leave-form .form-select-custom {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  background-color: white;
+  transition: border-color 0.3s ease;
+}
+
+.embedded-leave-form .form-select-custom:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Leave Category Radio Buttons */
+.embedded-leave-form .leave-category-section {
+  padding-top: 10px;
+}
+
+.embedded-leave-form .custom-radio {
+  margin-bottom: 8px;
+}
+
+.embedded-leave-form .custom-radio .form-check-input {
+  margin-top: 0.15em;
+}
+
+.embedded-leave-form .custom-radio .form-check-label {
+  font-size: 0.8rem;
+  color: #555;
+  margin-left: 6px;
+}
+
+/* Date Range Input */
+.embedded-leave-form .date-input-wrapper {
+  position: relative;
+}
+
+.embedded-leave-form .date-range-input {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 6px 35px 6px 10px;
+  font-size: 0.85rem;
+  transition: border-color 0.3s ease;
+}
+
+.embedded-leave-form .date-range-input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.embedded-leave-form .calendar-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+  pointer-events: none;
+}
+
+/* Calculation Inputs */
+.embedded-leave-form .calculation-input {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  background-color: #f8f9fa;
+  color: #495057;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* Reason Textarea */
+.embedded-leave-form .reason-textarea {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 10px;
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 100px;
+  transition: border-color 0.3s ease;
+}
+
+.embedded-leave-form .reason-textarea:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Signature Section */
+.embedded-leave-form .signature-section {
+  padding-top: 10px;
+}
+
+/* Submit Button */
+.embedded-leave-form .btn-success {
+  background-color: #28a745;
+  border-color: #28a745;
+  padding: 8px 20px;
+  font-weight: 600;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.embedded-leave-form .btn-success:hover {
+  background-color: #218838;
+  border-color: #1e7e34;
+  transform: translateY(-1px);
+}
+
+.embedded-leave-form .btn:disabled {
+  transform: none;
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Alert Styling */
+.embedded-leave-form .alert {
+  border-radius: 8px;
+  border: none;
+  font-size: 0.85rem;
+  margin-bottom: 15px;
+  padding: 10px 15px;
+}
+
+.embedded-leave-form .alert-success {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.embedded-leave-form .alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .embedded-leave-form {
+    padding: 20px 15px;
+    max-height: 80vh;
+  }
+  
+  .embedded-leave-form .form-label {
+    font-size: 0.8rem;
+  }
+  
+  .embedded-leave-form .underlined-input,
+  .embedded-leave-form .form-select-custom,
+  .embedded-leave-form .date-range-input,
+  .embedded-leave-form .calculation-input,
+  .embedded-leave-form .reason-textarea {
+    font-size: 0.8rem;
+  }
+  
+  .embedded-leave-form .reason-textarea {
+    min-height: 80px;
+  }
+  
+  .embedded-leave-form .leave-category-section {
+    padding-top: 15px;
+    margin-top: 10px;
+  }
+  
+  .embedded-leave-form .btn-success {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Focus states for better accessibility */
+.embedded-leave-form .form-control:focus,
+.embedded-leave-form .form-select:focus {
+  outline: none;
+}
+
+/* Row spacing adjustments for embedded form */
+.embedded-leave-form .mb-3 {
+  margin-bottom: 1rem !important;
+}
+
+.embedded-leave-form .row.mb-3 {
+  margin-bottom: 1.2rem !important;
+}
+
+/* Custom scrollbar for the form */
+.embedded-leave-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.embedded-leave-form::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.embedded-leave-form::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.embedded-leave-form::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

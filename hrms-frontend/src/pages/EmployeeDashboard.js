@@ -17,6 +17,7 @@ import {
   faBars,
   faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
+import EmbeddedLeaveForm from '../components/Employee/EmbeddedLeaveForm';
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -52,7 +53,7 @@ const EmployeeDashboard = () => {
       case 'profile': return 'Profile';
       case 'payroll-summary': return 'Payslip Summary';
       case 'timesheet': return 'Timesheet';
-      case 'leave-request': return 'Leave Request';
+      case 'leave-request': return 'Leave Application Form';
       case 'cash-advance': return 'Cash Advance';
       case 'evaluation-summary': return 'Evaluation Summary';
       case 'disciplinary-notice': return 'Disciplinary Notice';
@@ -95,23 +96,8 @@ const EmployeeDashboard = () => {
         );
       case 'leave-request':
         return (
-          <div className="card p-4">
-            <h5>Request a Leave</h5>
-            <form>
-              <div className="mb-3">
-                <label className="form-label">Leave Type</label>
-                <input type="text" className="form-control" placeholder="Vacation / Sick..." />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">From</label>
-                <input type="date" className="form-control" />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">To</label>
-                <input type="date" className="form-control" />
-              </div>
-              <button className="btn btn-primary">Submit</button>
-            </form>
+          <div>
+            <EmbeddedLeaveForm />
           </div>
         );
       default:

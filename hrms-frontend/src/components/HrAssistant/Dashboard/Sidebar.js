@@ -59,12 +59,14 @@ const Sidebar = () => {
             <FaCalendarCheck /> Attendance
           </NavLink>
         </li>
-           <NavLink
-        to="leave"
-        className={({ isActive }) => (isActive ? 'active' : '')}
-      >
-        <FaPlaneDeparture /> Leave Management</NavLink>
-
+        <li>
+          <NavLink
+            to="leave"
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            <FaPlaneDeparture /> Leave Management
+          </NavLink>
+        </li>
         <li>
           <NavLink
             to="evaluation-administration"

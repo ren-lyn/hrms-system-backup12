@@ -1,0 +1,296 @@
+.leave-management {
+  background-color: #f8f9fa;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.stats-card {
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.stats-card .card-body {
+  padding: 25px;
+}
+
+.stats-icon {
+  background-color: #28a745;
+  color: white;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-item {
+  padding: 10px 5px;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #212529;
+}
+
+.leave-types {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.leave-type-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+.leave-type-item:last-child {
+  border-bottom: none;
+}
+
+.progress-bar {
+  background-color: #e9ecef;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  transition: width 0.3s ease;
+}
+
+.leave-table {
+  margin: 0;
+}
+
+.leave-table th {
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  color: #495057;
+  padding: 15px 12px;
+  font-size: 0.9rem;
+}
+
+.leave-table td {
+  padding: 15px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+.leave-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.employee-info strong {
+  color: #212529;
+  font-size: 0.95rem;
+}
+
+.company-text {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.department-text {
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.leave-type-info {
+  line-height: 1.2;
+}
+
+.leave-type-info small {
+  font-size: 0.75rem;
+}
+
+.days-count {
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.95rem;
+}
+
+.reason-text {
+  color: #6c757d;
+  font-size: 0.9rem;
+  max-width: 200px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.action-buttons .btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.action-buttons .btn-success {
+  background-color: #28a745;
+  border-color: #28a745;
+}
+
+.action-buttons .btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.badge.bg-warning {
+  background-color: #ffc107 !important;
+  color: #000;
+}
+
+.badge.bg-success {
+  background-color: #28a745 !important;
+}
+
+.badge.bg-danger {
+  background-color: #dc3545 !important;
+}
+
+/* Search and filter styles */
+.input-group-text {
+  background-color: white;
+  border-right: none;
+  color: #6c757d;
+}
+
+.form-control:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.form-select {
+  border-color: #ced4da;
+}
+
+.form-select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Export button */
+.btn-outline-danger {
+  color: #dc3545;
+  border-color: #dc3545;
+  background-color: white;
+}
+
+.btn-outline-danger:hover {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+/* Modal styles */
+.modal-header {
+  border-bottom: 1px solid #dee2e6;
+  padding: 20px;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  border-top: 1px solid #dee2e6;
+  padding: 15px 20px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .leave-management {
+    padding: 15px;
+  }
+  
+  .stats-card .card-body {
+    padding: 20px 15px;
+  }
+  
+  .stat-value {
+    font-size: 1.3rem;
+  }
+  
+  .leave-table th,
+  .leave-table td {
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+  
+  .action-buttons .btn {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .reason-text {
+    max-width: 120px;
+  }
+}
+
+/* Alert styles */
+.alert {
+  border-radius: 10px;
+  border: none;
+  font-size: 0.9rem;
+}
+
+.alert-success {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+/* Back button */
+.btn-link {
+  color: #6c757d;
+  text-decoration: none;
+}
+
+.btn-link:hover {
+  color: #495057;
+}
+
+/* Loading state */
+.loading-spinner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  font-size: 1.1rem;
+  color: #6c757d;
+}
