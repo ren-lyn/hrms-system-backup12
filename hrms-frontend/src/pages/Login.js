@@ -8,6 +8,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Admin');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -269,6 +270,8 @@ const Login = () => {
         }
         .input-wrapper { position: relative; display: flex; align-items: center; }
         .input-icon { position: absolute; left: 20px; color: #7e8da1ff; font-size: 18px; }
+        .toggle-password-btn { position: absolute; right: 14px; background: transparent; border: none; cursor: pointer; padding: 4px; color: #7e8da1ff; display: flex; align-items: center; justify-content: center; }
+        .toggle-password-btn:hover { color: #475569; }
 
         .form-input {
           width: 100%;
@@ -285,6 +288,7 @@ const Login = () => {
           background: white;
           box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.15);
         }
+        .form-input.password-field { padding-right: 48px; }
 
         .login-button {
           background: linear-gradient(135deg, #3b82f6, #1e40af);
@@ -419,13 +423,22 @@ const Login = () => {
                 <div className="input-wrapper">
                   <i className="bi bi-lock-fill input-icon"></i>
                   <input
-                    type="password"
-                    className="form-input"
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-input password-field"
                     placeholder="Enter your Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
+                  <button
+                    type="button"
+                    className="toggle-password-btn"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    onClick={() => setShowPassword((v) => !v)}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`bi ${showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
+                  </button>
                 </div>
               </div>
 
