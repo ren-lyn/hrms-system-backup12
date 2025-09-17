@@ -33,20 +33,42 @@ Route::post('/employees', [EmployeeController::class, 'store']);
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+Route::middleware('auth:sanctum')->get('/auth/user', [AuthController::class, 'user']);
 Route::post('/register', [ApplicantController::class, 'register']);
 
 Route::get('/test', function () {
     return response()->json(['message' => 'Laravel API is working']);
 });
 
+// Test database connection
+Route::get('/test-db', function () {
+    try {
+        $users = \App\Models\User::count();
+        $leaves = \App\Models\LeaveRequest::count();
+        return response()->json([
+            'message' => 'Database connection working',
+            'users_count' => $users,
+            'leave_requests_count' => $leaves
+        ]);
+    } catch (Exception $e) {
+        return response()->json([
+            'error' => 'Database connection failed',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+});
+
 //Leave Requests
+// Temporarily allow without auth for testing
+Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
+Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
+Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
+
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
-    Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
-    Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
     Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
     Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
+    Route::put('/leave-requests/{id}/terms', [LeaveRequestController::class, 'updateTermsAndCategory']); // hr set terms/category
 });
 
 

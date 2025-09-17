@@ -11,14 +11,12 @@ const LeaveApplicationForm = ({ onBack }) => {
     dateFiled: new Date().toISOString().split('T')[0],
     department: '',
     leaveType: 'Vacation Leave',
-    terms: 'with PAY',
-    leaveCategory: 'Service Incentive Leave (SIL)',
     dateRange: '',
     totalDays: 0,
     totalHours: 0,
     reason: '',
     applicantName: '',
-    eSignature: ''
+    signatureFile: null
   });
 
   const [loading, setLoading] = useState(false);
@@ -81,6 +79,20 @@ const LeaveApplicationForm = ({ onBack }) => {
     }));
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type (images and PDFs)
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+      if (allowedTypes.includes(file.type)) {
+        setFormData({...formData, signatureFile: file});
+      } else {
+        showAlert('Please upload an image file (JPEG, PNG, GIF) or PDF for e-signature.', 'danger');
+        e.target.value = '';
+      }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -101,15 +113,19 @@ const LeaveApplicationForm = ({ onBack }) => {
       
       const submitData = new FormData();
       submitData.append('company', formData.company);
+      submitData.append('name', formData.applicantName);
       submitData.append('department', formData.department);
       submitData.append('type', formData.leaveType);
-      submitData.append('terms', formData.terms);
-      submitData.append('leave_category', formData.leaveCategory);
       submitData.append('from', formatDateForAPI(fromDate));
       submitData.append('to', formatDateForAPI(toDate));
       submitData.append('total_days', formData.totalDays);
       submitData.append('total_hours', formData.totalHours);
       submitData.append('reason', formData.reason);
+      
+      // Add signature file if provided
+      if (formData.signatureFile) {
+        submitData.append('signature', formData.signatureFile);
+      }
 
       await createLeaveRequest(submitData);
       showAlert('Leave application submitted successfully!', 'success');
@@ -118,14 +134,16 @@ const LeaveApplicationForm = ({ onBack }) => {
       setFormData(prev => ({
         ...prev,
         leaveType: 'Vacation Leave',
-        terms: 'with PAY',
-        leaveCategory: 'Service Incentive Leave (SIL)',
         dateRange: '',
         totalDays: 0,
         totalHours: 0,
         reason: '',
-        eSignature: ''
+        signatureFile: null
       }));
+      
+      // Clear file input
+      const fileInput = document.getElementById('signatureFile');
+      if (fileInput) fileInput.value = '';
     } catch (error) {
       console.error('Error submitting leave request:', error);
       showAlert('Failed to submit leave application. Please try again.', 'danger');
@@ -207,9 +225,9 @@ const LeaveApplicationForm = ({ onBack }) => {
               </Col>
             </Row>
 
-            {/* Leave Type, Terms, and Category Section */}
+            {/* Leave Type Section */}
             <Row className="mb-4">
-              <Col md={4}>
+              <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label className="form-label">Leave Type</Form.Label>
                   <Form.Select
@@ -226,43 +244,11 @@ const LeaveApplicationForm = ({ onBack }) => {
                 </Form.Group>
               </Col>
               
-              <Col md={4}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="form-label">Terms</Form.Label>
-                  <Form.Select
-                    value={formData.terms}
-                    onChange={(e) => setFormData({...formData, terms: e.target.value})}
-                    className="form-select-custom"
-                    required
-                  >
-                    <option value="with PAY">with PAY</option>
-                    <option value="without PAY">without PAY</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-              
-              <Col md={4}>
-                <div className="leave-category-section">
-                  <Form.Check
-                    type="radio"
-                    id="sil"
-                    label="Service Incentive Leave (SIL)"
-                    name="leaveCategory"
-                    value="Service Incentive Leave (SIL)"
-                    checked={formData.leaveCategory === 'Service Incentive Leave (SIL)'}
-                    onChange={(e) => setFormData({...formData, leaveCategory: e.target.value})}
-                    className="custom-radio"
-                  />
-                  <Form.Check
-                    type="radio"
-                    id="el"
-                    label="Emergency Leave (EL)"
-                    name="leaveCategory"
-                    value="Emergency Leave (EL)"
-                    checked={formData.leaveCategory === 'Emergency Leave (EL)'}
-                    onChange={(e) => setFormData({...formData, leaveCategory: e.target.value})}
-                    className="custom-radio"
-                  />
+              <Col md={6}>
+                <div className="bg-light p-3 rounded">
+                  <small className="text-muted">
+                    <strong>Note:</strong> Pay terms and leave category will be determined by HR during the approval process.
+                  </small>
                 </div>
               </Col>
             </Row>
@@ -346,13 +332,21 @@ const LeaveApplicationForm = ({ onBack }) => {
                     <Col>
                       <Form.Group className="mb-3">
                         <Form.Control
-                          type="text"
-                          placeholder="E-Signature"
-                          value={formData.eSignature}
-                          onChange={(e) => setFormData({...formData, eSignature: e.target.value})}
-                          className="underlined-input text-center"
+                          type="file"
+                          id="signatureFile"
+                          accept="image/*,.pdf"
+                          onChange={handleFileChange}
+                          className="form-control-file"
+                          required
                         />
-                        <div className="input-label">E-Signature</div>
+                        <div className="input-label">E-Signature (Upload Image/PDF)</div>
+                        {formData.signatureFile && (
+                          <div className="mt-2">
+                            <small className="text-success">
+                              ✓ File selected: {formData.signatureFile.name}
+                            </small>
+                          </div>
+                        )}
                       </Form.Group>
                     </Col>
                   </Row>
@@ -366,7 +360,7 @@ const LeaveApplicationForm = ({ onBack }) => {
                 <Button variant="danger" className="me-3" type="button" onClick={() => window.history.back()}>
                   Cancel
                 </Button>
-                <Button variant="success" type="submit" disabled={loading}>
+                <Button variant="success" type="submit" disabled={loading || !formData.signatureFile}>
                   {loading ? 'Submitting...' : 'Submit'}
                 </Button>
               </Col>

@@ -243,3 +243,36 @@
 .embedded-leave-form::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* DatePicker Styles */
+.embedded-leave-form .react-datepicker-wrapper {
+  width: 100%;
+}
+
+.embedded-leave-form .react-datepicker__input-container {
+  width: 100%;
+}
+
+.embedded-leave-form .react-datepicker__input-container input {
+  width: 100% !important;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 6px 35px 6px 10px;
+  font-size: 0.85rem;
+}
+
+.embedded-leave-form .react-datepicker__input-container input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  outline: none;
+}
+
+.embedded-leave-form .date-input-wrapper .calendar-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #6c757d;
+  pointer-events: none;
+  z-index: 1;
+}

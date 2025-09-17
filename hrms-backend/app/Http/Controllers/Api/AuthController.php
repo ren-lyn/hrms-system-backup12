@@ -52,6 +52,21 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Logged out']);
     }
+
+    public function user(Request $request)
+    {
+        $user = $request->user();
+        
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'full_name' => $user->first_name . ' ' . $user->last_name,
+            'email' => $user->email,
+            'department' => $user->department,
+            'role_id' => $user->role_id,
+            'role' => $user->role->name ?? null
+        ]);
+    }
 }
 // This controller handles user authentication, allowing users to log in and log out.
 // The login method checks the user's credentials and returns an access token if valid.

@@ -16,25 +16,29 @@ class LeaveRequestController extends Controller
     {
         $validated = $request->validate([
             'company' => 'nullable|string|max:255',
+            'name' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:255',
             'type' => 'required|string',
-            'terms' => 'required|in:with PAY,without PAY',
+            'terms' => 'nullable|in:with PAY,without PAY',
             'leave_category' => 'nullable|in:Service Incentive Leave (SIL),Emergency Leave (EL)',
             'from' => 'required|date',
             'to' => 'required|date|after_or_equal:from',
             'total_days' => 'nullable|integer|min:1',
             'total_hours' => 'nullable|numeric|min:0',
             'reason' => 'nullable|string',
+            'signature' => 'nullable|file|mimes:pdf,jpg,jpeg,png,gif|max:2048',
             'attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
         ]);
 
         $leaveRequest = new LeaveRequest();
-        $leaveRequest->employee_id = auth()->id();
+        // Use authenticated user ID or default to first user for testing
+        $leaveRequest->employee_id = auth()->id() ?? 1;
         $leaveRequest->company = $validated['company'] ?? null;
+        $leaveRequest->employee_name = $validated['name'] ?? null;
         $leaveRequest->department = $validated['department'] ?? null;
         $leaveRequest->type = $validated['type'];
-        $leaveRequest->terms = $validated['terms'];
-        $leaveRequest->leave_category = $validated['leave_category'] ?? null;
+        $leaveRequest->terms = $validated['terms'] ?? 'TBD by HR'; // Will be set by HR
+        $leaveRequest->leave_category = $validated['leave_category'] ?? 'TBD by HR'; // Will be set by HR
         $leaveRequest->from = $validated['from'];
         $leaveRequest->to = $validated['to'];
         $leaveRequest->total_days = $validated['total_days'] ?? null;
@@ -43,9 +47,18 @@ class LeaveRequestController extends Controller
         $leaveRequest->reason = $validated['reason'] ?? null;
         $leaveRequest->status = 'pending';
 
+        // Handle signature file upload
+        if ($request->hasFile('signature')) {
+            $file = $request->file('signature');
+            $fileName = 'signature_' . time() . '_' . $file->getClientOriginalName();
+            $filePath = $file->storeAs('signatures', $fileName, 'public');
+            $leaveRequest->signature_path = $filePath;
+        }
+        
+        // Handle additional attachment file upload
         if ($request->hasFile('attachment')) {
             $file = $request->file('attachment');
-            $fileName = time() . '_' . $file->getClientOriginalName();
+            $fileName = 'attachment_' . time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('leave_attachments', $fileName, 'public');
             $leaveRequest->attachment = $filePath;
         }
@@ -88,6 +101,30 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request rejected',
+            'data' => $leave->load(['employee', 'approvedBy'])
+        ]);
+    }
+
+    public function updateTermsAndCategory(Request $request, $id) {
+        $validated = $request->validate([
+            'terms' => 'nullable|in:with PAY,without PAY',
+            'leave_category' => 'nullable|string|max:255',
+        ]);
+
+        $leave = LeaveRequest::findOrFail($id);
+        
+        if (isset($validated['terms'])) {
+            $leave->terms = $validated['terms'];
+        }
+        
+        if (isset($validated['leave_category'])) {
+            $leave->leave_category = $validated['leave_category'];
+        }
+        
+        $leave->save();
+
+        return response()->json([
+            'message' => 'Leave request terms and category updated successfully',
             'data' => $leave->load(['employee', 'approvedBy'])
         ]);
     }

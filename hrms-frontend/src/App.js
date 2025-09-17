@@ -18,7 +18,7 @@ import HrAssistantLayout from './pages/HrAssistant/HrAssistantLayout';
 import EmployeeRecords from './pages/HrAssistant/EmployeeRecords';
 
 import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ New HR Assistant leave management
-import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
+import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ Updated Employee leave form
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
 import EvaluationForm from './pages/HrAssistant/Evaluations/EvaluationForm';
@@ -45,6 +45,9 @@ function App() {
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
+        <Route path="/test-leave-form" element={<LeaveApplicationForm />} />
+        <Route path="/updated-leave-form" element={<LeaveApplicationForm />} />
+        <Route path="/test-hr-leave" element={<LeaveManagement />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
 
         {/* HR Assistant Dashboard + Sidebar Layout */}

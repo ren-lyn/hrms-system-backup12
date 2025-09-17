@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, Check, X } from 'lucide-react';
-import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest } from '../../api/leave';
+import { Search, Calendar, Download, Eye, Check, X, FileText, Image } from 'lucide-react';
+import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest, updateLeaveTermsAndCategory } from '../../api/leave';
 import './LeaveManagement.css';
 
 const LeaveManagement = () => {
@@ -18,9 +18,19 @@ const LeaveManagement = () => {
   const [actionType, setActionType] = useState('');
   const [remarks, setRemarks] = useState('');
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [editingLeave, setEditingLeave] = useState(null);
+  const [editTerms, setEditTerms] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [selectedSignature, setSelectedSignature] = useState(null);
 
   useEffect(() => {
     loadData();
+    // Set up auto-refresh every 30 seconds for real-time updates
+    const interval = setInterval(loadData, 300000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadData = async () => {
@@ -31,11 +41,19 @@ const LeaveManagement = () => {
         getLeaveStats()
       ]);
       
-      setLeaveRequests(requestsResponse.data);
-      setStats(statsResponse.data);
+      console.log('Loaded leave requests:', requestsResponse.data);
+      console.log('Loaded stats:', statsResponse.data);
+      
+      setLeaveRequests(requestsResponse.data || []);
+      setStats(statsResponse.data || {
+        approval_stats: { requested: 0, approved: 0, rejected: 0, pending: 0 },
+        type_stats: {}
+      });
+      
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Error loading data:', error);
-      showAlert('Error loading leave requests', 'danger');
+      showAlert('Error loading leave requests. Please refresh the page.', 'danger');
     } finally {
       setLoading(false);
     }
@@ -54,21 +72,74 @@ const LeaveManagement = () => {
 
   const confirmAction = async () => {
     try {
+      let response;
       if (actionType === 'approve') {
-        await approveLeaveRequest(selectedLeave.id, remarks);
-        showAlert('Leave request approved successfully', 'success');
+        response = await approveLeaveRequest(selectedLeave.id, remarks);
+        showAlert(`Leave request for ${selectedLeave.employee?.name || 'employee'} has been approved successfully!`, 'success');
       } else if (actionType === 'reject') {
-        await rejectLeaveRequest(selectedLeave.id, remarks);
-        showAlert('Leave request rejected successfully', 'success');
+        response = await rejectLeaveRequest(selectedLeave.id, remarks);
+        showAlert(`Leave request for ${selectedLeave.employee?.name || 'employee'} has been rejected.`, 'info');
       }
       
+      console.log('Action response:', response);
+      
       setShowModal(false);
+      setSelectedLeave(null);
       setRemarks('');
-      await loadData(); // Reload data
+      setActionType('');
+      
+      // Immediately reload data to show changes
+      await loadData();
     } catch (error) {
       console.error('Error processing action:', error);
-      showAlert('Error processing request', 'danger');
+      const errorMessage = error.response?.data?.message || 'Error processing request. Please try again.';
+      showAlert(errorMessage, 'danger');
     }
+  };
+
+  const handleEditTerms = (leave) => {
+    setEditingLeave(leave);
+    setEditTerms(leave.terms || '');
+    setEditCategory(leave.leave_category || '');
+    setShowTermsModal(true);
+  };
+
+  const saveTermsAndCategory = async () => {
+    try {
+      await updateLeaveTermsAndCategory(editingLeave.id, editTerms, editCategory);
+      showAlert('Leave terms and category updated successfully!', 'success');
+      setShowTermsModal(false);
+      setEditingLeave(null);
+      setEditTerms('');
+      setEditCategory('');
+      await loadData();
+    } catch (error) {
+      console.error('Error updating terms:', error);
+      showAlert('Error updating leave terms. Please try again.', 'danger');
+    }
+  };
+
+  const handleViewSignature = (request) => {
+    if (request.signature_path) {
+      setSelectedSignature({
+        path: request.signature_path,
+        employeeName: request.employee?.name || request.employee_name || 'Unknown Employee',
+        leaveType: request.type,
+        isImage: isImageFile(request.signature_path)
+      });
+      setShowSignatureModal(true);
+    }
+  };
+
+  const isImageFile = (filePath) => {
+    if (!filePath) return false;
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+    const extension = filePath.split('.').pop()?.toLowerCase();
+    return imageExtensions.includes(extension);
+  };
+
+  const getSignatureUrl = (path) => {
+    return `http://localhost:8000/storage/${path}`;
   };
 
   const filteredRequests = leaveRequests.filter(request => {
@@ -107,7 +178,14 @@ const LeaveManagement = () => {
       {/* Header */}
       <Row className="mb-4">
         <Col>
-          <h2 className="mb-0">Leave Management</h2>
+          <div className="d-flex justify-content-between align-items-center">
+            <h2 className="mb-0">Leave Management</h2>
+            {lastUpdated && (
+              <small className="text-muted">
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </small>
+            )}
+          </div>
         </Col>
       </Row>
 
@@ -209,6 +287,14 @@ const LeaveManagement = () => {
           </Form.Select>
         </Col>
         <Col md={5} className="text-end">
+          <Button 
+            variant="outline-primary" 
+            className="me-2" 
+            onClick={loadData}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
           <Button variant="outline-danger" className="me-2">
             <Download size={16} className="me-1" />
             Export
@@ -230,6 +316,7 @@ const LeaveManagement = () => {
                 <th>End Date</th>
                 <th>Days</th>
                 <th>Reason</th>
+                <th>E-Signature</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -238,7 +325,7 @@ const LeaveManagement = () => {
                 <tr key={request.id}>
                   <td>
                     <div className="employee-info">
-                      <strong>{request.employee?.name || 'Unknown Employee'}</strong>
+                      <strong>{request.employee?.name || request.employee_name || 'Unknown Employee'}</strong>
                       {request.company && <div className="company-text">{request.company}</div>}
                     </div>
                   </td>
@@ -254,9 +341,27 @@ const LeaveManagement = () => {
                     </div>
                   </td>
                   <td>
-                    <Badge bg={request.terms === 'with PAY' ? 'success' : 'warning'}>
-                      {request.terms}
-                    </Badge>
+                    <div className="terms-section">
+                      <div className="mb-1">
+                        <Badge 
+                          bg={request.terms === 'with PAY' ? 'success' : 
+                              request.terms === 'without PAY' ? 'warning' :
+                              'secondary'}
+                        >
+                          {request.terms || 'TBD by HR'}
+                        </Badge>
+                      </div>
+                      {request.status === 'pending' && (
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          onClick={() => handleEditTerms(request)}
+                          style={{ fontSize: '10px', padding: '2px 6px' }}
+                        >
+                          Set Terms
+                        </Button>
+                      )}
+                    </div>
                   </td>
                   <td>{formatDate(request.from)}</td>
                   <td>{formatDate(request.to)}</td>
@@ -267,6 +372,27 @@ const LeaveManagement = () => {
                     <span className="reason-text">
                       {request.reason || 'No reason provided'}
                     </span>
+                  </td>
+                  <td>
+                    <div className="signature-section">
+                      {request.signature_path ? (
+                        <Button
+                          variant="outline-info"
+                          size="sm"
+                          onClick={() => handleViewSignature(request)}
+                          title="View E-Signature"
+                        >
+                          {isImageFile(request.signature_path) ? (
+                            <Image size={14} className="me-1" />
+                          ) : (
+                            <FileText size={14} className="me-1" />
+                          )}
+                          View
+                        </Button>
+                      ) : (
+                        <span className="text-muted">No signature</span>
+                      )}
+                    </div>
                   </td>
                   <td>
                     {request.status === 'pending' ? (
@@ -314,9 +440,22 @@ const LeaveManagement = () => {
         <Modal.Body>
           {selectedLeave && (
             <div className="mb-3">
-              <strong>Employee:</strong> {selectedLeave.employee?.name}<br />
+              <strong>Employee:</strong> {selectedLeave.employee?.name || selectedLeave.employee_name}<br />
               <strong>Leave Type:</strong> {selectedLeave.type}<br />
-              <strong>Duration:</strong> {formatDate(selectedLeave.from)} - {formatDate(selectedLeave.to)}
+              <strong>Duration:</strong> {formatDate(selectedLeave.from)} - {formatDate(selectedLeave.to)}<br />
+              <strong>E-Signature:</strong> {selectedLeave.signature_path ? (
+                <Button
+                  variant="outline-info"
+                  size="sm"
+                  className="ms-2"
+                  onClick={() => handleViewSignature(selectedLeave)}
+                >
+                  <Eye size={12} className="me-1" />
+                  View Signature
+                </Button>
+              ) : (
+                <span className="text-muted">No signature uploaded</span>
+              )}
             </div>
           )}
           <Form.Group>
@@ -339,6 +478,138 @@ const LeaveManagement = () => {
             onClick={confirmAction}
           >
             {actionType === 'approve' ? 'Approve' : 'Reject'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Terms and Category Modal */}
+      <Modal show={showTermsModal} onHide={() => setShowTermsModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Set Pay Terms & Leave Category</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {editingLeave && (
+            <div className="mb-3">
+              <strong>Employee:</strong> {editingLeave.employee?.name || editingLeave.employee_name}<br />
+              <strong>Leave Type:</strong> {editingLeave.type}<br />
+              <strong>Duration:</strong> {formatDate(editingLeave.from)} - {formatDate(editingLeave.to)}
+            </div>
+          )}
+          <Form.Group className="mb-3">
+            <Form.Label>Pay Terms *</Form.Label>
+            <Form.Select
+              value={editTerms}
+              onChange={(e) => setEditTerms(e.target.value)}
+              required
+            >
+              <option value="">Select pay terms...</option>
+              <option value="with PAY">With PAY</option>
+              <option value="without PAY">Without PAY</option>
+            </Form.Select>
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Leave Category</Form.Label>
+            <Form.Select
+              value={editCategory}
+              onChange={(e) => setEditCategory(e.target.value)}
+            >
+              <option value="">Select category </option>
+              <option value="Service Incentive Leave (SIL)">Service Incentive Leave (SIL)</option>
+              <option value="Emergency Leave (EL)">Emergency Leave (EL)</option>
+            </Form.Select>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowTermsModal(false)}>
+            Cancel
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={saveTermsAndCategory}
+            disabled={!editTerms}
+          >
+            Save Changes
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Signature Viewing Modal */}
+      <Modal show={showSignatureModal} onHide={() => setShowSignatureModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>E-Signature - {selectedSignature?.employeeName}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedSignature && (
+            <div>
+              <div className="mb-3">
+                <strong>Employee:</strong> {selectedSignature.employeeName}<br />
+                <strong>Leave Type:</strong> {selectedSignature.leaveType}<br />
+              </div>
+              
+              <div className="text-center">
+                {selectedSignature.isImage ? (
+                  <div>
+                    <img 
+                      src={getSignatureUrl(selectedSignature.path)} 
+                      alt="E-Signature"
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '400px', 
+                        border: '1px solid #ddd',
+                        borderRadius: '8px'
+                      }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextElementSibling.style.display = 'block';
+                      }}
+                    />
+                    <div style={{ display: 'none' }} className="alert alert-warning">
+                      <FileText size={48} className="mb-2" />
+                      <p>Unable to load image. This might be a PDF or the file is not accessible.</p>
+                      <Button 
+                        variant="primary" 
+                        href={getSignatureUrl(selectedSignature.path)} 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Download size={16} className="me-1" />
+                        Download File
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-info">
+                    <FileText size={48} className="mb-3" />
+                    <h5>PDF Document</h5>
+                    <p>This signature is in PDF format. Click the button below to view or download.</p>
+                    <div className="d-flex gap-2 justify-content-center">
+                      <Button 
+                        variant="primary" 
+                        href={getSignatureUrl(selectedSignature.path)} 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Eye size={16} className="me-1" />
+                        View PDF
+                      </Button>
+                      <Button 
+                        variant="outline-primary" 
+                        href={getSignatureUrl(selectedSignature.path)} 
+                        download
+                      >
+                        <Download size={16} className="me-1" />
+                        Download
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowSignatureModal(false)}>
+            Close
           </Button>
         </Modal.Footer>
       </Modal>

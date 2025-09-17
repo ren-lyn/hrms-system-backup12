@@ -10,8 +10,8 @@ class LeaveRequest extends Model
     use HasFactory;
 
     protected $fillable = [
-        'employee_id', 'company', 'department', 'type', 'terms', 'leave_category', 'from', 'to', 
-        'total_days', 'total_hours', 'date_filed', 'reason', 'attachment', 'status', 
+        'employee_id', 'company', 'employee_name', 'department', 'type', 'terms', 'leave_category', 'from', 'to', 
+        'total_days', 'total_hours', 'date_filed', 'reason', 'attachment', 'signature_path', 'status', 
         'admin_remarks', 'approved_at', 'rejected_at', 'approved_by'
     ];
 
