@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\EmployeeProfile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 
 class EmployeeController extends Controller
 {
@@ -161,5 +162,139 @@ public function update(Request $request, $id)
         $user->delete();
 
         return response()->json(['message' => 'Employee deleted successfully']);
+    }
+
+    // GET /employee/profile - Get current employee's profile
+    public function profile()
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        // Get the full name from User model
+        $profileData = $profile->toArray();
+        $profileData['name'] = $user->first_name . ' ' . $user->last_name;
+        
+        return response()->json([
+            'profile' => $profileData,
+            'edit_counts' => [
+                'marital_status' => $profile->marital_status_edit_count,
+                'address' => $profile->address_edit_count,
+                'contact' => $profile->contact_edit_count
+            ]
+        ]);
+    }
+
+    // PUT /employee/profile/marital_status - Update marital status
+    public function updateMaritalStatus(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->marital_status_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for marital status.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'marital_status' => 'required|string|in:Single,Married,Divorced,Widowed'
+        ]);
+        
+        $profile->update([
+            'marital_status' => $validated['marital_status'],
+            'marital_status_edit_count' => $profile->marital_status_edit_count + 1
+        ]);
+        
+        return response()->json([
+            'message' => 'Marital status updated successfully',
+            'remaining_edits' => 3 - $profile->marital_status_edit_count
+        ]);
+    }
+
+    // PUT /employee/profile/address - Update address information
+    public function updateAddress(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->address_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for address information.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'province' => 'nullable|string|max:255',
+            'barangay' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:255',
+            'postal_code' => 'nullable|string|max:20'
+        ]);
+        
+        $profile->update(array_merge($validated, [
+            'address_edit_count' => $profile->address_edit_count + 1
+        ]));
+        
+        return response()->json([
+            'message' => 'Address information updated successfully',
+            'remaining_edits' => 3 - $profile->address_edit_count
+        ]);
+    }
+
+    // PUT /employee/profile/contact - Update contact information
+    public function updateContact(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->contact_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for contact information.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|unique:employee_profiles,email,' . $profile->id,
+            'emergency_contact_name' => 'nullable|string|max:255',
+            'emergency_contact_phone' => 'nullable|string|max:20'
+        ]);
+        
+        // Also update email in User model if provided
+        if (isset($validated['email'])) {
+            $user->update(['email' => $validated['email']]);
+        }
+        
+        $profile->update(array_merge($validated, [
+            'contact_edit_count' => $profile->contact_edit_count + 1
+        ]));
+        
+        return response()->json([
+            'message' => 'Contact information updated successfully',
+            'remaining_edits' => 3 - $profile->contact_edit_count
+        ]);
     }
 }

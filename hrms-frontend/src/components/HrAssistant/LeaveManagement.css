@@ -1,7 +1,51 @@
 .leave-management {
   background-color: #f8f9fa;
-  min-height: 100vh;
-  padding: 20px;
+  min-height: calc(100vh - 60px); /* Account for top navigation */
+  padding: 0 !important; /* Override inline padding */
+  margin: 0 auto;
+  max-width: calc(100vw - 40px); /* Reduced side margins */
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar for main container */
+.leave-management::-webkit-scrollbar {
+  width: 12px;
+}
+
+.leave-management::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.leave-management::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 6px;
+}
+
+.leave-management::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Content spacing for full page layout */
+.leave-management .row {
+  margin-bottom: 24px;
+}
+
+/* Extra spacing for stats cards row */
+.leave-management .row:first-child {
+  margin-top: 40px;
+}
+
+.leave-management .row:last-child {
+  margin-bottom: 0;
+}
+
+/* Add some breathing room at the bottom */
+.leave-management::after {
+  content: '';
+  display: block;
+  height: 20px;
 }
 
 .stats-card {
@@ -9,6 +53,7 @@
   border-radius: 15px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
+  margin-top: 30px;
 }
 
 .stats-card .card-body {
@@ -70,6 +115,94 @@
 .leave-table {
   margin: 0;
 }
+
+/* Scrollable table container */
+.leave-table-container {
+  max-height: none; /* Remove height constraint */
+  overflow: visible; /* Let parent handle scrolling */
+  border-radius: 8px;
+}
+
+/* Custom scrollbar styling for main container */
+.leave-management::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.leave-management::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.leave-management::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.leave-management::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Sticky header for table */
+.leave-table thead th {
+  position: sticky;
+  top: 0;
+  background-color: white;
+  z-index: 10;
+  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .leave-management {
+    max-width: calc(100vw - 16px); /* Smaller side margins on mobile */
+    min-height: calc(100vh - 80px); /* Adjust for mobile navigation */
+    max-height: calc(100vh - 60px);
+  }
+  
+  .leave-table-container {
+    max-height: none;
+    overflow: visible;
+  }
+  
+  .leave-management .row:first-child {
+    margin-top: 25px;
+  }
+  
+  .stats-card {
+    margin-top: 20px;
+  }
+  
+  .leave-table th,
+  .leave-table td {
+    padding: 8px 6px;
+    font-size: 0.8rem;
+  }
+  
+  .reason-text {
+    max-width: 100px;
+  }
+  
+  .employee-info strong {
+    font-size: 0.85rem;
+  }
+  
+  .company-text {
+    font-size: 0.7rem;
+  }
+}
+
+/* Column width constraints */
+.leave-table th:nth-child(1) { min-width: 150px; } /* Employee Name */
+.leave-table th:nth-child(2) { min-width: 120px; } /* Department */
+.leave-table th:nth-child(3) { min-width: 130px; } /* Leave Type */
+.leave-table th:nth-child(4) { min-width: 120px; } /* Terms */
+.leave-table th:nth-child(5) { min-width: 100px; } /* Start Date */
+.leave-table th:nth-child(6) { min-width: 100px; } /* End Date */
+.leave-table th:nth-child(7) { min-width: 80px; }  /* Days */
+.leave-table th:nth-child(8) { min-width: 150px; } /* Reason */
+.leave-table th:nth-child(9) { min-width: 120px; } /* E-Signature */
+.leave-table th:nth-child(10) { min-width: 120px; } /* Action */
 
 .leave-table th {
   background-color: #f8f9fa;

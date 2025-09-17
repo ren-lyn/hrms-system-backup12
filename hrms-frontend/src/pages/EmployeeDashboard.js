@@ -18,6 +18,8 @@ import {
   faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
 import EmbeddedLeaveForm from '../components/Employee/EmbeddedLeaveForm';
+import EmployeeProfile from '../components/Employee/EmployeeProfile';
+import CashAdvanceForm from '../components/Employee/CashAdvanceForm';
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -29,7 +31,11 @@ const EmployeeDashboard = () => {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await axios.get('http://localhost:8000/api/user');
+        const res = await axios.get('http://localhost:8000/api/auth/user', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        });
         setEmployeeName(res.data.name);
       } catch (err) {
         console.error('Failed to fetch user info', err);
@@ -100,6 +106,10 @@ const EmployeeDashboard = () => {
             <EmbeddedLeaveForm />
           </div>
         );
+      case 'profile':
+        return <EmployeeProfile />;
+      case 'cash-advance':
+        return <CashAdvanceForm />;
       default:
         return (
           <div className="card p-4">

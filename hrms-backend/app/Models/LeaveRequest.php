@@ -29,6 +29,11 @@ class LeaveRequest extends Model
         return $this->belongsTo(User::class, 'employee_id');
     }
 
+    public function employeeProfile()
+    {
+        return $this->hasOneThrough(EmployeeProfile::class, User::class, 'id', 'user_id', 'employee_id', 'id');
+    }
+
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');

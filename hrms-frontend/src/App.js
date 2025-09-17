@@ -18,6 +18,7 @@ import HrAssistantLayout from './pages/HrAssistant/HrAssistantLayout';
 import EmployeeRecords from './pages/HrAssistant/EmployeeRecords';
 
 import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ New HR Assistant leave management
+import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagement'; // ✅ New Cash Advance management
 import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ Updated Employee leave form
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -62,6 +63,7 @@ function App() {
           <Route index element={<HrAssistantDashboard />} />
           <Route path="employee-records" element={<EmployeeRecords />} />
           <Route path="leave" element={<LeaveManagement />} />
+          <Route path="cash-advances" element={<CashAdvanceManagement />} />
           <Route path="evaluation" element={<EmployeeEvaluationList />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />

@@ -3,7 +3,7 @@ import { Row, Col, Form, Button, Alert } from 'react-bootstrap';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { createLeaveRequest } from '../../api/leave';
+import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest } from '../../api/leave';
 import './EmbeddedLeaveForm.css';
 
 const EmbeddedLeaveForm = () => {
@@ -25,16 +25,48 @@ const EmbeddedLeaveForm = () => {
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
 
-  // Auto-fill user info on component mount
+  // Auto-fill user info from employee profile API
   useEffect(() => {
-    const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
-    setFormData(prev => ({
-      ...prev,
-      name: userInfo.name || '',
-      department: userInfo.department || '',
-      applicantName: userInfo.name || ''
-    }));
-  }, []);
+    const loadEmployeeData = async () => {
+      try {
+        console.log('Loading employee profile data...');
+        
+        // Try to get profile data from the authenticated API first
+        let response;
+        try {
+          response = await getEmployeeProfile();
+        } catch (authError) {
+          console.log('Auth API failed, trying test API:', authError.message);
+          // Fallback to test API for development (using default user ID 6)
+          response = await getEmployeeProfileTest(6);
+        }
+        
+        const profileData = response.data;
+        console.log('Profile data loaded:', profileData);
+        
+        setFormData(prev => ({
+          ...prev,
+          name: profileData.employee_name || '',
+          department: profileData.department || '',
+          applicantName: profileData.employee_name || '',
+          company: profileData.company || 'Cabuyao Concrete Development Corporation'
+        }));
+      } catch (error) {
+        console.error('Failed to load employee profile:', error);
+        
+        // Fallback to localStorage if API fails
+        const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+        setFormData(prev => ({
+          ...prev,
+          name: userInfo.name || '',
+          department: userInfo.department || '',
+          applicantName: userInfo.name || ''
+        }));
+      }
+    };
+    
+    loadEmployeeData();
+  }, []); // Load once on component mount
 
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
@@ -44,23 +76,35 @@ const EmbeddedLeaveForm = () => {
   const calculateDaysAndHours = (startDate, endDate) => {
     if (!startDate || !endDate) return { days: 0, hours: 0 };
 
+    // Calculate the difference in milliseconds
     const timeDiff = endDate.getTime() - startDate.getTime();
-    const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
-    const hours = days * 8;
+    
+    // Calculate total days (inclusive of both start and end dates)
+    let days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+    
+    // Ensure minimum 1 day if same date is selected
+    if (days < 1) days = 1;
+    
+    // Calculate total working hours (assuming 8 hours per working day)
+    // This is just for reference - actual hours should be manually set for partial days
+    const totalWorkingHours = days * 8;
 
-    return { days: days > 0 ? days : 0, hours: hours > 0 ? hours : 0 };
+    return { 
+      days: days, 
+      hours: totalWorkingHours
+    };
   };
 
   const handleDateChange = (dates) => {
     const [start, end] = dates;
-    const { days, hours } = calculateDaysAndHours(start, end);
+    const { days } = calculateDaysAndHours(start, end);
 
     setFormData(prev => ({
       ...prev,
       startDate: start,
       endDate: end,
       totalDays: days,
-      totalHours: hours
+      totalHours: 0 // Default to 0 for full day leaves, user can manually enter for partial days
     }));
   };
 
@@ -87,8 +131,29 @@ const EmbeddedLeaveForm = () => {
       return;
     }
     
+    // Check if start date is not in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Set to start of today
+    const startDate = new Date(formData.startDate);
+    startDate.setHours(0, 0, 0, 0);
+    
+    if (startDate < today) {
+      showAlert('Leave start date cannot be in the past. Please select a future date.', 'warning');
+      return;
+    }
+    
     if (!formData.name.trim()) {
       showAlert('Please enter your name.', 'warning');
+      return;
+    }
+    
+    if (!formData.reason.trim()) {
+      showAlert('Please provide a reason for your leave.', 'warning');
+      return;
+    }
+    
+    if (formData.totalHours > 8) {
+      showAlert('Total hours cannot be more than 8 hours per day.', 'warning');
       return;
     }
     
@@ -106,23 +171,42 @@ const EmbeddedLeaveForm = () => {
 
       // Use FormData for file upload
       const submitData = new FormData();
-      submitData.append('company', formData.company || '');
-      submitData.append('name', formData.applicantName || formData.name);
-      submitData.append('department', formData.department || '');
+      submitData.append('company', formData.company || 'Cabuyao Concrete Development Corporation');
+      submitData.append('name', formData.applicantName || formData.name || 'Test Employee');
+      submitData.append('department', formData.department || 'Test Department');
       submitData.append('type', formData.leaveType);
       submitData.append('from', formatDateForAPI(formData.startDate));
       submitData.append('to', formatDateForAPI(formData.endDate));
-      submitData.append('total_days', formData.totalDays);
-      submitData.append('total_hours', formData.totalHours);
-      submitData.append('reason', formData.reason || '');
+      submitData.append('total_days', formData.totalDays || 1);
+      // Only send total_hours if it's greater than 0 (for partial day leaves)
+      // For full day leaves, send 0
+      if (formData.totalHours > 0 && formData.totalHours <= 8) {
+        submitData.append('total_hours', formData.totalHours);
+      } else {
+        // For full day leaves, send 0
+        submitData.append('total_hours', 0);
+      }
+      submitData.append('reason', formData.reason || 'Leave request');
       
       // Add signature file if provided
       if (formData.signatureFile) {
         submitData.append('signature', formData.signatureFile);
       }
       
-      // Debug the form data
-      console.log('Submitting form data:', submitData);
+      // Debug the form data being sent
+      console.log('=== FORM SUBMISSION DEBUG ===');
+      console.log('Form data object:', formData);
+      console.log('Formatted start date:', formatDateForAPI(formData.startDate));
+      console.log('Formatted end date:', formatDateForAPI(formData.endDate));
+      console.log('Total days:', formData.totalDays);
+      console.log('Total hours:', formData.totalHours);
+      console.log('Reason length:', formData.reason.length);
+      console.log('Has signature file:', !!formData.signatureFile);
+      
+      // Log FormData contents
+      for (let pair of submitData.entries()) {
+        console.log(`${pair[0]}: ${pair[1]}`);
+      }
       
       // Check authentication
       const token = localStorage.getItem('auth_token');
@@ -160,10 +244,20 @@ const EmbeddedLeaveForm = () => {
         statusText: error.response?.statusText
       });
       
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.error || 
-                          error.message || 
-                          'Failed to submit leave application. Please try again.';
+      let errorMessage = 'Failed to submit leave application. Please try again.';
+      
+      if (error.response?.data?.errors) {
+        // Laravel validation errors
+        const validationErrors = error.response.data.errors;
+        const errorList = Object.values(validationErrors).flat();
+        errorMessage = errorList.join(', ');
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       
       showAlert(`Error: ${errorMessage}`, 'danger');
     } finally {
@@ -192,8 +286,9 @@ const EmbeddedLeaveForm = () => {
               <Form.Control
                 type="text"
                 value={formData.company}
-                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                className="underlined-input"
+                readOnly
+                className="underlined-input bg-light"
+                title="Company name is pre-filled"
               />
             </Form.Group>
 
@@ -202,9 +297,9 @@ const EmbeddedLeaveForm = () => {
               <Form.Control
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="underlined-input"
-                required
+                readOnly
+                className="underlined-input bg-light"
+                title="Auto-filled from your employee profile"
               />
             </Form.Group>
           </Col>
@@ -225,8 +320,9 @@ const EmbeddedLeaveForm = () => {
               <Form.Control
                 type="text"
                 value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="underlined-input"
+                readOnly
+                className="underlined-input bg-light"
+                title="Auto-filled from your employee profile"
               />
             </Form.Group>
           </Col>
@@ -245,8 +341,11 @@ const EmbeddedLeaveForm = () => {
               >
                 <option value="Vacation Leave">Vacation Leave</option>
                 <option value="Sick Leave">Sick Leave</option>
-                <option value="Maternity/Paternity Leave">Maternity/Paternity Leave</option>
                 <option value="Emergency Leave">Emergency Leave</option>
+                <option value="Maternity Leave">Maternity Leave</option>
+                <option value="Paternity Leave">Paternity Leave</option>
+                <option value="Personal Leave">Personal Leave</option>
+                <option value="Bereavement Leave">Bereavement Leave</option>
               </Form.Select>
             </Form.Group>
           </Col>
@@ -272,8 +371,10 @@ const EmbeddedLeaveForm = () => {
                   startDate={formData.startDate}
                   endDate={formData.endDate}
                   selectsRange
+                  minDate={new Date()}
                   placeholderText="Select date range"
                   className="date-range-input"
+                  dateFormat="yyyy-MM-dd"
                 />
                 <CalendarIcon className="calendar-icon" size={20} />
               </div>
@@ -287,8 +388,10 @@ const EmbeddedLeaveForm = () => {
                 type="number"
                 value={formData.totalDays}
                 readOnly
-                className="calculation-input"
+                className="calculation-input bg-light"
+                title="Auto-calculated from selected dates"
               />
+            
             </Form.Group>
           </Col>
 
@@ -297,10 +400,24 @@ const EmbeddedLeaveForm = () => {
               <Form.Label className="form-label">Total Hours</Form.Label>
               <Form.Control
                 type="number"
-                value={formData.totalHours}
-                readOnly
+                value={formData.totalHours === 0 ? '' : formData.totalHours}
+                onChange={(e) => {
+                  const hours = parseFloat(e.target.value) || 0;
+                  if (hours <= 8) {
+                    setFormData({ ...formData, totalHours: hours });
+                  } else {
+                    // Show warning if trying to enter more than 8 hours
+                    showAlert('Maximum 8 hours allowed for partial day leaves', 'warning');
+                  }
+                }}
+                min="0"
+                max="8"
+                step="0.5"
                 className="calculation-input"
+                placeholder={formData.totalDays * 8}
+                title="Leave empty for full day leaves, or enter hours for partial day leaves (max 8 per day)"
               />
+            
             </Form.Group>
           </Col>
         </Row>

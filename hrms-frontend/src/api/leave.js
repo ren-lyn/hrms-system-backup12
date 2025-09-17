@@ -30,6 +30,12 @@ export const rejectLeaveRequest = (id, remarks) => API.put(`/leave-requests/${id
 export const updateLeaveTermsAndCategory = (id, terms, leave_category) => API.put(`/leave-requests/${id}/terms`, { terms, leave_category });
 export const getLeaveStats = () => API.get('/leave-requests/stats');
 
+// Employee Profile APIs for auto-population
+export const getEmployeeProfile = () => API.get('/employee/profile-data');
+export const getEmployeeProfileTest = (userId = 6) => API.get(`/employee-profile-test/${userId}`);
+export const getMyLeaveRequests = () => API.get('/leave-requests/my-requests');
+export const getMyLeaveBalance = () => API.get('/leave-requests/my-balance');
+
 // Legacy APIs (keeping for backward compatibility)
 export const fetchLeaves = () => API.get('/leave-requests');
 export const getLeave = (id) => API.get(`/leave-requests/${id}`);

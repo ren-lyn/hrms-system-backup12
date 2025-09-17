@@ -4,6 +4,35 @@
   padding: 20px;
 }
 
+/* Scrollable version for dashboard embedding */
+.leave-application-form.dashboard-embedded {
+  background-color: transparent;
+  min-height: auto;
+  padding: 0;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar for dashboard embedded version */
+.leave-application-form.dashboard-embedded::-webkit-scrollbar {
+  width: 8px;
+}
+
+.leave-application-form.dashboard-embedded::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.leave-application-form.dashboard-embedded::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.leave-application-form.dashboard-embedded::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
 .form-card {
   border: none;
   border-radius: 15px;
@@ -44,6 +73,27 @@
 .underlined-input[readonly] {
   border-bottom-color: #e9ecef;
   color: #6c757d;
+}
+
+/* Auto-filled fields styling */
+.auto-filled {
+  background-color: #f8f9fa !important;
+  color: #495057 !important;
+  font-style: italic;
+  border-bottom-color: #28a745 !important;
+}
+
+.auto-filled::placeholder {
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Add a small indicator for auto-filled fields */
+.auto-filled::before {
+  content: "✓";
+  color: #28a745;
+  font-weight: bold;
+  margin-right: 5px;
 }
 
 /* Custom Select Dropdown */
@@ -222,6 +272,11 @@
 @media (max-width: 768px) {
   .leave-application-form {
     padding: 15px;
+  }
+  
+  .leave-application-form.dashboard-embedded {
+    padding: 10px;
+    max-height: calc(100vh - 80px);
   }
   
   .form-card .card-body {

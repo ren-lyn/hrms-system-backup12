@@ -25,12 +25,24 @@ const LeaveManagement = () => {
   const [editCategory, setEditCategory] = useState('');
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedSignature, setSelectedSignature] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   useEffect(() => {
     loadData();
     // Set up auto-refresh every 30 seconds for real-time updates
     const interval = setInterval(loadData, 300000);
-    return () => clearInterval(interval);
+    
+    // Handle window resize for responsive design
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const loadData = async () => {
@@ -143,8 +155,10 @@ const LeaveManagement = () => {
   };
 
   const filteredRequests = leaveRequests.filter(request => {
-    const matchesSearch = request.employee?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.type?.toLowerCase().includes(searchTerm.toLowerCase());
+    const employeeName = request.employee?.name || request.employee_name || '';
+    const matchesSearch = employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         request.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         request.department?.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (selectedPeriod === 'all') return matchesSearch;
     
@@ -174,20 +188,12 @@ const LeaveManagement = () => {
   }
 
   return (
-    <Container fluid className="leave-management">
-      {/* Header */}
-      <Row className="mb-4">
-        <Col>
-          <div className="d-flex justify-content-between align-items-center">
-            <h2 className="mb-0">Leave Management</h2>
-            {lastUpdated && (
-              <small className="text-muted">
-                Last updated: {lastUpdated.toLocaleTimeString()}
-              </small>
-            )}
-          </div>
-        </Col>
-      </Row>
+    <div style={{ height: '100%' }}>
+      <Container fluid className="leave-management" style={{ 
+        height: 'auto', 
+        overflowY: 'auto', 
+        padding: isMobile ? '20px 8px' : '20px 20px'
+      }}>
 
       {alert.show && (
         <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
@@ -287,26 +293,50 @@ const LeaveManagement = () => {
           </Form.Select>
         </Col>
         <Col md={5} className="text-end">
-          <Button 
-            variant="outline-primary" 
-            className="me-2" 
-            onClick={loadData}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          <Button variant="outline-danger" className="me-2">
-            <Download size={16} className="me-1" />
-            Export
-          </Button>
+          <div className="d-flex align-items-center justify-content-end gap-3">
+            <small className="text-muted">
+              Showing {filteredRequests.length} of {leaveRequests.length} requests
+            </small>
+            <Button 
+              variant="outline-primary" 
+              size="sm"
+              onClick={loadData}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+            <Button variant="outline-danger" size="sm">
+              <Download size={16} className="me-1" />
+              Export
+            </Button>
+          </div>
         </Col>
       </Row>
 
       {/* Table */}
       <Card>
         <Card.Body className="p-0">
-          <Table responsive className="leave-table">
-            <thead>
+          <div className="leave-table-container" style={{ position: 'relative' }}>
+            {loading && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000
+              }}>
+                <div className="spinner-border text-primary" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+              </div>
+            )}
+            <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
+              <thead>
               <tr>
                 <th>👤 Employee Name</th>
                 <th>Department</th>
@@ -420,7 +450,8 @@ const LeaveManagement = () => {
                 </tr>
               ))}
             </tbody>
-          </Table>
+            </Table>
+          </div>
           
           {filteredRequests.length === 0 && (
             <div className="text-center p-4">
@@ -613,7 +644,8 @@ const LeaveManagement = () => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </Container>
+      </Container>
+    </div>
   );
 };
 

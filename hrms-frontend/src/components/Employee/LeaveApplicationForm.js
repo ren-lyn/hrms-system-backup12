@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { ArrowLeft, Calendar } from 'lucide-react';
 import { createLeaveRequest } from '../../api/leave';
+import axios from '../../axios';
 import './LeaveApplicationForm.css';
 
 const LeaveApplicationForm = ({ onBack }) => {
@@ -24,16 +25,81 @@ const LeaveApplicationForm = ({ onBack }) => {
 
   // Auto-fill user info on component mount
   useEffect(() => {
-    // You can fetch user info from localStorage or API
-    const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
-    setFormData(prev => ({
-      ...prev,
-      name: userInfo.name || '',
-      company: 'Cabuyao Concrete Development Corporation',
-      department: userInfo.department || '',
-      applicantName: userInfo.name || ''
-    }));
+    fetchEmployeeProfile();
   }, []);
+
+  const fetchEmployeeProfile = async () => {
+    try {
+      console.log('Fetching employee profile...');
+      const response = await axios.get('/employee/profile');
+      console.log('Profile response:', response.data);
+      
+      const profile = response.data.profile || response.data;
+      console.log('Profile data:', profile);
+      
+      // Handle different response structures
+      let firstName, lastName, department;
+      
+      if (profile.first_name && profile.last_name) {
+        firstName = profile.first_name;
+        lastName = profile.last_name;
+        department = profile.department;
+      } else if (profile.name) {
+        // If name is already combined
+        const nameParts = profile.name.split(' ');
+        firstName = nameParts[0] || '';
+        lastName = nameParts.slice(1).join(' ') || '';
+        department = profile.department;
+      }
+      
+      const fullName = `${firstName} ${lastName}`.trim();
+      console.log('Setting name:', fullName, 'department:', department);
+      
+      setFormData(prev => ({
+        ...prev,
+        name: fullName,
+        company: 'Cabuyao Concrete Development Corporation',
+        department: department || 'Not Specified',
+        applicantName: fullName
+      }));
+      
+    } catch (error) {
+      console.error('Error fetching employee profile:', error);
+      
+      // Fallback: Try to get from user token or localStorage
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          // Try to get user info from auth endpoint
+          const authResponse = await axios.get('/auth/user');
+          console.log('Auth response:', authResponse.data);
+          const user = authResponse.data;
+          const fullName = `${user.first_name} ${user.last_name}`;
+          
+          setFormData(prev => ({
+            ...prev,
+            name: fullName,
+            company: 'Cabuyao Concrete Development Corporation',
+            department: 'Not Specified',
+            applicantName: fullName
+          }));
+          return;
+        } catch (authError) {
+          console.error('Auth endpoint also failed:', authError);
+        }
+      }
+      
+      // Final fallback to localStorage
+      const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+      setFormData(prev => ({
+        ...prev,
+        name: userInfo.name || 'Please enter your name',
+        company: 'Cabuyao Concrete Development Corporation',
+        department: userInfo.department || 'Please enter department',
+        applicantName: userInfo.name || 'Please enter your name'
+      }));
+    }
+  };
 
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
@@ -153,7 +219,7 @@ const LeaveApplicationForm = ({ onBack }) => {
   };
 
   return (
-    <Container fluid className="leave-application-form">
+    <Container fluid className="leave-application-form dashboard-embedded">
       <Row className="mb-4">
         <Col>
           <div className="d-flex align-items-center mb-3">
@@ -184,8 +250,8 @@ const LeaveApplicationForm = ({ onBack }) => {
                   <Form.Control
                     type="text"
                     value={formData.company}
-                    onChange={(e) => setFormData({...formData, company: e.target.value})}
-                    className="underlined-input"
+                    readOnly
+                    className="underlined-input auto-filled"
                   />
                 </Form.Group>
                 
@@ -194,8 +260,8 @@ const LeaveApplicationForm = ({ onBack }) => {
                   <Form.Control
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="underlined-input"
+                    readOnly
+                    className="underlined-input auto-filled"
                     required
                   />
                 </Form.Group>
@@ -218,8 +284,8 @@ const LeaveApplicationForm = ({ onBack }) => {
                   <Form.Control
                     type="text"
                     value={formData.department}
-                    onChange={(e) => setFormData({...formData, department: e.target.value})}
-                    className="underlined-input"
+                    readOnly
+                    className="underlined-input auto-filled"
                   />
                 </Form.Group>
               </Col>
@@ -323,8 +389,8 @@ const LeaveApplicationForm = ({ onBack }) => {
                           type="text"
                           placeholder="Applicant Name"
                           value={formData.applicantName}
-                          onChange={(e) => setFormData({...formData, applicantName: e.target.value})}
-                          className="underlined-input text-center"
+                          readOnly
+                          className="underlined-input text-center auto-filled"
                         />
                         <div className="input-label">Applicant Name</div>
                       </Form.Group>

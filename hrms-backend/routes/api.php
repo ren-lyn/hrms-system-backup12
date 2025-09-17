@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\ApplicantController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
 use App\Http\Controllers\API\EvaluationAdministrationController;
+use App\Http\Controllers\Api\CashAdvanceController;
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -34,6 +35,14 @@ Route::post('/employees', [EmployeeController::class, 'store']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 Route::middleware('auth:sanctum')->get('/auth/user', [AuthController::class, 'user']);
+
+// Employee Profile Routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/employee/profile', [EmployeeController::class, 'profile']);
+    Route::put('/employee/profile/marital_status', [EmployeeController::class, 'updateMaritalStatus']);
+    Route::put('/employee/profile/address', [EmployeeController::class, 'updateAddress']);
+    Route::put('/employee/profile/contact', [EmployeeController::class, 'updateContact']);
+});
 Route::post('/register', [ApplicantController::class, 'register']);
 
 Route::get('/test', function () {
@@ -59,10 +68,29 @@ Route::get('/test-db', function () {
 });
 
 //Leave Requests
-// Temporarily allow without auth for testing
+// Public routes for testing (should be moved to authenticated routes in production)
 Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
 Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
 Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
+
+// Temporary route for testing employee profile data (remove in production)
+Route::get('/employee-profile-test/{userId?}', [LeaveRequestController::class, 'getEmployeeProfileTest']); // test profile data
+
+// Employee-specific leave routes (authenticated)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/employee/profile-data', [LeaveRequestController::class, 'getEmployeeProfile']); // Get profile data for form
+    Route::get('/leave-requests/my-requests', [LeaveRequestController::class, 'myRequests']); // Employee's own requests
+    Route::get('/leave-requests/my-balance', [LeaveRequestController::class, 'getLeaveBalance']); // Employee leave balance
+});
+
+//Cash Advances
+// Temporarily allow without auth for testing
+Route::post('/cash-advances', [CashAdvanceController::class, 'store']); // employee
+Route::get('/cash-advances', [CashAdvanceController::class, 'index']); // hr assistant
+Route::get('/cash-advances/stats', [CashAdvanceController::class, 'stats']); // hr stats
+Route::get('/cash-advances/{id}', [CashAdvanceController::class, 'show']); // view specific request
+Route::put('/cash-advances/{id}/approve', [CashAdvanceController::class, 'approve']); // approve
+Route::put('/cash-advances/{id}/reject', [CashAdvanceController::class, 'reject']); // reject
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
@@ -94,5 +122,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}/toggle-status', [EvaluationAdministrationController::class, 'toggleStatus']);
         Route::post('/{id}/duplicate', [EvaluationAdministrationController::class, 'duplicate']);
         Route::get('/active/forms', [EvaluationAdministrationController::class, 'getActiveForms']);
+    });
+
+    // Cash Advance Management
+    Route::prefix('cash-advances')->group(function () {
+        // Employee routes (submit request and view own requests)
+        Route::post('/', [CashAdvanceController::class, 'store']); // Submit cash advance request
+        Route::get('/my-requests', [CashAdvanceController::class, 'userRequests']); // Get user's own requests
+        
+        // HR Assistant routes (manage all requests)
+        Route::get('/', [CashAdvanceController::class, 'index']); // List all requests with filters
+        Route::get('/stats', [CashAdvanceController::class, 'stats']); // Dashboard statistics
+        Route::get('/{id}', [CashAdvanceController::class, 'show']); // View specific request details
+        Route::put('/{id}/approve', [CashAdvanceController::class, 'approve']); // Approve request
+        Route::put('/{id}/reject', [CashAdvanceController::class, 'reject']); // Reject request
     });
 });

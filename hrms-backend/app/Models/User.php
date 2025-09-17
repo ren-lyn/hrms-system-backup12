@@ -40,4 +40,10 @@ class User extends Authenticatable
     return $this->hasMany(Leave::class, 'employee_id');
 }
 
+    // Accessor for full name
+    public function getNameAttribute()
+    {
+        return $this->first_name . ' ' . $this->last_name;
+    }
+
 }

@@ -9,7 +9,38 @@ class EmployeeProfile extends Model
     use HasFactory;
     
     protected $fillable = [
-        'user_id', 'first_name', 'last_name', 'email', 'position', 'department', 'salary', 'contact_number', 'address'
+        'user_id',
+        'employee_id',
+        'first_name',
+        'last_name',
+        'email',
+        'position',
+        'department',
+        'salary',
+        'contact_number',
+        'address',
+        'marital_status',
+        'religion',
+        'place_of_birth',
+        'birth_date',
+        'blood_type',
+        'gender',
+        'province',
+        'barangay',
+        'city',
+        'postal_code',
+        'phone',
+        'emergency_contact_name',
+        'emergency_contact_phone',
+        'hire_date',
+        'employment_status',
+        'job_title',
+        'sss',
+        'philhealth',
+        'pagibig',
+        'marital_status_edit_count',
+        'address_edit_count',
+        'contact_edit_count'
     ];
 
     public function scopeEmployees($query)
