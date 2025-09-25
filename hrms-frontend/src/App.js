@@ -18,13 +18,16 @@ import HrAssistantLayout from './pages/HrAssistant/HrAssistantLayout';
 import EmployeeRecords from './pages/HrAssistant/EmployeeRecords';
 
 import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ New HR Assistant leave management
+
 import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagement'; // ✅ New Cash Advance management
-import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ Updated Employee leave form
+import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
+
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
 import EvaluationForm from './pages/HrAssistant/Evaluations/EvaluationForm';
 import EvaluationAdministration from './components/EvaluationAdministration';
-// ✅ Toastify imports
+import JobPostings from './components/JobPostings';
+import ApplicationsDashboard from "./components/HrAssistant/Dashboard/ApplicationsDashboard";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -46,9 +49,6 @@ function App() {
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
-        <Route path="/test-leave-form" element={<LeaveApplicationForm />} />
-        <Route path="/updated-leave-form" element={<LeaveApplicationForm />} />
-        <Route path="/test-hr-leave" element={<LeaveManagement />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
 
         {/* HR Assistant Dashboard + Sidebar Layout */}
@@ -67,6 +67,8 @@ function App() {
           <Route path="evaluation" element={<EmployeeEvaluationList />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
+          <Route path="job-postings" element={<JobPostings />} />
+          <Route path="applications" element={<ApplicationsDashboard />} />
         </Route>
 
         {/* HR Staff */}

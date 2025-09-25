@@ -10,8 +10,12 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withMiddleware(function (Middleware $middleware) {
-        //
+->withMiddleware(function (Middleware $middleware) {
+        // Register route middleware aliases (Laravel 11/12 style)
+        $middleware->alias([
+            'role' => \App\Http\Middleware\CheckRole::class,
+            'auth' => \App\Http\Middleware\Authenticate::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

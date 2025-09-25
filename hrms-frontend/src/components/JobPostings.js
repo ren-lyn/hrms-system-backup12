@@ -14,6 +14,7 @@ const JobPostings = () => {
     title: "",
     description: "",
     requirements: "",
+    department: "",
     status: "Open",
   });
   const [isEditing, setIsEditing] = useState(false);
@@ -81,7 +82,10 @@ const JobPostings = () => {
 
   const fetchJobs = async () => {
     try {
-      const response = await axios.get("http://localhost:8000/api/job-postings");
+      const token = localStorage.getItem('token');
+      const response = await axios.get("http://localhost:8000/api/job-postings", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setJobPosts(response.data);
 
       if (response.data.length === 0) {
@@ -104,6 +108,7 @@ const JobPostings = () => {
       title: "",
       description: "",
       requirements: "",
+      department: "",
       status: "Open",
     });
     setIsEditing(false);
@@ -124,7 +129,10 @@ const JobPostings = () => {
       setDeletingId(id);
       const loadingToast = toast.loading('Deleting job posting...');
       try {
-        await axios.delete(`http://localhost:8000/api/job-postings/${id}`);
+        const token = localStorage.getItem('token');
+        await axios.delete(`http://localhost:8000/api/job-postings/${id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         
         toast.dismiss(loadingToast);
         setJobPosts(jobPosts.filter((job) => job.id !== id));
@@ -139,31 +147,12 @@ const JobPostings = () => {
   };
 
   // Toggle job status (Open/Closed)
-  const handleToggleStatus = async (id) => {
-    setTogglingId(id);
-    const job = jobPosts.find((j) => j.id === id);
-    const updatedStatus = job.status === "Open" ? "Closed" : "Open";
-
-    const loadingToast = toast.loading(`${updatedStatus === "Open" ? "Opening" : "Closing"} job posting...`);
-    try {
-      await axios.put(`http://localhost:8000/api/job-postings/${id}`, {
-        ...job,
-        status: updatedStatus,
-      });
-      
-      toast.dismiss(loadingToast);
-      setJobPosts(
-        jobPosts.map((j) =>
-          j.id === id ? { ...j, status: updatedStatus } : j
-        )
-      );
-      showSuccess(`"${job.title}" ${updatedStatus.toLowerCase()} successfully!`);
-    } catch (error) {
-      toast.dismiss(loadingToast);
-      handleAxiosError(error, 'Failed to update job status. Please try again.');
-    } finally {
-      setTogglingId(null);
-    }
+  const handleToggleStatus = async (jobId) => {
+    const token = localStorage.getItem('token');
+    await axios.put(`http://localhost:8000/api/job-postings/${jobId}/toggle`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    fetchJobs(); // Refresh job list
   };
 
   // Form validation - same pattern as EmployeeRecords
@@ -180,6 +169,10 @@ const JobPostings = () => {
       showError('Job requirements are required.');
       return false;
     }
+    if (!currentJob.department.trim()) {
+      showError('Department is required.');
+      return false;
+    }
     return true;
   };
 
@@ -194,9 +187,12 @@ const JobPostings = () => {
     setIsSubmitting(true);
     const loadingToast = toast.loading(isEditing ? 'Updating job posting...' : 'Adding job posting...');
 
+    const token = localStorage.getItem('token');
+    const headers = { Authorization: `Bearer ${token}` };
+    
     try {
       if (isEditing) {
-        await axios.put(`http://localhost:8000/api/job-postings/${currentJob.id}`, currentJob);
+        await axios.put(`http://localhost:8000/api/job-postings/${currentJob.id}`, currentJob, { headers });
         setJobPosts(
           jobPosts.map((job) =>
             job.id === currentJob.id ? currentJob : job
@@ -205,8 +201,8 @@ const JobPostings = () => {
         toast.dismiss(loadingToast);
         showSuccess(`Job posting "${currentJob.title}" updated successfully!`);
       } else {
-        const response = await axios.post("http://localhost:8000/api/job-postings", currentJob);
-        setJobPosts([...jobPosts, response.data]);
+        const response = await axios.post("http://localhost:8000/api/job-postings", currentJob, { headers });
+        setJobPosts([...jobPosts, response.data.job_posting || response.data]);
         toast.dismiss(loadingToast);
         showSuccess(`Job posting "${currentJob.title}" added successfully!`);
       }
@@ -216,6 +212,7 @@ const JobPostings = () => {
         title: "",
         description: "",
         requirements: "",
+        department: "",
         status: "Open",
       });
       setIsEditing(false);
@@ -236,6 +233,7 @@ const JobPostings = () => {
       title: "",
       description: "",
       requirements: "",
+      department: "",
       status: "Open",
     });
   };
@@ -351,6 +349,11 @@ const JobPostings = () => {
                         <Card.Text className="text-secondary small">
                           <strong>Requirements:</strong> {job.requirements}
                         </Card.Text>
+                        {job.department && (
+                          <Card.Text className="text-secondary small">
+                            <strong>Department:</strong> {job.department}
+                          </Card.Text>
+                        )}
                       </div>
                     </Collapse>
 
@@ -419,7 +422,7 @@ const JobPostings = () => {
                 required
               />
             </Form.Group>
-            <Form.Group>
+            <Form.Group className="mb-3">
               <Form.Label className="fw-semibold">Requirements *</Form.Label>
               <Form.Control
                 as="textarea"
@@ -428,6 +431,18 @@ const JobPostings = () => {
                 value={currentJob.requirements}
                 onChange={handleChange}
                 placeholder="Enter job requirements"
+                className="rounded-3"
+                required
+              />
+            </Form.Group>
+            <Form.Group>
+              <Form.Label className="fw-semibold">Department *</Form.Label>
+              <Form.Control
+                type="text"
+                name="department"
+                value={currentJob.department}
+                onChange={handleChange}
+                placeholder="Enter department (e.g., IT, HR, Sales)"
                 className="rounded-3"
                 required
               />
