@@ -30,3 +30,18 @@
 .card .d-flex.flex-column.gap-1 > div:last-child {
   margin-bottom: 0;
 }
+
+/* Ensure create button matches the filter select size */
+.btn-create-eval {
+  min-width: 180px; /* at least the width of the filter select */
+  width: auto;      /* allow content to grow so text isn't truncated */
+  height: 38px;     /* match default form-select height for better consistency */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 16px;
+  gap: 6px;         /* space between icon and text */
+}

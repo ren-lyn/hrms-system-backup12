@@ -12,6 +12,7 @@ import {
   CalendarCheck
 } from 'lucide-react';
 import ManagerLeaveManagement from '../components/Manager/ManagerLeaveManagement';
+import ManagerEmployeeEvaluations from '../components/Manager/ManagerEmployeeEvaluations';
 
 
 const ManagerDashboard = () => {
@@ -28,13 +29,22 @@ const ManagerDashboard = () => {
     { icon: <LogOut size={18} />, label: 'Logout', view: 'logout' },
   ];
 
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('token');
+      // remove axios header if set elsewhere
+      try { delete require('axios').default.defaults.headers.common['Authorization']; } catch (e) {}
+      window.location.href = '/';
+    } catch (e) {
+      window.location.href = '/';
+    }
+  };
+
   const handleNavigation = (view, label) => {
     if (view === 'logout') {
-      // Handle logout logic here
-      console.log('Logout clicked');
+      handleLogout();
       return;
     }
-    console.log(`Navigating to ${label}`);
     setActiveView(view);
   };
 
@@ -42,6 +52,8 @@ const ManagerDashboard = () => {
     switch (activeView) {
       case 'leave-request':
         return <ManagerLeaveManagement />;
+      case 'evaluations':
+        return <ManagerEmployeeEvaluations />;
       case 'dashboard':
       default:
         return renderDashboardContent();
@@ -140,13 +152,14 @@ const ManagerDashboard = () => {
       </div>
 
       {/* Main content */}
-      <div style={activeView === 'leave-request' ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-        {activeView !== 'leave-request' && (
+      <div style={(activeView === 'leave-request' || activeView === 'evaluations') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+        {activeView !== 'leave-request' && activeView !== 'evaluations' && (
           <>
             {/* Header */}
             <div style={styles.header}>
               <h1 style={styles.headerTitle}>
-                {activeView === 'leave-request' ? 'Leave Management' : 'Manager Dashboard'}
+                {activeView === 'leave-request' ? 'Leave Management' : 
+                 activeView === 'evaluations' ? 'Employee Evaluations' : 'Manager Dashboard'}
               </h1>
               <div style={styles.headerIcons}>
                 <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />

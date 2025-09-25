@@ -10,7 +10,9 @@ use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
 use App\Http\Controllers\Api\EvaluationAdministrationController;
+use App\Http\Controllers\API\ManagerEvaluationController;
 use App\Http\Controllers\Api\CashAdvanceController;
+
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -57,6 +59,50 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/register', [ApplicantController::class, 'register']);
+
+
+// Debug routes for manager evaluation (temporary)
+Route::get('/debug/employees', function () {
+    $employees = \App\Models\User::with(['employeeProfile', 'role'])
+        ->whereHas('role', function($query) {
+            $query->where('name', 'Employee');
+        })
+        ->get();
+    return response()->json([
+        'count' => $employees->count(),
+        'employees' => $employees->map(function($emp) {
+            return [
+                'id' => $emp->id,
+                'name' => $emp->name,
+                'email' => $emp->email,
+                'role' => $emp->role->name ?? 'No role',
+                'profile' => $emp->employeeProfile ? [
+                    'employee_id' => $emp->employeeProfile->employee_id,
+                    'department' => $emp->employeeProfile->department,
+                    'position' => $emp->employeeProfile->position,
+                ] : null
+            ];
+        })
+    ]);
+});
+
+Route::get('/debug/active-form', function () {
+    $activeForm = \App\Models\EvaluationForm::with('questions')
+        ->where('status', 'Active')
+        ->latest()
+        ->first();
+    return response()->json([
+        'found' => $activeForm ? true : false,
+        'form' => $activeForm ? [
+            'id' => $activeForm->id,
+            'title' => $activeForm->title,
+            'status' => $activeForm->status,
+            'questions_count' => $activeForm->questions->count()
+        ] : null,
+        'all_forms' => \App\Models\EvaluationForm::select('id', 'title', 'status')->get()
+    ]);
+});
+
 
 // Public job postings (for applicants to view)
 Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
@@ -149,6 +195,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}/toggle-status', [EvaluationAdministrationController::class, 'toggleStatus']);
         Route::post('/{id}/duplicate', [EvaluationAdministrationController::class, 'duplicate']);
         Route::get('/active/forms', [EvaluationAdministrationController::class, 'getActiveForms']);
+    });
+
+    // Manager Evaluation Routes
+    Route::prefix('manager-evaluations')->group(function () {
+        Route::get('/active-form', [ManagerEvaluationController::class, 'getActiveForm']);
+        Route::get('/employees', [ManagerEvaluationController::class, 'getEmployees']);
+        Route::post('/start/{employeeId}', [ManagerEvaluationController::class, 'startEvaluation']);
+        Route::post('/submit/{evaluationId}', [ManagerEvaluationController::class, 'submitEvaluation']);
+        Route::get('/result/{evaluationId}', [ManagerEvaluationController::class, 'getEvaluationResult']);
+        Route::get('/result/{evaluationId}/pdf', [ManagerEvaluationController::class, 'downloadPdf']);
+        Route::get('/employee/{employeeId}/results', [ManagerEvaluationController::class, 'getEmployeeResults']);
+        Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluations']);
     });
 
     // Cash Advance Management

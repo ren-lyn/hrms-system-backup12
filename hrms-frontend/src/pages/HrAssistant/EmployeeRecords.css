@@ -217,6 +217,17 @@ input[readonly] {
   max-width: 900px;
 }
 
+/* Evaluation Result Modal - match employee-side height and comfortable width */
+.employee-eval-modal .modal-dialog {
+  max-width: 1100px; /* close to Manager EvaluationResult container width */
+  width: 95%;
+}
+.employee-eval-modal .modal-body {
+  max-height: 70vh;
+  overflow-y: auto;
+  background-color: #f8f9fa;
+}
+
 .view-field {
   margin-bottom: 1rem;
 }
@@ -258,4 +269,33 @@ input[readonly] {
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+/* Enhanced "View Evaluation Result" button */
+.btn-eval-result {
+  width: auto !important;
+  min-width: 160px;
+  height: 34px;
+  padding: 0.3rem 0.9rem !important;
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, #22c55e, #6366f1) !important; /* green to indigo */
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.25), 0 2px 6px rgba(34, 197, 94, 0.2);
+  gap: 8px;
+}
+
+.btn-eval-result:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(99, 102, 241, 0.35), 0 4px 10px rgba(34, 197, 94, 0.25);
+  filter: brightness(1.03);
+}
+
+.btn-eval-result:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.25), 0 2px 6px rgba(34, 197, 94, 0.2);
+}
+
+.btn-eval-result svg {
+  flex-shrink: 0;
 }

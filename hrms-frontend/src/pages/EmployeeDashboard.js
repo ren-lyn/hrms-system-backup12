@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import axios from 'axios';
+import { Button, Form, Spinner } from 'react-bootstrap';
+import EvaluationResult from '../components/Manager/EvaluationResult';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTachometerAlt,
@@ -27,6 +29,12 @@ const EmployeeDashboard = () => {
   const [timeNow, setTimeNow] = useState(new Date());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('dashboard'); // default view
+  // Evaluation summary state
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalResults, setEvalResults] = useState([]);
+  const [selectedEvalId, setSelectedEvalId] = useState(null);
+  const [evalDetail, setEvalDetail] = useState(null);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -37,6 +45,7 @@ const EmployeeDashboard = () => {
           }
         });
         setEmployeeName(res.data.name);
+        setUserId(res.data.id);
       } catch (err) {
         console.error('Failed to fetch user info', err);
       }
@@ -53,6 +62,19 @@ const EmployeeDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const handleLogout = () => {
+    try {
+      // Clear token and any user data
+      localStorage.removeItem('token');
+      delete axios.defaults.headers.common['Authorization'];
+      // Redirect to landing/login
+      window.location.href = '/';
+    } catch (e) {
+      console.error('Logout failed', e);
+      window.location.href = '/';
+    }
+  };
+
   const getHeaderTitle = () => {
     switch (activeView) {
       case 'dashboard': return 'Dashboard';
@@ -66,6 +88,68 @@ const EmployeeDashboard = () => {
       default: return 'Dashboard';
     }
   };
+
+  // Fetch evaluations for the logged-in employee
+  const loadEmployeeEvaluations = async (empId) => {
+    try {
+      setEvalLoading(true);
+      setEvalResults([]);
+      setEvalDetail(null);
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${empId}/results`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const results = res.data?.data || [];
+      setEvalResults(results);
+      if (results.length > 0) {
+        setSelectedEvalId(results[0].id);
+        await loadEvaluationDetail(results[0].id);
+      }
+    } catch (e) {
+      console.error('Failed to load evaluation results', e);
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const loadEvaluationDetail = async (evaluationId) => {
+    try {
+      setEvalLoading(true);
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${evaluationId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      setEvalDetail(res.data?.data || null);
+    } catch (e) {
+      console.error('Failed to load evaluation detail', e);
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const downloadEvaluationPDF = async (evaluationId) => {
+    try {
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${evaluationId}/pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `evaluation_result_${evaluationId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to download evaluation PDF', e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeView === 'evaluation-summary' && userId) {
+      loadEmployeeEvaluations(userId);
+    }
+  }, [activeView, userId]);
 
   const renderContent = () => {
     switch (activeView) {
@@ -110,6 +194,48 @@ const EmployeeDashboard = () => {
         return <EmployeeProfile />;
       case 'cash-advance':
         return <CashAdvanceForm />;
+      case 'evaluation-summary':
+        return (
+          <div className="card p-3">
+            <div className="d-flex align-items-center gap-2 mb-3">
+              <span className="fw-semibold">Evaluation Results</span>
+              {evalLoading && <Spinner animation="border" size="sm" />}
+            </div>
+
+            {evalResults.length > 0 && (
+              <div className="d-flex gap-2 align-items-center mb-3">
+                <Form.Label className="mb-0">Select Evaluation:</Form.Label>
+                <Form.Select
+                  value={selectedEvalId || ''}
+                  onChange={async (e) => {
+                    const id = parseInt(e.target.value, 10);
+                    setSelectedEvalId(id);
+                    await loadEvaluationDetail(id);
+                  }}
+                  style={{ maxWidth: 320 }}
+                >
+                  {evalResults.map(ev => (
+                    <option key={ev.id} value={ev.id}>{new Date(ev.submitted_at).toLocaleString()} — {ev.form_title || 'Form'}</option>
+                  ))}
+                </Form.Select>
+              </div>
+            )}
+
+            {(!evalLoading && evalResults.length === 0) && (
+              <div className="text-muted">No evaluation results found.</div>
+            )}
+
+            {evalDetail && (
+              <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                <EvaluationResult 
+                  result={evalDetail} 
+                  onBack={() => setActiveView('dashboard')} 
+                  showBackButton={false}
+                />
+              </div>
+            )}
+          </div>
+        );
       default:
         return (
           <div className="card p-4">
@@ -135,7 +261,9 @@ const EmployeeDashboard = () => {
           <li><button onClick={() => setActiveView('disciplinary-notice')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faExclamationTriangle} className="me-2" /> Disciplinary Notice</button></li>
         </ul>
         <div className="mt-auto pt-3 border-top">
-          <a href="/logout" className="nav-link text-danger"><FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout</a>
+          <button onClick={handleLogout} className="btn btn-link nav-link text-danger text-start p-0" style={{ textDecoration: 'none' }}>
+            <FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout
+          </button>
         </div>
       </div>
 

@@ -13,17 +13,16 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'login' => 'required', // this can be user_id or email
+            'login' => 'required', // this can be email or user_id (fallback)
             'password' => 'required'
         ]);
 
-        // Try to find the user based on whether login is numeric (user_id) or email
-        if (is_numeric($request->login)) {
-            // Login using user_id
-            $user = User::where('id', $request->login)->where('role_id', '<', 5)->first();
-        } else {
-            // Login using email (applicant only)
-            $user = User::where('email', $request->login)->where('role_id', 5)->first();
+        // Try to find the user by email first, then by user_id as fallback
+        $user = User::where('email', $request->login)->with('role')->first();
+        
+        // If not found by email and login is numeric, try by user_id (for backward compatibility)
+        if (!$user && is_numeric($request->login)) {
+            $user = User::where('id', $request->login)->with('role')->first();
         }
 
         if (!$user || !Hash::check($request->password, $user->password)) {

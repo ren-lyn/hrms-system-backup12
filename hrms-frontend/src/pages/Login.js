@@ -404,13 +404,13 @@ const Login = () => {
 
             <form onSubmit={handleLogin}>
               <div className="form-group">
-                <label className="form-label">Username or Email</label>
+                <label className="form-label">Email Address</label>
                 <div className="input-wrapper">
-                  <i className="bi bi-person-fill input-icon"></i>
+                  <i className="bi bi-envelope-fill input-icon"></i>
                   <input
-                    type="text"
+                    type="email"
                     className="form-input"
-                    placeholder="Enter your User ID or Email"
+                    placeholder="Enter your email address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required

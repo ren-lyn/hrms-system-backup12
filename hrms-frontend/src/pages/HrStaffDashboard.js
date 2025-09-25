@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import JobPostings from "../components/JobPostings";
+import EmployeeRecords from './HrAssistant/EmployeeRecords';
+import EvaluationAdministration from '../components/EvaluationAdministration';
 import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -203,6 +205,14 @@ const HrStaffDashboard = () => {
 
     if (activeView === "job-applications") {
       return <ApplicationsDashboard />;
+    }
+
+    if (activeView === "employee-record") {
+      return <EmployeeRecords />;
+    }
+
+    if (activeView === "evaluation") {
+      return <EvaluationAdministration />;
     }
 
     return (

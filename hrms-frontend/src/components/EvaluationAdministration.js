@@ -31,6 +31,7 @@ const EvaluationAdministration = () => {
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasShownEmptyMessage, setHasShownEmptyMessage] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('All');
   const hasFetchedRef = useRef(false);
 
   // Predefined categories based on the form design
@@ -206,9 +207,12 @@ const EvaluationAdministration = () => {
   };
 
   // Delete evaluation form
-  const handleDelete = async (id, formTitle = 'this evaluation form') => {
+  const handleDelete = async (id, formTitle = 'this evaluation form', usedCount = 0) => {
     if (isDeleting) return; // Prevent multiple clicks
-    if (window.confirm(`Are you sure you want to delete "${formTitle}"?`)) {
+    const baseMessage = usedCount > 0 
+      ? `"${formTitle}" has ${usedCount} linked evaluation${usedCount > 1 ? 's' : ''}. Deleting the form will NOT delete past results, but you will no longer be able to use or edit this form.\n\nDo you want to continue?`
+      : `Are you sure you want to delete "${formTitle}"?`;
+    if (window.confirm(baseMessage)) {
       setIsDeleting(true);
       const loadingToast = toast.loading('Deleting evaluation form...');
       try {
@@ -238,10 +242,15 @@ const EvaluationAdministration = () => {
       await axios.put(`http://localhost:8000/api/evaluation-administration/${id}/toggle-status`);
 
       toast.dismiss(loadingToast);
+      // Update local state: if we activated this form, set all others to Inactive
       setEvaluationForms(
-        evaluationForms.map((f) =>
-          f.id === id ? { ...f, status: updatedStatus } : f
-        )
+        evaluationForms.map((f) => {
+          if (f.id === id) return { ...f, status: updatedStatus };
+          if (updatedStatus === "Active" && f.status === "Active") {
+            return { ...f, status: "Inactive" };
+          }
+          return f;
+        })
       );
       showSuccess(`"${form.title}" ${updatedStatus.toLowerCase()} successfully!`);
     } catch (error) {
@@ -366,17 +375,26 @@ const EvaluationAdministration = () => {
       }}
     >
       {/* Header */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="fw-bold text-primary d-flex align-items-center">
+      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h2 className="fw-bold text-primary d-flex align-items-center mb-2 mb-md-0">
           <i className="bi bi-clipboard2-check-fill me-2"></i> Evaluation Administration
         </h2>
-        <Button
-          variant="primary"
-          className="shadow-sm rounded-pill px-4"
-          onClick={handleAdd}
-        >
-          <i className="bi bi-plus-circle me-2"></i> Create Evaluation Form
-        </Button>
+        <div className="d-flex align-items-center gap-2">
+          <Form.Select size="sm" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="rounded-pill" style={{ width: 180 }}>
+            <option value="All">All</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </Form.Select>
+          <Button
+            variant="primary"
+            className="shadow-sm rounded-pill btn-create-eval"
+            onClick={handleAdd}
+            title="Create Evaluation Form"
+          >
+            <i className="bi bi-plus-circle me-2"></i>
+            <span>Create Evaluation Form</span>
+          </Button>
+        </div>
       </div>
 
       {/* Evaluation Forms */}
@@ -395,7 +413,10 @@ const EvaluationAdministration = () => {
       ) : (
         <div className="row">
           <AnimatePresence>
-            {evaluationForms.map((form) => (
+            {evaluationForms
+              .filter((form) => filterStatus === 'All' || form.status === filterStatus)
+              .sort((a, b) => (a.status === 'Active' ? -1 : 1) - (b.status === 'Active' ? -1 : 1))
+              .map((form) => (
               <motion.div
                 key={form.id}
                 className="col-md-6 col-lg-4 mb-4"
@@ -404,7 +425,7 @@ const EvaluationAdministration = () => {
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.3 }}
               >
-                <Card className="shadow border-0 h-100 rounded-4">
+                <Card className="shadow border-0 h-100 rounded-4" style={{ border: form.status === 'Active' ? '2px solid #22c55e' : undefined, boxShadow: form.status === 'Active' ? '0 0 0 2px #22c55e33 inset, 0 2px 4px rgba(0,0,0,0.1)' : undefined }}>
                   <Card.Body className="d-flex flex-column">
                     <div className="d-flex justify-content-between align-items-start mb-2">
                       <div className="flex-grow-1">
@@ -469,7 +490,7 @@ const EvaluationAdministration = () => {
                             variant="outline-danger"
                             size="sm"
                             className="rounded-circle"
-                            onClick={() => handleDelete(form.id, form.title)}
+                            onClick={() => handleDelete(form.id, form.title, form.evaluations_count || 0)}
                             title="Delete Form"
                             disabled={isDeleting}
                           >
