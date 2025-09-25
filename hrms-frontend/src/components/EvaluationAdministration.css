@@ -1,0 +1,32 @@
+/* EvaluationAdministration Button Spacing Fix */
+
+/* Reduce gap between vertically stacked buttons in the card */
+.d-flex.flex-column.gap-1 {
+  gap: 0.1rem !important;
+}
+
+/* Reduce margin between button rows */
+.d-flex.flex-column.gap-1 > div {
+  margin-bottom: 0.1rem;
+}
+
+/* Ensure buttons have no extra bottom margin */
+.d-flex.flex-column.gap-1 .btn {
+  margin-bottom: 0 !important;
+}
+
+/* Specific fix for the button container in evaluation cards */
+.card .d-flex.flex-column.gap-1 {
+  gap: 0.1rem !important;
+}
+
+/* Remove extra padding from button containers */
+.card .d-flex.flex-column.gap-1 > div {
+  padding: 0;
+  margin-bottom: 0.1rem;
+}
+
+/* Last button row should have no margin */
+.card .d-flex.flex-column.gap-1 > div:last-child {
+  margin-bottom: 0;
+}

@@ -12,7 +12,8 @@ class LeaveRequest extends Model
     protected $fillable = [
         'employee_id', 'company', 'employee_name', 'department', 'type', 'terms', 'leave_category', 'from', 'to', 
         'total_days', 'total_hours', 'date_filed', 'reason', 'attachment', 'signature_path', 'status', 
-        'admin_remarks', 'approved_at', 'rejected_at', 'approved_by'
+        'admin_remarks', 'approved_at', 'rejected_at', 'approved_by',
+        'manager_approved_at', 'manager_rejected_at', 'manager_approved_by', 'manager_remarks'
     ];
 
     protected $casts = [
@@ -21,6 +22,8 @@ class LeaveRequest extends Model
         'date_filed' => 'datetime',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'manager_approved_at' => 'datetime',
+        'manager_rejected_at' => 'datetime',
         'total_hours' => 'decimal:2',
     ];
 
@@ -37,6 +40,11 @@ class LeaveRequest extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function managerApprovedBy()
+    {
+        return $this->belongsTo(User::class, 'manager_approved_by');
     }
 
     public function getDaysCountAttribute()

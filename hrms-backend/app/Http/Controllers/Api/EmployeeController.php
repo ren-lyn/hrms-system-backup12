@@ -29,16 +29,49 @@ class EmployeeController extends Controller
 public function store(Request $request)
 {
     $validated = $request->validate([
+        // Required fields
         'password'        => 'required|string',
         'first_name'      => 'required|string',
         'last_name'       => 'required|string',
         'email'           => 'required|email|unique:users,email|unique:employee_profiles,email',
-        'position'        => 'required|string',
         'role_id'         => 'required|integer|exists:roles,id',
-        'department'      => 'nullable|string',
-        'salary'          => 'nullable|numeric',
+        
+        // Personal Information
+        'nickname'        => 'nullable|string',
+        'civil_status'    => 'nullable|string|in:Single,Married,Divorced,Widowed,Separated',
+        'gender'          => 'nullable|string|in:Female,Male',
+        'place_of_birth'  => 'nullable|string',
+        'birth_date'      => 'nullable|date',
+        'age'             => 'nullable|integer|min:1|max:120',
+        
+        // Contact Information
         'contact_number'  => 'nullable|string',
-        'address'         => 'nullable|string',
+        'emergency_contact_name' => 'nullable|string',
+        'emergency_contact_phone' => 'nullable|string',
+        
+        // Address Information
+        'province'        => 'nullable|string',
+        'barangay'        => 'nullable|string',
+        'city'            => 'nullable|string',
+        'postal_code'     => 'nullable|string',
+        'present_address' => 'nullable|string',
+        
+        // Employment Overview
+        'department'      => 'nullable|string|in:Logistics,Accounting,IT Department',
+        'position'        => 'nullable|string|in:HR Assistant,HR Staff,Manager,Employee',
+        'employment_status' => 'nullable|string',
+        'tenurity'        => 'nullable|string',
+        'hire_date'       => 'nullable|date',
+        'salary'          => 'nullable|numeric',
+        'sss'             => 'nullable|string',
+        'philhealth'      => 'nullable|string',
+        'pagibig'         => 'nullable|string',
+        'tin_no'          => 'nullable|string',
+        
+        // Termination (optional)
+        'termination_date' => 'nullable|date',
+        'termination_reason' => 'nullable|string',
+        'termination_remarks' => 'nullable|string',
     ]);
 
     // ✅ Check for duplicate first + last name
@@ -61,16 +94,55 @@ public function store(Request $request)
         'last_name'  => $validated['last_name'],
     ]);
 
-    // Create employee profile
+    // Create employee profile with all new fields
     $user->employeeProfile()->create([
+        // Personal Information
         'first_name'     => $validated['first_name'],
         'last_name'      => $validated['last_name'],
+        'nickname'       => $validated['nickname'] ?? null,
+        'civil_status'   => $validated['civil_status'] ?? null,
+        'gender'         => $validated['gender'] ?? null,
+        'place_of_birth' => $validated['place_of_birth'] ?? null,
+        'birth_date'     => $validated['birth_date'] ?? null,
+        'age'            => $validated['age'] ?? null,
+        
+        // Contact Information
         'email'          => $validated['email'],
-        'position'       => $validated['position'],
-        'department'     => $validated['department'] ?? null,
-        'salary'         => $validated['salary'] ?? null,
         'contact_number' => $validated['contact_number'] ?? null,
-        'address'        => $validated['address'] ?? null,
+        'emergency_contact_name' => $validated['emergency_contact_name'] ?? null,
+        'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? null,
+        
+        // Address Information
+        'province'       => $validated['province'] ?? null,
+        'barangay'       => $validated['barangay'] ?? null,
+        'city'           => $validated['city'] ?? null,
+        'postal_code'    => $validated['postal_code'] ?? null,
+        'present_address' => $validated['present_address'] ?? null,
+        
+        // Employment Overview
+        'department'     => $validated['department'] ?? null,
+        'position'       => $validated['position'] ?? null,
+        'employment_status' => $validated['employment_status'] ?? null,
+        'tenurity'       => $validated['tenurity'] ?? null,
+        'hire_date'      => $validated['hire_date'] ?? null,
+        'salary'         => $validated['salary'] ?? null,
+        'sss'            => $validated['sss'] ?? null,
+        'philhealth'     => $validated['philhealth'] ?? null,
+        'pagibig'        => $validated['pagibig'] ?? null,
+        'tin_no'         => $validated['tin_no'] ?? null,
+        
+        // Termination (optional)
+        'termination_date' => $validated['termination_date'] ?? null,
+        'termination_reason' => $validated['termination_reason'] ?? null,
+        'termination_remarks' => $validated['termination_remarks'] ?? null,
+        
+        // Initialize edit counts
+        'name_edit_count' => 0,
+        'nickname_edit_count' => 0,
+        'civil_status_edit_count' => 0,
+        'address_edit_count' => 0,
+        'contact_edit_count' => 0,
+        'emergency_contact_edit_count' => 0,
     ]);
 
     return response()->json(['message' => 'Employee created successfully'], 201);
@@ -183,15 +255,26 @@ public function update(Request $request, $id)
         return response()->json([
             'profile' => $profileData,
             'edit_counts' => [
-                'marital_status' => $profile->marital_status_edit_count,
-                'address' => $profile->address_edit_count,
-                'contact' => $profile->contact_edit_count
+                'name' => $profile->name_edit_count ?? 0,
+                'nickname' => $profile->nickname_edit_count ?? 0,
+                'civil_status' => $profile->civil_status_edit_count ?? 0,
+                'address' => $profile->address_edit_count ?? 0,
+                'contact' => $profile->contact_edit_count ?? 0,
+                'emergency_contact' => $profile->emergency_contact_edit_count ?? 0
+            ],
+            'remaining_edits' => [
+                'name' => 3 - ($profile->name_edit_count ?? 0),
+                'nickname' => 3 - ($profile->nickname_edit_count ?? 0),
+                'civil_status' => 3 - ($profile->civil_status_edit_count ?? 0),
+                'address' => 3 - ($profile->address_edit_count ?? 0),
+                'contact' => 3 - ($profile->contact_edit_count ?? 0),
+                'emergency_contact' => 3 - ($profile->emergency_contact_edit_count ?? 0)
             ]
         ]);
     }
 
-    // PUT /employee/profile/marital_status - Update marital status
-    public function updateMaritalStatus(Request $request)
+    // PUT /employee/profile/civil-status - Update civil status
+    public function updateCivilStatus(Request $request)
     {
         $user = Auth::user();
         $profile = $user->employeeProfile;
@@ -202,24 +285,24 @@ public function update(Request $request, $id)
             ], 404);
         }
         
-        if ($profile->marital_status_edit_count >= 3) {
+        if ($profile->civil_status_edit_count >= 3) {
             return response()->json([
-                'message' => 'You have reached the maximum number of edits (3) for marital status.'
+                'message' => 'You have reached the maximum number of edits (3) for civil status.'
             ], 403);
         }
         
         $validated = $request->validate([
-            'marital_status' => 'required|string|in:Single,Married,Divorced,Widowed'
+            'civil_status' => 'required|string|in:Single,Married,Divorced,Widowed,Separated'
         ]);
         
         $profile->update([
-            'marital_status' => $validated['marital_status'],
-            'marital_status_edit_count' => $profile->marital_status_edit_count + 1
+            'civil_status' => $validated['civil_status'],
+            'civil_status_edit_count' => $profile->civil_status_edit_count + 1
         ]);
         
         return response()->json([
-            'message' => 'Marital status updated successfully',
-            'remaining_edits' => 3 - $profile->marital_status_edit_count
+            'message' => 'Civil status updated successfully',
+            'remaining_edits' => 3 - $profile->civil_status_edit_count
         ]);
     }
 
@@ -245,7 +328,8 @@ public function update(Request $request, $id)
             'province' => 'nullable|string|max:255',
             'barangay' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:255',
-            'postal_code' => 'nullable|string|max:20'
+            'postal_code' => 'nullable|string|max:20',
+            'present_address' => 'nullable|string'
         ]);
         
         $profile->update(array_merge($validated, [
@@ -288,13 +372,138 @@ public function update(Request $request, $id)
             $user->update(['email' => $validated['email']]);
         }
         
-        $profile->update(array_merge($validated, [
+        // Ensure phone and contact_number are synchronized
+        $updateData = $validated;
+        if (isset($validated['phone'])) {
+            $updateData['contact_number'] = $validated['phone'];
+        }
+        
+        $profile->update(array_merge($updateData, [
             'contact_edit_count' => $profile->contact_edit_count + 1
         ]));
         
         return response()->json([
             'message' => 'Contact information updated successfully',
             'remaining_edits' => 3 - $profile->contact_edit_count
+        ]);
+    }
+
+    // PUT /employee/profile/name - Update name information (first name, last name)
+    public function updateName(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->name_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for name information.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255'
+        ]);
+        
+        // Check for duplicate name
+        $duplicate = EmployeeProfile::where('first_name', $validated['first_name'])
+            ->where('last_name', $validated['last_name'])
+            ->where('id', '!=', $profile->id)
+            ->exists();
+            
+        if ($duplicate) {
+            return response()->json([
+                'message' => 'An employee with the same first and last name already exists.'
+            ], 409);
+        }
+        
+        // Update both User and EmployeeProfile
+        $user->update([
+            'first_name' => $validated['first_name'],
+            'last_name' => $validated['last_name']
+        ]);
+        
+        $profile->update([
+            'first_name' => $validated['first_name'],
+            'last_name' => $validated['last_name'],
+            'name_edit_count' => $profile->name_edit_count + 1
+        ]);
+        
+        return response()->json([
+            'message' => 'Name information updated successfully',
+            'remaining_edits' => 3 - $profile->name_edit_count
+        ]);
+    }
+
+    // PUT /employee/profile/nickname - Update nickname
+    public function updateNickname(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->nickname_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for nickname.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'nickname' => 'nullable|string|max:255'
+        ]);
+        
+        $profile->update([
+            'nickname' => $validated['nickname'],
+            'nickname_edit_count' => $profile->nickname_edit_count + 1
+        ]);
+        
+        return response()->json([
+            'message' => 'Nickname updated successfully',
+            'remaining_edits' => 3 - $profile->nickname_edit_count
+        ]);
+    }
+
+    // PUT /employee/profile/emergency-contact - Update emergency contact (separate from regular contact)
+    public function updateEmergencyContact(Request $request)
+    {
+        $user = Auth::user();
+        $profile = $user->employeeProfile;
+        
+        if (!$profile) {
+            return response()->json([
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+        
+        if ($profile->emergency_contact_edit_count >= 3) {
+            return response()->json([
+                'message' => 'You have reached the maximum number of edits (3) for emergency contact information.'
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'emergency_contact_name' => 'nullable|string|max:255',
+            'emergency_contact_phone' => 'nullable|string|max:20'
+        ]);
+        
+        $profile->update(array_merge($validated, [
+            'emergency_contact_edit_count' => $profile->emergency_contact_edit_count + 1
+        ]));
+        
+        return response()->json([
+            'message' => 'Emergency contact information updated successfully',
+            'remaining_edits' => 3 - $profile->emergency_contact_edit_count
         ]);
     }
 }
