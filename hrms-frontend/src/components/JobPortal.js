@@ -3,16 +3,6 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "bootstrap/dist/css/bootstrap.min.css";
 
-const popularSearches = [
-  "IT Programmer",
-  "Booking Salesman",
-  "Accounting Staff",
-  "Cashier",
-  "Engineering",
-  "Inventory Staff",
-  "UI/UX Designer",
-];
-
 export default function JobPortal() {
   const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -169,56 +159,253 @@ export default function JobPortal() {
 
   return (
     <div style={{ height: "100vh", overflowY: "auto" }}>
-      {/* Navbar */}
-      <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
-        <div className="container">
-          <a className="navbar-brand d-flex align-items-center" href="/">
-            <img
-              src="https://i.imgur.com/4YkkuH4.png"
-              alt="FAST Logo"
-              style={{ width: 60, height: "auto" }}
-            />
-            <span className="ms-2 fw-bold">Job Portal</span>
-          </a>
+      {/* Professional Clean Navbar */}
+      <nav className="navbar navbar-expand-lg navbar-dark sticky-top" style={{ 
+        background: "linear-gradient(45deg, #0575E6, #021B79)",
+        boxShadow: '0 2px 15px rgba(0,0,0,0.15)',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        padding: '0.75rem 0'
+      }}>
+        <div className="container-fluid px-4">
+          {/* CCDC Brand/Logo Section */}
+          <div className="navbar-brand-container">
+            <a className="navbar-brand d-flex align-items-center text-decoration-none" href="/" style={{
+              transition: 'all 0.3s ease'
+            }}>
+              <div className="logo-container d-flex align-items-center">
+                <img
+                  src="https://i.imgur.com/4YkkuH4.png"
+                  alt="CCDC Logo"
+                  style={{ 
+                    width: 50, 
+                    height: 'auto',
+                    marginRight: '12px',
+                    transition: 'transform 0.3s ease'
+                  }}
+                />
+                <div className="brand-text">
+                  <span className="fw-bold fs-3" style={{
+                    color: '#ffffff',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    letterSpacing: '-0.025em',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                  }}>
+                    CCDC
+                  </span>
+                </div>
+              </div>
+            </a>
+          </div>
+
+          {/* Mobile Toggle Button */}
           <button
-            className="navbar-toggler"
+            className="navbar-toggler border-0 shadow-none"
             type="button"
             data-bs-toggle="collapse"
             data-bs-target="#navbarNav"
+            style={{
+              padding: '0.4rem 0.6rem',
+              borderRadius: '6px'
+            }}
           >
-            <span className="navbar-toggler-icon" />
+            <span className="navbar-toggler-icon"></span>
           </button>
+
+          {/* Navigation Content */}
           <div className="collapse navbar-collapse" id="navbarNav">
-            <ul className="navbar-nav ms-auto">
-              <li className="nav-item">
-                <a className="nav-link" href="/">Home</a>
-              </li>
-              <li className="nav-item">
-                <button className="btn btn-link nav-link text-white">Browse Jobs</button>
-              </li>
-              <li className="nav-item">
-                <button className="btn btn-link nav-link text-white">Contact</button>
-              </li>
-              <li className="nav-item">
-                {isLoggedIn ? (
-                  <button 
-                    className="btn btn-danger ms-2"
-                    onClick={handleLogoutClick}
-                  >
-                    Log Out
-                  </button>
-                ) : (
-                  <button 
-                    className="btn btn-success ms-2"
-                    onClick={handleLoginClick}
-                  >
-                    Log In
-                  </button>
-                )}
-              </li>
-            </ul>
+            <div className="w-100 d-flex flex-column flex-lg-row align-items-lg-center justify-content-end">
+              
+              {/* Navigation Links & Authentication Section - All on the right */}
+              <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-lg-3 mt-3 mt-lg-0">
+                
+                {/* Navigation Links */}
+                <ul className="navbar-nav d-flex flex-row gap-lg-2 mb-2 mb-lg-0">
+                  <li className="nav-item">
+                    <a 
+                      className="nav-link fw-medium position-relative px-3" 
+                      href="/"
+                      style={{
+                        color: 'rgba(255,255,255,0.9)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: '6px',
+                        fontSize: '0.95rem'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                        e.target.style.color = '#ffffff';
+                        e.target.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = 'rgba(255,255,255,0.9)';
+                        e.target.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      Home
+                    </a>
+                  </li>
+                  <li className="nav-item">
+                    <button 
+                      className="btn nav-link fw-medium border-0 bg-transparent position-relative px-3" 
+                      onClick={scrollToJobs}
+                      style={{
+                        color: 'rgba(255,255,255,0.9)',
+                        transition: 'all 0.3s ease',
+                        borderRadius: '6px',
+                        fontSize: '0.95rem'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                        e.target.style.color = '#ffffff';
+                        e.target.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = 'rgba(255,255,255,0.9)';
+                        e.target.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      Browse Jobs
+                    </button>
+                  </li>
+                </ul>
+
+                {/* Divider for desktop */}
+                <div className="d-none d-lg-block" style={{
+                  width: '1px',
+                  height: '30px',
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                  margin: '0 0.5rem'
+                }}></div>
+
+                {/* User Authentication Section */}
+                <div className="auth-section d-flex align-items-center gap-2">
+                  {isLoggedIn ? (
+                    <div className="d-flex align-items-center gap-3">
+                      {/* User Status Indicator */}
+                      <div className="user-status d-flex align-items-center">
+                        <div className="status-dot me-2" style={{
+                          width: '8px',
+                          height: '8px',
+                          backgroundColor: '#48bb78',
+                          borderRadius: '50%',
+                          animation: 'pulse 2s infinite'
+                        }}></div>
+                        <span className="small fw-medium" style={{ color: 'rgba(255,255,255,0.9)' }}>
+                          {userRole || 'User'}
+                        </span>
+                      </div>
+
+                      {/* Logout Button */}
+                      <button 
+                        className="btn fw-medium"
+                        onClick={handleLogoutClick}
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.15)',
+                          color: '#ffffff',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          borderRadius: '6px',
+                          padding: '0.5rem 1rem',
+                          fontSize: '0.9rem',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = 'rgba(239, 68, 68, 0.9)';
+                          e.target.style.color = '#ffffff';
+                          e.target.style.borderColor = '#ef4444';
+                          e.target.style.transform = 'translateY(-1px)';
+                          e.target.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                          e.target.style.color = '#ffffff';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.3)';
+                          e.target.style.transform = 'translateY(0)';
+                          e.target.style.boxShadow = 'none';
+                        }}
+                      >
+                        Log Out
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      className="btn fw-medium"
+                      onClick={handleLoginClick}
+                      style={{
+                        backgroundColor: 'rgba(255,255,255,0.15)',
+                        color: '#ffffff',
+                        border: '1px solid rgba(255,255,255,0.3)',
+                        borderRadius: '6px',
+                        padding: '0.5rem 1.2rem',
+                        fontSize: '0.9rem',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = '#ffffff';
+                        e.target.style.color = '#0575E6';
+                        e.target.style.borderColor = '#ffffff';
+                        e.target.style.transform = 'translateY(-1px)';
+                        e.target.style.boxShadow = '0 4px 12px rgba(255, 255, 255, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                        e.target.style.color = '#ffffff';
+                        e.target.style.borderColor = 'rgba(255,255,255,0.3)';
+                        e.target.style.transform = 'translateY(0)';
+                        e.target.style.boxShadow = 'none';
+                      }}
+                    >
+                      Log In
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Custom Styles */}
+        <style jsx>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+          
+          .navbar-brand-container:hover img {
+            transform: scale(1.05);
+          }
+          
+          @media (max-width: 991.98px) {
+            .auth-section {
+              border-top: 1px solid rgba(255,255,255,0.2);
+              padding-top: 1rem;
+              margin-top: 1rem;
+              width: 100%;
+              justify-content: center;
+            }
+            
+            .navbar-nav {
+              justify-content: center;
+              margin-bottom: 0.5rem;
+            }
+          }
+          
+          .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            width: 0;
+            height: 2px;
+            background-color: #4299e1;
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+          }
+          
+          .nav-link:hover::after {
+            width: 70%;
+          }
+        `}</style>
       </nav>
 
       {/* Intro Section */}
@@ -385,48 +572,18 @@ export default function JobPortal() {
       {/* Search Bar */}
       <section className="container my-5">
         <div className="row g-3">
-          <div className="col-md-4">
+          <div className="col-md-9">
             <input
               type="text"
               className="form-control"
               placeholder="Search keyword"
             />
           </div>
-          <div className="col-md-3">
-            <select className="form-select">
-              <option>Location</option>
-              <option>Cebu</option>
-              <option>Manila</option>
-              <option>Davao</option>
-            </select>
-          </div>
-          <div className="col-md-3">
-            <select className="form-select">
-              <option>Category</option>
-              <option>Engineering</option>
-              <option>IT</option>
-              <option>Sales</option>
-              <option>Accounting</option>
-            </select>
-          </div>
-          <div className="col-md-2 d-grid">
+          <div className="col-md-3 d-grid">
             <button className="btn btn-success">Find Job</button>
           </div>
         </div>
 
-        {/* Popular Searches */}
-        <div className="mt-4">
-          <strong>Popular Search:</strong>{" "}
-          {popularSearches.map((item, idx) => (
-            <button
-              key={idx}
-              className="btn btn-outline-primary btn-sm mx-1 my-1"
-              type="button"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
       </section>
 
       {/* Job Listing */}
