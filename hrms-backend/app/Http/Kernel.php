@@ -38,16 +38,17 @@ class Kernel extends HttpKernel
     ];
 
     /**
-     * The application's route middleware.
+     * The application's route middleware aliases.
+     *
+     * In Laravel 11/12, use $middlewareAliases instead of $routeMiddleware.
      */
-    protected $routeMiddleware = [
+    protected $middlewareAliases = [
         'auth' => \App\Http\Middleware\Authenticate::class,
         'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-        'role' => \App\Http\Middleware\RoleMiddleware::class,
+        'role' => \App\Http\Middleware\CheckRole::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'bindings' => \Illuminate\Routing\Middleware\SubstituteBindings::class,
-        'cors' => \App\Http\Middleware\Cors::class,
-        'api' => \App\Http\Middleware\ApiMiddleware::class,
+        // Removed non-existent aliases 'cors' and 'api'
     ];
 }

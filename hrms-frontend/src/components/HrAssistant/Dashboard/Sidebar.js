@@ -1,12 +1,13 @@
 // src/components/HrAssistant/Dashboard/Sidebar.js
+import axios from "axios";
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
-  FaChartLine, FaSignOutAlt
-} from 'react-icons/fa';
-import axios from 'axios'; // Optional: if you want to also clear Axios headers
+  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList
+} from "react-icons/fa";
+
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -93,6 +94,22 @@ const Sidebar = () => {
         </li>
         <li>
           <NavLink
+            to="job-postings"
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            <FaBriefcase /> Job Postings
+          </NavLink>
+        </li>
+        <li>
+          <NavLink
+            to="applications"
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            <FaClipboardList /> Job Applications
+          </NavLink>
+        </li>
+        <li>
+          <NavLink
             to="/hr-assistant/recruitment"
             className={({ isActive }) => (isActive ? 'active' : '')}
           >
@@ -118,3 +135,4 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
+  

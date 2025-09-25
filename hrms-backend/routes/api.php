@@ -6,17 +6,21 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\JobPostingController;
 use App\Http\Controllers\Api\ApplicantController;
+use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
-use App\Http\Controllers\API\EvaluationAdministrationController;
+use App\Http\Controllers\Api\EvaluationAdministrationController;
 use App\Http\Controllers\Api\CashAdvanceController;
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
     Route::post('/job-postings', [JobPostingController::class, 'store']);
     Route::put('/job-postings/{id}', [JobPostingController::class, 'update']);
     Route::delete('/job-postings/{id}', [JobPostingController::class, 'destroy']);
+    Route::put('/job-postings/{id}/toggle', [JobPostingController::class, 'toggleStatus']);
+    Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
 });
+Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
 
 // Route::middleware(['auth:sanctum', 'role:HR Assistant'])->group(function () {
 //     Route::put('/employees/{id}', [EmployeeController::class, 'update']);
@@ -32,8 +36,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 Route::get('/employees', [EmployeeController::class, 'index']);
 Route::post('/employees', [EmployeeController::class, 'store']);
 
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+
 Route::middleware('auth:sanctum')->get('/auth/user', [AuthController::class, 'user']);
 
 // Employee Profile Routes
@@ -43,31 +48,31 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/employee/profile/address', [EmployeeController::class, 'updateAddress']);
     Route::put('/employee/profile/contact', [EmployeeController::class, 'updateContact']);
 });
+
 Route::post('/register', [ApplicantController::class, 'register']);
+
+// Public job postings (for applicants to view)
+Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
+
+// Application routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Applicant routes
+    Route::post('/applications', [ApplicationController::class, 'store']);
+    
+    // HR routes
+    Route::get('/applications', [ApplicationController::class, 'index']);
+    Route::get('/applications/job/{jobId}', [ApplicationController::class, 'getByJobPosting']);
+    Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
+    Route::get('/applications/{id}/resume', [ApplicationController::class, 'downloadResume']);
+    Route::get('/applications/stats', [ApplicationController::class, 'getStats']);
+});
 
 Route::get('/test', function () {
     return response()->json(['message' => 'Laravel API is working']);
 });
 
-// Test database connection
-Route::get('/test-db', function () {
-    try {
-        $users = \App\Models\User::count();
-        $leaves = \App\Models\LeaveRequest::count();
-        return response()->json([
-            'message' => 'Database connection working',
-            'users_count' => $users,
-            'leave_requests_count' => $leaves
-        ]);
-    } catch (Exception $e) {
-        return response()->json([
-            'error' => 'Database connection failed',
-            'message' => $e->getMessage()
-        ], 500);
-    }
-});
-
 //Leave Requests
+
 // Public routes for testing (should be moved to authenticated routes in production)
 Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
 Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
@@ -92,11 +97,14 @@ Route::get('/cash-advances/{id}', [CashAdvanceController::class, 'show']); // vi
 Route::put('/cash-advances/{id}/approve', [CashAdvanceController::class, 'approve']); // approve
 Route::put('/cash-advances/{id}/reject', [CashAdvanceController::class, 'reject']); // reject
 
+
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
+    Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
+    Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
     Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
     Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
-    Route::put('/leave-requests/{id}/terms', [LeaveRequestController::class, 'updateTermsAndCategory']); // hr set terms/category
 });
 
 

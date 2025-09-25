@@ -1,73 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import "bootstrap/dist/css/bootstrap.min.css";
-
-const jobs = [
-  {
-    id: 1,
-    title: "SUPPLY CHAIN SUPERVISOR",
-    location: "FDC HOME OFFICE - CEBU - NPI",
-    type: "Full-time",
-    date: "Apr 3 2025 3:33PM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 2,
-    title: "CIVIL ENGINEER",
-    location: "Cabuyao Plant - Laguna",
-    type: "Full-time",
-    date: "Mar 28 2025 10:15AM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 3,
-    title: "ACCOUNTING STAFF",
-    location: "Cebu Office - Finance Department",
-    type: "Full-time",
-    date: "Mar 25 2025 4:50PM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 4,
-    title: "IT SUPPORT SPECIALIST",
-    location: "Manila Head Office",
-    type: "Full-time",
-    date: "Mar 21 2025 9:20AM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 5,
-    title: "SALES REPRESENTATIVE",
-    location: "Mindanao Branch - Davao City",
-    type: "Full-time",
-    date: "Mar 18 2025 1:05PM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 6,
-    title: "QUALITY CONTROL ANALYST",
-    location: "Cabuyao Plant - Laguna",
-    type: "Full-time",
-    date: "Mar 15 2025 8:45AM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 7,
-    title: "MECHANICAL TECHNICIAN",
-    location: "Cebu Operations",
-    type: "Full-time",
-    date: "Mar 12 2025 11:30AM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-  {
-    id: 8,
-    title: "HUMAN RESOURCES ASSISTANT",
-    location: "Manila Head Office",
-    type: "Full-time",
-    date: "Mar 9 2025 3:00PM",
-    logo: "https://i.imgur.com/4YkkuH4.png",
-  },
-];
 
 const popularSearches = [
   "IT Programmer",
@@ -83,8 +17,14 @@ export default function JobPortal() {
   const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showApplicationModal, setShowApplicationModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [resumeFile, setResumeFile] = useState(null);
+  const [applying, setApplying] = useState(false);
 
-  // Check if user is logged in when component mounts
+  // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
@@ -92,7 +32,51 @@ export default function JobPortal() {
       setIsLoggedIn(true);
       setUserRole(role);
     }
+    fetchJobs();
   }, []);
+
+  // Fetch job postings from backend
+  const fetchJobs = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get("http://localhost:8000/api/public/job-postings");
+      setJobs(response.data);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      // Fallback to static data if API fails
+      setJobs([
+        {
+          id: 1,
+          title: "SUPPLY CHAIN SUPERVISOR",
+          department: "FDC HOME OFFICE - CEBU - NPI",
+          description: "Manage supply chain operations and logistics",
+          requirements: "Bachelor's degree in Business or related field, 3+ years experience",
+          status: "Open",
+          created_at: "2025-04-03T15:33:00.000Z"
+        },
+        {
+          id: 2,
+          title: "CIVIL ENGINEER",
+          department: "Cabuyao Plant - Laguna",
+          description: "Design and oversee construction projects",
+          requirements: "Bachelor's degree in Civil Engineering, Licensed Engineer",
+          status: "Open",
+          created_at: "2025-03-28T10:15:00.000Z"
+        },
+        {
+          id: 3,
+          title: "ACCOUNTING STAFF",
+          department: "Cebu Office - Finance Department",
+          description: "Handle financial records and transactions",
+          requirements: "Bachelor's degree in Accounting, CPA preferred",
+          status: "Open",
+          created_at: "2025-03-25T16:50:00.000Z"
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const scrollToJobs = () => {
     document.getElementById("jobs-section").scrollIntoView({ behavior: "smooth" });
@@ -113,16 +97,74 @@ export default function JobPortal() {
     window.location.reload(); // Refresh the page to reset any cached data
   };
 
-  const handleApplyClick = (jobTitle = '') => {
+  const handleApplyClick = (job) => {
     if (!isLoggedIn) {
       navigate("/login");
     } else if (userRole === 'Applicant') {
-      // Handle job application logic here
-      alert(`Application submitted for: ${jobTitle}`);
-      // You can add actual application logic here
+      setSelectedJob(job);
+      setShowApplicationModal(true);
     } else {
       alert("Only applicants can apply for jobs. Please log in with an applicant account.");
     }
+  };
+
+  // Handle file selection for resume
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      setResumeFile(file);
+    } else {
+      alert('Please select a PDF file for your resume.');
+    }
+  };
+
+  // Submit job application
+  const handleSubmitApplication = async () => {
+    if (!resumeFile) {
+      alert('Please select a PDF resume file.');
+      return;
+    }
+
+    setApplying(true);
+    try {
+      const formData = new FormData();
+      formData.append('job_posting_id', selectedJob.id);
+      formData.append('resume', resumeFile);
+
+      const token = localStorage.getItem('token');
+      const response = await axios.post('http://localhost:8000/api/applications', formData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      alert('Application submitted successfully!');
+      setShowApplicationModal(false);
+      setSelectedJob(null);
+      setResumeFile(null);
+    } catch (error) {
+      console.error('Error submitting application:', error);
+      if (error.response?.status === 409) {
+        alert('You have already applied for this job.');
+      } else {
+        alert('Failed to submit application. Please try again.');
+      }
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   return (
@@ -182,16 +224,17 @@ export default function JobPortal() {
       {/* Intro Section */}
       <section
         style={{
-          height: "100vh",
+          minHeight: "100vh",
           backgroundColor: "#1e2a38",
           color: "#fff",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          padding: "2rem 4rem",
+          padding: "2rem 1rem",
           position: "relative",
           overflow: "hidden",
         }}
+        className="px-3 px-md-5"
       >
         {/* Light Circle Background */}
         <div className="light-circle"></div>
@@ -200,7 +243,7 @@ export default function JobPortal() {
         <div style={{ maxWidth: "650px", position: "relative", zIndex: 2 }}>
           <h1
             style={{
-              fontSize: "3rem",
+              fontSize: "clamp(2rem, 5vw, 3rem)",
               fontWeight: "800",
               marginBottom: "1rem",
               lineHeight: "1.2",
@@ -212,7 +255,7 @@ export default function JobPortal() {
           <h3
             style={{
               fontWeight: "500",
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.2rem, 3vw, 1.5rem)",
               marginBottom: "0.5rem",
               animation: "fadeIn 1.5s ease-out",
             }}
@@ -221,7 +264,7 @@ export default function JobPortal() {
           </h3>
           <p
             style={{
-              fontSize: "1.1rem",
+              fontSize: "clamp(1rem, 2.5vw, 1.1rem)",
               color: "#dcdcdc",
               marginBottom: "1.5rem",
               animation: "fadeIn 1.8s ease-out",
@@ -233,7 +276,7 @@ export default function JobPortal() {
           </p>
           <p
             style={{
-              fontSize: "1rem",
+              fontSize: "clamp(0.9rem, 2vw, 1rem)",
               color: "#c0c0c0",
               marginBottom: "2rem",
               animation: "fadeIn 2.1s ease-out",
@@ -245,8 +288,8 @@ export default function JobPortal() {
           <button
             onClick={scrollToJobs}
             style={{
-              padding: "0.9rem 2rem",
-              fontSize: "1.1rem",
+              padding: "clamp(0.7rem, 2vw, 0.9rem) clamp(1.5rem, 4vw, 2rem)",
+              fontSize: "clamp(1rem, 2.5vw, 1.1rem)",
               fontWeight: "600",
               backgroundColor: "#007bff",
               color: "#fff",
@@ -321,12 +364,12 @@ export default function JobPortal() {
               Be a part of a company that invests in your growth and
               development.
             </p>
-            <button 
-              className="btn btn-light text-dark fw-bold px-4 py-2 mt-2"
-              onClick={() => handleApplyClick()}
-            >
-              Apply Now
-            </button>
+          <button 
+            className="btn btn-light text-dark fw-bold px-4 py-2 mt-2"
+            onClick={scrollToJobs}
+          >
+            Apply Now
+          </button>
           </div>
           <div className="col-md-6 text-center">
             <img
@@ -394,39 +437,144 @@ export default function JobPortal() {
             <button className="btn btn-outline-success">Browse More Jobs</button>
           </div>
 
-          {jobs.map((job) => (
-            <div
-              key={job.id}
-              className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center bg-white rounded shadow-sm p-4 mb-3"
-            >
-              <div className="d-flex align-items-center gap-3 mb-3 mb-md-0">
-                <img
-                  src={job.logo}
-                  alt="Company Logo"
-                  style={{ width: 70 }}
-                  className="border rounded"
-                />
-                <div>
-                  <h6 className="mb-1 fw-bold">{job.title}</h6>
-                  <small className="text-muted d-block">📍 {job.location}</small>
-                  <small className="text-muted">🕒 {job.type}</small>
-                </div>
+          {loading ? (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
               </div>
-              <div className="text-md-end">
-                <button 
-                  className="btn btn-success mb-2"
-                  onClick={() => handleApplyClick(job.title)}
-                >
-                  Apply Now
-                </button>
-                <div>
-                  <small className="text-muted">{job.date}</small>
-                </div>
-              </div>
+              <p className="mt-2">Loading job postings...</p>
             </div>
-          ))}
+          ) : jobs.length === 0 ? (
+            <div className="text-center py-5">
+              <h5 className="text-muted">No job postings available</h5>
+              <p className="text-muted">Check back later for new opportunities!</p>
+            </div>
+          ) : (
+            jobs.map((job) => (
+              <div
+                key={job.id}
+                className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center bg-white rounded shadow-sm p-4 mb-3"
+              >
+                <div className="d-flex align-items-center gap-3 mb-3 mb-md-0">
+                  <img
+                    src="https://i.imgur.com/4YkkuH4.png"
+                    alt="Company Logo"
+                    style={{ width: 70 }}
+                    className="border rounded"
+                  />
+                  <div>
+                    <h6 className="mb-1 fw-bold">{job.title}</h6>
+                    <small className="text-muted d-block">📍 {job.department}</small>
+                    <small className="text-muted">🕒 Full-time</small>
+                    <div className="mt-2">
+                      <small className="text-muted">
+                        <strong>Description:</strong> {job.description?.substring(0, 100)}...
+                      </small>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-md-end">
+                  <button 
+                    className="btn btn-success mb-2"
+                    onClick={() => handleApplyClick(job)}
+                  >
+                    Apply Now
+                  </button>
+                  <div>
+                    <small className="text-muted">{formatDate(job.created_at)}</small>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
+
+      {/* Application Modal */}
+      {showApplicationModal && (
+        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content">
+              <div className="modal-header bg-primary text-white">
+                <h5 className="modal-title">Apply for {selectedJob?.title}</h5>
+                <button 
+                  type="button" 
+                  className="btn-close btn-close-white" 
+                  onClick={() => {
+                    setShowApplicationModal(false);
+                    setSelectedJob(null);
+                    setResumeFile(null);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body">
+                {selectedJob && (
+                  <div className="mb-4">
+                    <h6 className="fw-bold">Job Details</h6>
+                    <p><strong>Department:</strong> {selectedJob.department}</p>
+                    <p><strong>Description:</strong></p>
+                    <p className="text-muted">{selectedJob.description}</p>
+                    <p><strong>Requirements:</strong></p>
+                    <p className="text-muted">{selectedJob.requirements}</p>
+                  </div>
+                )}
+                
+                <div className="mb-3">
+                  <label htmlFor="resume" className="form-label fw-bold">
+                    Upload Resume (PDF only) *
+                  </label>
+                  <input
+                    type="file"
+                    className="form-control"
+                    id="resume"
+                    accept=".pdf"
+                    onChange={handleFileChange}
+                  />
+                  <div className="form-text">
+                    Please upload your resume in PDF format (max 10MB)
+                  </div>
+                  {resumeFile && (
+                    <div className="mt-2">
+                      <small className="text-success">
+                        ✓ Selected: {resumeFile.name}
+                      </small>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowApplicationModal(false);
+                    setSelectedJob(null);
+                    setResumeFile(null);
+                  }}
+                  disabled={applying}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-primary"
+                  onClick={handleSubmitApplication}
+                  disabled={applying || !resumeFile}
+                >
+                  {applying ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Application'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

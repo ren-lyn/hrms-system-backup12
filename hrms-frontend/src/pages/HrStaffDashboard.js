@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import JobPostings from "../components/JobPostings";
+import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -13,6 +14,7 @@ import {
   faUserPlus,
   faClipboardList,
   faSignOutAlt,
+  faFileAlt,
   faBars,
   faEnvelope,
   faBell,
@@ -104,6 +106,8 @@ const HrStaffDashboard = () => {
         return "Dashboard";
       case "job-posting":
         return "Job Posting";
+      case "job-applications":
+        return "Job Applications";
       case "employee-record":
         return "Employee Record";
       case "evaluation":
@@ -197,6 +201,10 @@ const HrStaffDashboard = () => {
       return <JobPostings />;
     }
 
+    if (activeView === "job-applications") {
+      return <ApplicationsDashboard />;
+    }
+
     return (
       <div className="card p-4">
         <h5>{getHeaderTitle()}</h5>
@@ -232,6 +240,15 @@ const HrStaffDashboard = () => {
             >
               <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job
               Posting
+            </button>
+          </li>
+          <li>
+            <button
+              onClick={() => setActiveView("job-applications")}
+              className="btn btn-link text-start text-white nav-link"
+            >
+              <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Job
+              Applications
             </button>
           </li>
           <li>
@@ -300,6 +317,113 @@ const HrStaffDashboard = () => {
         </div>
       </div>
 
+      {/* Mobile Sidebar */}
+      {sidebarOpen && (
+        <div className="d-md-none position-fixed top-0 start-0 bg-dark text-white p-3" style={{ width: "250px", height: "100vh", zIndex: 1050, overflowY: "auto" }}>
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <h5 className="mb-0 fw-bold text-uppercase">CCDC</h5>
+            <FontAwesomeIcon
+              icon={faBars}
+              size="lg"
+              onClick={() => setSidebarOpen(false)}
+              style={{ cursor: "pointer" }}
+            />
+          </div>
+          <ul className="nav flex-column gap-3">
+            <li>
+              <button
+                onClick={() => { setActiveView("dashboard"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faChartBar} className="me-2" /> Dashboard
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("job-posting"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job Posting
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("job-applications"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Job Applications
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("employee-record"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faUsers} className="me-2" /> Employee Record
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("evaluation"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faChartBar} className="me-2" /> Evaluation
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("disciplinary"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" /> Disciplinary Action
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("leave"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> Leave
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("recruitment"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Recruitment
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => { setActiveView("onboarding"); setSidebarOpen(false); }}
+                className="btn btn-link text-start text-white nav-link w-100"
+              >
+                <FontAwesomeIcon icon={faClipboardList} className="me-2" /> Onboarding
+              </button>
+            </li>
+          </ul>
+          <div className="mt-auto pt-3 border-top">
+            <button 
+              onClick={handleLogout}
+              className="btn btn-link nav-link text-danger text-start p-0 w-100"
+              style={{ textDecoration: 'none' }}
+            >
+              <FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="d-md-none position-fixed top-0 start-0 w-100 h-100" 
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1040 }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Main Content */}
       <div
         className="flex-grow-1"
@@ -318,9 +442,9 @@ const HrStaffDashboard = () => {
           />
         </div>
 
-        {/* Header - hidden only for job-posting */}
+        {/* Header - hidden only for job-posting and job-applications */}
         <div className="container-fluid py-3 px-3 px-md-5">
-          {activeView !== "job-posting" && (
+          {activeView !== "job-posting" && activeView !== "job-applications" && (
             <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
               <h4 className="fw-bold text-primary mb-2 mb-md-0">
                 {getHeaderTitle()}
