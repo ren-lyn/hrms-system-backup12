@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import "bootstrap-icons/font/bootstrap-icons.css";
+import './EvaluationAdministration.css';
 
 const EvaluationAdministration = () => {
   const [evaluationForms, setEvaluationForms] = useState([]);

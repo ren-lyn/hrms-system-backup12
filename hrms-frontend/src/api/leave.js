@@ -35,6 +35,14 @@ export const getEmployeeProfile = () => API.get('/employee/profile-data');
 export const getEmployeeProfileTest = (userId = 6) => API.get(`/employee-profile-test/${userId}`);
 export const getMyLeaveRequests = () => API.get('/leave-requests/my-requests');
 export const getMyLeaveBalance = () => API.get('/leave-requests/my-balance');
+export const checkLeaveEligibility = () => API.get('/leave-requests/check-eligibility');
+export const getLeaveTypes = () => API.get('/leave-types');
+
+// Manager-specific APIs
+export const approveLeaveRequestAsManager = (id, remarks) => API.put(`/leave-requests/${id}/manager-approve`, { remarks });
+export const rejectLeaveRequestAsManager = (id, remarks) => API.put(`/leave-requests/${id}/manager-reject`, { remarks });
+export const getManagerPendingRequests = () => API.get('/leave-requests/manager-pending');
+export const getHRPendingRequests = () => API.get('/leave-requests/hr-pending');
 
 // Legacy APIs (keeping for backward compatibility)
 export const fetchLeaves = () => API.get('/leave-requests');

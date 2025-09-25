@@ -8,61 +8,49 @@ import {
   AlertCircle,
   Bell,
   LogOut,
-  FileText
+  FileText,
+  CalendarCheck
 } from 'lucide-react';
+import ManagerLeaveManagement from '../components/Manager/ManagerLeaveManagement';
 
 
 const ManagerDashboard = () => {
   const [date, setDate] = useState(new Date());
+  const [activeView, setActiveView] = useState('dashboard');
 
   const links = [
-    { icon: <Home size={18} />, label: 'Dashboard' },
-    { icon: <CalendarDays size={18} />, label: 'Attendance Monitor' },
-    { icon: <ClipboardList size={18} />, label: 'Evaluations' },
-    { icon: <AlertCircle size={18} />, label: 'Disciplinary Cases' },
-    { icon: <FileText size={18} />, label: 'Reports' },
-    { icon: <LogOut size={18} />, label: 'Logout' },
+    { icon: <Home size={18} />, label: 'Dashboard', view: 'dashboard' },
+    { icon: <CalendarCheck size={18} />, label: 'Leave Request', view: 'leave-request' },
+    { icon: <CalendarDays size={18} />, label: 'Attendance Monitor', view: 'attendance' },
+    { icon: <ClipboardList size={18} />, label: 'Evaluations', view: 'evaluations' },
+    { icon: <AlertCircle size={18} />, label: 'Disciplinary Cases', view: 'disciplinary' },
+    { icon: <FileText size={18} />, label: 'Reports', view: 'reports' },
+    { icon: <LogOut size={18} />, label: 'Logout', view: 'logout' },
   ];
 
-  return (
-    <div style={styles.app}>
-      {/* Sidebar */}
-      <div style={styles.sidebar}>
-        <div>
-          <h2 style={styles.title}>Manager Dashboard</h2>
-          {links.map((link, idx) => (
-            <div
-              key={idx}
-              style={{
-                ...styles.navLink,
-                ...(idx === 0 ? styles.activeLink : {})
-              }}
-            >
-              {link.icon}
-              <span>{link.label}</span>
-            </div>
-          ))}
-        </div>
-        <div style={styles.profile}>
-          <img src="https://i.pravatar.cc/40" alt="profile" style={styles.avatar} />
-          <div>
-            <div>Alex Rivera</div>
-            <small>HR Manager</small>
-          </div>
-        </div>
-      </div>
+  const handleNavigation = (view, label) => {
+    if (view === 'logout') {
+      // Handle logout logic here
+      console.log('Logout clicked');
+      return;
+    }
+    console.log(`Navigating to ${label}`);
+    setActiveView(view);
+  };
 
-      {/* Main content */}
-      <div style={styles.main}>
-        {/* Header */}
-        <div style={styles.header}>
-          <h1 style={styles.headerTitle}>Manager Dashboard</h1>
-          <div style={styles.headerIcons}>
-            <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />
-            <img src="https://i.pravatar.cc/30" alt="profile" style={styles.headerAvatar} />
-          </div>
-        </div>
+  const renderContent = () => {
+    switch (activeView) {
+      case 'leave-request':
+        return <ManagerLeaveManagement />;
+      case 'dashboard':
+      default:
+        return renderDashboardContent();
+    }
+  };
 
+  const renderDashboardContent = () => {
+    return (
+      <>
         {/* Top cards */}
         <div style={styles.dashboardCards}>
           {[
@@ -118,6 +106,58 @@ const ManagerDashboard = () => {
             </ul>
           </div>
         </div>
+      </>
+    );
+  };
+
+  return (
+    <div style={styles.app}>
+      {/* Sidebar */}
+      <div style={styles.sidebar}>
+        <div>
+          <h2 style={styles.title}>Manager Dashboard</h2>
+          {links.map((link, idx) => (
+            <div
+              key={idx}
+              style={{
+                ...styles.navLink,
+                ...(activeView === link.view ? styles.activeLink : {})
+              }}
+              onClick={() => handleNavigation(link.view, link.label)}
+            >
+              {link.icon}
+              <span>{link.label}</span>
+            </div>
+          ))}
+        </div>
+        <div style={styles.profile}>
+          <img src="https://i.pravatar.cc/40" alt="profile" style={styles.avatar} />
+          <div>
+            <div>Alex Rivera</div>
+            <small>HR Manager</small>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div style={activeView === 'leave-request' ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+        {activeView !== 'leave-request' && (
+          <>
+            {/* Header */}
+            <div style={styles.header}>
+              <h1 style={styles.headerTitle}>
+                {activeView === 'leave-request' ? 'Leave Management' : 'Manager Dashboard'}
+              </h1>
+              <div style={styles.headerIcons}>
+                <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />
+                <img src="https://i.pravatar.cc/30" alt="profile" style={styles.headerAvatar} />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Dynamic Content */}
+        {renderContent()}
       </div>
     </div>
   );

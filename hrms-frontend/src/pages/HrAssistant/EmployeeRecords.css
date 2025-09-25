@@ -1,0 +1,261 @@
+/* Employee Records Form Modal Styling */
+
+.employee-form-modal .modal-dialog {
+  max-width: 1200px;
+}
+
+.employee-form-modal .modal-body {
+  background-color: #f8f9fa;
+}
+
+.form-section {
+  background: white;
+  margin-bottom: 0;
+  border-radius: 0;
+}
+
+.form-section:first-child {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.form-section:last-child {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.section-header {
+  border-left: 4px solid #007bff;
+  background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.section-header h6 {
+  color: #495057;
+  font-size: 16px;
+}
+
+.section-content {
+  background: white;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  font-weight: 500;
+  color: #495057;
+  margin-bottom: 0.5rem;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.alert-warning {
+  background-color: #fff3cd;
+  border-color: #ffeaa7;
+  border-left: 4px solid #ffc107;
+}
+
+.text-danger {
+  color: #dc3545 !important;
+}
+
+.text-muted {
+  color: #6c757d !important;
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+/* Custom scrollbar for modal body */
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .employee-form-modal .modal-dialog {
+    max-width: 95%;
+    margin: 0.5rem auto;
+  }
+  
+  .modal-body {
+    max-height: 70vh;
+  }
+  
+  .section-header h6 {
+    font-size: 14px;
+  }
+}
+
+/* Employee records header styling */
+.employee-records-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.employee-records-controls {
+  flex: 1;
+  min-width: 300px;
+}
+
+.employee-records-actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .employee-records-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .employee-records-controls,
+  .employee-records-actions {
+    width: 100%;
+  }
+}
+
+/* Table responsiveness */
+.table-responsive {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.table {
+  margin-bottom: 0;
+}
+
+.table thead th {
+  background-color: #f8f9fa;
+  border-top: none;
+  font-weight: 600;
+  color: #495057;
+}
+
+.table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+/* Button styling */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-warning {
+  color: #212529;
+}
+
+.btn-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
+}
+
+.btn-warning:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 193, 7, 0.3);
+}
+
+/* Form validation styling */
+.is-invalid {
+  border-color: #dc3545;
+}
+
+.invalid-feedback {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: #dc3545;
+}
+
+/* Loading state */
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Custom form section animations */
+.form-section {
+  transition: all 0.3s ease;
+}
+
+.form-section:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Age field readonly styling */
+input[readonly] {
+  background-color: #e9ecef;
+  opacity: 1;
+}
+
+/* View Employee Modal Styling */
+.employee-view-modal .modal-dialog {
+  max-width: 900px;
+}
+
+.view-field {
+  margin-bottom: 1rem;
+}
+
+.view-field label {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+  color: #6c757d;
+}
+
+.view-value {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #495057;
+  background-color: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.view-value:empty::before {
+  content: 'N/A';
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Make all action buttons the same size */
+.table td .btn {
+  min-width: 65px;
+  width: 65px;
+  height: 32px;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}

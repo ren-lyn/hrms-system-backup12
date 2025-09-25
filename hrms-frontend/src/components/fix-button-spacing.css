@@ -1,0 +1,47 @@
+/* Fix for large vertical spacing between stacked Delete buttons */
+
+/* Reduce margin-bottom on buttons in vertical lists */
+.btn-danger {
+  margin-bottom: 0.5rem !important;
+}
+
+/* If buttons are in a list or container, reduce gaps */
+.list-group-item .btn-danger,
+.d-flex.flex-column .btn-danger,
+.btn-group-vertical .btn-danger {
+  margin-bottom: 0.25rem !important;
+}
+
+/* Remove last button's bottom margin */
+.btn-danger:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* For buttons in rows/containers */
+.row .btn-danger,
+.col .btn-danger {
+  margin-bottom: 0.5rem !important;
+}
+
+.row .btn-danger:last-child,
+.col .btn-danger:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Reduce padding on containers that hold buttons */
+.button-container,
+.action-container {
+  padding: 0.5rem 0 !important;
+}
+
+/* Override Bootstrap's default button margins */
+.btn + .btn {
+  margin-top: 0.25rem !important;
+}
+
+/* For specific components that might have custom spacing */
+.leave-application-form .btn-danger,
+.cash-advance-management .btn-danger,
+.leave-management .btn-danger {
+  margin-bottom: 0.5rem !important;
+}

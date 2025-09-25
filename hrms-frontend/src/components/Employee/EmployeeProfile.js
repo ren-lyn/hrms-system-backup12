@@ -9,9 +9,20 @@ const EmployeeProfile = () => {
   const [profile, setProfile] = useState({});
   const [loading, setLoading] = useState(true);
   const [editCounts, setEditCounts] = useState({
-    marital_status: 0,
+    name: 0,
+    nickname: 0,
+    civil_status: 0,
     address: 0,
-    contact: 0
+    contact: 0,
+    emergency_contact: 0
+  });
+  const [remainingEdits, setRemainingEdits] = useState({
+    name: 3,
+    nickname: 3,
+    civil_status: 3,
+    address: 3,
+    contact: 3,
+    emergency_contact: 3
   });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editField, setEditField] = useState('');
@@ -32,7 +43,14 @@ const EmployeeProfile = () => {
         }
       });
       setProfile(response.data.profile || response.data);
-      setEditCounts(response.data.edit_counts || { marital_status: 0, address: 0, contact: 0 });
+      const counts = response.data.edit_counts || {
+        name: 0, nickname: 0, civil_status: 0, address: 0, contact: 0, emergency_contact: 0
+      };
+      const remaining = response.data.remaining_edits || {
+        name: 3, nickname: 3, civil_status: 3, address: 3, contact: 3, emergency_contact: 3
+      };
+      setEditCounts(counts);
+      setRemainingEdits(remaining);
     } catch (error) {
       console.error('Error fetching profile:', error);
       showAlert('Error loading profile. Please try again.', 'danger');
@@ -54,20 +72,21 @@ const EmployeeProfile = () => {
 
     setEditField(field);
     switch (field) {
-      case 'marital_status':
-        setEditData({ marital_status: profile.marital_status || '' });
+      case 'civil_status':
+        setEditData({ civil_status: profile.civil_status || '' });
         break;
       case 'address':
         setEditData({
           province: profile.province || '',
           barangay: profile.barangay || '',
           city: profile.city || '',
-          postal_code: profile.postal_code || ''
+          postal_code: profile.postal_code || '',
+          present_address: profile.present_address || ''
         });
         break;
       case 'contact':
         setEditData({
-          phone: profile.phone || '',
+          phone: profile.contact_number || profile.phone || '',
           email: profile.email || '',
           emergency_contact_name: profile.emergency_contact_name || '',
           emergency_contact_phone: profile.emergency_contact_phone || ''
@@ -81,19 +100,53 @@ const EmployeeProfile = () => {
 
   const handleSaveEdit = async () => {
     try {
-      const response = await axios.put(`http://localhost:8000/api/employee/profile/${editField}`, editData, {
+      // Map edit field to correct API endpoint
+      let endpoint = `http://localhost:8000/api/employee/profile/${editField}`;
+      if (editField === 'civil_status') {
+        endpoint = 'http://localhost:8000/api/employee/profile/civil-status';
+      }
+      
+      const response = await axios.put(endpoint, editData, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`
         }
       });
       
-      setProfile(prev => ({ ...prev, ...editData }));
-      setEditCounts(prev => ({ ...prev, [editField]: prev[editField] + 1 }));
+      // Update local profile data with field mapping for contact
+      if (editField === 'contact') {
+        setProfile(prev => ({
+          ...prev,
+          contact_number: editData.phone, // Map phone back to contact_number for display
+          phone: editData.phone, // Also keep phone field for API consistency
+          email: editData.email,
+          emergency_contact_name: editData.emergency_contact_name,
+          emergency_contact_phone: editData.emergency_contact_phone
+        }));
+      } else {
+        setProfile(prev => ({ ...prev, ...editData }));
+      }
+      
+      // Update edit counts from response or increment locally
+      if (response.data.remaining_edits) {
+        setEditCounts(prev => ({ ...prev, [editField]: 3 - response.data.remaining_edits }));
+        setRemainingEdits(prev => ({ ...prev, [editField]: response.data.remaining_edits }));
+      } else {
+        setEditCounts(prev => ({ ...prev, [editField]: prev[editField] + 1 }));
+        setRemainingEdits(prev => ({ ...prev, [editField]: prev[editField] - 1 }));
+      }
+      
       setShowEditModal(false);
-      showAlert('Profile updated successfully!', 'success');
+      showAlert(response.data.message || 'Profile updated successfully!', 'success');
+      
+      // Refresh profile data to ensure sync with HR view
+      fetchProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
-      showAlert('Error updating profile. Please try again.', 'danger');
+      if (error.response && error.response.data && error.response.data.message) {
+        showAlert(error.response.data.message, 'danger');
+      } else {
+        showAlert('Error updating profile. Please try again.', 'danger');
+      }
     }
   };
 
@@ -161,39 +214,41 @@ const EmployeeProfile = () => {
                 <Col sm={6}>
                   <div className="info-item">
                     <label>Full name</label>
-                    <p>{profile.name || 'N/A'}</p>
+                    <p>{profile.first_name && profile.last_name ? `${profile.first_name} ${profile.last_name}` : profile.name || 'N/A'}</p>
+                    <small className="text-muted">Edits remaining: {remainingEdits.name || 3}</small>
                   </div>
                 </Col>
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>Gender</label>
-                    <p>{profile.gender || 'N/A'}</p>
+                    <label>Nickname</label>
+                    <p>{profile.nickname || 'N/A'}</p>
+                    <small className="text-muted">Edits remaining: {remainingEdits.nickname || 3}</small>
                   </div>
                 </Col>
               </Row>
               <Row className="mb-3">
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>Marital Status</label>
+                    <label>Civil Status</label>
                     <div className="d-flex justify-content-between align-items-center">
-                      <p className="mb-0">{profile.marital_status || 'Single'}</p>
+                      <p className="mb-0">{profile.civil_status || 'N/A'}</p>
                       <Button 
                         variant="outline-primary" 
                         size="sm"
-                        onClick={() => handleEdit('marital_status')}
-                        disabled={editCounts.marital_status >= 3}
-                        title={getEditButtonText('marital_status')}
+                        onClick={() => handleEdit('civil_status')}
+                        disabled={editCounts.civil_status >= 3}
+                        title={getEditButtonText('civil_status')}
                       >
                         <Edit2 size={14} />
                       </Button>
                     </div>
-                    <small className="text-muted">Edits remaining: {3 - editCounts.marital_status}</small>
+                    <small className="text-muted">Edits remaining: {remainingEdits.civil_status || 3}</small>
                   </div>
                 </Col>
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>Religion</label>
-                    <p>{profile.religion || 'Catholic'}</p>
+                    <label>Gender</label>
+                    <p>{profile.gender || 'N/A'}</p>
                   </div>
                 </Col>
               </Row>
@@ -215,13 +270,13 @@ const EmployeeProfile = () => {
                 <Col sm={6}>
                   <div className="info-item">
                     <label>Age</label>
-                    <p>{calculateAge(profile.birth_date)}</p>
+                    <p>{profile.age || calculateAge(profile.birth_date)}</p>
                   </div>
                 </Col>
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>Blood Type</label>
-                    <p>{profile.blood_type || 'A+'}</p>
+                    <label>Department</label>
+                    <p>{profile.department || 'N/A'}</p>
                   </div>
                 </Col>
               </Row>
@@ -271,7 +326,15 @@ const EmployeeProfile = () => {
                   </div>
                 </Col>
               </Row>
-              <small className="text-muted">Edits remaining: {3 - editCounts.address}</small>
+              <Row className="mt-3">
+                <Col sm={12}>
+                  <div className="info-item">
+                    <label>Present Address</label>
+                    <p>{profile.present_address || 'N/A'}</p>
+                  </div>
+                </Col>
+              </Row>
+              <small className="text-muted">Edits remaining: {remainingEdits.address || 3}</small>
             </Card.Body>
           </Card>
         </Col>
@@ -299,7 +362,7 @@ const EmployeeProfile = () => {
                   <Col sm={6}>
                     <div className="info-item">
                       <label>Phone Number</label>
-                      <p>{profile.phone || 'N/A'}</p>
+                      <p>{profile.contact_number || profile.phone || 'N/A'}</p>
                     </div>
                   </Col>
                   <Col sm={6}>
@@ -328,7 +391,9 @@ const EmployeeProfile = () => {
                   </Col>
                 </Row>
               </div>
-              <small className="text-muted">Edits remaining: {3 - editCounts.contact}</small>
+              <small className="text-muted">Contact edits remaining: {remainingEdits.contact || 3}</small>
+              <br />
+              <small className="text-muted">Emergency contact edits remaining: {remainingEdits.emergency_contact || 3}</small>
             </Card.Body>
           </Card>
 
@@ -348,25 +413,25 @@ const EmployeeProfile = () => {
                 <Col sm={6}>
                   <div className="info-item">
                     <label>Employment status</label>
-                    <p>{profile.employment_status || 'Full Time'}</p>
+                    <p>{profile.employment_status || 'N/A'}</p>
                   </div>
                 </Col>
               </Row>
               <Row className="mb-3">
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>Job Role</label>
+                    <label>Position</label>
                     <p>{profile.position || profile.job_title || 'N/A'}</p>
                   </div>
                 </Col>
                 <Col sm={6}>
                   <div className="info-item">
-                    <label>SSS</label>
-                    <p>{profile.sss || 'N/A'}</p>
+                    <label>Tenurity</label>
+                    <p>{profile.tenurity || 'N/A'}</p>
                   </div>
                 </Col>
               </Row>
-              <Row>
+              <Row className="mb-3">
                 <Col sm={6}>
                   <div className="info-item">
                     <label>PhilHealth</label>
@@ -377,6 +442,20 @@ const EmployeeProfile = () => {
                   <div className="info-item">
                     <label>Pag-ibig</label>
                     <p>{profile.pagibig || 'N/A'}</p>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col sm={6}>
+                  <div className="info-item">
+                    <label>TIN no.</label>
+                    <p>{profile.tin_no || 'N/A'}</p>
+                  </div>
+                </Col>
+                <Col sm={6}>
+                  <div className="info-item">
+                    <label>SSS</label>
+                    <p>{profile.sss || 'N/A'}</p>
                   </div>
                 </Col>
               </Row>
@@ -391,18 +470,19 @@ const EmployeeProfile = () => {
           <Modal.Title>Edit {editField.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {editField === 'marital_status' && (
+          {editField === 'civil_status' && (
             <Form.Group>
-              <Form.Label>Marital Status</Form.Label>
+              <Form.Label>Civil Status</Form.Label>
               <Form.Select 
-                value={editData.marital_status || ''} 
-                onChange={(e) => setEditData({...editData, marital_status: e.target.value})}
+                value={editData.civil_status || ''} 
+                onChange={(e) => setEditData({...editData, civil_status: e.target.value})}
               >
-                <option value="">Select marital status</option>
+                <option value="">Select civil status</option>
                 <option value="Single">Single</option>
                 <option value="Married">Married</option>
                 <option value="Divorced">Divorced</option>
                 <option value="Widowed">Widowed</option>
+                <option value="Separated">Separated</option>
               </Form.Select>
             </Form.Group>
           )}
@@ -449,6 +529,20 @@ const EmployeeProfile = () => {
                       type="text" 
                       value={editData.postal_code || ''} 
                       onChange={(e) => setEditData({...editData, postal_code: e.target.value})}
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={12}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Present Address</Form.Label>
+                    <Form.Control 
+                      as="textarea"
+                      rows={2}
+                      value={editData.present_address || ''} 
+                      onChange={(e) => setEditData({...editData, present_address: e.target.value})}
+                      placeholder="Complete present address"
                     />
                   </Form.Group>
                 </Col>

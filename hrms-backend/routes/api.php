@@ -44,9 +44,16 @@ Route::middleware('auth:sanctum')->get('/auth/user', [AuthController::class, 'us
 // Employee Profile Routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/employee/profile', [EmployeeController::class, 'profile']);
-    Route::put('/employee/profile/marital_status', [EmployeeController::class, 'updateMaritalStatus']);
+    
+    // Profile update endpoints with 3-edit limits
+    Route::put('/employee/profile/name', [EmployeeController::class, 'updateName']);
+    Route::put('/employee/profile/nickname', [EmployeeController::class, 'updateNickname']);
     Route::put('/employee/profile/address', [EmployeeController::class, 'updateAddress']);
     Route::put('/employee/profile/contact', [EmployeeController::class, 'updateContact']);
+    Route::put('/employee/profile/emergency-contact', [EmployeeController::class, 'updateEmergencyContact']);
+    
+    // Other profile updates (no edit limits)
+    Route::put('/employee/profile/civil-status', [EmployeeController::class, 'updateCivilStatus']);
 });
 
 Route::post('/register', [ApplicantController::class, 'register']);
@@ -77,6 +84,9 @@ Route::get('/test', function () {
 Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
 Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
 Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
+Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // test eligibility check
+Route::get('/leave-types', [LeaveRequestController::class, 'getLeaveTypes']); // get available leave types
+
 
 // Temporary route for testing employee profile data (remove in production)
 Route::get('/employee-profile-test/{userId?}', [LeaveRequestController::class, 'getEmployeeProfileTest']); // test profile data
@@ -86,6 +96,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/employee/profile-data', [LeaveRequestController::class, 'getEmployeeProfile']); // Get profile data for form
     Route::get('/leave-requests/my-requests', [LeaveRequestController::class, 'myRequests']); // Employee's own requests
     Route::get('/leave-requests/my-balance', [LeaveRequestController::class, 'getLeaveBalance']); // Employee leave balance
+    Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // Check if employee can submit new request
 });
 
 //Cash Advances
@@ -105,6 +116,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
     Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
     Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
+
+    Route::put('/leave-requests/{id}/terms', [LeaveRequestController::class, 'updateTermsAndCategory']); // hr set terms/category
+    
+    // Manager-specific routes
+    Route::put('/leave-requests/{id}/manager-approve', [LeaveRequestController::class, 'managerApprove']); // manager approve
+    Route::put('/leave-requests/{id}/manager-reject', [LeaveRequestController::class, 'managerReject']); // manager reject
+    Route::get('/leave-requests/manager-pending', [LeaveRequestController::class, 'getManagerPendingRequests']); // manager pending requests
+    Route::get('/leave-requests/hr-pending', [LeaveRequestController::class, 'getHRPendingRequests']); // hr pending requests
 });
 
 

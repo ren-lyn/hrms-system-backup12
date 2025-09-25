@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert } from 'react-bootstrap';
 import { Search, Calendar, Download, Eye, Check, X, FileText } from 'lucide-react';
-import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
+import { fetchLeaveRequests, getLeaveStats, getLeaveRequest, approveLeaveRequest, rejectLeaveRequest, approveLeaveRequestAsManager, rejectLeaveRequestAsManager } from '../../api/leave';
 import jsPDF from 'jspdf';
-import './LeaveManagement.css';
+import './ManagerLeaveManagement.css';
 
-const LeaveManagement = () => {
+const ManagerLeaveManagement = () => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [stats, setStats] = useState({
     approval_stats: { requested: 0, approved: 0, rejected: 0, pending: 0 },
@@ -20,10 +20,6 @@ const LeaveManagement = () => {
   const [remarks, setRemarks] = useState('');
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [editingLeave, setEditingLeave] = useState(null);
-  const [editTerms, setEditTerms] = useState('');
-  const [editCategory, setEditCategory] = useState('');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedLeaveForView, setSelectedLeaveForView] = useState(null);
@@ -31,8 +27,6 @@ const LeaveManagement = () => {
 
   useEffect(() => {
     loadData();
-    // Set up auto-refresh every 30 seconds for real-time updates
-    const interval = setInterval(loadData, 300000);
     
     // Handle window resize for responsive design
     const handleResize = () => {
@@ -42,7 +36,6 @@ const LeaveManagement = () => {
     window.addEventListener('resize', handleResize);
     
     return () => {
-      clearInterval(interval);
       window.removeEventListener('resize', handleResize);
     };
   }, []);
@@ -58,12 +51,8 @@ const LeaveManagement = () => {
       console.log('Loaded leave requests:', requestsResponse.data);
       console.log('Loaded stats:', statsResponse.data);
       
-      // Filter to show only manager-approved requests for HR
-      const hrRequests = requestsResponse.data.filter(request => 
-        request.status === 'manager_approved' || request.status === 'approved' || request.status === 'rejected'
-      );
-      
-      setLeaveRequests(hrRequests || []);
+      // For now, show all requests (can be filtered later based on role)
+      setLeaveRequests(requestsResponse.data || []);
       setStats(statsResponse.data || {
         approval_stats: { requested: 0, approved: 0, rejected: 0, pending: 0 },
         type_stats: {}
@@ -93,14 +82,14 @@ const LeaveManagement = () => {
     try {
       let response;
       if (actionType === 'approve') {
-        response = await approveLeaveRequest(selectedLeave.id, remarks);
-        showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been approved successfully!`, 'success');
+        response = await approveLeaveRequestAsManager(selectedLeave.id, remarks);
+        showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been approved and forwarded to HR!`, 'success');
       } else if (actionType === 'reject') {
-        response = await rejectLeaveRequest(selectedLeave.id, remarks);
+        response = await rejectLeaveRequestAsManager(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been rejected.`, 'info');
       }
       
-      console.log('Action response:', response);
+      console.log('Manager action response:', response);
       
       setShowModal(false);
       setSelectedLeave(null);
@@ -110,44 +99,18 @@ const LeaveManagement = () => {
       // Immediately reload data to show changes
       await loadData();
     } catch (error) {
-      console.error('Error processing action:', error);
+      console.error('Error processing manager action:', error);
       const errorMessage = error.response?.data?.message || 'Error processing request. Please try again.';
       showAlert(errorMessage, 'danger');
     }
   };
 
-  const handleEditTerms = (leave) => {
-    setEditingLeave(leave);
-    setEditTerms(leave.terms || '');
-    setEditCategory(leave.leave_category || '');
-    setShowTermsModal(true);
-  };
-
-  const saveTermsAndCategory = async () => {
-    try {
-      await updateLeaveTermsAndCategory(editingLeave.id, editTerms, editCategory);
-      showAlert('Leave terms and category updated successfully!', 'success');
-      setShowTermsModal(false);
-      setEditingLeave(null);
-      setEditTerms('');
-      setEditCategory('');
-      await loadData();
-    } catch (error) {
-      console.error('Error updating terms:', error);
-      showAlert('Error updating leave terms. Please try again.', 'danger');
-    }
-  };
-
-
-  // isImageFile is now imported from utils
 
   const handleViewLeave = async (request) => {
     try {
       setLoadingLeaveDetails(true);
       const response = await getLeaveRequest(request.id);
       console.log('Full leave request data:', response.data);
-      console.log('Total days:', response.data.total_days);
-      console.log('Total hours:', response.data.total_hours);
       setSelectedLeaveForView(response.data);
       setShowViewModal(true);
     } catch (error) {
@@ -158,22 +121,16 @@ const LeaveManagement = () => {
     }
   };
 
-  // getSignatureUrl is now imported from utils
-
   const getEmployeeName = (employee, employeeName) => {
     try {
-      // If employeeName is provided and is a string, use it
       if (employeeName && typeof employeeName === 'string') {
         return employeeName;
       }
       
-      // If employee is an object, try to construct name
       if (employee && typeof employee === 'object' && employee !== null) {
-        // Try the name property first
         if (employee.name && typeof employee.name === 'string') {
           return employee.name;
         }
-        // Try first_name and last_name
         const firstName = employee.first_name || '';
         const lastName = employee.last_name || '';
         const fullName = `${firstName} ${lastName}`.trim();
@@ -188,252 +145,11 @@ const LeaveManagement = () => {
       return 'Unknown Employee';
     }
   };
-  
-  const safeRender = (value) => {
-    if (value === null || value === undefined) {
-      return '';
-    }
-    if (typeof value === 'object') {
-      console.error('Attempting to render object as React child:', value);
-      return '[Object]';
-    }
-    return String(value);
-  };
-  
-  const calculateTotalHours = (totalDays, totalHours) => {
-    // If hours are already provided, use them
-    if (totalHours && totalHours > 0) {
-      return totalHours;
-    }
-    
-    // Otherwise, calculate hours from days (assuming 8 hours per day)
-    const days = totalDays || 0;
-    return days * 8;
-  };
 
-  const handleExportLeave = async () => {
-    if (!selectedLeaveForView) return;
-    
-    try {
-      // Show loading state
-      const originalButtonText = 'Export PDF';
-      const exportButton = document.querySelector('[title="Download as PDF"]');
-      if (exportButton) {
-        exportButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Generating PDF...';
-        exportButton.disabled = true;
-      }
-    
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 20;
-      let yPosition = margin;
-      
-      // Helper function to draw underlined fields like in the form
-      const drawField = (label, value, x, y, width = 50) => {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(10);
-        pdf.text(label, x, y);
-        
-        // Calculate label width to position value correctly
-        const labelWidth = pdf.getTextWidth(label);
-        
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(value || '', x + labelWidth + 2, y);
-        
-        // Draw underline
-        pdf.setLineWidth(0.3);
-        pdf.line(x + labelWidth + 2, y + 1, x + width, y + 1);
-      };
-      
-      // Title - centered
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Leave Application Form', pageWidth / 2, yPosition, { align: 'center' });
-      yPosition += 10;
-      
-      // Draw a horizontal line under the title
-      pdf.setLineWidth(0.5);
-      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-      yPosition += 15;
-      
-      // Two-column layout for Employee Information and Application Details
-      const leftColX = margin;
-      const rightColX = pageWidth / 2 + 10;
-      
-      // Section headers on the same line
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Employee Information', leftColX, yPosition);
-      pdf.text('Application Details', rightColX, yPosition);
-      
-      // Move down for content
-      yPosition += 10;
-      
-      // Left column content
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Name:', leftColX, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(getEmployeeName(selectedLeaveForView.employee, selectedLeaveForView.employee_name), leftColX + 18, yPosition);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Department:', leftColX, yPosition + 6);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedLeaveForView.department || 'IT Department', leftColX + 22, yPosition + 6);
-      
-      // Right column content (aligned)
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Date Filed:', rightColX, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(new Date(selectedLeaveForView.created_at).toLocaleDateString('en-US', { 
-        year: 'numeric', month: 'long', day: 'numeric' 
-      }), rightColX + 22, yPosition);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Status:', rightColX, yPosition + 6);
-      pdf.setFont('helvetica', 'normal');
-      const statusText = selectedLeaveForView.status.charAt(0).toUpperCase() + selectedLeaveForView.status.slice(1);
-      pdf.text(statusText, rightColX + 18, yPosition + 6);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Application ID:', rightColX, yPosition + 12);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`#${selectedLeaveForView.id}`, rightColX + 26, yPosition + 12);
-      
-      yPosition += 25;
-      
-      // Leave Details Section
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Leave Details', margin, yPosition);
-      yPosition += 10;
-      
-      // Leave Type
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Leave Type:', margin, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedLeaveForView.type || 'Vacation Leave', margin + 22, yPosition);
-      
-      // Pay Terms (if available)
-      if (selectedLeaveForView.terms) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Pay Terms:', margin + 80, yPosition);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(selectedLeaveForView.terms, margin + 100, yPosition);
-      }
-      
-      yPosition += 12;
-      
-      // Duration section
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Duration:', margin, yPosition);
-      yPosition += 8;
-      
-      // From date
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('From:', margin + 5, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      const fromDateFormatted = selectedLeaveForView.from ? new Date(selectedLeaveForView.from).toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-      }) : 'Not set';
-      pdf.text(fromDateFormatted, margin + 20, yPosition);
-      
-      // To date
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('To:', margin + 5, yPosition + 6);
-      pdf.setFont('helvetica', 'normal');
-      const toDateFormatted = selectedLeaveForView.to ? new Date(selectedLeaveForView.to).toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-      }) : 'Not set';
-      pdf.text(toDateFormatted, margin + 20, yPosition + 6);
-      
-      yPosition += 18;
-      
-      // Total Days and Hours
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Total Days:', margin, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`${selectedLeaveForView.total_days || 0}`, margin + 22, yPosition);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Total Hours:', margin + 60, yPosition);
-      pdf.setFont('helvetica', 'normal');
-      const calculatedHours = calculateTotalHours(selectedLeaveForView.total_days, selectedLeaveForView.total_hours);
-      pdf.text(`${calculatedHours}`, margin + 82, yPosition);
-      
-      yPosition += 15;
-      
-      // Reason for Leave Section
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Reason for Leave', margin, yPosition);
-      yPosition += 10;
-      
-      // Reason text (no box)
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      const reason = selectedLeaveForView.reason || '';
-      const reasonLines = pdf.splitTextToSize(reason, pageWidth - 2 * margin);
-      pdf.text(reasonLines, margin, yPosition);
-      
-      yPosition += (reasonLines.length * 5) + 15;
-      
-      // E-Signature Section
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('E-Signature', margin, yPosition);
-      yPosition += 10;
-      
-      // Signature status
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      if (selectedLeaveForView.signature_path) {
-        pdf.text('Signature provided', margin, yPosition);
-        
-        // Show filename
-        pdf.setFontSize(9);
-        pdf.text(`File: ${selectedLeaveForView.signature_path.split('/').pop()}`, margin, yPosition + 6);
-      } else {
-        pdf.text('No signature provided', margin, yPosition);
-      }
-      
-      // Footer
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'italic');
-      pdf.text(`Generated on ${new Date().toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      })}`, margin, pageHeight - 10);
-      pdf.text('Cabuyao Concrete Development Corporation', pageWidth - margin, pageHeight - 10, { align: 'right' });
-    
-      // Save the PDF
-      const employeeName = getEmployeeName(selectedLeaveForView.employee, selectedLeaveForView.employee_name);
-      const fileName = `Leave_Application_${employeeName.replace(/\s+/g, '_')}_${selectedLeaveForView.id}.pdf`;
-      pdf.save(fileName);
-      
-      // Show success message
-      showAlert(`PDF exported successfully: ${fileName}`, 'success');
-      
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      showAlert('Error generating PDF. Please try again.', 'danger');
-    } finally {
-      // Restore button state
-      const exportButton = document.querySelector('[title="Download as PDF"]');
-      if (exportButton) {
-        exportButton.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7,10 12,15 17,10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Export PDF
-        `;
-        exportButton.disabled = false;
-      }
-    }
+  // Helper function to calculate hours based on days (8 hours per day)
+  const calculateHoursFromDays = (days) => {
+    const totalDays = parseInt(days) || 0;
+    return totalDays * 8;
   };
 
   const filteredRequests = leaveRequests.filter(request => {
@@ -444,7 +160,6 @@ const LeaveManagement = () => {
     
     if (selectedPeriod === 'all') return matchesSearch;
     
-    // Add period filtering logic here if needed
     return matchesSearch;
   });
 
@@ -452,13 +167,15 @@ const LeaveManagement = () => {
     const variants = {
       pending: 'warning',
       manager_approved: 'info',
+      manager_rejected: 'danger',
       approved: 'success',
       rejected: 'danger'
     };
     const labels = {
-      pending: 'Pending',
-      manager_approved: 'Manager Approved',
-      approved: 'HR Approved',
+      pending: 'Pending Review',
+      manager_approved: 'Forwarded to HR',
+      manager_rejected: 'Rejected',
+      approved: 'Approved by HR',
       rejected: 'Rejected'
     };
     return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
@@ -477,12 +194,29 @@ const LeaveManagement = () => {
   }
 
   return (
-    <div style={{ height: '100%' }}>
-      <Container fluid className="leave-management" style={{ 
+    <div style={{ height: '100%', backgroundColor: '#f8f9fa' }}>
+      <Container fluid className="manager-leave-management" style={{ 
         height: 'auto', 
         overflowY: 'auto', 
-        padding: isMobile ? '20px 8px' : '20px 20px'
+        padding: isMobile ? '20px 8px' : '20px 20px',
+        backgroundColor: '#f8f9fa'
       }}>
+
+      {/* Header */}
+      <div style={{ 
+        backgroundColor: 'white', 
+        padding: '20px', 
+        borderBottom: '1px solid #e9ecef',
+        marginBottom: '20px',
+        borderRadius: '8px 8px 0 0'
+      }}>
+        <div className="d-flex justify-content-between align-items-center">
+          <h4 className="mb-0" style={{ color: '#495057', fontWeight: '600' }}>Leave Management</h4>
+          <div className="text-muted small">
+            Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : 'Never'}
+          </div>
+        </div>
+      </div>
 
       {alert.show && (
         <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
@@ -499,7 +233,7 @@ const LeaveManagement = () => {
                 <div className="stats-icon me-3">
                   <Check size={20} />
                 </div>
-                <h6 className="mb-0">Approval Status</h6>
+                <h6 className="mb-0">Manager Approval Status</h6>
               </div>
               <Row className="text-center">
                 <Col>
@@ -594,10 +328,6 @@ const LeaveManagement = () => {
             >
               {loading ? 'Refreshing...' : 'Refresh'}
             </Button>
-            <Button variant="outline-danger" size="sm">
-              <Download size={16} className="me-1" />
-              Export
-            </Button>
           </div>
         </Col>
       </Row>
@@ -624,16 +354,17 @@ const LeaveManagement = () => {
                 </div>
               </div>
             )}
-            <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
+            <Table responsive className="leave-table" style={{ minWidth: '1300px' }}>
               <thead>
               <tr>
                 <th>👤 Employee Name</th>
                 <th>Department</th>
                 <th>Type of Leave</th>
-                <th>Terms</th>
+                <th>Status</th>
                 <th>Start Date</th>
                 <th>End Date</th>
                 <th>Days</th>
+                <th>Hours</th>
                 <th>Reason</th>
                 <th>Action</th>
               </tr>
@@ -659,32 +390,15 @@ const LeaveManagement = () => {
                     </div>
                   </td>
                   <td>
-                    <div className="terms-section">
-                      <div className="mb-1">
-                        <Badge 
-                          bg={request.terms === 'with PAY' ? 'success' : 
-                              request.terms === 'without PAY' ? 'warning' :
-                              'secondary'}
-                        >
-                          {request.terms || 'TBD by HR'}
-                        </Badge>
-                      </div>
-                      {(request.status === 'pending' || request.status === 'manager_approved') && (
-                        <Button
-                          variant="outline-primary"
-                          size="sm"
-                          onClick={() => handleEditTerms(request)}
-                          style={{ fontSize: '10px', padding: '2px 6px' }}
-                        >
-                          Set Terms
-                        </Button>
-                      )}
-                    </div>
+                    {getStatusBadge(request.status)}
                   </td>
                   <td>{formatDate(request.from)}</td>
                   <td>{formatDate(request.to)}</td>
                   <td>
                     <span className="days-count">{request.total_days || '-'}</span>
+                  </td>
+                  <td>
+                    <span className="hours-count">{calculateHoursFromDays(request.total_days)} hrs</span>
                   </td>
                   <td>
                     <span className="reason-text">
@@ -702,12 +416,13 @@ const LeaveManagement = () => {
                       >
                         <Eye size={14} />
                       </Button>
-                      {(request.status === 'pending' || request.status === 'manager_approved') ? (
+                      {request.status === 'pending' ? (
                         <>
                           <Button
                             variant="success"
                             size="sm"
                             onClick={() => handleAction(request, 'approve')}
+                            title="Approve and forward to HR"
                           >
                             <Check size={14} />
                           </Button>
@@ -715,6 +430,7 @@ const LeaveManagement = () => {
                             variant="danger"
                             size="sm"
                             onClick={() => handleAction(request, 'reject')}
+                            title="Reject leave request"
                           >
                             <X size={14} />
                           </Button>
@@ -734,7 +450,7 @@ const LeaveManagement = () => {
           
           {filteredRequests.length === 0 && (
             <div className="text-center p-4">
-              <p className="text-muted">No leave requests found.</p>
+              <p className="text-muted">No leave requests found for manager review.</p>
             </div>
           )}
         </Card.Body>
@@ -756,7 +472,7 @@ const LeaveManagement = () => {
             </div>
           )}
           <Form.Group>
-            <Form.Label>Remarks (Optional)</Form.Label>
+            <Form.Label>Manager Remarks (Optional)</Form.Label>
             <Form.Control
               as="textarea"
               rows={3}
@@ -765,6 +481,13 @@ const LeaveManagement = () => {
               placeholder="Add any comments or remarks..."
             />
           </Form.Group>
+          {actionType === 'approve' && (
+            <Alert variant="info" className="mt-3">
+              <small>
+                <strong>Note:</strong> Approving this request will forward it to HR for final processing and pay terms determination.
+              </small>
+            </Alert>
+          )}
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowModal(false)}>
@@ -774,58 +497,7 @@ const LeaveManagement = () => {
             variant={actionType === 'approve' ? 'success' : 'danger'} 
             onClick={confirmAction}
           >
-            {actionType === 'approve' ? 'Approve' : 'Reject'}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* Terms and Category Modal */}
-      <Modal show={showTermsModal} onHide={() => setShowTermsModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Set Pay Terms & Leave Category</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {editingLeave && (
-            <div className="mb-3">
-              <strong>Employee:</strong> {getEmployeeName(editingLeave.employee, editingLeave.employee_name)}<br />
-              <strong>Leave Type:</strong> {editingLeave.type}<br />
-              <strong>Duration:</strong> {formatDate(editingLeave.from)} - {formatDate(editingLeave.to)}
-            </div>
-          )}
-          <Form.Group className="mb-3">
-            <Form.Label>Pay Terms *</Form.Label>
-            <Form.Select
-              value={editTerms}
-              onChange={(e) => setEditTerms(e.target.value)}
-              required
-            >
-              <option value="">Select pay terms...</option>
-              <option value="with PAY">With PAY</option>
-              <option value="without PAY">Without PAY</option>
-            </Form.Select>
-          </Form.Group>
-          <Form.Group className="mb-3">
-            <Form.Label>Leave Category</Form.Label>
-            <Form.Select
-              value={editCategory}
-              onChange={(e) => setEditCategory(e.target.value)}
-            >
-              <option value="">Select category </option>
-              <option value="Service Incentive Leave (SIL)">Service Incentive Leave (SIL)</option>
-              <option value="Emergency Leave (EL)">Emergency Leave (EL)</option>
-            </Form.Select>
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowTermsModal(false)}>
-            Cancel
-          </Button>
-          <Button 
-            variant="primary" 
-            onClick={saveTermsAndCategory}
-            disabled={!editTerms}
-          >
-            Save Changes
+            {actionType === 'approve' ? 'Approve & Forward to HR' : 'Reject Request'}
           </Button>
         </Modal.Footer>
       </Modal>
@@ -903,18 +575,6 @@ const LeaveManagement = () => {
                         )}
                       </div>
                     </div>
-                    <div className="mb-3">
-                      <strong>Pay Terms:</strong>
-                      <div className="mt-1">
-                        <Badge 
-                          bg={selectedLeaveForView.terms === 'with PAY' ? 'success' : 
-                              selectedLeaveForView.terms === 'without PAY' ? 'warning' :
-                              'secondary'}
-                        >
-                          {selectedLeaveForView.terms || 'To be determined by HR'}
-                        </Badge>
-                      </div>
-                    </div>
                   </Col>
                   <Col md={6}>
                     <div className="mb-3">
@@ -943,7 +603,7 @@ const LeaveManagement = () => {
                             <strong>Total Hours:</strong>
                           </div>
                           <Badge bg="info" style={{ fontSize: '16px', padding: '8px 12px' }}>
-                            {calculateTotalHours(selectedLeaveForView.total_days, selectedLeaveForView.total_hours)} Hours
+                            {calculateHoursFromDays(selectedLeaveForView.total_days)} Hours
                           </Badge>
                         </Col>
                       </Row>
@@ -977,15 +637,6 @@ const LeaveManagement = () => {
             </small>
           </div>
           <div>
-            <Button 
-              variant="outline-primary" 
-              className="me-2"
-              onClick={handleExportLeave}
-              title="Download as PDF"
-            >
-              <Download size={16} className="me-1" />
-              Export PDF
-            </Button>
             <Button variant="secondary" onClick={() => setShowViewModal(false)}>
               Close
             </Button>
@@ -997,4 +648,4 @@ const LeaveManagement = () => {
   );
 };
 
-export default LeaveManagement;
+export default ManagerLeaveManagement;

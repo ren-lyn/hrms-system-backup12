@@ -214,7 +214,7 @@
 }
 
 .leave-table td {
-  padding: 15px 12px;
+  padding: 8px 12px;
   vertical-align: middle;
   border-bottom: 1px solid #f1f1f1;
 }
@@ -265,7 +265,9 @@
 
 .action-buttons {
   display: flex;
-  gap: 5px;
+  gap: 2px;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .action-buttons .btn {
@@ -276,6 +278,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
+  margin-bottom: 0 !important;
 }
 
 .action-buttons .btn-success {
@@ -286,6 +289,16 @@
 .action-buttons .btn-danger {
   background-color: #dc3545;
   border-color: #dc3545;
+}
+
+/* Remove extra spacing from action button table cells */
+.leave-table td:last-child {
+  padding: 4px 8px;
+}
+
+.leave-table td .action-buttons {
+  margin: 0;
+  padding: 0;
 }
 
 .badge {

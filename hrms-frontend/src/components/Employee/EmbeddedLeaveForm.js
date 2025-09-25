@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest } from '../../api/leave';
+import axios from '../../axios';
 import './EmbeddedLeaveForm.css';
 
 const EmbeddedLeaveForm = () => {
@@ -18,50 +19,91 @@ const EmbeddedLeaveForm = () => {
     totalDays: 0,
     totalHours: 0,
     reason: '',
-    applicantName: '',
-    signatureFile: null
+    applicantName: ''
   });
 
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
 
-  // Auto-fill user info from employee profile API
+  // Auto-fill user info from multiple sources
   useEffect(() => {
     const loadEmployeeData = async () => {
+      console.log('Loading employee profile data...');
+      
+      // First, try localStorage for immediate display
+      const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+      console.log('User info from localStorage:', userInfo);
+      
+      if (userInfo.name || userInfo.first_name) {
+        const fullName = userInfo.name || `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim();
+        setFormData(prev => ({
+          ...prev,
+          name: fullName,
+          department: userInfo.department || 'Not Set',
+          applicantName: fullName,
+          company: 'Cabuyao Concrete Development Corporation'
+        }));
+      }
+      
+      // Then try API to get more complete data
       try {
-        console.log('Loading employee profile data...');
-        
-        // Try to get profile data from the authenticated API first
         let response;
         try {
-          response = await getEmployeeProfile();
-        } catch (authError) {
-          console.log('Auth API failed, trying test API:', authError.message);
-          // Fallback to test API for development (using default user ID 6)
-          response = await getEmployeeProfileTest(6);
+          console.log('Trying main profile API...');
+          // Try the main profile API first (from EmployeeController)
+          response = await axios.get('/employee/profile', {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          console.log('Profile API response:', response.data);
+        } catch (profileError) {
+          console.log('Profile API failed, trying leave profile API:', profileError.message);
+          try {
+            // Try the leave profile API
+            response = await getEmployeeProfile();
+            console.log('Leave profile API response:', response.data);
+          } catch (leaveError) {
+            console.log('Leave profile API failed, trying test API:', leaveError.message);
+            // Fallback to test API for development
+            response = await getEmployeeProfileTest(6);
+            console.log('Test API response:', response.data);
+          }
         }
         
-        const profileData = response.data;
-        console.log('Profile data loaded:', profileData);
+        let profileData = response.data;
+        console.log('Profile data loaded from API:', profileData);
         
-        setFormData(prev => ({
-          ...prev,
-          name: profileData.employee_name || '',
-          department: profileData.department || '',
-          applicantName: profileData.employee_name || '',
-          company: profileData.company || 'Cabuyao Concrete Development Corporation'
-        }));
+        // Handle different API response formats
+        if (profileData.profile) {
+          // EmployeeController response format
+          profileData = profileData.profile;
+        }
+        
+        if (profileData) {
+          const employeeName = profileData.employee_name || 
+                             profileData.name || 
+                             `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim();
+          
+          setFormData(prev => ({
+            ...prev,
+            name: employeeName || prev.name,
+            department: profileData.department || prev.department,
+            applicantName: employeeName || prev.applicantName,
+            company: profileData.company || 'Cabuyao Concrete Development Corporation'
+          }));
+        }
       } catch (error) {
-        console.error('Failed to load employee profile:', error);
-        
-        // Fallback to localStorage if API fails
-        const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
-        setFormData(prev => ({
-          ...prev,
-          name: userInfo.name || '',
-          department: userInfo.department || '',
-          applicantName: userInfo.name || ''
-        }));
+        console.error('Failed to load employee profile from API:', error);
+        // If API fails and we don't have localStorage data, set default values
+        if (!userInfo.name && !userInfo.first_name) {
+          setFormData(prev => ({
+            ...prev,
+            name: 'Test Employee',
+            department: 'IT Department',
+            applicantName: 'Test Employee'
+          }));
+        }
       }
     };
     
@@ -108,19 +150,6 @@ const EmbeddedLeaveForm = () => {
     }));
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Validate file type (images and PDFs)
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
-      if (allowedTypes.includes(file.type)) {
-        setFormData({...formData, signatureFile: file});
-      } else {
-        showAlert('Please upload an image file (JPEG, PNG, GIF) or PDF for e-signature.', 'danger');
-        e.target.value = '';
-      }
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -188,10 +217,6 @@ const EmbeddedLeaveForm = () => {
       }
       submitData.append('reason', formData.reason || 'Leave request');
       
-      // Add signature file if provided
-      if (formData.signatureFile) {
-        submitData.append('signature', formData.signatureFile);
-      }
       
       // Debug the form data being sent
       console.log('=== FORM SUBMISSION DEBUG ===');
@@ -228,13 +253,8 @@ const EmbeddedLeaveForm = () => {
         endDate: null,
         totalDays: 0,
         totalHours: 0,
-        reason: '',
-        signatureFile: null
+        reason: ''
       }));
-      
-      // Clear file input
-      const fileInput = document.getElementById('signatureFile');
-      if (fileInput) fileInput.value = '';
     } catch (error) {
       console.error('Error submitting leave request:', error);
       console.error('Error details:', {
@@ -446,30 +466,13 @@ const EmbeddedLeaveForm = () => {
               className="underlined-input text-center mb-3"
             />
 
-            <Form.Label className="form-label">E-Signature</Form.Label>
-            <Form.Control
-              type="file"
-              id="signatureFile"
-              accept="image/*,.pdf"
-              onChange={handleFileChange}
-              className="form-control-file"
-              required
-            />
-            <small className="text-muted">Upload Image/PDF</small>
-            {formData.signatureFile && (
-              <div className="mt-2">
-                <small className="text-success">
-                  ✓ File selected: {formData.signatureFile.name}
-                </small>
-              </div>
-            )}
           </Col>
         </Row>
 
         {/* Submit Button */}
         <Row>
           <Col className="text-end">
-            <Button variant="success" type="submit" disabled={loading || !formData.signatureFile}>
+            <Button variant="success" type="submit" disabled={loading}>
               {loading ? 'Submitting...' : 'Submit Leave Request'}
             </Button>
           </Col>
