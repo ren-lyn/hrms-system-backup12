@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HR Assistant Dashboard (Standalone)</title>
+
+  <!-- Color system: white primary, blue/dark-blue secondary -->
+  <style>
+    :root {
+      --hrasst-bg: #ffffff;              /* primary background */
+      --hrasst-surface: #ffffff;         /* card background */
+      --hrasst-border: #e5e7eb;          /* light border */
+      --hrasst-text: #111827;            /* body text */
+      --hrasst-muted: #6b7280;           /* muted text */
+      --hrasst-primary: #2563eb;         /* blue */
+      --hrasst-primary-600: #1d4ed8;     /* darker blue */
+      --hrasst-primary-900: #1e3a8a;     /* dark-blue (secondary accent) */
+      --hrasst-ring: rgba(37, 99, 235, 0.15);
+      --hrasst-shadow: 0 8px 24px rgba(2, 6, 23, 0.06);
+      --hrasst-radius-lg: 16px;
+      --hrasst-radius-md: 12px;
+      --hrasst-radius-sm: 10px;
+      --hrasst-spacing: clamp(14px, 1.2vw, 18px);
+    }
+
+    /* Layout wrapper */
+    .hrasst-wrapper {
+      box-sizing: border-box;
+      min-height: 100vh;
+      background: var(--hrasst-bg);
+      color: var(--hrasst-text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      padding: clamp(14px, 2vw, 28px);
+    }
+
+    /* Page heading */
+    .hrasst-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: clamp(12px, 1.5vw, 16px) clamp(14px, 1.8vw, 20px);
+      background: var(--hrasst-surface);
+      border: 1px solid var(--hrasst-border);
+      border-radius: var(--hrasst-radius-lg);
+      box-shadow: var(--hrasst-shadow);
+      margin-bottom: clamp(16px, 2.4vw, 28px);
+    }
+    .hrasst-header h1 {
+      font-size: clamp(18px, 2.2vw, 24px);
+      font-weight: 700;
+      color: var(--hrasst-primary-900);
+      margin: 0;
+    }
+    .hrasst-header .hrasst-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--hrasst-muted);
+      background: #f3f6ff;
+      border: 1px solid #e6ecff;
+      padding: 6px 10px;
+      border-radius: 999px;
+    }
+    .hrasst-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--hrasst-primary);
+      box-shadow: 0 0 0 4px var(--hrasst-ring);
+    }
+
+    /* Grid for the four containers: keep 2x2 on larger screens, 1x4 on narrow */
+    .hrasst-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: clamp(14px, 1.8vw, 22px);
+    }
+    @media (min-width: 880px) {
+      .hrasst-grid {
+        grid-template-columns: 1fr 1fr;  /* preserves 2x2 layout */
+      }
+    }
+
+    /* Cards */
+    .hrasst-card {
+      background: var(--hrasst-surface);
+      border: 1px solid var(--hrasst-border);
+      border-radius: var(--hrasst-radius-lg);
+      box-shadow: var(--hrasst-shadow);
+      padding: clamp(14px, 1.6vw, 20px);
+      cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+      outline: none;
+      position: relative;
+      min-height: 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .hrasst-card:hover, .hrasst-card:focus-visible {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(2, 6, 23, 0.08);
+      border-color: #dbe5ff;
+    }
+    .hrasst-card:active { transform: translateY(0); }
+
+    .hrasst-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .hrasst-card-title {
+      font-weight: 700;
+      letter-spacing: .2px;
+      color: var(--hrasst-primary-900);
+      font-size: clamp(14px, 1.6vw, 16px);
+      margin: 0;
+    }
+    .hrasst-kicker { font-size: 12px; color: var(--hrasst-muted); }
+    .hrasst-divider { height: 1px; background: var(--hrasst-border); margin: 4px 0 8px; }
+
+    /* Revenue chart area */
+    .hrasst-revenue-canvas-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 180px;
+    }
+
+    /* Calendar mini-grid */
+    .hrasst-calendar {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      row-gap: 8px;
+      flex: 1 1 auto;
+    }
+    .hrasst-calendar-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px; border: 1px solid var(--hrasst-border);
+      border-radius: var(--hrasst-radius-sm);
+      background: #f8fbff;
+      color: var(--hrasst-primary-900);
+      font-weight: 600;
+    }
+    .hrasst-cal-grid {
+      --cols: 7;
+      display: grid;
+      grid-template-columns: repeat(var(--cols), 1fr);
+      gap: 6px;
+      font-size: 12px;
+      user-select: none;
+    }
+    .hrasst-cal-cell {
+      border: 1px solid var(--hrasst-border);
+      border-radius: 8px;
+      min-height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff;
+      color: #1f2937;
+    }
+    .hrasst-cal-cell.is-dow {
+      background: #f1f5ff;
+      color: var(--hrasst-primary-900);
+      font-weight: 700;
+      border-style: dashed;
+    }
+    .hrasst-cal-cell.is-today {
+      border-color: var(--hrasst-primary);
+      box-shadow: 0 0 0 3px var(--hrasst-ring) inset;
+      font-weight: 700;
+      color: var(--hrasst-primary-900);
+    }
+
+    /* Absent list */
+    .hrasst-absent-list {
+      list-style: none; padding: 0; margin: 0;
+      display: flex; flex-direction: column; gap: 10px;
+      overflow: hidden auto;
+    }
+    .hrasst-absent-item {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--hrasst-border);
+      border-radius: var(--hrasst-radius-md);
+      background: #fafcff;
+    }
+    .hrasst-avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #93c5fd, #1d4ed8); box-shadow: 0 2px 6px rgba(29, 78, 216, 0.25); }
+    .hrasst-absent-meta { display: flex; flex-direction: column; line-height: 1.15; }
+    .hrasst-absent-name { font-weight: 600; font-size: 13px; }
+    .hrasst-absent-date { font-size: 12px; color: var(--hrasst-muted); }
+    .hrasst-badge { font-size: 11px; font-weight: 700; letter-spacing: .3px; padding: 6px 8px; border-radius: 999px; white-space: nowrap; color: #0b4c24; background: #d1fae5; border: 1px solid #bbf7d0; }
+
+    /* Total employees */
+    .hrasst-total-wrap { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; }
+    .hrasst-total-num { font-size: clamp(36px, 4.8vw, 48px); font-weight: 800; color: var(--hrasst-primary-900); line-height: 1; }
+    .hrasst-trend { display: inline-flex; align-items: center; gap: 6px; color: #065f46; font-weight: 700; font-size: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 6px 8px; border-radius: 999px; }
+    .hrasst-breakdown { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .hrasst-kv { border: 1px dashed var(--hrasst-border); background: #f9fbff; border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 12px; color: var(--hrasst-muted); }
+    .hrasst-kv strong { color: var(--hrasst-primary-900); }
+
+    /* Modal (reusable) */
+    .hrasst-modal { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; background: rgba(2, 6, 23, 0.52); padding: 18px; }
+    .hrasst-modal[aria-hidden="false"] { display: flex; }
+    .hrasst-dialog { width: min(980px, 96vw); max-height: 88vh; overflow: hidden; background: var(--hrasst-surface); border-radius: 18px; border: 1px solid var(--hrasst-border); box-shadow: 0 20px 60px rgba(2, 6, 23, 0.25); display: grid; grid-template-rows: auto 1fr auto; }
+    .hrasst-dialog-hd { padding: 14px 16px; border-bottom: 1px solid var(--hrasst-border); display: flex; align-items: center; justify-content: space-between; gap: 10px; background: linear-gradient(180deg, #f7faff 0%, #ffffff 100%); }
+    .hrasst-dialog-title { margin: 0; font-size: 16px; font-weight: 800; color: var(--hrasst-primary-900); display: inline-flex; align-items: center; gap: 10px; }
+    .hrasst-close { border: 1px solid #c7d2fe; background: #eef2ff; color: var(--hrasst-primary-900); padding: 8px 10px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+    .hrasst-dialog-bd { padding: clamp(14px, 1.6vw, 18px); overflow: auto; }
+    .hrasst-dialog-ft { padding: 12px 16px; border-top: 1px solid var(--hrasst-border); display: flex; justify-content: flex-end; background: #fbfdff; }
+
+    /* Utility */
+    .hrasst-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+  </style>
+</head>
+<body>
+  <div id="hr-assistant-dashboard" class="hrasst-wrapper" aria-label="HR Assistant Dashboard">
+    <div class="hrasst-header" role="region" aria-label="Header">
+      <h1>Dashboard</h1>
+      <span class="hrasst-status" title="Module is ready to connect">
+        <span class="hrasst-dot" aria-hidden="true"></span>
+        Ready to connect
+      </span>
+    </div>
+
+    <!-- 2x2 responsive grid: Revenue Report, Calendar, Absent, Total Employees -->
+    <section class="hrasst-grid" aria-label="Dashboard Grid">
+      <!-- Revenue Report -->
+      <article class="hrasst-card" tabindex="0" role="button" data-modal="revenue" aria-label="Open Revenue Report details">
+        <div class="hrasst-card-header">
+          <h2 class="hrasst-card-title">Revenue Report</h2>
+          <span class="hrasst-kicker">Sales (₱)</span>
+        </div>
+        <div class="hrasst-divider"></div>
+        <div class="hrasst-revenue-canvas-wrap">
+          <canvas id="hrasst-revenue-canvas" aria-label="Revenue chart" role="img"></canvas>
+        </div>
+      </article>
+
+      <!-- Calendar -->
+      <article class="hrasst-card" tabindex="0" role="button" data-modal="calendar" aria-label="Open Calendar details">
+        <div class="hrasst-card-header">
+          <h2 class="hrasst-card-title">Calendar</h2>
+          <span class="hrasst-kicker" id="hrasst-cal-kicker"></span>
+        </div>
+        <div class="hrasst-divider"></div>
+        <div class="hrasst-calendar" id="hrasst-calendar" aria-label="Monthly calendar">
+          <div class="hrasst-calendar-header" id="hrasst-cal-header"></div>
+          <div class="hrasst-cal-grid" id="hrasst-cal-grid" aria-label="Calendar grid"></div>
+        </div>
+      </article>
+
+      <!-- Absent Employees -->
+      <article class="hrasst-card" tabindex="0" role="button" data-modal="absent" aria-label="Open Absent Employees details">
+        <div class="hrasst-card-header">
+          <h2 class="hrasst-card-title">Absent Employees</h2>
+          <span class="hrasst-kicker" id="hrasst-absent-updated"></span>
+        </div>
+        <div class="hrasst-divider"></div>
+        <ul class="hrasst-absent-list" id="hrasst-absent-list" aria-label="Absent employees list">
+          <!-- populated by JS -->
+        </ul>
+      </article>
+
+      <!-- Total Employees -->
+      <article class="hrasst-card" tabindex="0" role="button" data-modal="employees" aria-label="Open Total Employees details">
+        <div class="hrasst-card-header">
+          <h2 class="hrasst-card-title">Total Employees</h2>
+        </div>
+        <div class="hrasst-divider"></div>
+        <div class="hrasst-total-wrap">
+          <div class="hrasst-total-num" id="hrasst-total-employees">120</div>
+          <div class="hrasst-trend" id="hrasst-total-trend" title="vs last month">▲ +5%</div>
+        </div>
+        <div class="hrasst-breakdown">
+          <div class="hrasst-kv"><span>Full-Time:</span> <strong id="hrasst-total-ft">95</strong></div>
+          <div class="hrasst-kv"><span>Training:</span>  <strong id="hrasst-total-tr">25</strong></div>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <!-- Reusable Modal -->
+  <div class="hrasst-modal" id="hrasst-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="hrasst-modal-title">
+    <div class="hrasst-dialog">
+      <header class="hrasst-dialog-hd">
+        <h3 class="hrasst-dialog-title" id="hrasst-modal-title">Details</h3>
+        <button type="button" class="hrasst-close" id="hrasst-modal-close" aria-label="Close details">Close</button>
+      </header>
+      <div class="hrasst-dialog-bd" id="hrasst-modal-body">
+        <!-- injected -->
+      </div>
+      <footer class="hrasst-dialog-ft">
+        <button type="button" class="hrasst-close" id="hrasst-modal-done" aria-label="Close">Done</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Chart.js (CDN) for standalone preview. Safe to replace with your bundler later. -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <script>
+    (function () {
+      // Namespace to avoid collisions
+      const NS = 'hrasst';
+      const $ = (sel, ctx = document) => ctx.querySelector(sel);
+
+      // ---------- Revenue Chart (no animation loop, single init) ----------
+      let revenueChart;
+      function initRevenueChart(canvas, data, labels) {
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        // Destroy existing instance if any (defensive for hot reloads)
+        if (revenueChart) {
+          revenueChart.destroy();
+          revenueChart = undefined;
+        }
+
+        const ds = {
+          label: 'Sales (₱)',
+          data: data || [12000, 15000, 10000, 17000, 14000, 20000],
+          backgroundColor: '#60a5fa',
+          hoverBackgroundColor: '#3b82f6',
+          borderColor: '#2563eb',
+          borderWidth: 1,
+          borderRadius: 6,
+          barPercentage: 0.6,
+          categoryPercentage: 0.6
+        };
+
+        revenueChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+            datasets: [ds]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+              duration: 700,
+              // Chart.js v4 does not loop animations by default; keep explicit to avoid confusion
+              loop: false
+            },
+            scales: {
+              x: {
+                grid: { color: 'rgba(17, 24, 39, 0.06)' },
+                ticks: { color: '#1f2937', font: { weight: 600 } }
+              },
+              y: {
+                grid: { color: 'rgba(17, 24, 39, 0.06)' },
+                ticks: {
+                  color: '#374151',
+                  callback: (v) => new Intl.NumberFormat('en-PH').format(v)
+                }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => ' ₱ ' + new Intl.NumberFormat('en-PH').format(ctx.parsed.y)
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // ---------- Calendar (lightweight, no dependency) ----------
+      function makeCalendar(date = new Date()) {
+        const y = date.getFullYear();
+        const m = date.getMonth();
+        const first = new Date(y, m, 1);
+        const last = new Date(y, m + 1, 0);
+        const firstDow = first.getDay();  // 0-6 (Sun-Sat)
+        const daysInMonth = last.getDate();
+        const monthName = date.toLocaleString(undefined, { month: 'short' });
+        const headerEl = $('#hrasst-cal-header');
+        const gridEl = $('#hrasst-cal-grid');
+        const kicker = $('#hrasst-cal-kicker');
+
+        headerEl.textContent = `${monthName} ${y}`;
+        kicker.textContent = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+        // Build
+        gridEl.innerHTML = '';
+        const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        dows.forEach(d => {
+          const cell = document.createElement('div');
+          cell.className = 'hrasst-cal-cell is-dow';
+          cell.textContent = d;
+          cell.setAttribute('aria-hidden', 'true');
+          gridEl.appendChild(cell);
+        });
+
+        // Empty slots before first day
+        for (let i = 0; i < firstDow; i++) {
+          const slot = document.createElement('div');
+          slot.className = 'hrasst-cal-cell';
+          slot.setAttribute('aria-hidden', 'true');
+          gridEl.appendChild(slot);
+        }
+        // Days
+        const today = new Date();
+        for (let d = 1; d <= daysInMonth; d++) {
+          const cell = document.createElement('div');
+          const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+          cell.className = 'hrasst-cal-cell' + (isToday ? ' is-today' : '');
+          cell.textContent = String(d);
+          gridEl.appendChild(cell);
+        }
+      }
+
+      // ---------- Absent Employees (static sample; replace via API later) ----------
+      const sampleAbsent = [
+        { name: 'Barayang, Crystal Anne A.', date: 'Feb 15', status: 'On Leave' },
+        { name: 'Cabuyao, Donna Mae N.',      date: 'Feb 15', status: 'On Leave' },
+        { name: 'Concina, Renelyn S.',        date: 'Feb 15–18', status: 'Sick Leave' },
+        { name: 'Osias, Shariel D.',          date: 'Feb 15–20', status: 'Vacation Leave' }
+      ];
+      function renderAbsent(list = sampleAbsent) {
+        const ul = $('#hrasst-absent-list');
+        ul.innerHTML = '';
+        list.forEach(item => {
+          const li = document.createElement('li');
+          li.className = 'hrasst-absent-item';
+          li.innerHTML = `
+            <span class="hrasst-avatar" aria-hidden="true"></span>
+            <span class="hrasst-absent-meta">
+              <span class="hrasst-absent-name">${item.name}</span>
+              <span class="hrasst-absent-date">${item.date}</span>
+            </span>
+            <span class="hrasst-badge">${item.status}</span>
+          `;
+          ul.appendChild(li);
+        });
+
+        const now = new Date();
+        $('#hrasst-absent-updated').textContent =
+          'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+          ' / ' + now.toLocaleDateString();
+      }
+
+      // ---------- Modal plumbing ----------
+      const modal = $('#hrasst-modal');
+      const modalTitle = $('#hrasst-modal-title');
+      const modalBody = $('#hrasst-modal-body');
+      const trapSelectors = 'a[href], button, textarea, input, select, [tabindex]:not([tabindex="-1"])';
+      let lastActive = null;
+
+      function openModal(kind) {
+        lastActive = document.activeElement;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+
+        // Inject content based on "kind"
+        modalBody.innerHTML = '';
+        if (kind === 'revenue') {
+          modalTitle.textContent = 'Revenue Report – Details';
+          const wrap = document.createElement('div');
+          wrap.style.minHeight = '360px';
+          wrap.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <div>
+                <div style="font-weight:700;color:#1e3a8a;">YTD Sales Overview</div>
+                <div style="font-size:12px;color:#6b7280;">Clean, non-looping visualization for clear decision-making</div>
+              </div>
+              <div style="font-size:12px;color:#6b7280;">Currency: PHP</div>
+            </div>
+            <div style="position:relative;height:340px;">
+              <canvas id="hrasst-revenue-modal"></canvas>
+            </div>
+          `;
+          modalBody.appendChild(wrap);
+          // Build a second chart instance in modal (also single init, no loop)
+          const c = $('#hrasst-revenue-modal');
+          new Chart(c.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+              datasets: [{
+                label: 'Sales (₱)',
+                data: revenueChart ? revenueChart.data.datasets[0].data : [12000,15000,10000,17000,14000,20000],
+                backgroundColor: '#93c5fd',
+                borderColor: '#2563eb',
+                borderWidth: 1,
+                borderRadius: 8
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 500, loop: false },
+              plugins: { legend: { display: false }},
+              scales: {
+                x: { grid: { color: 'rgba(17,24,39,.06)' } },
+                y: {
+                  grid: { color: 'rgba(17,24,39,.06)' },
+                  ticks: { callback: (v) => '₱ ' + new Intl.NumberFormat('en-PH').format(v) }
+                }
+              }
+            }
+          });
+        }
+        if (kind === 'calendar') {
+          modalTitle.textContent = 'Calendar – Month View';
+          const host = document.createElement('div');
+          host.innerHTML = `
+            <div class="hrasst-calendar">
+              <div class="hrasst-calendar-header" id="hrasst-cal-header-lg"></div>
+              <div class="hrasst-cal-grid" id="hrasst-cal-grid-lg"></div>
+            </div>
+          `;
+          modalBody.appendChild(host);
+          // Render a larger copy
+          const y = new Date();
+          const headerEl = $('#hrasst-cal-header-lg');
+          const gridEl = $('#hrasst-cal-grid-lg');
+          const monthName = y.toLocaleString(undefined, { month: 'long' });
+          headerEl.textContent = `${monthName} ${y.getFullYear()}`;
+          const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          gridEl.innerHTML = '';
+          dows.forEach(d => {
+            const cell = document.createElement('div');
+            cell.className = 'hrasst-cal-cell is-dow';
+            cell.textContent = d;
+            gridEl.appendChild(cell);
+          });
+          const first = new Date(y.getFullYear(), y.getMonth(), 1).getDay();
+          const last = new Date(y.getFullYear(), y.getMonth()+1, 0).getDate();
+          for (let i=0; i<first; i++) gridEl.appendChild(Object.assign(document.createElement('div'), { className: 'hrasst-cal-cell' }));
+          const today = new Date();
+          for (let d=1; d<=last; d++) {
+            const el = document.createElement('div');
+            const isToday = d===today.getDate() && y.getMonth()===today.getMonth() && y.getFullYear()===today.getFullYear();
+            el.className = 'hrasst-cal-cell' + (isToday ? ' is-today' : '');
+            el.textContent = d;
+            gridEl.appendChild(el);
+          }
+        }
+        if (kind === 'absent') {
+          modalTitle.textContent = 'Absent Employees – Details';
+          const list = document.createElement('ul');
+          list.className = 'hrasst-absent-list';
+          (Array.isArray(window.hraData?.absent) ? window.hraData.absent : sampleAbsent).forEach(item => {
+            const li = document.createElement('li');
+            li.className = 'hrasst-absent-item';
+            li.innerHTML = `
+              <span class="hrasst-avatar"></span>
+              <span class="hrasst-absent-meta">
+                <span class="hrasst-absent-name">${item.name}</span>
+                <span class="hrasst-absent-date">${item.date}</span>
+              </span>
+              <span class="hrasst-badge">${item.status}</span>
+            `;
+            list.appendChild(li);
+          });
+          modalBody.appendChild(list);
+        }
+        if (kind === 'employees') {
+          modalTitle.textContent = 'Total Employees – Breakdown';
+          const wrap = document.createElement('div');
+          wrap.innerHTML = `
+            <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:16px;align-items:stretch;">
+              <div style="position:relative;border:1px solid var(--hrasst-border);border-radius:14px;padding:10px;">
+                <div style="font-weight:700;color:#1e3a8a;margin:6px 4px 8px;">Headcount Trend</div>
+                <div style="position:relative;height:280px;"><canvas id=\"hrasst-emp-trend\"></canvas></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <div class="hrasst-kv" style="font-size:14px;"><span>Total:</span> <strong>${$('#hrasst-total-employees').textContent}</strong></div>
+                <div class="hrasst-kv" style="font-size:14px;"><span>Full-Time:</span> <strong>${$('#hrasst-total-ft').textContent}</strong></div>
+                <div class="hrasst-kv" style="font-size:14px;"><span>Training:</span> <strong>${$('#hrasst-total-tr').textContent}</strong></div>
+                <div class="hrasst-kv" style="font-size:14px;"><span>Trend:</span> <strong>${$('#hrasst-total-trend').textContent}</strong></div>
+              </div>
+            </div>
+          `;
+          modalBody.appendChild(wrap);
+          // Small trend line (non-looping)
+          const c = $('#hrasst-emp-trend');
+          new Chart(c.getContext('2d'), {
+            type: 'line',
+            data: {
+              labels: ['Jan','Feb','Mar','Apr','May','Jun'],
+              datasets: [{
+                data: [100, 105, 108, 110, 114, Number($('#hrasst-total-employees').textContent) || 120],
+                borderColor: '#16a34a',
+                backgroundColor: 'rgba(22, 163, 74, 0.12)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 2
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 500, loop: false },
+              plugins: { legend: { display: false }, tooltip: { intersect: false } },
+              scales: {
+                x: { grid: { display: false } },
+                y: { grid: { color: 'rgba(17,24,39,.06)' }, ticks: { precision: 0 } }
+              }
+            }
+          });
+        }
+
+        // Focus trap basics
+        const first = modal.querySelectorAll(trapSelectors)[0];
+        first && first.focus();
+        modal.addEventListener('keydown', trapFocus);
+      }
+
+      function closeModal() {
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        modal.removeEventListener('keydown', trapFocus);
+        lastActive && lastActive.focus();
+      }
+
+      function trapFocus(e) {
+        if (e.key !== 'Tab') return;
+        const focusables = modal.querySelectorAll(trapSelectors);
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+        else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+      }
+
+      $('#'+NS+'-modal-close').addEventListener('click', closeModal);
+      $('#'+NS+'-modal-done').addEventListener('click', closeModal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      document.addEventListener('keydown', (e) => { if (modal.getAttribute('aria-hidden') === 'false' && e.key === 'Escape') closeModal(); });
+
+      // ---------- Card click handling ----------
+      document.querySelectorAll('.hrasst-card').forEach(card => {
+        card.addEventListener('click', () => openModal(card.dataset.modal));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openModal(card.dataset.modal); }
+        });
+      });
+
+      // ---------- Initial render ----------
+      document.addEventListener('DOMContentLoaded', () => {
+        initRevenueChart($('#hrasst-revenue-canvas'));
+        makeCalendar();
+        renderAbsent();
+      });
+
+      // ---------- Public API for later integration ----------
+      window.hraData = window.hraData || {};
+      window.hraDashboard = {
+        // Replace entire revenue dataset (array of numbers) and optional labels
+        updateRevenue: function (values, labels) {
+          if (!Array.isArray(values) || values.length === 0) return;
+          if (!revenueChart) initRevenueChart($('#hrasst-revenue-canvas'));
+          revenueChart.data.datasets[0].data = values.slice();
+          if (Array.isArray(labels) && labels.length === values.length) {
+            revenueChart.data.labels = labels.slice();
+          }
+          revenueChart.update();
+        },
+        // Update absent list [{ name, date, status }]
+        setAbsentList: function (list) {
+          if (!Array.isArray(list)) return;
+          window.hraData.absent = list.slice();
+          renderAbsent(window.hraData.absent);
+        },
+        // Update employee totals: { total, fullTime, training, trendText }
+        setEmployeeTotals: function (payload) {
+          if (!payload) return;
+          if (typeof payload.total === 'number') $('#hrasst-total-employees').textContent = String(payload.total);
+          if (typeof payload.fullTime === 'number') $('#hrasst-total-ft').textContent = String(payload.fullTime);
+          if (typeof payload.training === 'number') $('#hrasst-total-tr').textContent = String(payload.training);
+          if (typeof payload.trendText === 'string') $('#hrasst-total-trend').textContent = payload.trendText;
+        },
+        // Redraw the current month (optional date param)
+        refreshCalendar: function (date) {
+          makeCalendar(date instanceof Date ? date : new Date());
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

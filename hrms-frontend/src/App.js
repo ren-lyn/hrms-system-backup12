@@ -7,7 +7,6 @@ import RegisterApplicant from './pages/RegisterApplicant';
 import JobPortal from './components/JobPortal'; // Add this import
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-import HrAssistantDashboard from './pages/HrAssistant/Dashboard';
 import HrStaffDashboard from './pages/HrStaffDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import ApplicantDashboard from './pages/ApplicantDashboard';
@@ -31,6 +30,7 @@ import JobPostings from './components/JobPostings';
 import ApplicationsDashboard from "./components/HrAssistant/Dashboard/ApplicationsDashboard";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import StandaloneAssistantDashboard from './components/HrAssistant/Dashboard/StandaloneAssistantDashboard';
 
 function App() {
   useEffect(() => {
@@ -52,6 +52,9 @@ function App() {
         <Route path="/register" element={<RegisterApplicant />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
 
+        {/* Public preview route for the consolidated HR Assistant Dashboard */}
+        <Route path="/standalone/hr-assistant-dashboard" element={<StandaloneAssistantDashboard />} />
+
         {/* HR Assistant Dashboard + Sidebar Layout */}
         <Route
           path="/dashboard/hr-assistant"
@@ -61,7 +64,7 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<HrAssistantDashboard />} />
+          <Route index element={<StandaloneAssistantDashboard />} />
           <Route path="employee-records" element={<EmployeeRecords />} />
           <Route path="leave" element={<LeaveManagement />} />
           <Route path="my-calendar" element={<MyCalendar />} />
