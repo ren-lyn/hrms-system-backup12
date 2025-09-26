@@ -21,6 +21,7 @@ import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ N
 
 import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagement'; // ✅ New Cash Advance management
 import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
+import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Calendar
 
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -63,6 +64,7 @@ function App() {
           <Route index element={<HrAssistantDashboard />} />
           <Route path="employee-records" element={<EmployeeRecords />} />
           <Route path="leave" element={<LeaveManagement />} />
+          <Route path="my-calendar" element={<MyCalendar />} />
           <Route path="cash-advances" element={<CashAdvanceManagement />} />
           <Route path="evaluation" element={<EmployeeEvaluationList />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />

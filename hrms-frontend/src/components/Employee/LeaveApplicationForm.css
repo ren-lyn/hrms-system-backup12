@@ -361,6 +361,25 @@
   font-weight: 500;
 }
 
+/* Validation feedback boxes */
+.bg-light-success {
+  background-color: #d4edda !important;
+}
+
+.bg-light-danger {
+  background-color: #f8d7da !important;
+}
+
+.border-success {
+  border-color: #28a745 !important;
+  border-width: 1px !important;
+}
+
+.border-danger {
+  border-color: #dc3545 !important;
+  border-width: 1px !important;
+}
+
 /* Leave type entitlement display */
 .text-muted {
   font-size: 0.875rem;

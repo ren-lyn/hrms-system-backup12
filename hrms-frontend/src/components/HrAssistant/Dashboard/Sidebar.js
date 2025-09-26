@@ -5,7 +5,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
-  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList
+  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt
 } from "react-icons/fa";
 
 
@@ -66,6 +66,14 @@ const Sidebar = () => {
             className={({ isActive }) => (isActive ? 'active' : '')}
           >
             <FaPlaneDeparture /> Leave Management
+          </NavLink>
+        </li>
+        <li>
+          <NavLink
+            to="my-calendar"
+            className={({ isActive }) => (isActive ? 'active' : '')}
+          >
+            <FaCalendarAlt /> My Calendar
           </NavLink>
         </li>
         <li>

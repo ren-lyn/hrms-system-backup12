@@ -16,6 +16,18 @@ class EvaluationForm extends Model
         'status',
     ];
 
+    protected static function booted()
+    {
+        static::saved(function (EvaluationForm $form) {
+            if ($form->status === 'Active') {
+                // Ensure only this form remains active
+                static::where('id', '!=', $form->id)
+                    ->where('status', 'Active')
+                    ->update(['status' => 'Inactive']);
+            }
+        });
+    }
+
     /**
      * An evaluation form belongs to the HR staff who created it.
      */

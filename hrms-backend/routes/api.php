@@ -10,7 +10,12 @@ use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
 use App\Http\Controllers\Api\EvaluationAdministrationController;
+use App\Http\Controllers\API\ManagerEvaluationController;
 use App\Http\Controllers\Api\CashAdvanceController;
+use App\Http\Controllers\HrCalendarController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\NotificationStreamController;
+
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -58,6 +63,50 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::post('/register', [ApplicantController::class, 'register']);
 
+
+// Debug routes for manager evaluation (temporary)
+Route::get('/debug/employees', function () {
+    $employees = \App\Models\User::with(['employeeProfile', 'role'])
+        ->whereHas('role', function($query) {
+            $query->where('name', 'Employee');
+        })
+        ->get();
+    return response()->json([
+        'count' => $employees->count(),
+        'employees' => $employees->map(function($emp) {
+            return [
+                'id' => $emp->id,
+                'name' => $emp->name,
+                'email' => $emp->email,
+                'role' => $emp->role->name ?? 'No role',
+                'profile' => $emp->employeeProfile ? [
+                    'employee_id' => $emp->employeeProfile->employee_id,
+                    'department' => $emp->employeeProfile->department,
+                    'position' => $emp->employeeProfile->position,
+                ] : null
+            ];
+        })
+    ]);
+});
+
+Route::get('/debug/active-form', function () {
+    $activeForm = \App\Models\EvaluationForm::with('questions')
+        ->where('status', 'Active')
+        ->latest()
+        ->first();
+    return response()->json([
+        'found' => $activeForm ? true : false,
+        'form' => $activeForm ? [
+            'id' => $activeForm->id,
+            'title' => $activeForm->title,
+            'status' => $activeForm->status,
+            'questions_count' => $activeForm->questions->count()
+        ] : null,
+        'all_forms' => \App\Models\EvaluationForm::select('id', 'title', 'status')->get()
+    ]);
+});
+
+
 // Public job postings (for applicants to view)
 Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
 
@@ -97,6 +146,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/my-requests', [LeaveRequestController::class, 'myRequests']); // Employee's own requests
     Route::get('/leave-requests/my-balance', [LeaveRequestController::class, 'getLeaveBalance']); // Employee leave balance
     Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // Check if employee can submit new request
+    Route::get('/leave-requests/{id}/download-pdf', [LeaveRequestController::class, 'downloadPdf']); // Download leave request as PDF
 });
 
 //Cash Advances
@@ -124,6 +174,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/leave-requests/{id}/manager-reject', [LeaveRequestController::class, 'managerReject']); // manager reject
     Route::get('/leave-requests/manager-pending', [LeaveRequestController::class, 'getManagerPendingRequests']); // manager pending requests
     Route::get('/leave-requests/hr-pending', [LeaveRequestController::class, 'getHRPendingRequests']); // hr pending requests
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::get('/notifications/stream', [NotificationStreamController::class, 'stream']);
 
 
 });
@@ -153,6 +207,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/active/forms', [EvaluationAdministrationController::class, 'getActiveForms']);
     });
 
+    // Manager Evaluation Routes
+    Route::prefix('manager-evaluations')->group(function () {
+        Route::get('/active-form', [ManagerEvaluationController::class, 'getActiveForm']);
+        Route::get('/employees', [ManagerEvaluationController::class, 'getEmployees']);
+        Route::post('/start/{employeeId}', [ManagerEvaluationController::class, 'startEvaluation']);
+        Route::post('/submit/{evaluationId}', [ManagerEvaluationController::class, 'submitEvaluation']);
+        Route::get('/result/{evaluationId}', [ManagerEvaluationController::class, 'getEvaluationResult']);
+        Route::get('/result/{evaluationId}/pdf', [ManagerEvaluationController::class, 'downloadPdf']);
+        Route::get('/employee/{employeeId}/results', [ManagerEvaluationController::class, 'getEmployeeResults']);
+        Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluations']);
+    });
+
     // Cash Advance Management
     Route::prefix('cash-advances')->group(function () {
         // Employee routes (submit request and view own requests)
@@ -165,5 +231,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{id}', [CashAdvanceController::class, 'show']); // View specific request details
         Route::put('/{id}/approve', [CashAdvanceController::class, 'approve']); // Approve request
         Route::put('/{id}/reject', [CashAdvanceController::class, 'reject']); // Reject request
+    });
+    
+    // HR Calendar Management
+    Route::prefix('hr-calendar')->group(function () {
+        Route::get('/', [HrCalendarController::class, 'index']); // List events
+        Route::post('/', [HrCalendarController::class, 'store']); // Create event
+        Route::get('/todays-events', [HrCalendarController::class, 'todaysEvents']); // Today's events
+        Route::get('/upcoming', [HrCalendarController::class, 'upcomingEvents']); // Upcoming events
+        Route::get('/check-availability', [HrCalendarController::class, 'checkHrAvailability']); // Check if HR is available
+        Route::get('/{id}', [HrCalendarController::class, 'show']); // View specific event
+        Route::put('/{id}', [HrCalendarController::class, 'update']); // Update event
+        Route::delete('/{id}', [HrCalendarController::class, 'destroy']); // Delete event
+        Route::put('/{id}/cancel', [HrCalendarController::class, 'cancel']); // Cancel event
+        Route::put('/{id}/complete', [HrCalendarController::class, 'complete']); // Complete event
     });
 });

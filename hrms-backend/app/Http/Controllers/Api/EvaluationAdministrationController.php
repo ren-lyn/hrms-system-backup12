@@ -13,6 +13,94 @@ class EvaluationAdministrationController extends Controller
     // Get all evaluation forms with their questions
     public function index()
     {
+        // Enforce single active form: keep the most recently updated/created Active, inactivate the rest
+        try {
+            $activeForms = EvaluationForm::where('status', 'Active')
+                ->orderByDesc('updated_at')
+                ->orderByDesc('created_at')
+                ->get();
+
+            // Prefer 'Assesstment 1' (typo-friendly) or 'Assessment 1' as the default active if present
+            $preferred = EvaluationForm::whereIn('title', ['Assesstment 1', 'Assessment 1'])
+                ->orderByDesc('updated_at')
+                ->orderByDesc('created_at')
+                ->first();
+
+            if ($activeForms->count() > 1) {
+                $keepId = $preferred ? $preferred->id : $activeForms->first()->id;
+                EvaluationForm::where('status', 'Active')
+                    ->where('id', '!=', $keepId)
+                    ->update(['status' => 'Inactive']);
+            } elseif ($activeForms->count() === 0 && $preferred) {
+                // If no active form, promote preferred form to Active
+                $preferred->update(['status' => 'Active']);
+            }
+        } catch (\Throwable $e) {
+            // Do not fail index() if cleanup fails; proceed to list
+        }
+
+        // Ensure a default 'Assessment 1' form exists
+        try {
+            $existingDefault = EvaluationForm::whereIn('title', ['Assesstment 1', 'Assessment 1'])->first();
+            if (!$existingDefault) {
+                $activeExists = EvaluationForm::where('status', 'Active')->exists();
+                $creatorId = optional(auth()->user())->id ?? (\App\Models\User::min('id') ?? 1);
+                $defaultForm = EvaluationForm::create([
+                    'hr_staff_id' => $creatorId,
+                    'title' => 'Assessment 1',
+                    'description' => 'Default performance evaluation form based on the company template.',
+                    'status' => $activeExists ? 'Inactive' : 'Active',
+                ]);
+
+                $questions = [
+                    [
+                        'category' => 'Punctuality & Attendance',
+                        'question_text' => 'Pagpasok sa tamang oras at hindi pagliban (Punctuality & Attendance)',
+                        'description' => 'Ang empleyadong ito ay pumapasok sa tamang oras at hindi lumalampas sa oras ng pagpasok. Gayundin ang hindi pagliban o pag-absent sa araw at oras ng trabaho.',
+                    ],
+                    [
+                        'category' => 'Attitude towards co-workers',
+                        'question_text' => 'Pag-uugali sa kapwa manggagawa (Attitude towards co-workers)',
+                        'description' => 'Nagpapakita ng tama at magandang asal sa mga katrabaho sa loob at labas ng kumpanya nakakataas man o kapwa nya manggagawa.',
+                    ],
+                    [
+                        'category' => 'Quality of work',
+                        'question_text' => 'Kalidad ng trabaho (Quality of work)',
+                        'description' => 'Ang bawat gawaing inatas at may kinalaman sa trabaho ay may magandang resulta at pasok sa kalidad na kailangan ng kumpanya at kliyente.',
+                    ],
+                    [
+                        'category' => 'Initiative',
+                        'question_text' => 'Pagkukusa (Initiative)',
+                        'description' => 'May sariling kusa sa gawain na kailangan sa trabaho at ng kumpanya na hindi kailangan utusan at subaybayan ng mga nakakataas.',
+                    ],
+                    [
+                        'category' => 'Teamwork',
+                        'question_text' => 'Pagtutulungan ng magkasama (Teamwork)',
+                        'description' => 'Paggawa sa trabaho ng sama-sama at tulung-tulong na hindi nagsisisiilbing pabigat sa ibang kasamahan, at ito ay nagreresulta ng madami at magandang gawa at gawi na produkto.',
+                    ],
+                    [
+                        'category' => 'Trustworthy and Reliable',
+                        'question_text' => 'Mapagkakatiwalaan at Maaasahan (Trustworthy and Reliable)',
+                        'description' => 'Ang empleyadong ito ay may tamang pag-uugali kahit hindi man ito binabantayan, may abilidad na iwanan at ihabilin ang mga gawain ng walang pagdududa.',
+                    ],
+                ];
+
+                foreach ($questions as $index => $q) {
+                    EvaluationQuestion::create([
+                        'evaluation_form_id' => $defaultForm->id,
+                        'category' => $q['category'],
+                        'question_text' => $q['question_text'],
+                        'description' => $q['description'],
+                        'order' => $index + 1,
+                    ]);
+                }
+
+                // Ensure default remains the preferred active if none existed
+            }
+        } catch (\Throwable $e) {
+            // ignore creation failure and continue listing
+        }
+
         return EvaluationForm::with(['questions', 'evaluations'])
             ->latest()
             ->get()
@@ -55,12 +143,20 @@ class EvaluationAdministrationController extends Controller
         try {
             DB::beginTransaction();
 
+            // Decide status: if an Active form already exists, force new form to be Inactive
+            $statusToUse = $request->status;
+            $hasActive = EvaluationForm::where('status', 'Active')->exists();
+            if ($statusToUse === 'Active' && $hasActive) {
+                $statusToUse = 'Inactive';
+            }
+
+
             // Create evaluation form
             $evaluationForm = EvaluationForm::create([
                 'hr_staff_id' => auth()->id(),
                 'title' => $request->title,
                 'description' => $request->description,
-                'status' => $request->status,
+                'status' => $statusToUse,
             ]);
 
             // Create questions
@@ -132,6 +228,13 @@ class EvaluationAdministrationController extends Controller
         try {
             DB::beginTransaction();
 
+            // If setting this form Active, deactivate others first
+            if ($request->status === 'Active') {
+                EvaluationForm::where('id', '!=', $evaluationForm->id)
+                    ->where('status', 'Active')
+                    ->update(['status' => 'Inactive']);
+            }
+
             // Update evaluation form
             $evaluationForm->update([
                 'title' => $request->title,
@@ -198,12 +301,7 @@ class EvaluationAdministrationController extends Controller
         try {
             $evaluationForm = EvaluationForm::findOrFail($id);
             
-            // Check if form has been used in evaluations
-            if ($evaluationForm->evaluations()->exists()) {
-                return response()->json([
-                    'message' => 'Cannot delete evaluation form that has been used for evaluations.'
-                ], 422);
-            }
+            // Allow deleting even if used; evaluations will be preserved with null form reference
 
             $evaluationForm->delete();
 
@@ -226,6 +324,13 @@ class EvaluationAdministrationController extends Controller
             $evaluationForm = EvaluationForm::findOrFail($id);
             $newStatus = $evaluationForm->status === 'Active' ? 'Inactive' : 'Active';
             
+            if ($newStatus === 'Active') {
+                // Deactivate all other active forms
+                EvaluationForm::where('id', '!=', $evaluationForm->id)
+                    ->where('status', 'Active')
+                    ->update(['status' => 'Inactive']);
+            }
+
             $evaluationForm->update(['status' => $newStatus]);
 
             return response()->json([

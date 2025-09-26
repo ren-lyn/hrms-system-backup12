@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { ArrowLeft, Calendar } from 'lucide-react';
 import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, checkLeaveEligibility, getLeaveTypes } from '../../api/leave';
+import { checkLeaveSubmissionAvailability } from '../../api/calendar';
 import axios from '../../axios';
 import { fileToBase64 } from '../../utils/signatureUtils';
 import './LeaveApplicationForm.css';
@@ -28,12 +29,14 @@ const LeaveApplicationForm = ({ onBack }) => {
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [leaveEntitlements, setLeaveEntitlements] = useState({});
   const [dateValidation, setDateValidation] = useState({ valid: true, message: '' });
+  const [hrAvailability, setHrAvailability] = useState({ available: true, message: '', endTime: null });
 
   // Auto-fill user info and check eligibility on component mount
   useEffect(() => {
     fetchEmployeeProfile();
     checkEligibilityStatus();
     fetchLeaveTypesData();
+    checkHrAvailability();
   }, []);
 
   const fetchEmployeeProfile = async () => {
@@ -183,6 +186,30 @@ const LeaveApplicationForm = ({ onBack }) => {
     }
   };
 
+  const checkHrAvailability = async () => {
+    try {
+      const response = await checkLeaveSubmissionAvailability();
+      const data = response.data;
+      
+      setHrAvailability({
+        available: data.available,
+        message: data.message || '',
+        endTime: data.end_time || null
+      });
+      
+      if (!data.available) {
+        showAlert(data.message, 'warning');
+      }
+    } catch (error) {
+      console.error('Error checking HR availability:', error);
+      setHrAvailability({
+        available: true, // Default to allowing submissions if check fails
+        message: 'Unable to check HR availability at this time.',
+        endTime: null
+      });
+    }
+  };
+
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
     setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
@@ -225,7 +252,7 @@ const LeaveApplicationForm = ({ onBack }) => {
         days: days > 0 ? days : 0,
         hours: hours > 0 ? hours : 0,
         valid: false,
-        message: `${currentLeaveType} allows maximum ${maxDays} days. You selected ${days} days.`
+        message: `You can only file up to ${maxDays} days for ${currentLeaveType}.`
       };
     }
     
@@ -233,7 +260,7 @@ const LeaveApplicationForm = ({ onBack }) => {
       days: days > 0 ? days : 0, 
       hours: hours > 0 ? hours : 0, 
       valid: true, 
-      message: days > 0 ? `Valid selection: ${days} days` : '' 
+      message: days > 0 ? `✅ Valid selection: ${days} days (within ${maxDays}-day limit)` : '' 
     };
   };
 
@@ -319,6 +346,15 @@ const LeaveApplicationForm = ({ onBack }) => {
     setLoading(true);
 
     try {
+      // Check HR availability before submitting
+      await checkHrAvailability();
+      
+      // If HR is not available, block submission
+      if (!hrAvailability.available) {
+        showAlert(hrAvailability.message, 'warning');
+        setLoading(false);
+        return;
+      }
       // Parse date range for API
       const [fromDateStr, toDateStr] = formData.dateRange.split(' - ');
       const fromDate = parseDate(fromDateStr.trim());
@@ -579,9 +615,11 @@ const LeaveApplicationForm = ({ onBack }) => {
                   </div>
                   {/* Validation feedback */}
                   {dateValidation.message && (
-                    <small className={`mt-1 d-block ${dateValidation.valid ? 'text-success' : 'text-danger'}`}>
-                      {dateValidation.valid ? '✅' : '⚠️'} {dateValidation.message}
-                    </small>
+                    <div className={`mt-2 p-2 rounded ${dateValidation.valid ? 'bg-light-success text-success border border-success' : 'bg-light-danger text-danger border border-danger'}`}>
+                      <small className="d-block">
+                        <strong>{dateValidation.valid ? '✅' : '⚠️'}</strong> {dateValidation.message}
+                      </small>
+                    </div>
                   )}
                 </Form.Group>
               </Col>

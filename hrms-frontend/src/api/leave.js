@@ -37,6 +37,41 @@ export const getMyLeaveRequests = () => API.get('/leave-requests/my-requests');
 export const getMyLeaveBalance = () => API.get('/leave-requests/my-balance');
 export const checkLeaveEligibility = () => API.get('/leave-requests/check-eligibility');
 export const getLeaveTypes = () => API.get('/leave-types');
+export const downloadLeavePdf = (id) => {
+  const token = localStorage.getItem('token');
+  const url = `http://localhost:8000/api/leave-requests/${id}/download-pdf`;
+  
+  // Create a temporary link to download the PDF
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `leave-application-${id}.pdf`;
+  
+  // Add authorization header by creating a fetch request
+  fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/pdf'
+    }
+  })
+  .then(response => {
+    if (response.ok) {
+      return response.blob();
+    }
+    throw new Error('Failed to download PDF');
+  })
+  .then(blob => {
+    const url = window.URL.createObjectURL(blob);
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  })
+  .catch(error => {
+    console.error('Error downloading PDF:', error);
+    alert('Failed to download PDF. Please try again.');
+  });
+};
 
 // Manager-specific APIs
 export const approveLeaveRequestAsManager = (id, remarks) => API.put(`/leave-requests/${id}/manager-approve`, { remarks });

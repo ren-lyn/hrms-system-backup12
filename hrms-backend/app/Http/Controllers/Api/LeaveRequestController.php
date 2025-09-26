@@ -7,8 +7,11 @@ use Illuminate\Http\Request;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Models\EmployeeProfile;
+use App\Models\HrCalendarEvent;
+use App\Notifications\LeaveRequestStatusChanged;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class LeaveRequestController extends Controller
 {
@@ -201,6 +204,14 @@ class LeaveRequestController extends Controller
         $toDate = Carbon::parse($validated['to']);
         $totalDays = $validated['total_days'] ?? $fromDate->diffInDays($toDate) + 1;
 
+        // Check if HR Assistant is currently in a meeting
+        $hrMeeting = HrCalendarEvent::hasActiveBlockingEvent();
+        if ($hrMeeting['blocked']) {
+            return response()->json([
+                'error' => $hrMeeting['message']
+            ], 400);
+        }
+
         // Validate leave request limits including balance check
         $validationError = $this->validateLeaveRequestLimits($user->id, $validated['type'], $totalDays);
         if ($validationError) {
@@ -328,6 +339,9 @@ class LeaveRequestController extends Controller
         $leave->rejected_at = null;
         $leave->save();
 
+        // Notify employee
+        $leave->employee->notify(new LeaveRequestStatusChanged($leave));
+
         return response()->json([
             'message' => 'Leave request approved by HR successfully',
             'data' => $leave->load(['employee', 'approvedBy', 'managerApprovedBy'])
@@ -353,6 +367,9 @@ class LeaveRequestController extends Controller
         $leave->rejected_at = now();
         $leave->approved_at = null;
         $leave->save();
+
+        // Notify employee
+        $leave->employee->notify(new LeaveRequestStatusChanged($leave));
 
         return response()->json([
             'message' => 'Leave request rejected by HR',
@@ -493,11 +510,31 @@ class LeaveRequestController extends Controller
     }
 
     /**
+     * Check if the requested days exceed the maximum allowed for a single request of this leave type
+     */
+    private function checkLeaveTypeLimit($leaveType, $requestedDays)
+    {
+        $entitlements = config('leave.entitlements');
+        $maxAllowedDays = $entitlements[$leaveType] ?? 0;
+        
+        if ($maxAllowedDays === 0) {
+            return "Invalid leave type: {$leaveType}";
+        }
+        
+        if ($requestedDays > $maxAllowedDays) {
+            return "You can only file up to {$maxAllowedDays} days for {$leaveType}.";
+        }
+        
+        return null; // No limit violation
+    }
+
+    /**
      * Validate leave request limits for an employee
      * Rules:
      * 1. Maximum 3 leave requests per month
      * 2. Must wait 7 days after the end date of previous leave before filing another
-     * 3. Check leave balance for the requested leave type
+     * 3. Check if requested days exceed maximum days allowed for the leave type (per-request limit)
+     * 4. Check leave balance for the requested leave type (annual balance)
      */
     private function validateLeaveRequestLimits($employeeId, $leaveType = null, $requestedDays = 0)
     {
@@ -530,7 +567,15 @@ class LeaveRequestController extends Controller
             }
         }
         
-        // Rule 3: Check leave balance if leave type and requested days are provided
+        // Rule 3: Check if requested days exceed the maximum allowed for the leave type (check first)
+        if ($leaveType && $requestedDays > 0) {
+            $leaveTypeLimitError = $this->checkLeaveTypeLimit($leaveType, $requestedDays);
+            if ($leaveTypeLimitError) {
+                return $leaveTypeLimitError;
+            }
+        }
+        
+        // Rule 4: Check leave balance if leave type and requested days are provided
         if ($leaveType && $requestedDays > 0) {
             $balanceError = $this->checkLeaveBalance($employeeId, $leaveType, $requestedDays);
             if ($balanceError) {
@@ -644,5 +689,30 @@ class LeaveRequestController extends Controller
             ],
             'waiting_period' => $waitingPeriodInfo
         ];
+    }
+
+    /**
+     * Download leave request as PDF
+     */
+    public function downloadPdf($id)
+    {
+        $leaveRequest = LeaveRequest::with(['employee', 'approvedBy'])->findOrFail($id);
+        
+        // Check if user can access this leave request
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        
+        // Only allow the employee who created the request or HR staff to download
+        if ($leaveRequest->employee_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff'])) {
+            return response()->json(['error' => 'Access denied'], 403);
+        }
+
+        $pdf = Pdf::loadView('pdf.leave-application', compact('leaveRequest'));
+        
+        $filename = 'leave-application-' . $leaveRequest->id . '.pdf';
+        
+        return $pdf->download($filename);
     }
 }

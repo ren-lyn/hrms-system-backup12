@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback, useReducer } from 'react';
 import axios from 'axios';
-import { Table, Button, Modal, Form } from 'react-bootstrap';
+import { Table, Button, Modal, Form, Spinner } from 'react-bootstrap';
+import EvaluationResult from '../../components/Manager/EvaluationResult';
+import { FaEye } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import Papa from 'papaparse';
@@ -24,6 +26,13 @@ const EmployeeRecords = () => {
   // New state for View Employee Record modal
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState(null);
+
+  // Evaluation Results modal state
+  const [showEvalModal, setShowEvalModal] = useState(false);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalResults, setEvalResults] = useState([]); // list of summaries
+  const [selectedEvalId, setSelectedEvalId] = useState(null);
+  const [evalDetail, setEvalDetail] = useState(null);
   
   // Session monitoring
   const [currentUser, setCurrentUser] = useState(null);
@@ -959,6 +968,69 @@ const EmployeeRecords = () => {
     }
   };
 
+  // Fetch employee evaluation results and open modal
+  const handleViewEvaluation = async (emp) => {
+    try {
+      setEvalLoading(true);
+      setEvalResults([]);
+      setEvalDetail(null);
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${emp.id}/results`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const results = res.data?.data || [];
+      if (results.length === 0) {
+        showInfo('No evaluation results found for this employee.');
+        return;
+      }
+      setEvalResults(results);
+      const latest = results[0];
+      setSelectedEvalId(latest.id);
+      await fetchEvaluationDetail(latest.id);
+      setShowEvalModal(true);
+    } catch (err) {
+      handleAxiosError(err, 'Failed to load evaluation results.');
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const fetchEvaluationDetail = async (evaluationId) => {
+    try {
+      setEvalLoading(true);
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${evaluationId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEvalDetail(res.data?.data || null);
+    } catch (err) {
+      handleAxiosError(err, 'Failed to load evaluation detail.');
+    } finally {
+      setEvalLoading(false);
+    }
+  };
+
+  const downloadEvaluationPDF = async (evaluationId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${evaluationId}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `evaluation_result_${evaluationId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      handleAxiosError(err, 'Failed to download PDF.');
+    }
+  };
+
   return (
     <div>
       <div className="employee-records-header">
@@ -1032,6 +1104,14 @@ const EmployeeRecords = () => {
                       View
                     </Button>{' '}
                     <Button 
+                      size="sm"
+                      className="btn-eval-result"
+                      onClick={() => handleViewEvaluation(emp)}
+                      title="View evaluation result"
+                    >
+                      <FaEye size={14} /> <span>View Result</span>
+                    </Button>{' '}
+                    <Button 
                       size="sm" 
                       variant="danger" 
                       onClick={() => handleDelete(
@@ -1048,6 +1128,50 @@ const EmployeeRecords = () => {
           </tbody>
         </Table>
       </div>
+
+      {/* Evaluation Results Modal */}
+      <Modal show={showEvalModal} onHide={() => setShowEvalModal(false)} size="xl" className="employee-eval-modal">
+        <Modal.Header closeButton>
+          <Modal.Title>Evaluation Result</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {evalLoading && (
+            <div className="text-center my-3"><Spinner animation="border" size="sm" /> Loading...</div>
+          )}
+
+          {evalResults.length > 0 && (
+            <div className="mb-3 d-flex gap-2 align-items-center">
+              <Form.Label className="mb-0">Select Evaluation:</Form.Label>
+              <Form.Select
+                value={selectedEvalId || ''}
+                onChange={async (e) => {
+                  const id = parseInt(e.target.value, 10);
+                  setSelectedEvalId(id);
+                  await fetchEvaluationDetail(id);
+                }}
+                style={{ maxWidth: 320 }}
+              >
+                {evalResults.map(ev => (
+                  <option key={ev.id} value={ev.id}>{new Date(ev.submitted_at).toLocaleString()} — {ev.form_title || 'Form'}</option>
+                ))}
+              </Form.Select>
+            </div>
+          )}
+
+          {evalDetail && (
+            <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <EvaluationResult result={evalDetail} onBack={() => setShowEvalModal(false)} />
+            </div>
+          )}
+
+          {!evalLoading && evalResults.length === 0 && (
+            <div className="text-center text-muted">No evaluation results.</div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowEvalModal(false)}>Close</Button>
+        </Modal.Footer>
+      </Modal>
 
       {/* Comprehensive Employee Form Modal */}
       <Modal show={showModal} onHide={closeModal} size="xl" className="employee-form-modal">
