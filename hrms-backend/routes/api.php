@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\CashAdvanceController;
 use App\Http\Controllers\HrCalendarController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationStreamController;
+use App\Http\Controllers\ManagerDisciplinaryController;
+use App\Http\Controllers\HRDisciplinaryController;
+use App\Http\Controllers\EmployeeDisciplinaryController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -247,4 +250,78 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}/cancel', [HrCalendarController::class, 'cancel']); // Cancel event
         Route::put('/{id}/complete', [HrCalendarController::class, 'complete']); // Complete event
     });
+
+    // Disciplinary Management Routes
+    
+    // Manager Routes - Category and Report Management
+    Route::middleware(['role:Manager'])->prefix('manager/disciplinary')->group(function () {
+        // Disciplinary Categories
+        Route::get('/categories', [ManagerDisciplinaryController::class, 'getCategories']);
+        Route::post('/categories', [ManagerDisciplinaryController::class, 'createCategory']);
+        Route::put('/categories/{id}', [ManagerDisciplinaryController::class, 'updateCategory']);
+        Route::delete('/categories/{id}', [ManagerDisciplinaryController::class, 'deleteCategory']);
+        
+        // Disciplinary Reports
+        Route::get('/reports', [ManagerDisciplinaryController::class, 'getReports']);
+        Route::post('/reports', [ManagerDisciplinaryController::class, 'createReport']);
+        Route::get('/reports/{id}', [ManagerDisciplinaryController::class, 'getReport']);
+        Route::put('/reports/{id}', [ManagerDisciplinaryController::class, 'updateReport']);
+        
+        // Investigation Management
+        Route::get('/investigations', [ManagerDisciplinaryController::class, 'getAssignedInvestigations']);
+        Route::get('/investigations/{id}', [ManagerDisciplinaryController::class, 'getInvestigation']);
+        Route::post('/investigations/{id}/submit', [ManagerDisciplinaryController::class, 'submitInvestigation']);
+        
+        // Helper endpoints
+        Route::get('/employees', [ManagerDisciplinaryController::class, 'getEmployees']);
+        Route::post('/check-previous-violations', [ManagerDisciplinaryController::class, 'checkPreviousViolations']);
+    });
+    
+    // Test route for debugging
+    Route::middleware(['auth:sanctum'])->get('/test-auth', function(Request $request) {
+        return response()->json([
+            'user' => $request->user() ? $request->user()->name : 'No user',
+            'role' => $request->user() && $request->user()->role ? $request->user()->role->name : 'No role'
+        ]);
+    });
+    
+    // HR Assistant Routes - Two Tab Interface
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('hr/disciplinary')->group(function () {
+        
+        // TAB 1: DISCIPLINARY ACTION ADMINISTRATION
+        // Category CRUD Operations
+        Route::get('/categories', [HRDisciplinaryController::class, 'getCategories']);
+        Route::post('/categories', [HRDisciplinaryController::class, 'createCategory']);
+        Route::get('/categories/{id}', [HRDisciplinaryController::class, 'getCategory']);
+        Route::put('/categories/{id}', [HRDisciplinaryController::class, 'updateCategory']);
+        Route::delete('/categories/{id}', [HRDisciplinaryController::class, 'deleteCategory']);
+        Route::patch('/categories/{id}/toggle-status', [HRDisciplinaryController::class, 'toggleCategoryStatus']);
+        
+        // TAB 2: REPORTED INFRACTIONS/VIOLATIONS
+        // Enhanced Report Management with Filtering
+        Route::get('/reports', [HRDisciplinaryController::class, 'getAllReports']);
+        Route::get('/reports/{id}', [HRDisciplinaryController::class, 'getReport']);
+        Route::post('/reports/{id}/review', [HRDisciplinaryController::class, 'markReportAsReviewed']);
+        Route::get('/reports/statistics', [HRDisciplinaryController::class, 'getReportStatistics']);
+        
+        // DISCIPLINARY ACTIONS MANAGEMENT
+        // Issue Actions and Handle Verdicts
+        Route::post('/actions', [HRDisciplinaryController::class, 'issueAction']);
+        Route::get('/actions', [HRDisciplinaryController::class, 'getAllActions']);
+        Route::post('/actions/{id}/verdict', [HRDisciplinaryController::class, 'issueVerdict']);
+        
+        // HELPER ENDPOINTS
+        // Get available investigators/managers
+        Route::get('/investigators', [HRDisciplinaryController::class, 'getAvailableInvestigators']);
+    });
+    
+    // Employee Routes - View Actions and Submit Explanations
+    Route::middleware(['role:Employee'])->prefix('employee/disciplinary')->group(function () {
+        Route::get('/actions', [EmployeeDisciplinaryController::class, 'getMyActions']);
+        Route::get('/actions/{id}', [EmployeeDisciplinaryController::class, 'getAction']);
+        Route::post('/actions/{id}/explanation', [EmployeeDisciplinaryController::class, 'submitExplanation']);
+        Route::get('/dashboard/stats', [EmployeeDisciplinaryController::class, 'getDashboardStats']);
+    });
+    
 });
+

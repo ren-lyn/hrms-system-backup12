@@ -3,6 +3,8 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import axios from 'axios';
 import { Button, Form, Spinner } from 'react-bootstrap';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import EvaluationResult from '../components/Manager/EvaluationResult';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Bell from '../components/Notifications/Bell';
@@ -24,6 +26,7 @@ import EmbeddedLeaveForm from '../components/Employee/EmbeddedLeaveForm';
 import EmployeeProfile from '../components/Employee/EmployeeProfile';
 import LeaveRequestView from '../components/Employee/LeaveRequestView';
 import CashAdvanceForm from '../components/Employee/CashAdvanceForm';
+import EmployeeDisciplinaryNotice from '../components/Employee/EmployeeDisciplinaryNotice';
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -245,6 +248,8 @@ const EmployeeDashboard = () => {
             )}
           </div>
         );
+      case 'disciplinary-notice':
+        return <EmployeeDisciplinaryNotice />;
       default:
         return (
           <div className="card p-4">
@@ -290,7 +295,10 @@ const EmployeeDashboard = () => {
             <h4 className="fw-bold text-primary mb-2 mb-md-0">{getHeaderTitle()}</h4>
             <div className="d-flex align-items-center gap-3">
               <FontAwesomeIcon icon={faEnvelope} size="lg" className="text-primary" />
-              <Bell onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }} />
+              <Bell 
+                onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
+                onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
+              />
               <span className="fw-semibold text-dark">{employeeName || 'Employee'}</span>
               <img src="https://i.pravatar.cc/40" alt="Profile" className="rounded-circle" style={{ width: '36px', height: '36px', objectFit: 'cover', border: '2px solid #0d6efd' }} />
             </div>
@@ -300,6 +308,19 @@ const EmployeeDashboard = () => {
           {renderContent()}
         </div>
       </div>
+      
+      {/* Toast Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
     </div>
   );
 };

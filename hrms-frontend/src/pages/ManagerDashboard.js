@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import ManagerLeaveManagement from '../components/Manager/ManagerLeaveManagement';
 import ManagerEmployeeEvaluations from '../components/Manager/ManagerEmployeeEvaluations';
+import ManagerDisciplinaryManagement from '../components/Manager/ManagerDisciplinaryManagement';
 
 
 const ManagerDashboard = () => {
@@ -54,6 +55,8 @@ const ManagerDashboard = () => {
         return <ManagerLeaveManagement />;
       case 'evaluations':
         return <ManagerEmployeeEvaluations />;
+      case 'disciplinary':
+        return <ManagerDisciplinaryManagement />;
       case 'dashboard':
       default:
         return renderDashboardContent();
@@ -152,14 +155,15 @@ const ManagerDashboard = () => {
       </div>
 
       {/* Main content */}
-      <div style={(activeView === 'leave-request' || activeView === 'evaluations') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-        {activeView !== 'leave-request' && activeView !== 'evaluations' && (
+      <div style={(activeView === 'leave-request' || activeView === 'evaluations' || activeView === 'disciplinary') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+        {activeView !== 'leave-request' && activeView !== 'evaluations' && activeView !== 'disciplinary' && (
           <>
             {/* Header */}
             <div style={styles.header}>
               <h1 style={styles.headerTitle}>
                 {activeView === 'leave-request' ? 'Leave Management' : 
-                 activeView === 'evaluations' ? 'Employee Evaluations' : 'Manager Dashboard'}
+                 activeView === 'evaluations' ? 'Employee Evaluations' :
+                 activeView === 'disciplinary' ? 'Disciplinary Management' : 'Manager Dashboard'}
               </h1>
               <div style={styles.headerIcons}>
                 <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />

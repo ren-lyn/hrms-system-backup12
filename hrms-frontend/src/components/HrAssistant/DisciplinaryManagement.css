@@ -1,0 +1,477 @@
+.disciplinary-management {
+  padding: 20px 0;
+  height: calc(100vh - 180px); /* Optimized height to prevent cutoff */
+  overflow: hidden; /* Prevent page-level scrolling */
+  display: flex;
+  flex-direction: column;
+}
+
+.disciplinary-management .container-fluid {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header {
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.page-header h2 {
+  color: #495057;
+  font-weight: 600;
+}
+
+.page-header p {
+  font-size: 1.1rem;
+  margin-bottom: 0;
+}
+
+/* Tab styling */
+.nav-tabs {
+  border-bottom: 2px solid #dee2e6;
+}
+
+.nav-tabs .nav-link {
+  color: #495057;
+  border: none;
+  padding: 12px 20px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.nav-tabs .nav-link:hover {
+  background-color: #f8f9fa;
+  border-color: transparent;
+}
+
+.nav-tabs .nav-link.active {
+  color: #0d6efd;
+  background-color: #fff;
+  border-bottom: 3px solid #0d6efd;
+  font-weight: 600;
+}
+
+/* Card enhancements */
+.card {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: none;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.card-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+  border-bottom: none;
+}
+
+.card-header h5 {
+  margin-bottom: 0;
+}
+
+/* Table enhancements */
+.table {
+  margin-bottom: 0;
+}
+
+.table th {
+  background-color: #f8f9fa;
+  border-top: none;
+  font-weight: 600;
+  color: #495057;
+  padding: 15px 12px;
+}
+
+.table td {
+  padding: 12px;
+  vertical-align: middle;
+}
+
+.table-hover tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+/* Badge styling */
+.badge {
+  font-size: 0.75rem;
+  padding: 6px 10px;
+}
+
+/* Button styling */
+.btn {
+  padding: 8px 16px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 0.875rem;
+}
+
+/* Modal enhancements */
+.modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+}
+
+.modal-header .btn-close {
+  filter: brightness(0) invert(1);
+}
+
+.modal-content {
+  border: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+/* Form styling */
+.form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.form-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* Loading states */
+.loading-spinner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+}
+
+.empty-state i {
+  font-size: 3rem;
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+/* Priority and severity indicators */
+.priority-urgent {
+  background-color: #dc3545;
+  animation: pulse 2s infinite;
+}
+
+.priority-high {
+  background-color: #fd7e14;
+}
+
+.priority-medium {
+  background-color: #0d6efd;
+}
+
+.priority-low {
+  background-color: #6c757d;
+}
+
+.severity-severe {
+  background-color: #dc3545;
+  color: white;
+}
+
+.severity-major {
+  background-color: #fd7e14;
+  color: white;
+}
+
+.severity-minor {
+  background-color: #198754;
+  color: white;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Enhanced table styling */
+.table tbody tr {
+  transition: all 0.2s ease;
+}
+
+.table tbody tr:hover {
+  background-color: #f8f9fa;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Filter section */
+.bg-light {
+  border-left: 4px solid #0d6efd;
+}
+
+/* Badge enhancements */
+.badge {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Button improvements */
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Dropdown improvements */
+.dropdown-menu {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+  padding: 10px 20px;
+  border-radius: 5px;
+  margin: 2px;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background-color: #f8f9fa;
+  transform: translateX(5px);
+}
+
+/* Empty state improvements */
+.fa-folder-open {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Loading spinner improvements */
+.spinner-border {
+  width: 3rem;
+  height: 3rem;
+  color: #667eea;
+}
+
+/* Form enhancements */
+.suggested-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  background-color: #f8f9fa;
+}
+
+/* Scrollbar for suggested actions */
+.suggested-actions-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.suggested-actions-grid::-webkit-scrollbar-track {
+  background: #e9ecef;
+  border-radius: 3px;
+}
+
+.suggested-actions-grid::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 3px;
+}
+
+.suggested-actions-grid::-webkit-scrollbar-thumb:hover {
+  background: #5a67d8;
+}
+
+/* Scrollable table container for disciplinary categories */
+.disciplinary-categories-tab .card .card-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: 20px; /* Add padding to prevent cutoff */
+}
+
+.disciplinary-categories-tab .table-responsive {
+  flex: 1;
+  max-height: calc(100vh - 400px); /* Dynamic height based on viewport */
+  min-height: 300px; /* Minimum height to ensure visibility */
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  margin-bottom: 15px; /* Add margin to separate from pagination */
+}
+
+/* Custom scrollbar for table container */
+.disciplinary-categories-tab .table-responsive::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.disciplinary-categories-tab .table-responsive::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.disciplinary-categories-tab .table-responsive::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 4px;
+}
+
+.disciplinary-categories-tab .table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #5a67d8;
+}
+
+.disciplinary-categories-tab .table-responsive::-webkit-scrollbar-corner {
+  background: #f1f1f1;
+}
+
+/* Ensure table content has proper spacing */
+.disciplinary-categories-tab .table {
+  margin-bottom: 10px !important; /* Add space at bottom of table */
+}
+
+.disciplinary-categories-tab .table tbody tr:last-child td {
+  padding-bottom: 20px; /* Extra padding for last row */
+}
+
+/* Ensure pagination has proper spacing */
+.disciplinary-categories-tab .pagination {
+  margin-bottom: 0;
+  margin-top: 10px;
+}
+
+/* Suggested actions styling */
+.disciplinary-categories-tab .suggested-actions-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 250px;
+}
+
+.disciplinary-categories-tab .action-badge {
+  font-size: 0.65rem !important;
+  padding: 3px 8px !important;
+  border-radius: 12px !important;
+  background-color: #f8f9fa !important;
+  color: #495057 !important;
+  border: 1px solid #dee2e6 !important;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.disciplinary-categories-tab .action-badge:hover {
+  background-color: #e9ecef !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Different colors for different action types */
+.disciplinary-categories-tab .action-badge.warning-action {
+  background-color: #fff3cd !important;
+  color: #856404 !important;
+  border-color: #ffeaa7 !important;
+}
+
+.disciplinary-categories-tab .action-badge.severe-action {
+  background-color: #f8d7da !important;
+  color: #721c24 !important;
+  border-color: #f5c6cb !important;
+}
+
+.disciplinary-categories-tab .action-badge.training-action {
+  background-color: #d4edda !important;
+  color: #155724 !important;
+  border-color: #c3e6cb !important;
+}
+
+.disciplinary-categories-tab .action-badge.support-action {
+  background-color: #d1ecf1 !important;
+  color: #0c5460 !important;
+  border-color: #bee5eb !important;
+}
+
+.form-check {
+  padding: 8px 12px;
+  border-radius: 5px;
+  transition: background-color 0.2s ease;
+}
+
+.form-check:hover {
+  background-color: #e9ecef;
+}
+
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .disciplinary-management {
+    padding: 10px 0;
+    height: calc(100vh - 120px); /* Adjusted for mobile */
+  }
+  
+  .disciplinary-categories-tab .table-responsive {
+    max-height: calc(100vh - 350px); /* Adjusted for mobile */
+    min-height: 200px;
+  }
+  
+  .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .btn-lg {
+    width: 100%;
+  }
+  
+  .nav-tabs .nav-link {
+    padding: 10px 15px;
+    font-size: 0.9rem;
+  }
+  
+  .table-responsive {
+    font-size: 0.875rem;
+  }
+  
+  .disciplinary-categories-tab .suggested-actions-badges {
+    max-width: 180px;
+  }
+  
+  .disciplinary-categories-tab .action-badge {
+    font-size: 0.6rem !important;
+    padding: 2px 6px !important;
+  }
+  
+  .bg-light .row {
+    flex-direction: column;
+  }
+  
+  .bg-light .col-md-1,
+  .bg-light .col-md-2,
+  .bg-light .col-md-3,
+  .bg-light .col-md-4 {
+    margin-bottom: 1rem;
+  }
+}

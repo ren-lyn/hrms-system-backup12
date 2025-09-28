@@ -94,7 +94,7 @@ const Sidebar = () => {
         </li>
         <li>
           <NavLink
-            to="/hr-assistant/disciplinary"
+            to="disciplinary"
             className={({ isActive }) => (isActive ? 'active' : '')}
           >
             <FaExclamationTriangle /> Disciplinary Action

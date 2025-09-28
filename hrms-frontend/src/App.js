@@ -21,6 +21,7 @@ import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ N
 import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagement'; // ✅ New Cash Advance management
 import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
 import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Calendar
+import DisciplinaryManagement from './components/HrAssistant/DisciplinaryManagement'; // ✅ New Disciplinary Management
 
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -74,6 +75,8 @@ function App() {
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
           <Route path="job-postings" element={<JobPostings />} />
           <Route path="applications" element={<ApplicationsDashboard />} />
+          <Route path="disciplinary" element={<DisciplinaryManagement />} />
+
         </Route>
 
         {/* HR Staff */}

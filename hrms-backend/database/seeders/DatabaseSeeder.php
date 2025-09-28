@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             UserSeeder::class,
             DefaultAccountsSeeder::class,
+            DisciplinaryCategorySeeder::class,
             // EmployeeProfileSeeder::class,
             // JobPostingSeeder::class,
             // ApplicantSeeder::class,

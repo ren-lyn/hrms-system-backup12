@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { fetchNotifications, markNotificationRead } from '../../api/notifications';
 
-const Bell = ({ onOpenLeave }) => {
+const Bell = ({ onOpenLeave, onOpenDisciplinary }) => {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -44,6 +44,13 @@ const Bell = ({ onOpenLeave }) => {
   const handleClickItem = async (n) => {
     try {
       await markNotificationRead(n.id);
+
+      // Mark as read in local state immediately
+      setItems(prev => prev.map(item => 
+        item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item
+      ));
+      setUnread(prev => Math.max(0, prev - 1));
+
       // Update local state to mark as read
       setItems(prev => prev.map(item => 
         item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item
@@ -53,6 +60,11 @@ const Bell = ({ onOpenLeave }) => {
       // If it's a leave notification, open the leave application with that ID
       if (n.type === 'leave_status' && n.leave_id && onOpenLeave) {
         onOpenLeave(n.leave_id);
+      }
+
+      // Handle disciplinary notifications
+      if ((n.type === 'disciplinary_action' || n.type === 'disciplinary') && onOpenDisciplinary) {
+        onOpenDisciplinary(n.disciplinary_action_id || n.action_id);
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -79,17 +91,36 @@ const Bell = ({ onOpenLeave }) => {
               <div className="p-3 text-muted small">No notifications</div>
             )}
             {items.map((n) => (
-              <button key={n.id} className={`list-group-item list-group-item-action d-flex justify-content-between align-items-start ${!n.read_at ? 'bg-light border-primary' : ''}`} onClick={() => handleClickItem(n)}>
-                <div className="flex-grow-1">
-                  <div className={`fw-${!n.read_at ? 'bold' : 'semibold'}`}>{n.title}</div>
-                  <div className="small text-muted">{n.message}</div>
-                  <div className="small text-muted mt-1">
-                    {new Date(n.created_at).toLocaleString()}
+              <button 
+                key={n.id} 
+                className={`list-group-item list-group-item-action ${
+                  !n.read_at ? 'bg-light border-primary' : ''
+                }`} 
+                onClick={() => handleClickItem(n)}
+                style={{ textAlign: 'left', border: 'none' }}
+              >
+                <div className="d-flex justify-content-between align-items-start">
+                  <div className="flex-grow-1">
+                    <div className={`fw-semibold ${!n.read_at ? 'text-primary' : ''}`}>
+                      {n.title || 'Notification'}
+                      {!n.read_at && <span className="badge bg-primary ms-2">New</span>}
+                    </div>
+                    <div className="small text-muted mt-1">
+                      {n.message || 'No message content'}
+                    </div>
+                    <div className="small text-muted">
+                      {new Date(n.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    {n.type === 'disciplinary_action' && (
+                      <i className="fas fa-exclamation-triangle text-warning"></i>
+                    )}
+                    {n.type === 'leave_status' && (
+                      <i className="fas fa-calendar-alt text-info"></i>
+                    )}
                   </div>
                 </div>
-                {!n.read_at && (
-                  <span className="badge bg-primary rounded-pill ms-2">New</span>
-                )}
               </button>
             ))}
           </div>
