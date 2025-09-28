@@ -166,6 +166,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
     Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
     Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
+    Route::put('/leave-requests/{id}/confirm-rejection', [LeaveRequestController::class, 'confirmManagerRejection']); // hr confirm manager rejection
 
     Route::put('/leave-requests/{id}/terms', [LeaveRequestController::class, 'updateTermsAndCategory']); // hr set terms/category
     

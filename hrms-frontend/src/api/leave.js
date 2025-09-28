@@ -27,6 +27,7 @@ export const createLeaveRequest = (data) => {
 };
 export const approveLeaveRequest = (id, remarks) => API.put(`/leave-requests/${id}/approve`, { remarks });
 export const rejectLeaveRequest = (id, remarks) => API.put(`/leave-requests/${id}/reject`, { remarks });
+export const confirmManagerRejection = (id, remarks) => API.put(`/leave-requests/${id}/confirm-rejection`, { remarks });
 export const updateLeaveTermsAndCategory = (id, terms, leave_category) => API.put(`/leave-requests/${id}/terms`, { terms, leave_category });
 export const getLeaveStats = () => API.get('/leave-requests/stats');
 

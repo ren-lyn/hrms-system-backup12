@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert } from 'react-bootstrap';
 import { Search, Calendar, Download, Eye, Check, X, FileText } from 'lucide-react';
-import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
+import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
 import jsPDF from 'jspdf';
+import axios from '../../axios';
 import './LeaveManagement.css';
 
 const LeaveManagement = () => {
@@ -28,9 +29,11 @@ const LeaveManagement = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedLeaveForView, setSelectedLeaveForView] = useState(null);
   const [loadingLeaveDetails, setLoadingLeaveDetails] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     loadData();
+    fetchCurrentUser();
     // Set up auto-refresh every 30 seconds for real-time updates
     const interval = setInterval(loadData, 300000);
     
@@ -47,6 +50,16 @@ const LeaveManagement = () => {
     };
   }, []);
 
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await axios.get('/auth/user');
+      setCurrentUser(response.data);
+      console.log('Current user:', response.data);
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -58,9 +71,9 @@ const LeaveManagement = () => {
       console.log('Loaded leave requests:', requestsResponse.data);
       console.log('Loaded stats:', statsResponse.data);
       
-      // Filter to show only manager-approved requests for HR
+      // Filter to show only manager-approved and manager-rejected requests for HR
       const hrRequests = requestsResponse.data.filter(request => 
-        request.status === 'manager_approved' || request.status === 'approved' || request.status === 'rejected'
+        request.status === 'manager_approved' || request.status === 'manager_rejected' || request.status === 'approved' || request.status === 'rejected'
       );
       
       setLeaveRequests(hrRequests || []);
@@ -98,6 +111,9 @@ const LeaveManagement = () => {
       } else if (actionType === 'reject') {
         response = await rejectLeaveRequest(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been rejected.`, 'info');
+      } else if (actionType === 'confirm_rejection') {
+        response = await confirmManagerRejection(selectedLeave.id, remarks);
+        showAlert(`Manager rejection confirmed for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)}. Employee has been notified.`, 'info');
       }
       
       console.log('Action response:', response);
@@ -360,7 +376,17 @@ const LeaveManagement = () => {
       pdf.setFont('helvetica', 'bold');
       pdf.text('Total Hours:', margin + 60, yPosition);
       pdf.setFont('helvetica', 'normal');
-      const calculatedHours = calculateTotalHours(selectedLeaveForView.total_days, selectedLeaveForView.total_hours);
+      // Calculate hours with fallback if total_days is 0
+      let calculatedHours;
+      if (!selectedLeaveForView.total_days && selectedLeaveForView.from && selectedLeaveForView.to) {
+        const fromDate = new Date(selectedLeaveForView.from);
+        const toDate = new Date(selectedLeaveForView.to);
+        const timeDiff = toDate.getTime() - fromDate.getTime();
+        const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+        calculatedHours = days * 8;
+      } else {
+        calculatedHours = selectedLeaveForView.total_days * 8 || 0;
+      }
       pdf.text(`${calculatedHours}`, margin + 82, yPosition);
       
       yPosition += 15;
@@ -379,6 +405,105 @@ const LeaveManagement = () => {
       pdf.text(reasonLines, margin, yPosition);
       
       yPosition += (reasonLines.length * 5) + 15;
+      
+      // Approval Information Section (only for PDF export)
+      if (selectedLeaveForView.status === 'approved' || selectedLeaveForView.status === 'rejected') {
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Approval Information', margin, yPosition);
+        yPosition += 10;
+        
+        // Requested by
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Requested by:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(getEmployeeName(selectedLeaveForView.employee, selectedLeaveForView.employee_name), margin + 30, yPosition);
+        yPosition += 6;
+        
+        // Noted by (HR Assistant) - always show HR Assistant
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Noted by (HR Assistant):', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        const hrAssistantName = currentUser?.name || selectedLeaveForView.approved_by?.name || selectedLeaveForView.approvedBy?.name || '—';
+        pdf.text(hrAssistantName, margin + 45, yPosition);
+        yPosition += 6;
+        
+        // Show appropriate action based on status
+        if (selectedLeaveForView.status === 'approved') {
+          // Only show Approved by for approved requests
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Approved by:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          const approverName = selectedLeaveForView.approved_by?.name || selectedLeaveForView.approvedBy?.name || 'HR Assistant';
+          pdf.text(approverName, margin + 25, yPosition);
+          yPosition += 6;
+          
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Approval Date:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          const approvalDate = new Date(selectedLeaveForView.approved_at).toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+          });
+          pdf.text(approvalDate, margin + 28, yPosition);
+          
+        } else if (selectedLeaveForView.status === 'rejected') {
+          // Show who rejected it - either Manager or HR
+          if (selectedLeaveForView.manager_rejected_at && !selectedLeaveForView.rejected_at) {
+            // Rejected by Manager
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Rejected by the Manager:', margin, yPosition);
+            pdf.setFont('helvetica', 'normal');
+            const managerName = selectedLeaveForView.manager_approved_by?.name || selectedLeaveForView.managerApprovedBy?.name || 'Manager';
+            pdf.text(managerName, margin + 42, yPosition);
+            yPosition += 6;
+            
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Rejection Date:', margin, yPosition);
+            pdf.setFont('helvetica', 'normal');
+            const rejectionDate = new Date(selectedLeaveForView.manager_rejected_at).toLocaleDateString('en-US', {
+              year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+            });
+            pdf.text(rejectionDate, margin + 30, yPosition);
+            yPosition += 6;
+            
+            // Manager Remarks
+            if (selectedLeaveForView.manager_remarks) {
+              pdf.setFont('helvetica', 'bold');
+              pdf.text('Manager Remarks:', margin, yPosition);
+              pdf.setFont('helvetica', 'normal');
+              pdf.text(selectedLeaveForView.manager_remarks, margin + 35, yPosition);
+            }
+          } else {
+            // Rejected by HR
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Rejected by HR:', margin, yPosition);
+            pdf.setFont('helvetica', 'normal');
+            const hrName = selectedLeaveForView.approved_by?.name || selectedLeaveForView.approvedBy?.name || 'HR Assistant';
+            pdf.text(hrName, margin + 28, yPosition);
+            yPosition += 6;
+            
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Rejection Date:', margin, yPosition);
+            pdf.setFont('helvetica', 'normal');
+            const rejectionDate = new Date(selectedLeaveForView.rejected_at).toLocaleDateString('en-US', {
+              year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+            });
+            pdf.text(rejectionDate, margin + 30, yPosition);
+            yPosition += 6;
+            
+            // HR Remarks
+            if (selectedLeaveForView.admin_remarks) {
+              pdf.setFont('helvetica', 'bold');
+              pdf.text('HR Remarks:', margin, yPosition);
+              pdf.setFont('helvetica', 'normal');
+              pdf.text(selectedLeaveForView.admin_remarks, margin + 25, yPosition);
+            }
+          }
+        }
+        
+        yPosition += 15;
+      }
       
       // E-Signature Section
       pdf.setFontSize(12);
@@ -452,12 +577,14 @@ const LeaveManagement = () => {
     const variants = {
       pending: 'warning',
       manager_approved: 'info',
+      manager_rejected: 'warning',
       approved: 'success',
       rejected: 'danger'
     };
     const labels = {
       pending: 'Pending',
       manager_approved: 'Manager Approved',
+      manager_rejected: 'Manager Rejected',
       approved: 'HR Approved',
       rejected: 'Rejected'
     };
@@ -669,7 +796,7 @@ const LeaveManagement = () => {
                           {request.terms || 'TBD by HR'}
                         </Badge>
                       </div>
-                      {(request.status === 'pending' || request.status === 'manager_approved') && (
+                      {request.status === 'manager_approved' && (
                         <Button
                           variant="outline-primary"
                           size="sm"
@@ -702,12 +829,13 @@ const LeaveManagement = () => {
                       >
                         <Eye size={14} />
                       </Button>
-                      {(request.status === 'pending' || request.status === 'manager_approved') ? (
+                      {request.status === 'manager_approved' ? (
                         <>
                           <Button
                             variant="success"
                             size="sm"
                             onClick={() => handleAction(request, 'approve')}
+                            title="Approve leave request"
                           >
                             <Check size={14} />
                           </Button>
@@ -715,8 +843,20 @@ const LeaveManagement = () => {
                             variant="danger"
                             size="sm"
                             onClick={() => handleAction(request, 'reject')}
+                            title="Reject leave request"
                           >
                             <X size={14} />
+                          </Button>
+                        </>
+                      ) : request.status === 'manager_rejected' ? (
+                        <>
+                          <Button
+                            variant="warning"
+                            size="sm"
+                            onClick={() => handleAction(request, 'confirm_rejection')}
+                            title="Confirm manager's rejection"
+                          >
+                            <Check size={14} /> Confirm
                           </Button>
                         </>
                       ) : (
@@ -744,7 +884,9 @@ const LeaveManagement = () => {
       <Modal show={showModal} onHide={() => setShowModal(false)}>
         <Modal.Header closeButton>
           <Modal.Title>
-            {actionType === 'approve' ? 'Approve' : 'Reject'} Leave Request
+            {actionType === 'approve' ? 'Approve' : 
+             actionType === 'reject' ? 'Reject' : 
+             actionType === 'confirm_rejection' ? 'Confirm Manager Rejection' : 'Process'} Leave Request
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
@@ -771,10 +913,12 @@ const LeaveManagement = () => {
             Cancel
           </Button>
           <Button 
-            variant={actionType === 'approve' ? 'success' : 'danger'} 
+            variant={actionType === 'approve' ? 'success' : actionType === 'confirm_rejection' ? 'warning' : 'danger'} 
             onClick={confirmAction}
           >
-            {actionType === 'approve' ? 'Approve' : 'Reject'}
+            {actionType === 'approve' ? 'Approve' : 
+             actionType === 'reject' ? 'Reject' : 
+             actionType === 'confirm_rejection' ? 'Confirm Rejection' : 'Process'}
           </Button>
         </Modal.Footer>
       </Modal>
@@ -943,7 +1087,17 @@ const LeaveManagement = () => {
                             <strong>Total Hours:</strong>
                           </div>
                           <Badge bg="info" style={{ fontSize: '16px', padding: '8px 12px' }}>
-                            {calculateTotalHours(selectedLeaveForView.total_days, selectedLeaveForView.total_hours)} Hours
+                            {(() => {
+                              // If total_days is 0 or null, calculate from date range
+                              if (!selectedLeaveForView.total_days && selectedLeaveForView.from && selectedLeaveForView.to) {
+                                const fromDate = new Date(selectedLeaveForView.from);
+                                const toDate = new Date(selectedLeaveForView.to);
+                                const timeDiff = toDate.getTime() - fromDate.getTime();
+                                const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+                                return days * 8;
+                              }
+                              return selectedLeaveForView.total_days * 8 || 0;
+                            })()} Hours
                           </Badge>
                         </Col>
                       </Row>
@@ -962,6 +1116,40 @@ const LeaveManagement = () => {
                 </div>
               </div>
 
+              {/* Manager Rejection Section - Only show for manager_rejected status */}
+              {selectedLeaveForView.status === 'manager_rejected' && (
+                <div className="border-bottom pb-3 mb-4">
+                  <h5 className="text-danger mb-3">⚠️ Manager Rejection Details</h5>
+                  <div className="bg-warning bg-opacity-10 p-3 rounded border border-warning">
+                    <div className="mb-2">
+                      <strong>Rejected by Manager:</strong> 
+                      <span className="ms-2">
+                        {selectedLeaveForView.manager_approved_by?.name || selectedLeaveForView.managerApprovedBy?.name || 'Manager'}
+                      </span>
+                    </div>
+                    <div className="mb-2">
+                      <strong>Rejection Date:</strong> 
+                      <span className="ms-2">
+                        {new Date(selectedLeaveForView.manager_rejected_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
+                      </span>
+                    </div>
+                    {selectedLeaveForView.manager_remarks && (
+                      <div className="mb-2">
+                        <strong>Manager Remarks:</strong>
+                        <div className="mt-1 p-2 bg-white rounded border">
+                          {selectedLeaveForView.manager_remarks}
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-3">
+                      <Badge bg="warning" className="me-2">
+                        <i className="fas fa-clock me-1"></i>
+                        Pending HR Approval of Rejection
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             </div>
           ) : (

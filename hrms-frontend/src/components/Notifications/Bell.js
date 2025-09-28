@@ -21,6 +21,17 @@ const Bell = ({ onOpenLeave }) => {
     }
   };
 
+  const handleNewNotification = (notification) => {
+    console.log('New notification received:', notification);
+    setItems(prev => {
+      // Check if notification already exists to avoid duplicates
+      const exists = prev.some(n => n.id === notification.id);
+      if (exists) return prev;
+      return [notification, ...prev];
+    });
+    setUnread(prev => prev + 1);
+  };
+
   useEffect(() => {
     load();
     const handler = (e) => {
@@ -33,12 +44,19 @@ const Bell = ({ onOpenLeave }) => {
   const handleClickItem = async (n) => {
     try {
       await markNotificationRead(n.id);
+      // Update local state to mark as read
+      setItems(prev => prev.map(item => 
+        item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item
+      ));
+      setUnread(prev => Math.max(0, prev - 1));
       setOpen(false);
       // If it's a leave notification, open the leave application with that ID
       if (n.type === 'leave_status' && n.leave_id && onOpenLeave) {
         onOpenLeave(n.leave_id);
       }
-    } catch {}
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   return (
@@ -49,9 +67,10 @@ const Bell = ({ onOpenLeave }) => {
           <span className="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">{unread}</span>
         )}
       </button>
-      {/* light polling + SSE stream while open */}
-      {open && <Poller tick={load} />}
-      {open && <SSEStream onEvent={(n) => { setItems(prev => [n, ...prev]); setUnread(u => u + 1); }} />}
+      {/* Always listen for real-time updates */}
+      <Poller tick={load} />
+      <SSEStream onEvent={handleNewNotification} />
+      {/* Show notifications dropdown when opened */}
       {open && (
         <div className="card shadow-sm" style={{ position: 'absolute', right: 0, width: 320, zIndex: 1000 }}>
           <div className="card-header fw-semibold">Notifications</div>
@@ -60,9 +79,17 @@ const Bell = ({ onOpenLeave }) => {
               <div className="p-3 text-muted small">No notifications</div>
             )}
             {items.map((n) => (
-              <button key={n.id} className="list-group-item list-group-item-action" onClick={() => handleClickItem(n)}>
-                <div className="fw-semibold">{n.title}</div>
-                <div className="small text-muted">{n.message}</div>
+              <button key={n.id} className={`list-group-item list-group-item-action d-flex justify-content-between align-items-start ${!n.read_at ? 'bg-light border-primary' : ''}`} onClick={() => handleClickItem(n)}>
+                <div className="flex-grow-1">
+                  <div className={`fw-${!n.read_at ? 'bold' : 'semibold'}`}>{n.title}</div>
+                  <div className="small text-muted">{n.message}</div>
+                  <div className="small text-muted mt-1">
+                    {new Date(n.created_at).toLocaleString()}
+                  </div>
+                </div>
+                {!n.read_at && (
+                  <span className="badge bg-primary rounded-pill ms-2">New</span>
+                )}
               </button>
             ))}
           </div>
@@ -75,8 +102,8 @@ const Bell = ({ onOpenLeave }) => {
 export default Bell;
 
 
-// Tiny polling component
-const Poller = ({ tick, interval = 10000 }) => {
+// Tiny polling component for real-time updates
+const Poller = ({ tick, interval = 5000 }) => {
   useEffect(() => {
     const id = setInterval(() => tick(), interval);
     return () => clearInterval(id);

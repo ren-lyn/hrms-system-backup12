@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Button, Alert, Spinner } from 'react-bootstr
 import { ArrowLeft, Download } from 'lucide-react';
 import { downloadLeavePdf } from '../../api/leave';
 import axios from '../../axios';
+import ApprovalInformation from '../common/ApprovalInformation';
 
 const LeaveRequestView = ({ leaveId, onBack }) => {
   const [leaveRequest, setLeaveRequest] = useState(null);
@@ -148,7 +149,17 @@ const LeaveRequestView = ({ leaveId, onBack }) => {
                 <strong>Total Days:</strong> {leaveRequest.total_days}
               </div>
               <div className="mb-2">
-                <strong>Total Hours:</strong> {leaveRequest.total_hours * 8}
+                <strong>Total Hours:</strong> {(() => {
+                  // If total_days is 0 or null, calculate from date range
+                  if (!leaveRequest.total_days && leaveRequest.from && leaveRequest.to) {
+                    const fromDate = new Date(leaveRequest.from);
+                    const toDate = new Date(leaveRequest.to);
+                    const timeDiff = toDate.getTime() - fromDate.getTime();
+                    const days = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+                    return days * 8;
+                  }
+                  return leaveRequest.total_days * 8 || 0;
+                })()}
               </div>
             </Col>
             <Col md={6}>
@@ -159,39 +170,7 @@ const LeaveRequestView = ({ leaveId, onBack }) => {
             </Col>
           </Row>
 
-          {(leaveRequest.status === 'approved' || leaveRequest.status === 'rejected') && (
-            <>
-              <hr />
-              <div className="bg-light p-3 rounded">
-                <h5 className="text-success mb-3">Approval Information</h5>
-                {leaveRequest.status === 'approved' && (
-                  <>
-                    <div className="mb-2">
-                      <strong>Approved by:</strong> {leaveRequest.approved_by?.name || 'HR Assistant'}
-                    </div>
-                    <div className="mb-2">
-                      <strong>Approved at:</strong> {new Date(leaveRequest.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
-                    </div>
-                  </>
-                )}
-                {leaveRequest.status === 'rejected' && (
-                  <>
-                    <div className="mb-2">
-                      <strong>Rejected by:</strong> {leaveRequest.approved_by?.name || 'HR Assistant'}
-                    </div>
-                    <div className="mb-2">
-                      <strong>Rejected at:</strong> {new Date(leaveRequest.rejected_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
-                    </div>
-                  </>
-                )}
-                {leaveRequest.admin_remarks && (
-                  <div className="mb-2">
-                    <strong>Remarks:</strong> {leaveRequest.admin_remarks}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+          <ApprovalInformation leaveRequest={leaveRequest} />
         </Card.Body>
       </Card>
     </Container>

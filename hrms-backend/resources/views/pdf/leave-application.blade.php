@@ -36,14 +36,18 @@
             font-weight: bold;
         }
         .approval-info {
-            background-color: #f8f9fa;
+            background-color: #d4edda;
             padding: 15px;
+            border: 1px solid #c3e6cb;
             border-left: 4px solid #28a745;
             margin-top: 20px;
+            border-radius: 4px;
         }
         .approval-info h3 {
-            margin: 0 0 10px 0;
+            margin: 0 0 15px 0;
             color: #28a745;
+            font-size: 18px;
+            font-weight: bold;
         }
         .status-approved {
             color: #28a745;
@@ -89,7 +93,7 @@
             <strong>To:</strong> {{ \Carbon\Carbon::parse($leaveRequest->to)->format('l, F j, Y') }}
         </div>
         <div class="field"><strong>Total Days:</strong> {{ $leaveRequest->total_days }}</div>
-        <div class="field"><strong>Total Hours:</strong> {{ $leaveRequest->total_hours * 8 }}</div>
+        <div class="field"><strong>Total Hours:</strong> {{ number_format($leaveRequest->total_hours, 0) }}</div>
     </div>
 
     <div class="section">
@@ -97,18 +101,52 @@
         <div class="field">{{ $leaveRequest->reason }}</div>
     </div>
 
-    @if($leaveRequest->status === 'approved' || $leaveRequest->status === 'rejected')
+    @if(in_array($leaveRequest->status, ['approved', 'rejected', 'manager_approved', 'manager_rejected']))
     <div class="approval-info">
         <h3>Approval Information</h3>
+        
+        {{-- Always show who requested --}}
+        <div class="field"><strong>Requested by:</strong> {{ $leaveRequest->employee->name ?? $leaveRequest->employee_name ?? 'Employee' }}</div>
+        
+        {{-- Handle different approval/rejection scenarios --}}
         @if($leaveRequest->status === 'approved')
-            <div class="field"><strong>Approved by:</strong> {{ $leaveRequest->approvedBy->name ?? 'HR Assistant' }}</div>
-            <div class="field"><strong>Approved at:</strong> {{ \Carbon\Carbon::parse($leaveRequest->approved_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
+            {{-- Final approval by Manager, HR noted --}}
+            @if($leaveRequest->approved_by)
+                {{-- Show HR assistant noted when HR processed after manager --}}
+                <div class="field"><strong>Noted by:</strong> {{ $leaveRequest->approvedBy->name ?? 'HR Assistant' }}</div>
+            @endif
+            <div class="field"><strong>Approved by:</strong> {{ $leaveRequest->managerApprovedBy->name ?? 'Manager' }}</div>
+            <div class="field"><strong>Approval Date:</strong> {{ \Carbon\Carbon::parse($leaveRequest->manager_approved_at ?? $leaveRequest->approved_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
+            
         @elseif($leaveRequest->status === 'rejected')
-            <div class="field"><strong>Rejected by:</strong> {{ $leaveRequest->approvedBy->name ?? 'HR Assistant' }}</div>
-            <div class="field"><strong>Rejected at:</strong> {{ \Carbon\Carbon::parse($leaveRequest->rejected_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
+            {{-- Final rejection by Manager, HR noted --}}
+            @if($leaveRequest->approved_by)
+                {{-- Show HR assistant noted when HR processed the rejection --}}
+                <div class="field"><strong>Noted by:</strong> {{ $leaveRequest->approvedBy->name ?? 'HR Assistant' }}</div>
+            @endif
+            <div class="field"><strong>Rejected by:</strong> {{ $leaveRequest->managerApprovedBy->name ?? 'Manager' }}</div>
+            <div class="field"><strong>Rejection Date:</strong> {{ \Carbon\Carbon::parse($leaveRequest->manager_rejected_at ?? $leaveRequest->rejected_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
+            
+        @elseif($leaveRequest->status === 'manager_approved')
+            {{-- Manager approved, waiting for HR --}}
+            <div class="field"><strong>Approved by:</strong> {{ $leaveRequest->managerApprovedBy->name ?? 'Manager' }}</div>
+            <div class="field"><strong>Approval Date:</strong> {{ \Carbon\Carbon::parse($leaveRequest->manager_approved_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
+            
+        @elseif($leaveRequest->status === 'manager_rejected')
+            {{-- Direct rejection by Manager --}}
+            <div class="field"><strong>Rejected by:</strong> {{ $leaveRequest->managerApprovedBy->name ?? 'Manager' }}</div>
+            <div class="field"><strong>Rejection Date:</strong> {{ \Carbon\Carbon::parse($leaveRequest->manager_rejected_at)->setTimezone('Asia/Manila')->format('F j, Y \a\t g:i A') }}</div>
         @endif
-        @if($leaveRequest->admin_remarks)
-            <div class="field"><strong>Remarks:</strong> {{ $leaveRequest->admin_remarks }}</div>
+        
+        {{-- Show remarks if available --}}
+        @if($leaveRequest->status === 'manager_rejected')
+            {{-- For manager rejections, show 'Manager Remarks' as specified in the user requirement --}}
+            <div class="field"><strong>Manager Remarks:</strong> {{ $leaveRequest->manager_remarks ?: 'noo' }}</div>
+        @else
+            {{-- For other cases, show HR remarks if available --}}
+            @if($leaveRequest->admin_remarks)
+                <div class="field"><strong>Remarks:</strong> {{ $leaveRequest->admin_remarks }}</div>
+            @endif
         @endif
     </div>
     @endif

@@ -82,7 +82,7 @@ class LeaveRequestController extends Controller
     }
 
     public function index() {
-        return LeaveRequest::with(['employee', 'approvedBy'])->latest()->get();
+        return LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->latest()->get();
     }
 
     /**
@@ -96,7 +96,7 @@ class LeaveRequestController extends Controller
         }
 
         $leaveRequests = LeaveRequest::where('employee_id', $user->id)
-            ->with(['employee', 'approvedBy'])
+            ->with(['employee', 'approvedBy', 'managerApprovedBy'])
             ->latest()
             ->get();
 
@@ -182,7 +182,7 @@ class LeaveRequestController extends Controller
             'from' => 'required|date',
             'to' => 'required|date|after_or_equal:from',
             'total_days' => 'nullable|integer|min:1',
-            'total_hours' => 'nullable|numeric|min:0|max:8',
+            // total_hours is now automatically calculated as total_days * 8
             'reason' => 'required|string|max:500',
             'signature' => 'nullable|file|mimes:pdf,jpg,jpeg,png,gif|max:2048',
             'attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048'
@@ -234,7 +234,7 @@ class LeaveRequestController extends Controller
         $leaveRequest->from = $validated['from'];
         $leaveRequest->to = $validated['to'];
         $leaveRequest->total_days = $totalDays;
-        $leaveRequest->total_hours = $validated['total_hours'] ?? 0;
+        $leaveRequest->total_hours = $totalDays * 8; // Automatically calculate: 8 hours per day
         $leaveRequest->date_filed = now();
         $leaveRequest->reason = $validated['reason'];
         $leaveRequest->status = 'pending';
@@ -264,7 +264,7 @@ class LeaveRequestController extends Controller
     }
 
     public function show($id) {
-        return LeaveRequest::with(['employee', 'approvedBy'])->findOrFail($id);
+        return LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->findOrFail($id);
     }
 
     /**
@@ -306,15 +306,17 @@ class LeaveRequestController extends Controller
             ], 400);
         }
         
-        $leave->status = 'rejected';
+        $leave->status = 'manager_rejected';
         $leave->manager_remarks = $request->input('remarks');
         $leave->manager_approved_by = auth()->id();
         $leave->manager_rejected_at = now();
         $leave->manager_approved_at = null;
         $leave->save();
 
+        // Do NOT notify employee yet - HR must approve the rejection first
+        
         return response()->json([
-            'message' => 'Leave request rejected by manager',
+            'message' => 'Leave request rejected by manager. Pending HR approval of rejection.',
             'data' => $leave->load(['employee', 'managerApprovedBy'])
         ]);
     }
@@ -378,6 +380,38 @@ class LeaveRequestController extends Controller
     }
 
     /**
+     * HR confirms/approves a manager's rejection
+     */
+    public function confirmManagerRejection(Request $request, $id) {
+        $leave = LeaveRequest::findOrFail($id);
+        
+        // Only allow confirmation of manager-rejected requests
+        if ($leave->status !== 'manager_rejected') {
+            return response()->json([
+                'error' => 'This leave request is not pending HR confirmation of manager rejection'
+            ], 400);
+        }
+        
+        // Change status to rejected and add HR remarks if provided
+        $leave->status = 'rejected';
+        if ($request->has('remarks')) {
+            $leave->admin_remarks = $request->input('remarks');
+        }
+        $leave->approved_by = auth()->id();
+        $leave->rejected_at = now();
+        $leave->approved_at = null;
+        $leave->save();
+
+        // Now notify employee about the confirmed rejection
+        $leave->employee->notify(new LeaveRequestStatusChanged($leave));
+
+        return response()->json([
+            'message' => 'Manager rejection confirmed by HR. Employee has been notified.',
+            'data' => $leave->load(['employee', 'approvedBy', 'managerApprovedBy'])
+        ]);
+    }
+
+    /**
      * Get leave requests pending manager approval
      */
     public function getManagerPendingRequests()
@@ -399,14 +433,17 @@ class LeaveRequestController extends Controller
      */
     public function getHRPendingRequests()
     {
-        $pendingRequests = LeaveRequest::where('status', 'manager_approved')
+        $pendingRequests = LeaveRequest::whereIn('status', ['manager_approved', 'manager_rejected'])
             ->with(['employee', 'employee.employeeProfile', 'managerApprovedBy'])
             ->latest('manager_approved_at')
+            ->orderByRaw('CASE WHEN status = "manager_rejected" THEN 1 ELSE 2 END') // Show manager rejected first
             ->get();
 
         return response()->json([
             'data' => $pendingRequests,
             'total' => $pendingRequests->count(),
+            'manager_approved' => $pendingRequests->where('status', 'manager_approved')->count(),
+            'manager_rejected' => $pendingRequests->where('status', 'manager_rejected')->count(),
             'message' => 'HR pending leave requests retrieved successfully'
         ]);
     }
@@ -431,7 +468,7 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request terms and category updated successfully',
-            'data' => $leave->load(['employee', 'approvedBy'])
+            'data' => $leave->load(['employee', 'approvedBy', 'managerApprovedBy'])
         ]);
     }
 
@@ -443,6 +480,7 @@ class LeaveRequestController extends Controller
             'rejected' => LeaveRequest::where('status', 'rejected')->count(),
             'pending' => LeaveRequest::where('status', 'pending')->count(),
             'manager_approved' => LeaveRequest::where('status', 'manager_approved')->count(),
+            'manager_rejected' => LeaveRequest::where('status', 'manager_rejected')->count(),
         ];
 
         $typeStats = LeaveRequest::selectRaw('type, COUNT(*) as count')
@@ -696,7 +734,7 @@ class LeaveRequestController extends Controller
      */
     public function downloadPdf($id)
     {
-        $leaveRequest = LeaveRequest::with(['employee', 'approvedBy'])->findOrFail($id);
+        $leaveRequest = LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->findOrFail($id);
         
         // Check if user can access this leave request
         $user = Auth::user();
