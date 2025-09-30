@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HR Assistant Dashboard (Standalone)</title>
+  
+  <!-- Responsive CSS -->
+  <link rel="stylesheet" href="/responsive.css" type="text/css">
 
   <!-- Color system: white primary, blue/dark-blue secondary -->
   <style>
@@ -218,8 +221,32 @@
   </style>
 </head>
 <body>
-  <div id="hr-assistant-dashboard" class="hrasst-wrapper" aria-label="HR Assistant Dashboard">
-    <div class="hrasst-header" role="region" aria-label="Header">
+  <div id="hr-assistant-dashboard" class="hrasst-wrapper responsive-container" aria-label="HR Assistant Dashboard">
+    <!-- Mobile Menu Button -->
+    <button class="hrms-mobile-menu-btn responsive-mobile-menu show-on-mobile" id="mobileMenuBtn" aria-label="Toggle Navigation Menu">
+      ☰
+    </button>
+    
+    <!-- Sidebar Overlay -->
+    <div class="hrms-sidebar-overlay responsive-sidebar-overlay" id="sidebarOverlay"></div>
+    
+    <!-- Navigation Sidebar (initially hidden on mobile) -->
+    <nav class="hrms-sidebar responsive-sidebar hide-on-mobile" id="navSidebar" style="width: 280px; background: #1a202c; color: white; position: fixed; left: 0; top: 0; height: 100vh; z-index: 1000; padding: 20px; transform: translateX(-100%); transition: transform 0.3s ease;">
+      <div style="padding-bottom: 20px; border-bottom: 1px solid #4a5568; margin-bottom: 20px;">
+        <h3 style="color: white; margin: 0; font-size: 1.2rem;">HR Assistant</h3>
+        <small style="color: #a0aec0;">Navigation Menu</small>
+      </div>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">📊 Dashboard</a></li>
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">👥 Employee Records</a></li>
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">💰 Payroll</a></li>
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">📅 Leave Management</a></li>
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">💵 Cash Advance</a></li>
+        <li style="margin-bottom: 10px;"><a href="#" style="color: white; text-decoration: none; padding: 10px 0; display: block; border-radius: 6px; padding-left: 15px;">⭐ Evaluation</a></li>
+      </ul>
+    </nav>
+    
+    <div class="hrasst-header responsive-header" role="region" aria-label="Header">
       <h1>Dashboard</h1>
       <span class="hrasst-status" title="Module is ready to connect">
         <span class="hrasst-dot" aria-hidden="true"></span>
@@ -228,7 +255,7 @@
     </div>
 
     <!-- 2x2 responsive grid: Revenue Report, Calendar, Absent, Total Employees -->
-    <section class="hrasst-grid" aria-label="Dashboard Grid">
+    <section class="hrasst-grid responsive-dashboard-grid" aria-label="Dashboard Grid">
       <!-- Revenue Report -->
       <article class="hrasst-card" tabindex="0" role="button" data-modal="revenue" aria-label="Open Revenue Report details">
         <div class="hrasst-card-header">
@@ -650,6 +677,36 @@
         initRevenueChart($('#hrasst-revenue-canvas'));
         makeCalendar();
         renderAbsent();
+        
+        // Mobile menu functionality
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.getElementById('navSidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        if (mobileMenuBtn && sidebar && overlay) {
+          mobileMenuBtn.addEventListener('click', function() {
+            sidebar.classList.toggle('open');
+            sidebar.style.transform = sidebar.classList.contains('open') ? 'translateX(0)' : 'translateX(-100%)';
+            overlay.classList.toggle('show');
+            overlay.style.display = overlay.classList.contains('show') ? 'block' : 'none';
+          });
+          
+          overlay.addEventListener('click', function() {
+            sidebar.classList.remove('open');
+            sidebar.style.transform = 'translateX(-100%)';
+            overlay.classList.remove('show');
+            overlay.style.display = 'none';
+          });
+          
+          window.addEventListener('resize', function() {
+            if (window.innerWidth >= 1024) {
+              sidebar.classList.remove('open');
+              sidebar.style.transform = 'translateX(-100%)';
+              overlay.classList.remove('show');
+              overlay.style.display = 'none';
+            }
+          });
+        }
       });
 
       // ---------- Public API for later integration ----------

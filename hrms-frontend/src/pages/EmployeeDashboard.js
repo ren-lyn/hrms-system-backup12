@@ -33,6 +33,7 @@ const EmployeeDashboard = () => {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [timeNow, setTimeNow] = useState(new Date());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [activeView, setActiveView] = useState('dashboard'); // default view
 
   // Evaluation summary state
@@ -70,6 +71,27 @@ const EmployeeDashboard = () => {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 1023;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+  };
 
   const handleLogout = () => {
     try {
@@ -260,52 +282,137 @@ const EmployeeDashboard = () => {
   };
 
   return (
-    <div className="d-flex" style={{ minHeight: '100vh', fontFamily: 'Segoe UI, sans-serif' }}>
-      {/* Sidebar */}
-      <div className="d-none d-md-flex flex-column bg-dark text-white p-4" style={{ width: '18vw', minHeight: '100vh' }}>
-        <h5 className="mb-4 text-center fw-bold text-uppercase">CCDC</h5>
-        <ul className="nav flex-column gap-3">
-          <li><button onClick={() => setActiveView('dashboard')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faTachometerAlt} className="me-2" /> Dashboard</button></li>
-          <li><button onClick={() => setActiveView('profile')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faUser} className="me-2" /> Profile</button></li>
-          <li><button onClick={() => setActiveView('payroll-summary')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faMoneyBillWave} className="me-2" /> Payslip</button></li>
-          <li><button onClick={() => setActiveView('timesheet')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faClock} className="me-2" /> Timesheet</button></li>
-          <li><button onClick={() => setActiveView('leave-request')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> Leave Request</button></li>
-          <li><button onClick={() => setActiveView('cash-advance')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faHandHoldingUsd} className="me-2" /> Cash Advance</button></li>
-          <li><button onClick={() => setActiveView('evaluation-summary')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faChartBar} className="me-2" /> Evaluation Summary</button></li>
-          <li><button onClick={() => setActiveView('disciplinary-notice')} className="btn btn-link text-start text-white nav-link"><FontAwesomeIcon icon={faExclamationTriangle} className="me-2" /> Disciplinary Notice</button></li>
-        </ul>
-        <div className="mt-auto pt-3 border-top">
-          <button onClick={handleLogout} className="btn btn-link nav-link text-danger text-start p-0" style={{ textDecoration: 'none' }}>
-            <FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-grow-1" style={{ background: 'linear-gradient(to bottom right, #f0f4f8, #d9e2ec)' }}>
-        {/* Mobile header */}
-        <div className="d-md-none d-flex justify-content-between align-items-center p-2 bg-dark text-white">
-          <span className="fw-bold">CCDC</span>
-          <FontAwesomeIcon icon={faBars} size="lg" onClick={() => setSidebarOpen(!sidebarOpen)} style={{ cursor: 'pointer' }} />
-        </div>
-
-        {/* Header */}
-        <div className="container-fluid py-3 px-3 px-md-5">
-          <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
-            <h4 className="fw-bold text-primary mb-2 mb-md-0">{getHeaderTitle()}</h4>
-            <div className="d-flex align-items-center gap-3">
-              <FontAwesomeIcon icon={faEnvelope} size="lg" className="text-primary" />
-              <Bell 
-                onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
-                onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
-              />
-              <span className="fw-semibold text-dark">{employeeName || 'Employee'}</span>
-              <img src="https://i.pravatar.cc/40" alt="Profile" className="rounded-circle" style={{ width: '36px', height: '36px', objectFit: 'cover', border: '2px solid #0d6efd' }} />
+    <>
+      <div className="d-flex employee-dashboard hrms-dashboard-wrapper responsive-container" style={{ minHeight: '100vh', fontFamily: 'Segoe UI, sans-serif' }}>
+        {/* Mobile Menu Button */}
+        {/* Sidebar Overlay */}
+        <div 
+          className={`hrms-sidebar-overlay ${sidebarOpen && isMobile ? 'show' : ''}`}
+          onClick={closeSidebar}
+        ></div>
+        
+        {/* Sidebar */}
+        <div className={`hrms-sidebar hrms-scrollable-sidebar hrms-unified-sidebar ${isMobile ? (sidebarOpen ? 'open' : '') : ''}`}>
+          <div>
+            <h2 className="hrms-unified-logo">CCDC</h2>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'dashboard' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('dashboard')}
+            >
+              <FontAwesomeIcon icon={faTachometerAlt} />
+              <span>Dashboard</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'profile' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('profile')}
+            >
+              <FontAwesomeIcon icon={faUser} />
+              <span>Profile</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'leave-request' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('leave-request')}
+            >
+              <FontAwesomeIcon icon={faCalendarAlt} />
+              <span>Leave Request</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'cash-advance' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('cash-advance')}
+            >
+              <FontAwesomeIcon icon={faHandHoldingUsd} />
+              <span>Cash Advance</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'evaluation-summary' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('evaluation-summary')}
+            >
+              <FontAwesomeIcon icon={faChartBar} />
+              <span>Evaluation Summary</span>
+            </button>
+            <button
+              className="hrms-unified-nav-link"
+              onClick={handleLogout}
+            >
+              <FontAwesomeIcon icon={faSignOutAlt} />
+              <span>Logout</span>
+            </button>
+          </div>
+          <div className="hrms-unified-profile">
+            <img src="https://i.pravatar.cc/40" alt="profile" style={{ width: '40px', borderRadius: '50%' }} />
+            <div>
+              <div>{employeeName || 'Employee'}</div>
+              <small>Employee</small>
             </div>
           </div>
+        </div>
+        
+        {/* Mobile Menu Button */}
+        {isMobile && (
+          <button 
+            className="hrms-mobile-menu-btn responsive-mobile-menu"
+            onClick={toggleSidebar}
+            aria-label="Toggle Navigation Menu"
+            style={{
+              position: 'fixed',
+              top: '15px',
+              left: '15px',
+              zIndex: 1001,
+              backgroundColor: '#204176',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '0.75rem',
+              fontSize: '1.2rem',
+              lineHeight: '1',
+              minWidth: '44px',
+              minHeight: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#1a3660';
+              e.target.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#204176';
+              e.target.style.transform = 'scale(1)';
+            }}
+          >
+            ☰
+          </button>
+        )}
 
-          {/* Content Section */}
-          {renderContent()}
+        {/* Main Content */}
+        <div className="hrms-main-content hrms-scrollable-main-content flex-grow-1" style={{ background: 'linear-gradient(to bottom right, #f0f4f8, #d9e2ec)' }}>
+          {/* Mobile header */}
+          <div className="d-md-none d-flex justify-content-between align-items-center p-2 bg-dark text-white">
+            <span className="fw-bold">CCDC</span>
+            <FontAwesomeIcon icon={faBars} size="lg" onClick={() => setSidebarOpen(!sidebarOpen)} style={{ cursor: 'pointer' }} />
+          </div>
+
+          {/* Header */}
+          <div className="container-fluid py-3 px-3 px-md-5">
+            <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
+              <h4 className="fw-bold text-primary mb-2 mb-md-0">{getHeaderTitle()}</h4>
+              <div className="d-flex align-items-center gap-3">
+                <FontAwesomeIcon icon={faEnvelope} size="lg" className="text-primary" />
+                <Bell 
+                  onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
+                  onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
+                />
+                <span className="fw-semibold text-dark">{employeeName || 'Employee'}</span>
+                <img src="https://i.pravatar.cc/40" alt="Profile" className="rounded-circle" style={{ width: '36px', height: '36px', objectFit: 'cover', border: '2px solid #0d6efd' }} />
+              </div>
+            </div>
+
+            {/* Content Section */}
+            {renderContent()}
+          </div>
         </div>
       </div>
       
@@ -321,7 +428,7 @@ const EmployeeDashboard = () => {
         draggable
         pauseOnHover
       />
-    </div>
+    </>
   );
 };
 

@@ -1,26 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
 
-/**
- * StandaloneAssistantDashboard
- *
- * A self-contained, responsive dashboard component that mirrors the 4-card layout:
- * - Revenue Report (bar chart)
- * - Calendar (month view)
- * - Absent Employees (list)
- * - Total Employees (summary)
- *
- * Notes
- * - CSS is fully scoped with the `hrasst-` prefix and injected via a <style> tag to avoid conflicts.
- * - Charts are initialized once (no animation loop). Instances are destroyed on unmount.
- * - Each card opens a modal with additional details when clicked.
- * - An optional public API is exposed via `window.hraDashboardReact` for runtime data updates.
- *
- * Usage
- *   import StandaloneAssistantDashboard from './components/HrAssistant/Dashboard/StandaloneAssistantDashboard';
- *   ...
- *   <StandaloneAssistantDashboard />
- */
 export default function StandaloneAssistantDashboard() {
   // ---------- Styles (scoped) ----------
   const styles = useMemo(() => `
@@ -39,7 +19,7 @@ export default function StandaloneAssistantDashboard() {
       --hrasst-radius-md: 12px;
       --hrasst-radius-sm: 10px;
     }
-    .hrasst-wrapper { box-sizing: border-box; max-height: calc(100vh - 130px); overflow: auto; overflow-x: hidden; background: var(--hrasst-bg); color: var(--hrasst-text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: clamp(14px, 2vw, 28px); margin-left: 40px; }
+    .hrasst-wrapper { box-sizing: border-box; max-height: calc(100vh - 130px); overflow: auto; overflow-x: hidden; background: var(--hrasst-bg); color: var(--hrasst-text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: clamp(14px, 2vw, 28px); }
     .hrasst-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding: clamp(12px,1.5vw,16px) clamp(14px,1.8vw,20px); background: var(--hrasst-surface); border:1px solid var(--hrasst-border); border-radius:16px; box-shadow: var(--hrasst-shadow); margin-bottom: clamp(16px,2.4vw,28px); }
     .hrasst-header h1 { font-size: clamp(18px,2.2vw,24px); font-weight: 700; color: var(--hrasst-primary-900); margin: 0; }
     .hrasst-status { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--hrasst-muted); background:#f3f6ff; border:1px solid #e6ecff; padding:6px 10px; border-radius:999px; }

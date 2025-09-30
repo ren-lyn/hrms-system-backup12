@@ -27,6 +27,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 const HrStaffDashboard = () => {
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [date, setDate] = useState(new Date());
   const [timeNow, setTimeNow] = useState(new Date());
 
@@ -34,6 +35,27 @@ const HrStaffDashboard = () => {
     const timer = setInterval(() => setTimeNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 1023;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+  };
 
   // Toast notification helpers
   const showSuccess = (message) => toast.success(message);
@@ -224,287 +246,197 @@ const HrStaffDashboard = () => {
   };
 
   return (
-    <div
-      className="d-flex"
-      style={{ minHeight: "100vh", fontFamily: "Segoe UI, sans-serif" }}
-    >
-      {/* Sidebar */}
-      <div
-        className="d-none d-md-flex flex-column bg-dark text-white p-4"
-        style={{ width: "18vw", minHeight: "100vh" }}
-      >
-        <h5 className="mb-4 text-center fw-bold text-uppercase">CCDC</h5>
-        <ul className="nav flex-column gap-3">
-          <li>
-            <button
-              onClick={() => setActiveView("dashboard")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faChartBar} className="me-2" /> Dashboard
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("job-posting")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job
-              Posting
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("job-applications")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Job
-              Applications
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("employee-record")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faUsers} className="me-2" /> Employee
-              Record
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("evaluation")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faChartBar} className="me-2" /> Evaluation
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("disciplinary")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon
-                icon={faExclamationTriangle}
-                className="me-2"
-              />{" "}
-              Disciplinary Action
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("leave")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> Leave
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("recruitment")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Recruitment
-            </button>
-          </li>
-          <li>
-            <button
-              onClick={() => setActiveView("onboarding")}
-              className="btn btn-link text-start text-white nav-link"
-            >
-              <FontAwesomeIcon icon={faClipboardList} className="me-2" />{" "}
-              Onboarding
-            </button>
-          </li>
-        </ul>
-        <div className="mt-auto pt-3 border-top">
+    <>
+      <div className="d-flex hrms-dashboard-wrapper responsive-container" style={{ minHeight: "100vh", fontFamily: "Segoe UI, sans-serif" }}>
+        {/* Mobile Menu Button */}
+        {isMobile && (
           <button 
-            onClick={handleLogout}
-            className="btn btn-link nav-link text-danger text-start p-0 w-100"
-            style={{ textDecoration: 'none' }}
+            className="hrms-mobile-menu-btn responsive-mobile-menu"
+            onClick={toggleSidebar}
+            aria-label="Toggle Navigation Menu"
+            style={{
+              position: 'fixed',
+              top: '15px',
+              left: '15px',
+              zIndex: 1001,
+              backgroundColor: '#204176',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '0.75rem',
+              fontSize: '1.2rem',
+              lineHeight: '1',
+              minWidth: '44px',
+              minHeight: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#1a3660';
+              e.target.style.transform = 'scale(1.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#204176';
+              e.target.style.transform = 'scale(1)';
+            }}
           >
-            <FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout
+            ☰
           </button>
-        </div>
-      </div>
-
-      {/* Mobile Sidebar */}
-      {sidebarOpen && (
-        <div className="d-md-none position-fixed top-0 start-0 bg-dark text-white p-3" style={{ width: "250px", height: "100vh", zIndex: 1050, overflowY: "auto" }}>
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h5 className="mb-0 fw-bold text-uppercase">CCDC</h5>
-            <FontAwesomeIcon
-              icon={faBars}
-              size="lg"
-              onClick={() => setSidebarOpen(false)}
-              style={{ cursor: "pointer" }}
-            />
-          </div>
-          <ul className="nav flex-column gap-3">
+        )}
+        
+        {/* Sidebar Overlay */}
+        <div 
+          className={`hrms-sidebar-overlay ${sidebarOpen && isMobile ? 'show' : ''}`}
+          onClick={closeSidebar}
+        ></div>
+        
+        {/* Single Sidebar - Conditionally positioned */}
+        <div className={`flex-column shadow-lg p-4 hrms-sidebar hrms-scrollable-sidebar hrms-unified-sidebar ${isMobile ? (sidebarOpen ? 'open' : '') : ''}`}>
+          <h5 className="mb-4 text-center fw-bold text-uppercase hrms-unified-logo">CCDC</h5>
+          <ul className="nav flex-column gap-2">
             <li>
               <button
-                onClick={() => { setActiveView("dashboard"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("dashboard")}
+                className={`hrms-unified-nav-link ${activeView === 'dashboard' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faChartBar} className="me-2" /> Dashboard
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("job-posting"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("job-posting")}
+                className={`hrms-unified-nav-link ${activeView === 'job-posting' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job Posting
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("job-applications"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("job-applications")}
+                className={`hrms-unified-nav-link ${activeView === 'job-applications' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Job Applications
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("employee-record"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("employee-record")}
+                className={`hrms-unified-nav-link ${activeView === 'employee-record' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faUsers} className="me-2" /> Employee Record
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("evaluation"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("evaluation")}
+                className={`hrms-unified-nav-link ${activeView === 'evaluation' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faChartBar} className="me-2" /> Evaluation
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("disciplinary"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("disciplinary")}
+                className={`hrms-unified-nav-link ${activeView === 'disciplinary' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" /> Disciplinary Action
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("leave"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("leave")}
+                className={`hrms-unified-nav-link ${activeView === 'leave' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> Leave
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("recruitment"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("recruitment")}
+                className={`hrms-unified-nav-link ${activeView === 'recruitment' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Recruitment
               </button>
             </li>
             <li>
               <button
-                onClick={() => { setActiveView("onboarding"); setSidebarOpen(false); }}
-                className="btn btn-link text-start text-white nav-link w-100"
+                onClick={() => setActiveView("onboarding")}
+                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faClipboardList} className="me-2" /> Onboarding
               </button>
             </li>
           </ul>
-          <div className="mt-auto pt-3 border-top">
+          <div className="mt-auto pt-3 border-top hrms-unified-profile">
             <button 
               onClick={handleLogout}
-              className="btn btn-link nav-link text-danger text-start p-0 w-100"
-              style={{ textDecoration: 'none' }}
+              className="hrms-unified-nav-link hrms-unified-logout"
             >
               <FontAwesomeIcon icon={faSignOutAlt} className="me-2" /> Logout
             </button>
           </div>
         </div>
-      )}
 
-      {/* Mobile Overlay */}
-      {sidebarOpen && (
-        <div 
-          className="d-md-none position-fixed top-0 start-0 w-100 h-100" 
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1040 }}
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main Content */}
-      <div
-        className="flex-grow-1"
-        style={{
-          background: "linear-gradient(to bottom right, #f0f4f8, #d9e2ec)",
-        }}
-      >
-        {/* Mobile header */}
-        <div className="d-md-none d-flex justify-content-between align-items-center p-2 bg-dark text-white">
-          <span className="fw-bold">HR Staff</span>
-          <FontAwesomeIcon
-            icon={faBars}
-            size="lg"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{ cursor: "pointer" }}
-          />
-        </div>
-
-        {/* Header - hidden only for job-posting and job-applications */}
-        <div className="container-fluid py-3 px-3 px-md-5">
-          {activeView !== "job-posting" && activeView !== "job-applications" && (
-            <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
-              <h4 className="fw-bold text-primary mb-2 mb-md-0">
-                {getHeaderTitle()}
-              </h4>
-              <div className="d-flex align-items-center gap-3">
-                <FontAwesomeIcon
-                  icon={faEnvelope}
-                  size="lg"
-                  className="text-primary"
-                />
-                <FontAwesomeIcon
-                  icon={faBell}
-                  size="lg"
-                  className="text-primary"
-                />
-                <span className="fw-semibold text-dark">HR Staff</span>
-                <img
-                  src="https://i.pravatar.cc/40"
-                  alt="Profile"
-                  className="rounded-circle"
-                  style={{
-                    width: "36px",
-                    height: "36px",
-                    objectFit: "cover",
-                    border: "2px solid #0d6efd",
-                  }}
-                />
+        {/* Main Content */}
+        <div className="flex-grow-1 hrms-main-content hrms-scrollable-main-content" style={{ background: "linear-gradient(to bottom right, #f0f4f8, #d9e2ec)" }}>
+          {/* Header - hidden only for job-posting and job-applications */}
+          <div className="container-fluid py-3 px-3 px-md-5">
+            {activeView !== "job-posting" && activeView !== "job-applications" && (
+              <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
+                <h4 className="fw-bold text-primary mb-2 mb-md-0">
+                  {getHeaderTitle()}
+                </h4>
+                <div className="d-flex align-items-center gap-3">
+                  <FontAwesomeIcon
+                    icon={faEnvelope}
+                    size="lg"
+                    className="text-primary"
+                  />
+                  <FontAwesomeIcon
+                    icon={faBell}
+                    size="lg"
+                    className="text-primary"
+                  />
+                  <span className="fw-semibold text-dark">HR Staff</span>
+                  <img
+                    src="https://i.pravatar.cc/40"
+                    alt="Profile"
+                    className="rounded-circle"
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      objectFit: "cover",
+                      border: "2px solid #0d6efd",
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Content Section */}
-          {renderContent()}
+            {/* Content Section */}
+            {renderContent()}
+          </div>
         </div>
+        
+        {/* Toast Container */}
+        <ToastContainer 
+          position="top-center" 
+          autoClose={3000} 
+          hideProgressBar={false}
+          newestOnTop={true}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="colored"
+        />
       </div>
-
-      {/* Toast Container */}
-      <ToastContainer 
-        position="top-center" 
-        autoClose={3000} 
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="colored"
-      />
-    </div>
+    </>
   );
 };
 

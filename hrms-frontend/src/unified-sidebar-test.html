@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRMS Unified Sidebar Test</title>
+    <style>
+        /* Test styles for unified sidebar theme */
+        .hrms-unified-sidebar {
+            background: #204176 !important;
+            color: #ffffff !important;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+            width: 280px;
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+        }
+
+        .hrms-unified-logo {
+            color: #ffffff !important;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 0 0 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .hrms-unified-nav-link {
+            display: flex !important;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            color: #ffffff !important;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none !important;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-size: 15px;
+        }
+
+        .hrms-unified-nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            color: #ffffff !important;
+        }
+
+        .hrms-unified-nav-link.hrms-unified-active {
+            background-color: #ffffff !important;
+            color: #204176 !important;
+        }
+
+        .hrms-unified-nav-link.hrms-unified-active:hover {
+            background-color: #ffffff !important;
+            color: #204176 !important;
+        }
+
+        .hrms-unified-logout {
+            color: #dc3545 !important;
+            background: rgba(220, 53, 69, 0.1) !important;
+        }
+
+        .hrms-unified-logout:hover {
+            background: rgba(220, 53, 69, 0.2) !important;
+            color: #dc3545 !important;
+        }
+
+        .hrms-unified-profile {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 20px;
+            color: #ffffff;
+        }
+
+        .main-content {
+            margin-left: 300px;
+            padding: 20px;
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+
+        .test-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .hrms-unified-sidebar {
+                transform: translateX(-100%);
+                z-index: 1000;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="hrms-unified-sidebar">
+        <div>
+            <h2 class="hrms-unified-logo">CCDC</h2>
+            <ul style="list-style: none; padding: 0;">
+                <li><button class="hrms-unified-nav-link hrms-unified-active">📊 Dashboard</button></li>
+                <li><button class="hrms-unified-nav-link">👥 Employee Records</button></li>
+                <li><button class="hrms-unified-nav-link">💰 Payroll</button></li>
+                <li><button class="hrms-unified-nav-link">📅 Attendance</button></li>
+                <li><button class="hrms-unified-nav-link">✈️ Leave Management</button></li>
+                <li><button class="hrms-unified-nav-link">📋 My Calendar</button></li>
+                <li><button class="hrms-unified-nav-link">💵 Cash Advance</button></li>
+                <li><button class="hrms-unified-nav-link">⭐ Employee Evaluation</button></li>
+                <li><button class="hrms-unified-nav-link">⚠️ Disciplinary Action</button></li>
+                <li><button class="hrms-unified-nav-link">💼 Job Postings</button></li>
+                <li><button class="hrms-unified-nav-link">📄 Job Applications</button></li>
+                <li><button class="hrms-unified-nav-link">👤 Recruitment</button></li>
+                <li><button class="hrms-unified-nav-link">📊 Report Generation</button></li>
+            </ul>
+        </div>
+        
+        <div class="hrms-unified-profile">
+            <button class="hrms-unified-nav-link hrms-unified-logout">🚪 Logout</button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="test-card">
+            <h1>HRMS Unified Sidebar Theme Test</h1>
+            <p>This test page shows the unified sidebar theme with:</p>
+            <ul>
+                <li><strong>Background:</strong> #204176 (Primary)</li>
+                <li><strong>Text:</strong> #FFFFFF (White)</li>
+                <li><strong>Active Item:</strong> White background with primary text</li>
+                <li><strong>Hover Effect:</strong> Semi-transparent white overlay</li>
+                <li><strong>Logout Button:</strong> Danger red styling</li>
+            </ul>
+        </div>
+
+        <div class="test-card">
+            <h2>Responsive Behavior</h2>
+            <p>On mobile screens (< 768px), the sidebar will be hidden by default and slide out when triggered.</p>
+            <p><strong>Test Instructions:</strong></p>
+            <ol>
+                <li>Resize browser window to mobile size</li>
+                <li>Sidebar should disappear</li>
+                <li>Main content should expand to full width</li>
+                <li>In actual implementation, hamburger menu would show</li>
+            </ol>
+        </div>
+
+        <div class="test-card">
+            <h2>Cross-Role Consistency</h2>
+            <p>This theme should be consistent across all user roles:</p>
+            <ul>
+                <li>✅ Manager Dashboard</li>
+                <li>✅ HR Assistant Dashboard</li>
+                <li>✅ HR Staff Dashboard</li>
+                <li>✅ Employee Dashboard</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

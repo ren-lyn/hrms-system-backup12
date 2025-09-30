@@ -1,0 +1,126 @@
+/* Global Responsive Styles for HRMS Dashboards */
+
+/* Hamburger Menu Global Styles */
+.hrms-mobile-menu-btn {
+  position: fixed;
+  top: 15px;
+  left: 15px;
+  z-index: 1001;
+  background-color: #204176;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.hrms-mobile-menu-btn:hover {
+  background-color: #1a3660;
+  transform: scale(1.05);
+}
+
+/* Sidebar Overlay Global Styles */
+.hrms-sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1044;
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.hrms-sidebar-overlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+@media screen and (min-width: 1024px) {
+  .hrms-sidebar-overlay {
+    display: none !important;
+  }
+}
+
+/* Responsive Main Content Adjustments */
+@media (max-width: 1023px) {
+  .hrms-main-content.responsive-main-content {
+    padding-top: 70px !important; /* Space for hamburger menu */
+  }
+  
+  .hrms-dashboard-wrapper.responsive-container .hrms-main-content {
+    padding-top: 70px !important;
+  }
+  
+  /* Employee Dashboard specific */
+  .employee-dashboard .hrms-main-content {
+    padding-top: 70px !important;
+  }
+  
+  /* Manager Dashboard specific */
+  .manager-dashboard .hrms-main-content {
+    padding-top: 70px !important;
+  }
+}
+
+/* Sidebar Global Responsive Styles */
+@media (min-width: 1024px) {
+  .hrms-sidebar.responsive-sidebar {
+    position: static !important;
+    transform: translateX(0) !important;
+    display: flex !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .hrms-sidebar.responsive-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  
+  .hrms-sidebar.responsive-sidebar.open {
+    transform: translateX(0) !important;
+  }
+}
+
+/* Touch-friendly improvements */
+@media (max-width: 768px) {
+  .nav-link, .btn {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  
+  .hrms-mobile-menu-btn {
+    top: 10px;
+    left: 10px;
+  }
+}
+
+/* Large screen optimizations */
+@media (min-width: 1400px) {
+  .hrms-sidebar.responsive-sidebar {
+    width: 280px;
+  }
+  
+  .hrms-main-content.responsive-main-content {
+    padding: 2rem;
+  }
+}

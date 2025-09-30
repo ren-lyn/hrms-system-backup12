@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import RegisterApplicant from './pages/RegisterApplicant';
 import JobPortal from './components/JobPortal'; // Add this import
 import 'bootstrap/dist/css/bootstrap.min.css';
+import './responsive.css'; // Import responsive CSS
 
 import HrStaffDashboard from './pages/HrStaffDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';

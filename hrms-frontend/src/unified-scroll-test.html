@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRMS Unified Scroll & Touch Sensitivity Test</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Unified Scroll Container */
+        .hrms-unified-scroll-container {
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: 100vh;
+            scrollbar-width: thin;
+            scrollbar-color: #c1c1c1 #f1f1f1;
+            display: flex;
+        }
+
+        .hrms-unified-scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .hrms-unified-scroll-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .hrms-unified-scroll-container::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        .hrms-unified-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* Sidebar */
+        .hrms-sidebar {
+            width: 280px;
+            background: #204176;
+            color: #ffffff;
+            overflow-y: visible;
+            overflow-x: hidden;
+            flex-shrink: 0;
+            min-height: 100%;
+            padding: 20px;
+        }
+
+        /* Main Content */
+        .hrms-main-content {
+            overflow-y: visible;
+            overflow-x: hidden;
+            flex: 1;
+            min-height: 100%;
+            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
+            padding: 20px;
+        }
+
+        /* Touch-sensitive overlay */
+        .hrms-sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1044;
+            backdrop-filter: blur(2px);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .hrms-sidebar-overlay.show {
+            display: block;
+            opacity: 1;
+        }
+
+        /* Navigation items */
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            color: #ffffff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-size: 15px;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-item.active {
+            background-color: #ffffff;
+            color: #204176;
+        }
+
+        .logo {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 0 0 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .content-section {
+            background: white;
+            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .hamburger-btn {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1001;
+            background: #204176;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 18px;
+            cursor: pointer;
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        .hamburger-btn:hover {
+            background: #1a3660;
+        }
+
+        .controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1002;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            background: #204176;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .control-btn:hover {
+            background: #1a3660;
+        }
+
+        .long-content {
+            height: 200vh;
+            background: linear-gradient(to bottom, #f8f9fa, #e9ecef, #dee2e6, #ced4da);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            align-items: center;
+            text-align: center;
+            padding: 40px;
+        }
+
+        /* Mobile styles */
+        @media (max-width: 1023px) {
+            .hrms-unified-scroll-container {
+                display: none;
+            }
+
+            .mobile-layout {
+                display: flex;
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            .hamburger-btn {
+                display: block;
+            }
+
+            .hrms-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                height: 100vh;
+                z-index: 1045;
+                transform: translateX(-100%);
+                width: 280px;
+                transition: transform 0.3s ease;
+            }
+
+            .hrms-sidebar.open {
+                transform: translateX(0);
+            }
+
+            .hrms-main-content {
+                flex: 1;
+                overflow-y: auto;
+                height: 100vh;
+                padding-top: 70px;
+            }
+        }
+
+        .status-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 1003;
+        }
+
+        .highlight {
+            background: yellow;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: black;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- Controls -->
+    <div class="controls">
+        <button class="control-btn" onclick="simulateMobile()">📱 Mobile Mode</button>
+        <button class="control-btn" onclick="simulateDesktop()">🖥️ Desktop Mode</button>
+        <button class="control-btn" onclick="addMoreContent()">➕ Add Content</button>
+        <button class="control-btn" onclick="resetContent()">🔄 Reset</button>
+    </div>
+
+    <!-- Status Indicator -->
+    <div class="status-indicator" id="status">
+        <span class="highlight">Desktop Mode:</span> Unified Scrolling Active
+    </div>
+
+    <!-- Hamburger Menu -->
+    <button class="hamburger-btn" id="hamburger" onclick="toggleSidebar()">☰</button>
+
+    <!-- Overlay -->
+    <div class="hrms-sidebar-overlay" id="overlay" onclick="closeSidebar()"></div>
+
+    <!-- Desktop: Unified Scroll Container -->
+    <div class="hrms-unified-scroll-container" id="desktop-layout">
+        <!-- Sidebar -->
+        <div class="hrms-sidebar" id="desktop-sidebar">
+            <div class="logo">CCDC - Unified Scroll</div>
+            <div class="nav-item active">📊 Dashboard</div>
+            <div class="nav-item">👥 Employee Records</div>
+            <div class="nav-item">💰 Payroll</div>
+            <div class="nav-item">📅 Attendance</div>
+            <div class="nav-item">✈️ Leave Management</div>
+            <div class="nav-item">📋 My Calendar</div>
+            <div class="nav-item">💵 Cash Advance</div>
+            <div class="nav-item">⭐ Employee Evaluation</div>
+            <div class="nav-item">⚠️ Disciplinary Action</div>
+            <div class="nav-item">💼 Job Postings</div>
+            <div class="nav-item">📄 Job Applications</div>
+            <div class="nav-item">👤 Recruitment</div>
+            <div class="nav-item">📊 Report Generation</div>
+            <div class="nav-item">📈 Analytics</div>
+            <div class="nav-item">🔒 Security</div>
+            <div class="nav-item">⚙️ Settings</div>
+            <div class="nav-item">📞 Support</div>
+            <div class="nav-item">📝 Documentation</div>
+            <div class="nav-item">🎯 Goals</div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="hrms-main-content" id="desktop-main">
+            <div class="content-section">
+                <h1>🎉 Unified Scroll Behavior Test</h1>
+                <h2>✅ Desktop Mode Features:</h2>
+                <ul>
+                    <li><strong>Unified Scrolling:</strong> One scrollbar controls both sidebar and main content</li>
+                    <li><strong>Synchronized Movement:</strong> Both areas scroll together as a single unit</li>
+                    <li><strong>Better UX:</strong> No confusion about which area to scroll</li>
+                    <li><strong>Consistent Behavior:</strong> Works the same across all dashboards</li>
+                </ul>
+                
+                <h2>🧪 Test Instructions:</h2>
+                <ol>
+                    <li><strong>Desktop Mode:</strong> Use mouse wheel or scrollbar - both sidebar and content move together</li>
+                    <li><strong>Mobile Mode:</strong> Click "📱 Mobile Mode" to test touch-sensitive overlay</li>
+                    <li><strong>Touch Sensitivity:</strong> In mobile mode, tap outside sidebar to close it</li>
+                    <li><strong>Add Content:</strong> Click "➕ Add Content" to test with more scrollable content</li>
+                </ol>
+            </div>
+
+            <div class="content-section">
+                <h2>🔧 Technical Implementation</h2>
+                <p><strong>Desktop (≥1024px):</strong></p>
+                <ul>
+                    <li>Container: <code>.hrms-unified-scroll-container</code> with <code>overflow-y: auto</code></li>
+                    <li>Sidebar: <code>overflow-y: visible</code> (no independent scrolling)</li>
+                    <li>Main Content: <code>overflow-y: visible</code> (no independent scrolling)</li>
+                    <li>Single scrollbar controls entire layout</li>
+                </ul>
+                
+                <p><strong>Mobile/Tablet (≤1023px):</strong></p>
+                <ul>
+                    <li>Sidebar: Fixed position overlay with independent scrolling</li>
+                    <li>Main Content: Independent scrolling with <code>overflow-y: auto</code></li>
+                    <li>Touch-sensitive overlay for closing sidebar</li>
+                    <li>Hamburger menu for navigation</li>
+                </ul>
+            </div>
+
+            <div class="content-section" id="dynamic-content">
+                <h2>📊 Dynamic Content Area</h2>
+                <p>This section demonstrates how the unified scroll handles dynamic content.</p>
+                <div id="content-container">
+                    <!-- Dynamic content will be added here -->
+                </div>
+            </div>
+
+            <div class="long-content">
+                <div>
+                    <h2>📜 Long Scrollable Content</h2>
+                    <p>This extra-long content demonstrates unified scrolling behavior.</p>
+                    <p><strong>Notice:</strong> Both sidebar and main content scroll together!</p>
+                </div>
+                
+                <div>
+                    <h3>🎯 Middle Section</h3>
+                    <p>You're now in the middle of the scrollable content.</p>
+                    <p>The sidebar navigation items should still be visible and scrolling with this content.</p>
+                </div>
+                
+                <div>
+                    <h3>🏁 Bottom Section</h3>
+                    <p>You've reached the bottom of the content!</p>
+                    <p>The unified scroll behavior ensures everything moves together smoothly.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile: Separate Layout -->
+    <div class="mobile-layout" id="mobile-layout" style="display: none;">
+        <!-- Mobile Sidebar -->
+        <div class="hrms-sidebar" id="mobile-sidebar">
+            <div class="logo">CCDC - Mobile</div>
+            <div class="nav-item active">📊 Dashboard</div>
+            <div class="nav-item">👥 Employee Records</div>
+            <div class="nav-item">💰 Payroll</div>
+            <div class="nav-item">📅 Attendance</div>
+            <div class="nav-item">✈️ Leave Management</div>
+            <div class="nav-item">📋 My Calendar</div>
+            <div class="nav-item">💵 Cash Advance</div>
+            <div class="nav-item">⭐ Employee Evaluation</div>
+            <div class="nav-item">⚠️ Disciplinary Action</div>
+            <div class="nav-item">💼 Job Postings</div>
+            <div class="nav-item">📄 Job Applications</div>
+            <div class="nav-item">👤 Recruitment</div>
+        </div>
+
+        <!-- Mobile Main Content -->
+        <div class="hrms-main-content" id="mobile-main">
+            <div class="content-section">
+                <h1>📱 Mobile Mode - Touch Sensitivity Test</h1>
+                <h2>✅ Mobile Features:</h2>
+                <ul>
+                    <li><strong>Touch Overlay:</strong> Tap outside sidebar to close it</li>
+                    <li><strong>Independent Scrolling:</strong> Sidebar and main content scroll separately</li>
+                    <li><strong>Hamburger Menu:</strong> Easy access to navigation</li>
+                    <li><strong>Responsive Design:</strong> Optimized for touch interaction</li>
+                </ul>
+                
+                <h2>🧪 Mobile Test Steps:</h2>
+                <ol>
+                    <li>Click the hamburger menu (☰) to open sidebar</li>
+                    <li>Tap anywhere on the <span class="highlight">dark overlay area</span> to close</li>
+                    <li>Notice the smooth animation and backdrop blur</li>
+                    <li>Try scrolling - both areas are independently scrollable</li>
+                </ol>
+                
+                <div style="height: 100vh; background: linear-gradient(45deg, #f0f4f8, #d9e2ec); display: flex; align-items: center; justify-content: center; margin-top: 20px; border-radius: 8px;">
+                    <div style="text-align: center;">
+                        <h3>📱 Touch-Sensitive Area</h3>
+                        <p>Open the sidebar, then tap anywhere in this area to close it!</p>
+                        <p style="color: #666; font-size: 14px;">The overlay will capture touch events and close the sidebar automatically.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sidebarOpen = false;
+        let isMobile = false;
+
+        function toggleSidebar() {
+            sidebarOpen = !sidebarOpen;
+            const sidebar = document.getElementById('mobile-sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            if (sidebarOpen) {
+                sidebar.classList.add('open');
+                overlay.classList.add('show');
+            } else {
+                sidebar.classList.remove('open');
+                overlay.classList.remove('show');
+            }
+        }
+
+        function closeSidebar() {
+            if (sidebarOpen) {
+                sidebarOpen = false;
+                const sidebar = document.getElementById('mobile-sidebar');
+                const overlay = document.getElementById('overlay');
+                sidebar.classList.remove('open');
+                overlay.classList.remove('show');
+            }
+        }
+
+        function simulateMobile() {
+            isMobile = true;
+            document.getElementById('desktop-layout').style.display = 'none';
+            document.getElementById('mobile-layout').style.display = 'flex';
+            document.getElementById('status').innerHTML = '<span class="highlight">Mobile Mode:</span> Touch-Sensitive Overlay Active';
+        }
+
+        function simulateDesktop() {
+            isMobile = false;
+            closeSidebar();
+            document.getElementById('desktop-layout').style.display = 'flex';
+            document.getElementById('mobile-layout').style.display = 'none';
+            document.getElementById('status').innerHTML = '<span class="highlight">Desktop Mode:</span> Unified Scrolling Active';
+        }
+
+        function addMoreContent() {
+            const container = document.getElementById('content-container');
+            const newContent = document.createElement('div');
+            newContent.className = 'content-section';
+            newContent.innerHTML = `
+                <h3>📈 Additional Content Section ${container.children.length + 1}</h3>
+                <p>This is dynamically added content to test scrolling behavior with varying content heights.</p>
+                <div style="height: 300px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; margin: 10px 0;">
+                    <div style="text-align: center;">
+                        <h4>Dynamic Content Block</h4>
+                        <p>Notice how the unified scroll handles this new content!</p>
+                    </div>
+                </div>
+                <p>The unified scrolling system automatically adapts to new content without any additional configuration.</p>
+            `;
+            container.appendChild(newContent);
+        }
+
+        function resetContent() {
+            document.getElementById('content-container').innerHTML = '';
+        }
+
+        // Handle ESC key to close sidebar
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeSidebar();
+            }
+        });
+
+        // Initialize
+        simulateDesktop();
+    </script>
+</body>
+</html>

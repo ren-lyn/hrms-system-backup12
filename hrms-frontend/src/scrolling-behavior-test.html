@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HRMS Scrolling Behavior Test</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .dashboard-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* HR Assistant Fitted Sidebar */
+        .hrms-assistant-fitted {
+            position: static !important;
+            transform: none !important;
+            display: flex !important;
+            width: 280px;
+            min-width: 280px;
+            max-width: 280px;
+            flex-shrink: 0;
+            background: #204176;
+            color: #ffffff;
+            overflow-y: auto;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .hrms-assistant-main-content {
+            flex: 1;
+            min-width: 0;
+            overflow-x: hidden;
+            background: radial-gradient(circle at top left, #1a3b6e, #345ba5, #2a5298);
+        }
+
+        /* Scrollable Sidebar for Other Dashboards */
+        .hrms-scrollable-sidebar {
+            width: 280px;
+            background: #204176;
+            color: #ffffff;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+            flex-shrink: 0;
+        }
+
+        .hrms-scrollable-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .hrms-scrollable-sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .hrms-scrollable-sidebar::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        .hrms-scrollable-sidebar::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Main Content Scrolling */
+        .hrms-scrollable-main-content {
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: 100vh;
+            scrollbar-width: thin;
+            scrollbar-color: #c1c1c1 #f1f1f1;
+            flex: 1;
+            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
+        }
+
+        .hrms-scrollable-main-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .hrms-scrollable-main-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .hrms-scrollable-main-content::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        .hrms-scrollable-main-content::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* HR Assistant Content */
+        .hrms-scrollable-content {
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: calc(100vh - 120px);
+            padding: 20px;
+            scrollbar-width: thin;
+            scrollbar-color: #c1c1c1 #f1f1f1;
+        }
+
+        .hrms-scrollable-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .hrms-scrollable-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .hrms-scrollable-content::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        .hrms-scrollable-content::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* Navigation Styling */
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            color: #ffffff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-size: 15px;
+        }
+
+        .nav-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-item.active {
+            background-color: #ffffff;
+            color: #204176;
+        }
+
+        .logo {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 0 0 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .content-card {
+            background: white;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .dashboard-tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tab-button {
+            padding: 10px 20px;
+            background: #204176;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .tab-button.active {
+            background: #1a3660;
+        }
+
+        .tab-button:hover {
+            background: #1a3660;
+        }
+
+        .long-content {
+            height: 200vh; /* Extra long content to test scrolling */
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-tabs">
+        <button class="tab-button active" onclick="showDashboard('hr-assistant')">HR Assistant (Fitted)</button>
+        <button class="tab-button" onclick="showDashboard('manager')">Manager (Scrollable)</button>
+        <button class="tab-button" onclick="showDashboard('employee')">Employee (Scrollable)</button>
+        <button class="tab-button" onclick="showDashboard('hr-staff')">HR Staff (Scrollable)</button>
+    </div>
+
+    <!-- HR Assistant Dashboard -->
+    <div id="hr-assistant-dashboard" class="dashboard-container">
+        <div class="hrms-assistant-fitted">
+            <div>
+                <div class="logo">CCDC - HR Assistant</div>
+                <div class="nav-item active">📊 Dashboard</div>
+                <div class="nav-item">👥 Employee Records</div>
+                <div class="nav-item">💰 Payroll</div>
+                <div class="nav-item">📅 Attendance</div>
+                <div class="nav-item">✈️ Leave Management</div>
+                <div class="nav-item">📋 My Calendar</div>
+                <div class="nav-item">💵 Cash Advance</div>
+                <div class="nav-item">⭐ Employee Evaluation</div>
+                <div class="nav-item">⚠️ Disciplinary Action</div>
+                <div class="nav-item">💼 Job Postings</div>
+                <div class="nav-item">📄 Job Applications</div>
+                <div class="nav-item">👤 Recruitment</div>
+                <div class="nav-item">📊 Report Generation</div>
+            </div>
+        </div>
+        <div class="hrms-assistant-main-content">
+            <div class="hrms-scrollable-content">
+                <div class="content-card">
+                    <h2>HR Assistant Dashboard - Fitted Sidebar</h2>
+                    <p><strong>Behavior:</strong> Sidebar is always visible and fitted to the layout. No swipe/overlay behavior.</p>
+                    <p><strong>Scrolling:</strong> Only the main content area scrolls vertically.</p>
+                    <ul>
+                        <li>✅ Sidebar is always visible</li>
+                        <li>✅ No mobile overlay behavior</li>
+                        <li>✅ Content area is scrollable</li>
+                        <li>✅ Sidebar stays fixed in place</li>
+                    </ul>
+                </div>
+                <div class="content-card long-content">
+                    <h3>Long Content for Scrolling Test</h3>
+                    <p>This is extra long content to test the scrolling behavior of the HR Assistant dashboard. The sidebar should remain fixed while this content scrolls.</p>
+                    <div style="height: 100vh; background: linear-gradient(to bottom, #f0f0f0, #e0e0e0); display: flex; align-items: center; justify-content: center;">
+                        <p>Scroll down to see more content...</p>
+                    </div>
+                    <div style="height: 100vh; background: linear-gradient(to bottom, #e0e0e0, #d0d0d0); display: flex; align-items: center; justify-content: center;">
+                        <p>More scrollable content here. Sidebar should stay fixed.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manager/Employee/HR Staff Dashboard Template -->
+    <div id="other-dashboard" class="dashboard-container" style="display: none;">
+        <div class="hrms-scrollable-sidebar">
+            <div>
+                <div class="logo" id="dashboard-title">CCDC - Manager</div>
+                <div class="nav-item active">📊 Dashboard</div>
+                <div class="nav-item">👥 Leave Requests</div>
+                <div class="nav-item">📅 Attendance Monitor</div>
+                <div class="nav-item">📋 Evaluations</div>
+                <div class="nav-item">⚠️ Disciplinary Cases</div>
+                <div class="nav-item">📊 Reports</div>
+                <div class="nav-item">📋 Item 7</div>
+                <div class="nav-item">📋 Item 8</div>
+                <div class="nav-item">📋 Item 9</div>
+                <div class="nav-item">📋 Item 10</div>
+                <div class="nav-item">📋 Item 11</div>
+                <div class="nav-item">📋 Item 12</div>
+                <div class="nav-item">📋 Item 13</div>
+                <div class="nav-item">📋 Item 14</div>
+                <div class="nav-item">📋 Item 15</div>
+                <div class="nav-item">📋 Item 16</div>
+                <div class="nav-item">📋 Item 17</div>
+                <div class="nav-item">📋 Item 18</div>
+                <div class="nav-item">📋 Item 19</div>
+                <div class="nav-item">📋 Item 20</div>
+            </div>
+        </div>
+        <div class="hrms-scrollable-main-content">
+            <div class="content-card">
+                <h2 id="main-title">Manager Dashboard - Scrollable Sidebar</h2>
+                <p><strong>Behavior:</strong> Both sidebar and main content are independently scrollable.</p>
+                <p><strong>Desktop Mode:</strong> Sidebar is visible and scrollable. Main content is also scrollable.</p>
+                <p><strong>Mobile/Tablet Mode:</strong> Sidebar becomes an overlay with hamburger menu trigger.</p>
+                <ul>
+                    <li>✅ Sidebar is scrollable independently</li>
+                    <li>✅ Main content scrolls independently</li>
+                    <li>✅ Mobile overlay behavior maintained</li>
+                    <li>✅ Both scroll areas have custom scrollbars</li>
+                </ul>
+            </div>
+            <div class="content-card long-content">
+                <h3>Long Content for Scrolling Test</h3>
+                <p>This content tests the main content scrolling. Try scrolling the sidebar too - it should scroll independently!</p>
+                <div style="height: 100vh; background: linear-gradient(to bottom, #f8f9fa, #e9ecef); display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                    <p><strong>Main Content Scrolls Here</strong></p>
+                    <p>While the sidebar scrolls independently →</p>
+                </div>
+                <div style="height: 100vh; background: linear-gradient(to bottom, #e9ecef, #dee2e6); display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                    <p><strong>Independent Scrolling Areas</strong></p>
+                    <p>Both sidebar and main content have their own scroll areas.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showDashboard(type) {
+            const hrAssistant = document.getElementById('hr-assistant-dashboard');
+            const other = document.getElementById('other-dashboard');
+            const title = document.getElementById('dashboard-title');
+            const mainTitle = document.getElementById('main-title');
+            
+            // Update active tab
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if (type === 'hr-assistant') {
+                hrAssistant.style.display = 'flex';
+                other.style.display = 'none';
+            } else {
+                hrAssistant.style.display = 'none';
+                other.style.display = 'flex';
+                
+                const titles = {
+                    'manager': 'CCDC - Manager',
+                    'employee': 'CCDC - Employee', 
+                    'hr-staff': 'CCDC - HR Staff'
+                };
+                
+                const mainTitles = {
+                    'manager': 'Manager Dashboard - Scrollable Sidebar',
+                    'employee': 'Employee Dashboard - Scrollable Sidebar',
+                    'hr-staff': 'HR Staff Dashboard - Scrollable Sidebar'
+                };
+                
+                title.textContent = titles[type];
+                mainTitle.textContent = mainTitles[type];
+            }
+        }
+    </script>
+</body>
+</html>

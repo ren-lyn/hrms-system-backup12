@@ -22,123 +22,102 @@ const Sidebar = () => {
   };
 
   return (
-    <div className="sidebar">
-      <div className="logo">
-        <FaChartPie /> <span>Cabuyao Concrete Development Corporation</span>
+    <>
+      <div>
+        <h2 className="hrms-unified-logo">
+          <FaChartPie style={{ marginRight: '8px' }} />CCDC
+        </h2>
+        <NavLink
+          to=""
+          end
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaTachometerAlt /> <span>Dashboard</span>
+        </NavLink>
+        <NavLink
+          to="employee-records"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaUsers /> <span>Employee Records</span>
+        </NavLink>
+        <NavLink
+          to="/hr-assistant/payroll"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaMoneyCheckAlt /> <span>Payroll</span>
+        </NavLink>
+        <NavLink
+          to="/hr-assistant/attendance"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaCalendarCheck /> <span>Attendance</span>
+        </NavLink>
+        <NavLink
+          to="leave"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaPlaneDeparture /> <span>Leave Management</span>
+        </NavLink>
+        <NavLink
+          to="my-calendar"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaCalendarAlt /> <span>My Calendar</span>
+        </NavLink>
+        <NavLink
+          to="cash-advances"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaDollarSign /> <span>Cash Advance</span>
+        </NavLink>
+        <NavLink
+          to="evaluation-administration"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaStarHalfAlt /> <span>Employee Evaluation</span>
+        </NavLink>
+        <NavLink
+          to="disciplinary"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaExclamationTriangle /> <span>Disciplinary Action</span>
+        </NavLink>
+        <NavLink
+          to="job-postings"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaBriefcase /> <span>Job Postings</span>
+        </NavLink>
+        <NavLink
+          to="applications"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaClipboardList /> <span>Job Applications</span>
+        </NavLink>
+        <NavLink
+          to="/hr-assistant/recruitment"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaUserPlus /> <span>Recruitment</span>
+        </NavLink>
+        <NavLink
+          to="/hr-assistant/reports"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaChartLine /> <span>Report Generation</span>
+        </NavLink>
+        <button onClick={handleLogout} className="hrms-unified-nav-link hrms-unified-logout">
+          <FaSignOutAlt /> <span>Logout</span>
+        </button>
       </div>
-      <ul>
-        <li>
-          <NavLink
-            to=""
-            end
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaTachometerAlt /> Dashboard
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="employee-records"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaUsers /> Employee Records
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="/hr-assistant/payroll"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaMoneyCheckAlt /> Payroll
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="/hr-assistant/attendance"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaCalendarCheck /> Attendance
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="leave"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaPlaneDeparture /> Leave Management
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="my-calendar"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaCalendarAlt /> My Calendar
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="cash-advances"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaDollarSign /> Cash Advance
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="evaluation-administration"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaStarHalfAlt /> Employee Evaluation
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="disciplinary"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaExclamationTriangle /> Disciplinary Action
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="job-postings"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaBriefcase /> Job Postings
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="applications"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaClipboardList /> Job Applications
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="/hr-assistant/recruitment"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaUserPlus /> Recruitment
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="/hr-assistant/reports"
-            className={({ isActive }) => (isActive ? 'active' : '')}
-          >
-            <FaChartLine /> Report Generation
-          </NavLink>
-        </li>
-        <li className="logout">
-          <button onClick={handleLogout} className="logout-btn">
-            <FaSignOutAlt /> Logout
-          </button>
-        </li>
-      </ul>
-    </div>
+      <div className="hrms-unified-profile">
+        <img src="https://i.pravatar.cc/40" alt="profile" style={{ width: '40px', borderRadius: '50%' }} />
+        <div>
+          <div>HR Assistant</div>
+          <small>HRMS System</small>
+        </div>
+      </div>
+    </>
   );
 };
 
