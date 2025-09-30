@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\API;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\EvaluationForm;
@@ -425,6 +425,8 @@ class ManagerEvaluationController extends Controller
     public function downloadPdf($evaluationId)
     {
         try {
+            \Log::info('PDF download requested', ['evaluation_id' => $evaluationId, 'user_id' => Auth::id()]);
+            
             $evaluation = Evaluation::with([
                 'employee.employeeProfile',
                 'manager.employeeProfile',
@@ -433,6 +435,8 @@ class ManagerEvaluationController extends Controller
             ])->where('id', $evaluationId)
             ->where('status', 'Submitted')
             ->firstOrFail();
+            
+            \Log::info('Evaluation found', ['evaluation' => $evaluation->id, 'employee' => $evaluation->employee_id]);
 
             $responses = $evaluation->responses;
             $totalQuestions = $responses->count();
@@ -460,15 +464,23 @@ class ManagerEvaluationController extends Controller
                     'weaknesses_count' => $weaknesses->count(),
                 ]
             ];
-
+            
+            \Log::info('About to generate PDF');
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('evaluations.result', $data)->setPaper('a4');
+            
             $employeeName = optional($evaluation->employee->employeeProfile)->first_name && optional($evaluation->employee->employeeProfile)->last_name
                 ? trim($evaluation->employee->employeeProfile->first_name . ' ' . $evaluation->employee->employeeProfile->last_name)
                 : $evaluation->employee->name;
             $fileName = 'Evaluation_Result_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $employeeName) . '_' . $evaluation->id . '.pdf';
-
+            
+            \Log::info('PDF generated successfully', ['filename' => $fileName]);
             return $pdf->download($fileName);
         } catch (\Exception $e) {
+            \Log::error('PDF generation failed', [
+                'evaluation_id' => $evaluationId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'message' => 'Failed to generate PDF.',
                 'error' => $e->getMessage()
