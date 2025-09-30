@@ -298,7 +298,7 @@ class DisciplinaryAction extends Model
      */
     public function getViolationOrdinalAttribute()
     {
-        if (!$this->disciplinaryReport) {
+        if (!$this->disciplinaryReport || !$this->disciplinaryReport->created_at) {
             return '1st';
         }
         
