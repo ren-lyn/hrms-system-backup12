@@ -27,6 +27,8 @@ import EmployeeProfile from '../components/Employee/EmployeeProfile';
 import LeaveRequestView from '../components/Employee/LeaveRequestView';
 import CashAdvanceForm from '../components/Employee/CashAdvanceForm';
 import EmployeeDisciplinaryNotice from '../components/Employee/EmployeeDisciplinaryNotice';
+import NotificationSection from '../components/Notifications/NotificationSection';
+import CashAdvanceView from '../components/Employee/CashAdvanceView';
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -44,6 +46,9 @@ const EmployeeDashboard = () => {
   const [userId, setUserId] = useState(null);
 
   const [selectedLeaveId, setSelectedLeaveId] = useState(null);
+  const [selectedCashAdvanceId, setSelectedCashAdvanceId] = useState(null);
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
+  const [evaluationNotificationData, setEvaluationNotificationData] = useState(null);
 
 
   useEffect(() => {
@@ -113,8 +118,8 @@ const EmployeeDashboard = () => {
       case 'payroll-summary': return 'Payslip Summary';
       case 'timesheet': return 'Timesheet';
       case 'leave-request': return selectedLeaveId ? 'Leave Request Details' : 'Leave Application Form';
-      case 'cash-advance': return 'Cash Advance';
-      case 'evaluation-summary': return 'Evaluation Summary';
+      case 'cash-advance': return selectedCashAdvanceId ? 'Cash Advance Details' : 'Cash Advance';
+      case 'evaluation-summary': return selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Summary';
       case 'disciplinary-notice': return 'Disciplinary Notice';
       default: return 'Dashboard';
     }
@@ -178,9 +183,15 @@ const EmployeeDashboard = () => {
 
   useEffect(() => {
     if (activeView === 'evaluation-summary' && userId) {
-      loadEmployeeEvaluations(userId);
+      if (selectedEvaluationId) {
+        // Load specific evaluation if coming from notification
+        loadEvaluationDetail(selectedEvaluationId);
+      } else {
+        // Load all evaluations for selection
+        loadEmployeeEvaluations(userId);
+      }
     }
-  }, [activeView, userId]);
+  }, [activeView, userId, selectedEvaluationId]);
 
   const renderContent = () => {
     switch (activeView) {
@@ -188,16 +199,16 @@ const EmployeeDashboard = () => {
         return (
           <div className="row g-4">
             <div className="col-md-6">
-              <div className="card shadow-sm p-3 rounded-4">
-                <h6 className="text-secondary mb-3">
-                  <FontAwesomeIcon icon={faBell} className="me-2 text-warning" /> Notifications
-                </h6>
-                <ul className="list-unstyled small ps-2">
-                  <li>• New company policy update</li>
-                  <li>• 1 pending leave request</li>
-                  <li>• Company event on Friday</li>
-                </ul>
-              </div>
+              <NotificationSection 
+                onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
+                onOpenCashAdvance={(cashAdvanceId) => { setSelectedCashAdvanceId(cashAdvanceId); setActiveView('cash-advance'); }}
+                onOpenEvaluation={(evaluationId, notificationData) => { 
+                  setSelectedEvaluationId(evaluationId);
+                  setEvaluationNotificationData(notificationData);
+                  setActiveView('evaluation-summary'); 
+                }}
+                onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
+              />
             </div>
             <div className="col-md-6">
               <div className="card shadow-sm p-3 rounded-4">
@@ -227,16 +238,48 @@ const EmployeeDashboard = () => {
       case 'profile':
         return <EmployeeProfile />;
       case 'cash-advance':
+        if (selectedCashAdvanceId) {
+          return (
+            <CashAdvanceView 
+              cashAdvanceId={selectedCashAdvanceId} 
+              onBack={() => { setSelectedCashAdvanceId(null); setActiveView('dashboard'); }} 
+            />
+          );
+        }
         return <CashAdvanceForm />;
       case 'evaluation-summary':
         return (
           <div className="card p-3">
             <div className="d-flex align-items-center gap-2 mb-3">
-              <span className="fw-semibold">Evaluation Results</span>
+              <span className="fw-semibold">
+                {selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Results'}
+              </span>
               {evalLoading && <Spinner animation="border" size="sm" />}
+              {selectedEvaluationId && (
+                <Button 
+                  variant="outline-secondary" 
+                  size="sm" 
+                  onClick={() => {
+                    setSelectedEvaluationId(null);
+                    setEvaluationNotificationData(null);
+                    setEvalDetail(null);
+                  }}
+                >
+                  ← Back to All Evaluations
+                </Button>
+              )}
             </div>
 
-            {evalResults.length > 0 && (
+            {/* Show notification alert if opened from notification */}
+            {evaluationNotificationData && (
+              <div className="alert alert-info mb-3">
+                <i className="fas fa-bell me-2"></i>
+                <strong>Notification:</strong> {evaluationNotificationData.message || 'New evaluation result available'}
+              </div>
+            )}
+
+            {/* Show evaluation selector only when not viewing specific evaluation */}
+            {!selectedEvaluationId && evalResults.length > 0 && (
               <div className="d-flex gap-2 align-items-center mb-3">
                 <Form.Label className="mb-0">Select Evaluation:</Form.Label>
                 <Form.Select
@@ -255,7 +298,7 @@ const EmployeeDashboard = () => {
               </div>
             )}
 
-            {(!evalLoading && evalResults.length === 0) && (
+            {(!evalLoading && evalResults.length === 0 && !selectedEvaluationId) && (
               <div className="text-muted">No evaluation results found.</div>
             )}
 
@@ -263,8 +306,19 @@ const EmployeeDashboard = () => {
               <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
                 <EvaluationResult 
                   result={evalDetail} 
-                  onBack={() => setActiveView('dashboard')} 
-                  showBackButton={false}
+                  onBack={() => {
+                    if (selectedEvaluationId) {
+                      // If opened from notification, go back to dashboard
+                      setSelectedEvaluationId(null);
+                      setEvaluationNotificationData(null);
+                      setActiveView('dashboard');
+                    } else {
+                      // Otherwise go back to dashboard
+                      setActiveView('dashboard');
+                    }
+                  }} 
+                  showBackButton={true}
+                  backButtonText={selectedEvaluationId ? 'Back to Dashboard' : 'Back to Dashboard'}
                 />
               </div>
             )}
@@ -331,6 +385,13 @@ const EmployeeDashboard = () => {
               <span>Evaluation Summary</span>
             </button>
             <button
+              className={`hrms-unified-nav-link ${activeView === 'disciplinary-notice' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('disciplinary-notice')}
+            >
+              <FontAwesomeIcon icon={faExclamationTriangle} />
+              <span>Disciplinary Notice</span>
+            </button>
+            <button
               className="hrms-unified-nav-link"
               onClick={handleLogout}
             >
@@ -338,7 +399,7 @@ const EmployeeDashboard = () => {
               <span>Logout</span>
             </button>
           </div>
-          <div className="hrms-unified-profile">
+          <div className="hrms-unified-profile" onClick={() => setActiveView('profile')} style={{ cursor: 'pointer' }} title="Go to Profile">
             <img src="https://i.pravatar.cc/40" alt="profile" style={{ width: '40px', borderRadius: '50%' }} />
             <div>
               <div>{employeeName || 'Employee'}</div>
@@ -404,9 +465,28 @@ const EmployeeDashboard = () => {
                 <Bell 
                   onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
                   onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
+                  onOpenCashAdvance={(cashAdvanceId) => { setSelectedCashAdvanceId(cashAdvanceId); setActiveView('cash-advance'); }}
+                  onOpenEvaluation={(evaluationId, notificationData) => { 
+                    setSelectedEvaluationId(evaluationId);
+                    setEvaluationNotificationData(notificationData);
+                    setActiveView('evaluation-summary'); 
+                  }}
                 />
                 <span className="fw-semibold text-dark">{employeeName || 'Employee'}</span>
-                <img src="https://i.pravatar.cc/40" alt="Profile" className="rounded-circle" style={{ width: '36px', height: '36px', objectFit: 'cover', border: '2px solid #0d6efd' }} />
+                <img 
+                  src="https://i.pravatar.cc/40" 
+                  alt="Profile" 
+                  className="rounded-circle" 
+                  style={{ 
+                    width: '36px', 
+                    height: '36px', 
+                    objectFit: 'cover', 
+                    border: '2px solid #0d6efd',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setActiveView('profile')}
+                  title="Go to Profile"
+                />
               </div>
             </div>
 

@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use App\Notifications\EvaluationCompleted;
 
 class ManagerEvaluationController extends Controller
 {
@@ -294,6 +295,25 @@ class ManagerEvaluationController extends Controller
 
             DB::commit();
 
+            // Send notification to employee about completed evaluation
+            try {
+                $evaluation->load(['employee', 'manager.employeeProfile', 'evaluationForm']);
+                $evaluation->employee->notify(new EvaluationCompleted($evaluation));
+                
+                // Update evaluation to mark employee as notified
+                $evaluation->update([
+                    'employee_notified' => true,
+                    'notified_at' => Carbon::now()
+                ]);
+            } catch (\Exception $notificationError) {
+                // Log the error but don't fail the evaluation submission
+                \Log::error('Failed to send evaluation notification', [
+                    'evaluation_id' => $evaluation->id,
+                    'employee_id' => $evaluation->employee_id,
+                    'error' => $notificationError->getMessage()
+                ]);
+            }
+
             // Load the evaluation with all related data for response
             $evaluation->load(['employee.employeeProfile', 'manager', 'evaluationForm', 'responses.question']);
 
@@ -525,6 +545,180 @@ class ManagerEvaluationController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve evaluations.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get employee's own evaluation results (for employee view)
+     */
+    public function getMyEvaluationResults()
+    {
+        try {
+            $evaluations = Evaluation::with([
+                'manager.employeeProfile',
+                'evaluationForm'
+            ])
+            ->where('employee_id', Auth::id())
+            ->where('status', 'Submitted')
+            ->latest('submitted_at')
+            ->get()
+            ->map(function ($evaluation) {
+                return [
+                    'id' => $evaluation->id,
+                    'submitted_at' => $evaluation->submitted_at,
+                    'total_score' => $evaluation->total_score,
+                    'average_score' => $evaluation->average_score,
+                    'percentage' => $evaluation->percentage_score,
+                    'is_passed' => $evaluation->is_passed,
+                    'passing_score' => $evaluation->passing_threshold,
+                    'form_title' => optional($evaluation->evaluationForm)->title,
+                    'manager' => [
+                        'name' => optional($evaluation->manager->employeeProfile)->first_name && optional($evaluation->manager->employeeProfile)->last_name
+                            ? trim($evaluation->manager->employeeProfile->first_name . ' ' . $evaluation->manager->employeeProfile->last_name)
+                            : $evaluation->manager->name,
+                        'email' => $evaluation->manager->email,
+                        'id' => $evaluation->manager->id,
+                    ],
+                    'next_evaluation_date' => $evaluation->next_evaluation_date,
+                ];
+            });
+
+            return response()->json([
+                'message' => 'Your evaluations retrieved successfully.',
+                'data' => $evaluations
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve your evaluations.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get specific evaluation result for employee view
+     */
+    public function getEvaluationResultForEmployee($evaluationId)
+    {
+        try {
+            $evaluation = Evaluation::with([
+                'manager.employeeProfile',
+                'evaluationForm',
+                'responses.question'
+            ])
+            ->where('id', $evaluationId)
+            ->where('employee_id', Auth::id()) // Ensure employee can only view their own evaluation
+            ->where('status', 'Submitted')
+            ->firstOrFail();
+
+            // Calculate additional metrics
+            $responses = $evaluation->responses;
+            $totalQuestions = $responses->count();
+            $percentage = ($evaluation->total_score / ($totalQuestions * 10)) * 100;
+            $passingScore = 42;
+            $isPassed = $evaluation->total_score >= $passingScore;
+
+            $strengths = $responses->where('classification', 'Strength')->values();
+            $weaknesses = $responses->where('classification', 'Weakness')->values();
+
+            return response()->json([
+                'message' => 'Your evaluation result retrieved successfully.',
+                'data' => [
+                    'evaluation' => $evaluation,
+                    'scores' => [
+                        'total_score' => $evaluation->total_score,
+                        'average_score' => $evaluation->average_score,
+                        'percentage' => round($percentage, 2),
+                        'passing_score' => $passingScore,
+                        'is_passed' => $isPassed,
+                        'total_questions' => $totalQuestions
+                    ],
+                    'analysis' => [
+                        'strengths' => $strengths,
+                        'weaknesses' => $weaknesses,
+                        'strengths_count' => $strengths->count(),
+                        'weaknesses_count' => $weaknesses->count(),
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve your evaluation result.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Download evaluation result as PDF (employee version)
+     */
+    public function downloadPdfForEmployee($evaluationId)
+    {
+        try {
+            \Log::info('Employee PDF download requested', ['evaluation_id' => $evaluationId, 'user_id' => Auth::id()]);
+            
+            $evaluation = Evaluation::with([
+                'employee.employeeProfile',
+                'manager.employeeProfile',
+                'evaluationForm',
+                'responses.question'
+            ])
+            ->where('id', $evaluationId)
+            ->where('employee_id', Auth::id()) // Ensure employee can only download their own evaluation
+            ->where('status', 'Submitted')
+            ->firstOrFail();
+            
+            \Log::info('Employee evaluation found', ['evaluation' => $evaluation->id, 'employee' => $evaluation->employee_id]);
+
+            $responses = $evaluation->responses;
+            $totalQuestions = $responses->count();
+            $percentage = ($totalQuestions > 0) ? ($evaluation->total_score / ($totalQuestions * 10)) * 100 : 0;
+            $passingScore = 42;
+            $isPassed = $evaluation->total_score >= $passingScore;
+
+            $strengths = $responses->where('classification', 'Strength')->values();
+            $weaknesses = $responses->where('classification', 'Weakness')->values();
+
+            $data = [
+                'evaluation' => $evaluation,
+                'scores' => [
+                    'total_score' => $evaluation->total_score,
+                    'average_score' => $evaluation->average_score,
+                    'percentage' => round($percentage, 2),
+                    'passing_score' => $passingScore,
+                    'is_passed' => $isPassed,
+                    'total_questions' => $totalQuestions
+                ],
+                'analysis' => [
+                    'strengths' => $strengths,
+                    'weaknesses' => $weaknesses,
+                    'strengths_count' => $strengths->count(),
+                    'weaknesses_count' => $weaknesses->count(),
+                ]
+            ];
+            
+            \Log::info('About to generate employee PDF');
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('evaluations.result', $data)->setPaper('a4');
+            
+            $employeeName = optional($evaluation->employee->employeeProfile)->first_name && optional($evaluation->employee->employeeProfile)->last_name
+                ? trim($evaluation->employee->employeeProfile->first_name . ' ' . $evaluation->employee->employeeProfile->last_name)
+                : $evaluation->employee->name;
+            $fileName = 'My_Evaluation_Result_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $employeeName) . '_' . $evaluation->id . '.pdf';
+            
+            \Log::info('Employee PDF generated successfully', ['filename' => $fileName]);
+            return $pdf->download($fileName);
+        } catch (\Exception $e) {
+            \Log::error('Employee PDF generation failed', [
+                'evaluation_id' => $evaluationId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Failed to generate PDF.',
                 'error' => $e->getMessage()
             ], 500);
         }

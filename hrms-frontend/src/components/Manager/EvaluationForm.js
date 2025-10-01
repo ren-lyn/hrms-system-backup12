@@ -96,8 +96,14 @@ const EvaluationForm = ({ employee, evaluationData, activeForm, onSubmit, onCanc
         submissionData
       );
 
+      // Show success message first
       toast.success('Evaluation submitted successfully!');
-      onSubmit(response.data.data);
+      
+      // Call the parent onSubmit callback with both result and employee data for notification
+      onSubmit({
+        ...response.data.data,
+        employee: employee // Pass employee data for notification
+      });
     } catch (error) {
       console.error('Error submitting evaluation:', error);
       toast.error(error.response?.data?.message || 'Failed to submit evaluation');

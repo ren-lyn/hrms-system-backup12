@@ -2,6 +2,7 @@
 import axios from "axios";
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import useUserProfile from '../../../hooks/useUserProfile';
 import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
@@ -11,6 +12,7 @@ import {
 
 const Sidebar = () => {
   const navigate = useNavigate();
+  const { userProfile, loading } = useUserProfile();
 
   const handleLogout = () => {
     // Remove token
@@ -113,8 +115,8 @@ const Sidebar = () => {
       <div className="hrms-unified-profile">
         <img src="https://i.pravatar.cc/40" alt="profile" style={{ width: '40px', borderRadius: '50%' }} />
         <div>
-          <div>HR Assistant</div>
-          <small>HRMS System</small>
+          <div>{loading ? 'Loading...' : userProfile?.name || 'HR Assistant'}</div>
+          <small>{loading ? 'Please wait...' : userProfile?.role || 'HRMS System'}</small>
         </div>
       </div>
     </>

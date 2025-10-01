@@ -223,11 +223,19 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluations']);
     });
 
+    // Employee Evaluation Routes - For employees to view their own evaluations
+    Route::prefix('employee-evaluations')->group(function () {
+        Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluationResults']); // Get employee's own evaluations
+        Route::get('/{evaluationId}', [ManagerEvaluationController::class, 'getEvaluationResultForEmployee']); // View specific evaluation result
+        Route::get('/{evaluationId}/pdf', [ManagerEvaluationController::class, 'downloadPdfForEmployee']); // Download evaluation PDF
+    });
+
     // Cash Advance Management
     Route::prefix('cash-advances')->group(function () {
         // Employee routes (submit request and view own requests)
         Route::post('/', [CashAdvanceController::class, 'store']); // Submit cash advance request
         Route::get('/my-requests', [CashAdvanceController::class, 'userRequests']); // Get user's own requests
+        Route::get('/{id}/download-pdf', [CashAdvanceController::class, 'downloadPDF']); // Download cash advance form as PDF
         
         // HR Assistant routes (manage all requests)
         Route::get('/', [CashAdvanceController::class, 'index']); // List all requests with filters
@@ -309,6 +317,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/actions', [HRDisciplinaryController::class, 'issueAction']);
         Route::get('/actions', [HRDisciplinaryController::class, 'getAllActions']);
         Route::post('/actions/{id}/verdict', [HRDisciplinaryController::class, 'issueVerdict']);
+        Route::get('/actions/{id}/pdf', [HRDisciplinaryController::class, 'downloadActionPdf']);
         
         // HELPER ENDPOINTS
         // Get available investigators/managers
@@ -320,6 +329,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/actions', [EmployeeDisciplinaryController::class, 'getMyActions']);
         Route::get('/actions/{id}', [EmployeeDisciplinaryController::class, 'getAction']);
         Route::post('/actions/{id}/explanation', [EmployeeDisciplinaryController::class, 'submitExplanation']);
+        Route::get('/actions/{id}/pdf', [EmployeeDisciplinaryController::class, 'downloadPdf']);
         Route::get('/dashboard/stats', [EmployeeDisciplinaryController::class, 'getDashboardStats']);
     });
     

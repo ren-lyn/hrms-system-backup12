@@ -5,7 +5,8 @@ import {
   fetchCashAdvanceRequests, 
   getCashAdvanceStats, 
   approveCashAdvanceRequest, 
-  rejectCashAdvanceRequest 
+  rejectCashAdvanceRequest,
+  downloadCashAdvancePdf 
 } from '../../api/cashAdvances';
 import './CashAdvanceManagement.css';
 
@@ -28,6 +29,7 @@ const CashAdvanceManagement = () => {
   const [remarks, setRemarks] = useState('');
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     // Load data once when component mounts
@@ -143,6 +145,21 @@ const CashAdvanceManagement = () => {
       style: 'currency',
       currency: 'PHP'
     }).format(amount);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!selectedRequest) return;
+    
+    try {
+      setDownloadingPdf(true);
+      await downloadCashAdvancePdf(selectedRequest.id);
+      showAlert(`✅ PDF downloaded successfully for ${selectedRequest.name}`, 'success');
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      showAlert('❌ Failed to download PDF. Please try again.', 'danger');
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   // No loading screen - show content immediately for instant feel
@@ -530,18 +547,35 @@ const CashAdvanceManagement = () => {
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
-            {actionType === 'view' ? 'Close' : 'Cancel'}
-          </Button>
-          {actionType !== 'view' && (
-            <Button 
-              variant={actionType === 'approve' ? 'success' : 'danger'} 
-              onClick={confirmAction}
-              disabled={actionType === 'reject' && !remarks.trim()}
-            >
-              {actionType === 'approve' ? 'Approve Request' : 'Reject Request'}
-            </Button>
-          )}
+          <div className="d-flex justify-content-between align-items-center w-100">
+            <div>
+              {actionType === 'view' && selectedRequest && (
+                <Button 
+                  variant="outline-success" 
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="me-2"
+                >
+                  <Download size={16} className="me-1" />
+                  {downloadingPdf ? 'Exporting...' : 'Export PDF'}
+                </Button>
+              )}
+            </div>
+            <div>
+              <Button variant="secondary" onClick={() => setShowModal(false)} className="me-2">
+                {actionType === 'view' ? 'Close' : 'Cancel'}
+              </Button>
+              {actionType !== 'view' && (
+                <Button 
+                  variant={actionType === 'approve' ? 'success' : 'danger'} 
+                  onClick={confirmAction}
+                  disabled={actionType === 'reject' && !remarks.trim()}
+                >
+                  {actionType === 'approve' ? 'Approve Request' : 'Reject Request'}
+                </Button>
+              )}
+            </div>
+          </div>
         </Modal.Footer>
       </Modal>
     </div>

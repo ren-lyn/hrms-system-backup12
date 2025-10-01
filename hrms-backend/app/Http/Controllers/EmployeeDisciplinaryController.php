@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
 
 class EmployeeDisciplinaryController extends Controller
 {
@@ -85,7 +87,7 @@ class EmployeeDisciplinaryController extends Controller
             $currentEmployee = Auth::user()->employeeProfile;
             
             if (!$currentEmployee) {
-                \Log::error('Employee profile not found', ['user_id' => Auth::id()]);
+                Log::error('Employee profile not found', ['user_id' => Auth::id()]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Employee profile not found'
@@ -95,7 +97,7 @@ class EmployeeDisciplinaryController extends Controller
             $action = DisciplinaryAction::where('employee_id', $currentEmployee->id)
                         ->findOrFail($id);
             
-            \Log::info('Attempting explanation submission', [
+            Log::info('Attempting explanation submission', [
                 'action_id' => $action->id,
                 'employee_id' => $currentEmployee->id,
                 'current_status' => $action->status,
@@ -105,7 +107,7 @@ class EmployeeDisciplinaryController extends Controller
             
             if (!$action->canSubmitExplanation()) {
                 $reason = $this->getExplanationBlockReason($action);
-                \Log::warning('Explanation submission blocked', [
+                Log::warning('Explanation submission blocked', [
                     'action_id' => $action->id,
                     'reason' => $reason,
                     'status' => $action->status,
@@ -122,16 +124,16 @@ class EmployeeDisciplinaryController extends Controller
             ]);
             
             // Use database transaction for atomic operations
-            \DB::beginTransaction();
+            DB::beginTransaction();
             
             $action->submitExplanation($request->explanation);
             
             // Note: The disciplinary report's overall_status is computed dynamically
             // based on the action status, so we don't need to update it manually
             
-            \DB::commit();
+            DB::commit();
             
-            \Log::info('Explanation submitted successfully', [
+            Log::info('Explanation submitted successfully', [
                 'action_id' => $action->id,
                 'employee_id' => $currentEmployee->id
             ]);
@@ -146,8 +148,8 @@ class EmployeeDisciplinaryController extends Controller
             ]);
             
         } catch (\Illuminate\Validation\ValidationException $e) {
-            \DB::rollBack();
-            \Log::warning('Explanation validation failed', [
+            DB::rollBack();
+            Log::warning('Explanation validation failed', [
                 'action_id' => $id,
                 'errors' => $e->errors()
             ]);
@@ -157,8 +159,8 @@ class EmployeeDisciplinaryController extends Controller
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
-            \DB::rollBack();
-            \Log::error('Explanation submission failed', [
+            DB::rollBack();
+            Log::error('Explanation submission failed', [
                 'action_id' => $id,
                 'employee_id' => $currentEmployee->id ?? null,
                 'error' => $e->getMessage(),
@@ -194,6 +196,73 @@ class EmployeeDisciplinaryController extends Controller
             'success' => true,
             'data' => $stats
         ]);
+    }
+    
+    // Download disciplinary action as PDF
+    public function downloadPdf($id)
+    {
+        try {
+            $currentEmployee = Auth::user()->employeeProfile;
+            
+            if (!$currentEmployee) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found'
+                ], 400);
+            }
+            
+            $action = DisciplinaryAction::with([
+                'disciplinaryReport.disciplinaryCategory',
+                'disciplinaryReport.reporter',
+                'disciplinaryReport.employee',
+                'investigator',
+                'issuedBy',
+                'employee'
+            ])->where('employee_id', $currentEmployee->id)
+              ->findOrFail($id);
+            
+            // Append repeated violation data
+            $action->append([
+                'previous_violations', 
+                'violation_count', 
+                'is_repeat_violation',
+                'violation_ordinal',
+                'violation_warning_message'
+            ]);
+            
+            // Generate PDF
+            $pdf = Pdf::loadView('pdf.disciplinary-form', [
+                'action' => $action
+            ]);
+            
+            // Set PDF options
+            $pdf->setPaper('a4', 'portrait');
+            $pdf->setOption('isHtml5ParserEnabled', true);
+            $pdf->setOption('isPhpEnabled', true);
+            $pdf->setOption('isRemoteEnabled', true);
+            
+            $filename = 'disciplinary_action_DA-' . $action->id . '_' . Carbon::now()->format('Y-m-d') . '.pdf';
+            
+            return $pdf->download($filename);
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Disciplinary action not found or you do not have permission to access it'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('PDF generation failed', [
+                'action_id' => $id,
+                'employee_id' => $currentEmployee->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate PDF: ' . $e->getMessage()
+            ], 500);
+        }
     }
     
     /**

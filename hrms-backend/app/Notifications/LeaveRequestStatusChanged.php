@@ -29,12 +29,22 @@ class LeaveRequestStatusChanged extends Notification
         $status = $this->leaveRequest->status;
         $statusText = $status === 'approved' ? 'approved' : ($status === 'rejected' ? 'rejected' : $status);
         
+        // Use standardized messages based on status
+        $message = '';
+        if ($status === 'approved') {
+            $message = 'Your leave request has been approved. Please check the form for collection details.';
+        } elseif ($status === 'rejected') {
+            $message = 'Your leave request has been rejected. Please check the form for details.';
+        } else {
+            $message = 'Your leave request is ' . $statusText . '.';
+        }
+        
         return [
             'type' => 'leave_status',
             'leave_id' => $this->leaveRequest->id,
             'status' => $status,
             'title' => 'Leave request ' . $statusText,
-            'message' => 'Your leave request is ' . $statusText . '.',
+            'message' => $message,
             'created_at' => now(),
         ];
     }

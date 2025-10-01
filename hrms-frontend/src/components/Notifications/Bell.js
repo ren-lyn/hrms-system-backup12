@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { fetchNotifications, markNotificationRead } from '../../api/notifications';
+import ReactDOM from 'react-dom';
+import { fetchNotifications, markNotificationRead, getNotificationAction, getNotificationIcon } from '../../api/notifications';
 
-const Bell = ({ onOpenLeave, onOpenDisciplinary }) => {
+const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation }) => {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const ref = useRef(null);
+  const buttonRef = useRef(null);
+  const [anchor, setAnchor] = useState({ top: 0, left: 0 });
 
   const load = async () => {
     try {
@@ -50,21 +53,35 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary }) => {
         item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item
       ));
       setUnread(prev => Math.max(0, prev - 1));
-
-      // Update local state to mark as read
-      setItems(prev => prev.map(item => 
-        item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item
-      ));
-      setUnread(prev => Math.max(0, prev - 1));
       setOpen(false);
-      // If it's a leave notification, open the leave application with that ID
-      if (n.type === 'leave_status' && n.leave_id && onOpenLeave) {
-        onOpenLeave(n.leave_id);
-      }
-
-      // Handle disciplinary notifications
-      if ((n.type === 'disciplinary_action' || n.type === 'disciplinary') && onOpenDisciplinary) {
-        onOpenDisciplinary(n.disciplinary_action_id || n.action_id);
+      
+      // Use the enhanced notification action handler
+      const notificationAction = getNotificationAction(n);
+      console.log('Notification action:', notificationAction);
+      
+      switch (notificationAction.action) {
+        case 'OPEN_EVALUATION':
+          if (onOpenEvaluation && notificationAction.id) {
+            onOpenEvaluation(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_DISCIPLINARY':
+          if (onOpenDisciplinary) {
+            onOpenDisciplinary(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_LEAVE':
+          if (onOpenLeave && notificationAction.id) {
+            onOpenLeave(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_CASH_ADVANCE':
+          if (onOpenCashAdvance && notificationAction.id) {
+            onOpenCashAdvance(notificationAction.id, notificationAction.data);
+          }
+          break;
+        default:
+          console.log('No specific action for notification type:', n.type);
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -73,7 +90,19 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary }) => {
 
   return (
     <div className="position-relative" ref={ref}>
-      <button className="btn btn-link position-relative" onClick={async () => { const next = !open; setOpen(next); if (next) await load(); }}>
+      <button
+        ref={buttonRef}
+        className="btn btn-link position-relative"
+        onClick={async () => {
+          const next = !open;
+          setOpen(next);
+          if (next) {
+            const rect = buttonRef.current?.getBoundingClientRect();
+            if (rect) setAnchor({ top: rect.bottom + 8, left: Math.max(8, rect.right - 320) });
+            await load();
+          }
+        }}
+      >
         <span role="img" aria-label="bell">🔔</span>
         {unread > 0 && (
           <span className="badge bg-danger position-absolute top-0 start-100 translate-middle rounded-pill">{unread}</span>
@@ -83,48 +112,75 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary }) => {
       <Poller tick={load} />
       <SSEStream onEvent={handleNewNotification} />
       {/* Show notifications dropdown when opened */}
-      {open && (
-        <div className="card shadow-sm" style={{ position: 'absolute', right: 0, width: 320, zIndex: 1000 }}>
-          <div className="card-header fw-semibold">Notifications</div>
-          <div className="list-group list-group-flush" style={{ maxHeight: 360, overflowY: 'auto' }}>
-            {items.length === 0 && (
-              <div className="p-3 text-muted small">No notifications</div>
-            )}
-            {items.map((n) => (
-              <button 
-                key={n.id} 
-                className={`list-group-item list-group-item-action ${
-                  !n.read_at ? 'bg-light border-primary' : ''
-                }`} 
-                onClick={() => handleClickItem(n)}
-                style={{ textAlign: 'left', border: 'none' }}
-              >
-                <div className="d-flex justify-content-between align-items-start">
-                  <div className="flex-grow-1">
-                    <div className={`fw-semibold ${!n.read_at ? 'text-primary' : ''}`}>
-                      {n.title || 'Notification'}
-                      {!n.read_at && <span className="badge bg-primary ms-2">New</span>}
+      {open && ReactDOM.createPortal(
+        (
+          <div
+            className="card shadow-sm"
+            style={{
+              position: 'fixed',
+              top: anchor.top,
+              left: anchor.left,
+              width: 320,
+              zIndex: 9999,
+              maxHeight: 'calc(100vh - 100px)',
+              overflow: 'hidden',
+              padding: 0,
+              margin: 0
+            }}
+          >
+            <div className="card-header fw-semibold" style={{ padding: '12px 16px' }}>Notifications</div>
+            <div 
+              style={{ 
+                maxHeight: items.length > 4 ? '320px' : 'auto',
+                overflowY: items.length > 4 ? 'auto' : 'visible',
+                padding: 0,
+                margin: 0,
+                borderRadius: '0 0 0.375rem 0.375rem'
+              }}
+            >
+              {items.length === 0 && (
+                <div className="p-3 text-muted small" style={{ margin: 0 }}>No notifications</div>
+              )}
+              {items.map((n) => (
+                <button
+                  key={n.id}
+                  className={`${!n.read_at ? 'bg-light' : ''}`}
+                  onClick={() => handleClickItem(n)}
+                  style={{ 
+                    width: '100%',
+                    textAlign: 'left', 
+                    border: 'none', 
+                    padding: '12px 16px',
+                    margin: 0,
+                    borderRadius: 0,
+                    backgroundColor: !n.read_at ? '#f8f9fa' : 'white',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid #dee2e6'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#e9ecef'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = !n.read_at ? '#f8f9fa' : 'white'}
+                >
+                  <div className="d-flex justify-content-between align-items-start">
+                    <div className="flex-grow-1">
+                      <div className={`fw-semibold ${!n.read_at ? 'text-primary' : ''}`} style={{ fontSize: '0.9rem' }}>
+                        {n.title || 'Notification'}
+                        {!n.read_at && <span className="badge bg-primary ms-2" style={{ fontSize: '0.7rem' }}>New</span>}
+                      </div>
+                      <div className="small text-muted mt-1" style={{ fontSize: '0.8rem', lineHeight: '1.3' }}>
+                        {n.message || 'No message content'}
+                      </div>
+                      <div className="small text-muted" style={{ fontSize: '0.75rem', marginTop: '4px' }}>
+                        {new Date(n.created_at).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="small text-muted mt-1">
-                      {n.message || 'No message content'}
-                    </div>
-                    <div className="small text-muted">
-                      {new Date(n.created_at).toLocaleString()}
-                    </div>
+                    <div style={{ fontSize: '1.1rem', marginLeft: '8px' }}>{getNotificationIcon(n.type)}</div>
                   </div>
-                  <div>
-                    {n.type === 'disciplinary_action' && (
-                      <i className="fas fa-exclamation-triangle text-warning"></i>
-                    )}
-                    {n.type === 'leave_status' && (
-                      <i className="fas fa-calendar-alt text-info"></i>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ),
+        document.body
       )}
     </div>
   );

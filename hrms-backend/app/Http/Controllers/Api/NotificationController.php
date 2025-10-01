@@ -23,7 +23,12 @@ class NotificationController extends Controller
                     'leave_id' => $n->data['leave_id'] ?? null,
                     'action_id' => $n->data['action_id'] ?? null,
                     'disciplinary_action_id' => $n->data['action_id'] ?? null,
+                    'cash_advance_id' => $n->data['cash_advance_id'] ?? null,
+                    'evaluation_id' => $n->data['evaluation_id'] ?? null,
+                    'redirect_url' => $n->data['redirect_url'] ?? null,
                     'status' => $n->data['status'] ?? null,
+                    'amount' => $n->data['amount'] ?? null,
+                    'collection_date' => $n->data['collection_date'] ?? null,
                     'read_at' => $n->read_at,
                     'created_at' => $n->created_at,
                 ];
@@ -58,6 +63,11 @@ class NotificationController extends Controller
                 return 'Investigation Assigned';
             case 'leave_status':
                 return 'Leave Request Update';
+            case 'cash_advance_status':
+                $status = ucfirst($data['status'] ?? 'updated');
+                return "Cash Advance Request {$status}";
+            case 'evaluation_result':
+                return $data['title'] ?? 'New Evaluation Available';
             default:
                 return $data['title'] ?? 'Notification';
         }
@@ -81,8 +91,28 @@ class NotificationController extends Controller
                 return 'You have been assigned to investigate a disciplinary case.';
             
             case 'leave_status':
-                $status = ucfirst($data['status'] ?? 'updated');
-                return "Your leave request has been {$status}.";
+                $status = $data['status'] ?? 'updated';
+                if ($status === 'approved') {
+                    return 'Your leave request has been approved. Please check the form for collection details.';
+                } elseif ($status === 'rejected') {
+                    return 'Your leave request has been rejected. Please check the form for details.';
+                } else {
+                    return "Your leave request has been {$status}.";
+                }
+            
+            case 'cash_advance_status':
+                $status = $data['status'] ?? 'updated';
+                if ($status === 'approved') {
+                    return 'Your cash advance has been approved. Please check the form for collection details.';
+                } elseif ($status === 'rejected') {
+                    return 'Your cash advance has been rejected. Please check the form for details.';
+                } else {
+                    $amount = isset($data['amount']) ? 'PHP ' . number_format($data['amount'], 2) : '';
+                    return "Your cash advance request for {$amount} has been {$status}.";
+                }
+            
+            case 'evaluation_result':
+                return $data['message'] ?? 'A new evaluation is available for your review. Click to view your evaluation summary and detailed results.';
             
             default:
                 return $data['message'] ?? 'You have a new notification.';

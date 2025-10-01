@@ -8,6 +8,11 @@ use App\Models\CashAdvanceRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use App\Notifications\CashAdvanceStatusChanged;
+use Illuminate\Support\Facades\Notification;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class CashAdvanceController extends Controller
 {
@@ -96,8 +101,14 @@ class CashAdvanceController extends Controller
         $cashAdvanceRequest = CashAdvanceRequest::with(['user', 'processedBy'])
             ->findOrFail($id);
 
+        // Add processed_by_name for easier frontend access
+        $data = $cashAdvanceRequest->toArray();
+        if ($cashAdvanceRequest->processedBy) {
+            $data['processed_by_name'] = $cashAdvanceRequest->processedBy->first_name . ' ' . $cashAdvanceRequest->processedBy->last_name;
+        }
+
         return response()->json([
-            'data' => $cashAdvanceRequest,
+            'data' => $data,
         ]);
     }
 
@@ -108,6 +119,7 @@ class CashAdvanceController extends Controller
     {
         $request->validate([
             'hr_remarks' => 'nullable|string|max:1000',
+            'collection_date' => 'nullable|date|after_or_equal:today',
         ]);
 
         $cashAdvanceRequest = CashAdvanceRequest::findOrFail($id);
@@ -118,16 +130,40 @@ class CashAdvanceController extends Controller
             ], 400);
         }
 
+        // Set collection date - default to 2 business days from now if not provided
+        $collectionDate = $request->collection_date 
+            ? Carbon::parse($request->collection_date)
+            : $this->calculateCollectionDate();
+
         $cashAdvanceRequest->update([
             'status' => 'approved',
             'processed_by' => Auth::id(),
             'processed_at' => now(),
             'hr_remarks' => $request->hr_remarks,
+            'collection_date' => $collectionDate,
         ]);
+
+        // Send notification to the employee
+        $cashAdvanceRequest->load(['user', 'processedBy']);
+        
+        try {
+            $cashAdvanceRequest->user->notify(new CashAdvanceStatusChanged($cashAdvanceRequest));
+            Log::info('Cash advance approval notification sent', [
+                'user_id' => $cashAdvanceRequest->user->id,
+                'request_id' => $cashAdvanceRequest->id,
+                'status' => 'approved'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send cash advance approval notification', [
+                'user_id' => $cashAdvanceRequest->user->id,
+                'request_id' => $cashAdvanceRequest->id,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return response()->json([
             'message' => 'Cash advance request approved successfully',
-            'data' => $cashAdvanceRequest->load(['user', 'processedBy']),
+            'data' => $cashAdvanceRequest,
         ]);
     }
 
@@ -155,9 +191,27 @@ class CashAdvanceController extends Controller
             'hr_remarks' => $request->hr_remarks,
         ]);
 
+        // Send notification to the employee
+        $cashAdvanceRequest->load(['user', 'processedBy']);
+        
+        try {
+            $cashAdvanceRequest->user->notify(new CashAdvanceStatusChanged($cashAdvanceRequest));
+            Log::info('Cash advance rejection notification sent', [
+                'user_id' => $cashAdvanceRequest->user->id,
+                'request_id' => $cashAdvanceRequest->id,
+                'status' => 'rejected'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send cash advance rejection notification', [
+                'user_id' => $cashAdvanceRequest->user->id,
+                'request_id' => $cashAdvanceRequest->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json([
             'message' => 'Cash advance request rejected successfully',
-            'data' => $cashAdvanceRequest->load(['user', 'processedBy']),
+            'data' => $cashAdvanceRequest,
         ]);
     }
 
@@ -195,5 +249,66 @@ class CashAdvanceController extends Controller
         ];
 
         return response()->json($stats);
+    }
+
+    /**
+     * Calculate collection date (2 business days from now)
+     */
+    private function calculateCollectionDate()
+    {
+        $date = Carbon::now();
+        $businessDays = 0;
+        
+        while ($businessDays < 2) {
+            $date->addDay();
+            // Skip weekends (Saturday = 6, Sunday = 0)
+            if (!in_array($date->dayOfWeek, [0, 6])) {
+                $businessDays++;
+            }
+        }
+        
+        return $date;
+    }
+
+    /**
+     * Download cash advance form as PDF
+     */
+    public function downloadPDF($id)
+    {
+        $cashAdvanceRequest = CashAdvanceRequest::with(['user', 'processedBy'])
+            ->findOrFail($id);
+
+        // Check if user can access this request (either owner or HR)
+        $user = Auth::user();
+        if ($user) {
+            $user->load('role'); // Load role relationship
+        }
+        
+        if (!$user || ($cashAdvanceRequest->user_id !== $user->id && !$this->isHRUser($user))) {
+            return response()->json(['message' => 'Unauthorized access'], 403);
+        }
+
+        $pdf = Pdf::loadView('pdf.cash-advance-form', [
+            'request' => $cashAdvanceRequest,
+            'generatedAt' => now()
+        ]);
+
+        $filename = "cash-advance-{$cashAdvanceRequest->id}-{$cashAdvanceRequest->name}.pdf";
+        
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Check if user has HR role
+     */
+    private function isHRUser($user)
+    {
+        // Check role through relationship
+        if (!$user->role) {
+            return false;
+        }
+        
+        $roleName = $user->role->name;
+        return in_array($roleName, ['hr', 'hr_assistant', 'admin']);
     }
 }

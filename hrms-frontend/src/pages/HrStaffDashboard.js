@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
+import useUserProfile from '../hooks/useUserProfile';
 import JobPostings from "../components/JobPostings";
 import EmployeeRecords from './HrAssistant/EmployeeRecords';
 import EvaluationAdministration from '../components/EvaluationAdministration';
 import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
+import HrStaffProfile from '../components/HrStaff/HrStaffProfile';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -30,6 +32,7 @@ const HrStaffDashboard = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [date, setDate] = useState(new Date());
   const [timeNow, setTimeNow] = useState(new Date());
+  const { userProfile, loading } = useUserProfile();
 
   useEffect(() => {
     const timer = setInterval(() => setTimeNow(new Date()), 1000);
@@ -144,6 +147,8 @@ const HrStaffDashboard = () => {
         return "Recruitment";
       case "onboarding":
         return "Onboarding";
+      case "profile":
+        return "Profile";
       default:
         return "Dashboard";
     }
@@ -235,6 +240,10 @@ const HrStaffDashboard = () => {
 
     if (activeView === "evaluation") {
       return <EvaluationAdministration />;
+    }
+
+    if (activeView === "profile") {
+      return <HrStaffProfile onBack={() => setActiveView('dashboard')} />;
     }
 
     return (
@@ -383,9 +392,9 @@ const HrStaffDashboard = () => {
 
         {/* Main Content */}
         <div className="flex-grow-1 hrms-main-content hrms-scrollable-main-content" style={{ background: "linear-gradient(to bottom right, #f0f4f8, #d9e2ec)" }}>
-          {/* Header - hidden only for job-posting and job-applications */}
+          {/* Header - hidden for job-posting, job-applications, and profile */}
           <div className="container-fluid py-3 px-3 px-md-5">
-            {activeView !== "job-posting" && activeView !== "job-applications" && (
+            {activeView !== "job-posting" && activeView !== "job-applications" && activeView !== "profile" && (
               <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
                 <h4 className="fw-bold text-primary mb-2 mb-md-0">
                   {getHeaderTitle()}
@@ -401,7 +410,9 @@ const HrStaffDashboard = () => {
                     size="lg"
                     className="text-primary"
                   />
-                  <span className="fw-semibold text-dark">HR Staff</span>
+                  <span className="fw-semibold text-dark">
+                    {loading ? 'Loading...' : userProfile?.name || 'HR Staff'}
+                  </span>
                   <img
                     src="https://i.pravatar.cc/40"
                     alt="Profile"
@@ -411,7 +422,10 @@ const HrStaffDashboard = () => {
                       height: "36px",
                       objectFit: "cover",
                       border: "2px solid #0d6efd",
+                      cursor: "pointer"
                     }}
+                    onClick={() => setActiveView('profile')}
+                    title={`Go to Profile - ${userProfile?.name || 'HR Staff'}`}
                   />
                 </div>
               </div>

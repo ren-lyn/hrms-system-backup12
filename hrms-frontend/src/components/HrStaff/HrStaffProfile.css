@@ -1,0 +1,106 @@
+.hr-staff-profile-container {
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.hr-staff-profile-container.dashboard-embedded {
+  padding: 20px;
+  background: transparent;
+}
+
+.profile-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.profile-card-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 20px;
+  border: none;
+  position: relative;
+}
+
+.profile-card-header h5 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+}
+
+.edit-btn-header {
+  color: white !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.edit-btn-header:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  color: white !important;
+}
+
+.info-item {
+  margin-bottom: 16px;
+}
+
+.info-item label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.info-item p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #2c3e50;
+  line-height: 1.4;
+}
+
+.contact-section,
+.emergency-section {
+  margin-bottom: 20px;
+}
+
+.contact-section h6,
+.emergency-section h6 {
+  color: #495057;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.profile-card .card-body {
+  padding: 20px;
+  background: #fff;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hr-staff-profile-container.dashboard-embedded {
+    padding: 10px;
+  }
+  
+  .profile-card-header {
+    padding: 12px 16px;
+  }
+  
+  .profile-card .card-body {
+    padding: 16px;
+  }
+  
+  .info-item {
+    margin-bottom: 12px;
+  }
+}

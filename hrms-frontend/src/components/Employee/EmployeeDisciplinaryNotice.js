@@ -105,6 +105,67 @@ const EmployeeDisciplinaryNotice = () => {
     setShowExplanationModal(true);
   };
 
+  const handleDownloadPDF = async (actionId) => {
+    try {
+      const axios = (await import('axios')).default;
+      
+      // Show loading toast
+      const loadingToast = toast.loading('Generating PDF...');
+      
+      const response = await axios.get(`http://localhost:8000/api/employee/disciplinary/actions/${actionId}/pdf`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('auth_token') || localStorage.getItem('token')}`
+        },
+        responseType: 'blob'
+      });
+      
+      // Check if the response is actually a PDF
+      if (response.data.type === 'application/json') {
+        // This means we got an error response in JSON format
+        const reader = new FileReader();
+        reader.onload = function() {
+          const errorResponse = JSON.parse(reader.result);
+          console.error('PDF Generation Error:', errorResponse);
+          toast.dismiss(loadingToast);
+          toast.error(errorResponse.message || 'Failed to generate PDF');
+        };
+        reader.readAsText(response.data);
+        return;
+      }
+      
+      // Success - handle PDF download
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `disciplinary_action_DA-${actionId}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.dismiss(loadingToast);
+      toast.success('PDF downloaded successfully');
+      
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      
+      let errorMessage = 'Failed to download PDF';
+      
+      if (error.response?.status === 404) {
+        errorMessage = 'Disciplinary action not found or access denied';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error while generating PDF. Please try again later.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+      
+      toast.error(errorMessage);
+    }
+  };
+
   const submitEmployeeExplanation = async () => {
     if (!explanation.trim()) {
       toast.error('Please provide an explanation');
@@ -348,6 +409,17 @@ const EmployeeDisciplinaryNotice = () => {
                               {action.employee_explanation ? 'Update' : 'Explain'}
                             </Button>
                           )}
+                          
+                          {/* PDF Download button */}
+                          <Button
+                            variant="outline-success"
+                            size="sm"
+                            onClick={() => handleDownloadPDF(action.id)}
+                            title="Download PDF"
+                          >
+                            <i className="fas fa-download me-1"></i>
+                            PDF
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -480,6 +552,15 @@ const EmployeeDisciplinaryNotice = () => {
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowDetailModal(false)}>
             Close
+          </Button>
+          
+          {/* PDF Download button */}
+          <Button 
+            variant="success" 
+            onClick={() => handleDownloadPDF(selectedAction?.id)}
+          >
+            <i className="fas fa-download me-1"></i>
+            Download PDF
           </Button>
           
           {/* Show explanation button for actions that can accept explanations */}

@@ -54,16 +54,27 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user()->load(['role', 'employeeProfile']);
         
         return response()->json([
             'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
             'name' => $user->name,
             'full_name' => $user->first_name . ' ' . $user->last_name,
             'email' => $user->email,
-            'department' => $user->department,
             'role_id' => $user->role_id,
-            'role' => $user->role->name ?? null
+            'role' => [
+                'id' => $user->role_id,
+                'name' => $user->role->name ?? 'Employee'
+            ],
+            'employeeProfile' => $user->employeeProfile ? [
+                'department' => $user->employeeProfile->department,
+                'position' => $user->employeeProfile->position,
+                'job_title' => $user->employeeProfile->job_title,
+                'employment_status' => $user->employeeProfile->employment_status,
+                'hire_date' => $user->employeeProfile->hire_date,
+            ] : null
         ]);
     }
 }

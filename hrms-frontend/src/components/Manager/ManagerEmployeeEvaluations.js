@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import axios from '../../axios';
 import { toast } from 'react-toastify';
+import { sendEvaluationNotification } from '../../api/notifications';
 import EvaluationForm from './EvaluationForm';
 import EvaluationResult from './EvaluationResult';
 
@@ -95,12 +96,50 @@ const ManagerEmployeeEvaluations = () => {
       const response = await axios.get(`/manager-evaluations/result/${evaluationId}`);
       setEvaluationResult(response.data.data);
       setCurrentView('result');
+      
+      // Send notification to employee about evaluation completion
+      await sendNotificationToEmployee(evaluationId, selectedEmployee);
+      
       fetchEmployees(); // Refresh employee list
     } catch (error) {
       console.error('Error fetching evaluation result after submit:', error);
       toast.error('Failed to load evaluation result');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const sendNotificationToEmployee = async (evaluationId, employee) => {
+    try {
+      console.log('Sending evaluation notification to employee:', employee?.name);
+      
+      await sendEvaluationNotification(
+        evaluationId,
+        employee?.id,
+        {
+          employee_name: employee?.name,
+          employee_department: employee?.department,
+          employee_position: employee?.position
+        }
+      );
+      
+      toast.success(
+        <div>
+          <div><strong>Evaluation submitted successfully!</strong></div>
+          <div className="small text-success">📧 Notification sent to {employee?.name}</div>
+        </div>,
+        {
+          autoClose: 5000,
+          hideProgressBar: false
+        }
+      );
+      
+    } catch (error) {
+      console.error('Error sending evaluation notification:', error);
+      // Don't show error toast for notification failure, as evaluation was successful
+      console.log('Notification failed but evaluation was successful');
+      
+      toast.success('Evaluation submitted successfully!');
     }
   };
 

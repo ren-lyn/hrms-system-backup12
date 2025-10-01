@@ -63,6 +63,8 @@ class NotificationStreamController extends Controller
                             'title' => $n->data['title'] ?? '',
                             'message' => $n->data['message'] ?? '',
                             'leave_id' => $n->data['leave_id'] ?? null,
+                            'evaluation_id' => $n->data['evaluation_id'] ?? null,
+                            'redirect_url' => $n->data['redirect_url'] ?? null,
                             'status' => $n->data['status'] ?? null,
                             'read_at' => $n->read_at,
                             'created_at' => $n->created_at,

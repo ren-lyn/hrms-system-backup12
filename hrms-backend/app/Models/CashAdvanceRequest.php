@@ -22,13 +22,15 @@ class CashAdvanceRequest extends Model
         'status',
         'hr_remarks',
         'processed_by',
-        'processed_at'
+        'processed_at',
+        'collection_date'
     ];
 
     protected $casts = [
         'date_field' => 'date',
         'amount_ca' => 'decimal:2',
-        'processed_at' => 'datetime'
+        'processed_at' => 'datetime',
+        'collection_date' => 'date'
     ];
 
     public function user(): BelongsTo

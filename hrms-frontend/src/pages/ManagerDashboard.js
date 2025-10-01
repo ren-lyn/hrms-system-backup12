@@ -11,9 +11,11 @@ import {
   FileText,
   CalendarCheck
 } from 'lucide-react';
+import useUserProfile from '../hooks/useUserProfile';
 import ManagerLeaveManagement from '../components/Manager/ManagerLeaveManagement';
 import ManagerEmployeeEvaluations from '../components/Manager/ManagerEmployeeEvaluations';
 import ManagerDisciplinaryManagement from '../components/Manager/ManagerDisciplinaryManagement';
+import ManagerProfile from '../components/Manager/ManagerProfile';
 
 
 const ManagerDashboard = () => {
@@ -21,6 +23,7 @@ const ManagerDashboard = () => {
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
+  const { userProfile, loading } = useUserProfile();
 
   const links = [
     { icon: <Home size={18} />, label: 'Dashboard', view: 'dashboard' },
@@ -81,6 +84,8 @@ const ManagerDashboard = () => {
         return <ManagerEmployeeEvaluations />;
       case 'disciplinary':
         return <ManagerDisciplinaryManagement />;
+      case 'profile':
+        return <ManagerProfile onBack={() => setActiveView('dashboard')} />;
       case 'dashboard':
       default:
         return renderDashboardContent();
@@ -213,29 +218,39 @@ const ManagerDashboard = () => {
               </button>
             ))}
           </div>
-          <div className="hrms-unified-profile">
+          <div className="hrms-unified-profile" onClick={() => setActiveView('profile')} style={{ cursor: 'pointer' }} title="Go to Profile">
             <img src="https://i.pravatar.cc/40" alt="profile" style={styles.avatar} />
             <div>
-              <div>Alex Rivera</div>
-              <small>HR Manager</small>
+              <div>{loading ? 'Loading...' : userProfile?.name || 'Manager'}</div>
+              <small>{loading ? 'Please wait...' : userProfile?.role || 'HR Manager'}</small>
             </div>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'evaluations' || activeView === 'disciplinary') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-          {activeView !== 'leave-request' && activeView !== 'evaluations' && activeView !== 'disciplinary' && (
+        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+          {activeView !== 'leave-request' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
             <>
               {/* Header */}
               <div style={styles.header}>
                 <h1 style={styles.headerTitle}>
                   {activeView === 'leave-request' ? 'Leave Management' : 
                    activeView === 'evaluations' ? 'Employee Evaluations' :
-                   activeView === 'disciplinary' ? 'Disciplinary Management' : 'Manager Dashboard'}
+                   activeView === 'disciplinary' ? 'Disciplinary Management' :
+                   activeView === 'profile' ? 'Profile' : 'Manager Dashboard'}
                 </h1>
                 <div style={styles.headerIcons}>
                   <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />
-                  <img src="https://i.pravatar.cc/30" alt="profile" style={styles.headerAvatar} />
+                  <span style={{ color: '#fff', marginRight: '12px', fontSize: '14px', fontWeight: '500' }}>
+                    {loading ? 'Loading...' : userProfile?.name || 'Manager'}
+                  </span>
+                  <img 
+                    src="https://i.pravatar.cc/30" 
+                    alt="profile" 
+                    style={{...styles.headerAvatar, cursor: 'pointer'}} 
+                    onClick={() => setActiveView('profile')}
+                    title={`Go to Profile - ${userProfile?.name || 'Manager'}`}
+                  />
                 </div>
               </div>
             </>

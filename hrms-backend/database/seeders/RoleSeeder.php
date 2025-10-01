@@ -12,12 +12,19 @@ class RoleSeeder extends Seeder
      */
     public function run(): void
     {
-        \App\Models\Role::insert([
+        $roles = [
             ['name' => 'HR Assistant'],
             ['name' => 'HR Staff'],
             ['name' => 'Manager'],
             ['name' => 'Employee'],
             ['name' => 'Applicant'],
-        ]);
+        ];
+
+        foreach ($roles as $role) {
+            \App\Models\Role::firstOrCreate(
+                ['name' => $role['name']],
+                $role
+            );
+        }
     }
 }

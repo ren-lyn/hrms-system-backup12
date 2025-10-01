@@ -282,7 +282,7 @@ class LeaveRequestController extends Controller
         
         $leave->status = 'manager_approved';
         $leave->manager_remarks = $request->input('remarks');
-        $leave->manager_approved_by = auth()->id();
+        $leave->manager_approved_by = Auth::id();
         $leave->manager_approved_at = now();
         $leave->manager_rejected_at = null;
         $leave->save();
@@ -308,7 +308,7 @@ class LeaveRequestController extends Controller
         
         $leave->status = 'manager_rejected';
         $leave->manager_remarks = $request->input('remarks');
-        $leave->manager_approved_by = auth()->id();
+        $leave->manager_approved_by = Auth::id();
         $leave->manager_rejected_at = now();
         $leave->manager_approved_at = null;
         $leave->save();
@@ -336,7 +336,7 @@ class LeaveRequestController extends Controller
         
         $leave->status = 'approved';
         $leave->admin_remarks = $request->input('remarks');
-        $leave->approved_by = auth()->id();
+        $leave->approved_by = Auth::id();
         $leave->approved_at = now();
         $leave->rejected_at = null;
         $leave->save();
@@ -365,7 +365,7 @@ class LeaveRequestController extends Controller
         
         $leave->status = 'rejected';
         $leave->admin_remarks = $request->input('remarks');
-        $leave->approved_by = auth()->id();
+        $leave->approved_by = Auth::id();
         $leave->rejected_at = now();
         $leave->approved_at = null;
         $leave->save();
@@ -397,7 +397,7 @@ class LeaveRequestController extends Controller
         if ($request->has('remarks')) {
             $leave->admin_remarks = $request->input('remarks');
         }
-        $leave->approved_by = auth()->id();
+        $leave->approved_by = Auth::id();
         $leave->rejected_at = now();
         $leave->approved_at = null;
         $leave->save();
@@ -497,12 +497,12 @@ class LeaveRequestController extends Controller
 
     public function export(Request $request) {
         $type = $request->get('type', 'csv');
-        $leaves = LeaveRequest::with('user')->get();
+        $leaves = LeaveRequest::with('employee')->get();
 
         if ($type === 'csv') {
             $csv = "Employee,Leave Type,Start Date,End Date,Status\n";
             foreach ($leaves as $leave) {
-                $csv .= "{$leave->user->name},{$leave->leave_type},{$leave->start_date},{$leave->end_date},{$leave->status}\n";
+                $csv .= "{$leave->employee_name},{$leave->type},{$leave->from},{$leave->to},{$leave->status}\n";
             }
 
             return response($csv)
@@ -510,9 +510,7 @@ class LeaveRequestController extends Controller
                 ->header('Content-Disposition', 'attachment; filename=leaves.csv');
         }
 
-        
-
-        // You can integrate PDF generation here (e.g. DOMPDF or Snappy)
+        return response()->json(['error' => 'Invalid export type. Supported: csv'], 400);
     }
 
     /**
