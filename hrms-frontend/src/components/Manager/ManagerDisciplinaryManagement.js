@@ -691,8 +691,8 @@ const ManagerDisciplinaryManagement = () => {
                                 </td>
                                 <td>
                                   <div className="d-flex flex-column">
-                                    <Badge bg={getSeverityColor(investigation.disciplinaryReport?.disciplinaryCategory?.severity_level)}>
-                                      {investigation.disciplinaryReport?.disciplinaryCategory?.name}
+                                    <Badge bg={getSeverityColor(investigation.disciplinary_report?.disciplinary_category?.severity_level)}>
+                                      {investigation.disciplinary_report?.disciplinary_category?.name || 'N/A'}
                                     </Badge>
                                     {investigation.is_repeat_violation && (
                                       <Badge bg="warning" size="sm" className="mt-1">
@@ -910,9 +910,10 @@ const ManagerDisciplinaryManagement = () => {
                                 </td>
                                 <td>
                                   <Badge bg={getSeverityColor(report.disciplinary_category?.severity_level)}>
-                                    {report.disciplinary_category?.name}
+                                    {report.disciplinary_category?.name || 'N/A'}
                                   </Badge>
                                 </td>
+
                                 <td>
                                   <Badge bg={getPriorityColor(report.priority)}>
                                     {report.priority}
@@ -1241,80 +1242,113 @@ const ManagerDisciplinaryManagement = () => {
             {selectedInvestigation && (
               <>
                 {/* Investigation Case Summary */}
-                <Alert variant="info" className="mb-4">
-                  <Row>
-                    <Col md={6}>
-                      <h6><i className="fas fa-user me-2"></i>Employee</h6>
-                      <p><strong>{selectedInvestigation.employee?.first_name} {selectedInvestigation.employee?.last_name}</strong></p>
-                      <p><small>ID: {selectedInvestigation.employee?.employee_id} | Department: {selectedInvestigation.employee?.department}</small></p>
-                    </Col>
-                    <Col md={6}>
-                      <h6><i className="fas fa-gavel me-2"></i>Action Details</h6>
-                      <p><strong>Type:</strong> {selectedInvestigation.action_type?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                      <p><strong>Status:</strong> <Badge bg={getStatusColor(selectedInvestigation.status)}>{formatStatus(selectedInvestigation.status)}</Badge></p>
-                    </Col>
-                  </Row>
-                  <Row className="mt-3">
-                    <Col md={12}>
-                      <h6><i className="fas fa-file-alt me-2"></i>Violation Details</h6>
-                      <p><strong>Category:</strong> 
-                        {selectedInvestigation.disciplinaryReport?.disciplinaryCategory?.name || 'N/A'}
-                      </p>
-                      <p><strong>Severity:</strong> 
-                        {selectedInvestigation.disciplinaryReport?.disciplinaryCategory?.severity_level && (
-                          <Badge bg={getSeverityColor(selectedInvestigation.disciplinaryReport.disciplinaryCategory.severity_level)} className="ms-2">
-                            {selectedInvestigation.disciplinaryReport.disciplinaryCategory.severity_level}
-                          </Badge>
-                        )}
-                      </p>
-                      <p><strong>Incident Date:</strong> {formatDate(selectedInvestigation.incident_date)}</p>
-                      <p><strong>Violation Description:</strong></p>
-                      <div className="bg-light p-3 rounded">
-                        {selectedInvestigation.violation || 
-                         selectedInvestigation.disciplinaryReport?.incident_description || 
-                         'No violation description available'}
-                      </div>
-                      
-                      
-                      {selectedInvestigation.disciplinaryReport?.incident_description && 
-                       selectedInvestigation.disciplinaryReport?.incident_description !== selectedInvestigation.violation && (
-                        <>
-                          <p className="mt-3"><strong>Original Incident Description:</strong></p>
-                          <div className="bg-light p-3 rounded">
-                            {selectedInvestigation.disciplinaryReport.incident_description}
-                          </div>
-                        </>
-                      )}
-                      
-                      {selectedInvestigation.disciplinaryReport?.location && (
-                        <p className="mt-2"><strong>Location:</strong> {selectedInvestigation.disciplinaryReport.location}</p>
-                      )}
-                      
-                      {selectedInvestigation.disciplinaryReport?.evidence && (
-                        <>
-                          <p className="mt-2"><strong>Evidence:</strong></p>
-                          <div className="bg-light p-2 rounded small">
-                            {selectedInvestigation.disciplinaryReport.evidence}
-                          </div>
-                        </>
-                      )}
-                      
-                      {selectedInvestigation.disciplinaryReport?.witnesses && 
-                       selectedInvestigation.disciplinaryReport.witnesses.length > 0 && (
-                        <>
-                          <p className="mt-2"><strong>Witnesses:</strong></p>
-                          <ul className="small">
-                            {selectedInvestigation.disciplinaryReport.witnesses.map((witness, index) => (
-                              <li key={index}>
-                                {witness.name} {witness.contact && `- ${witness.contact}`}
-                              </li>
-                            ))}
-                          </ul>
-                        </>
-                      )}
-                    </Col>
-                  </Row>
-                </Alert>
+<Alert variant="info" className="mb-4">
+  <Row>
+    <Col md={6}>
+      <h6><i className="fas fa-user me-2"></i>Employee</h6>
+      <p>
+        <strong>
+          {selectedInvestigation.employee?.first_name} {selectedInvestigation.employee?.last_name}
+        </strong>
+      </p>
+      <p>
+        <small>
+          ID: {selectedInvestigation.employee?.id || 'N/A'} | 
+          Department: {selectedInvestigation.employee?.department || 'N/A'}
+        </small>
+      </p>
+    </Col>
+    <Col md={6}>
+      <h6><i className="fas fa-gavel me-2"></i>Action Details</h6>
+      <p>
+        <strong>Type:</strong>{' '}
+        {selectedInvestigation.action_type
+          ? selectedInvestigation.action_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+          : 'N/A'}
+      </p>
+      <p>
+        <strong>Status:</strong>{' '}
+        <Badge bg={getStatusColor(selectedInvestigation.status)}>
+          {formatStatus(selectedInvestigation.status)}
+        </Badge>
+      </p>
+    </Col>
+  </Row>
+
+  <Row className="mt-3">
+    <Col md={12}>
+      <h6><i className="fas fa-file-alt me-2"></i>Violation Details</h6>
+
+      <p>
+        <strong>Category:</strong>{' '}
+        {selectedInvestigation.disciplinary_report?.disciplinary_category?.name || 'N/A'}
+      </p>
+
+      <p>
+        <strong>Severity:</strong>{' '}
+        {selectedInvestigation.disciplinary_report?.disciplinary_category?.severity_level ? (
+          <Badge
+            bg={getSeverityColor(
+              selectedInvestigation.disciplinary_report.disciplinary_category.severity_level
+            )}
+            className="ms-2"
+          >
+            {selectedInvestigation.disciplinary_report.disciplinary_category.severity_level}
+          </Badge>
+        ) : (
+          'N/A'
+        )}
+      </p>
+
+      <p><strong>Incident Date:</strong> {formatDate(selectedInvestigation.incident_date)}</p>
+
+      <p><strong>Violation Description:</strong></p>
+      <div className="bg-light p-3 rounded">
+        {selectedInvestigation.violation ||
+          selectedInvestigation.disciplinary_report?.incident_description ||
+          'No violation description available'}
+      </div>
+
+      {selectedInvestigation.disciplinary_report?.incident_description &&
+        selectedInvestigation.disciplinary_report.incident_description !== selectedInvestigation.violation && (
+          <>
+            <p className="mt-3"><strong>Original Incident Description:</strong></p>
+            <div className="bg-light p-3 rounded">
+              {selectedInvestigation.disciplinary_report.incident_description}
+            </div>
+          </>
+        )}
+
+      {selectedInvestigation.disciplinary_report?.location && (
+        <p className="mt-2"><strong>Location:</strong> {selectedInvestigation.disciplinary_report.location}</p>
+      )}
+
+      {selectedInvestigation.disciplinary_report?.evidence && (
+        <>
+          <p className="mt-2"><strong>Evidence:</strong></p>
+          <div className="bg-light p-2 rounded small">
+            {selectedInvestigation.disciplinary_report.evidence}
+          </div>
+        </>
+      )}
+
+      {selectedInvestigation.disciplinary_report?.witnesses &&
+        selectedInvestigation.disciplinary_report.witnesses.length > 0 && (
+          <>
+            <p className="mt-2"><strong>Witnesses:</strong></p>
+            <ul className="small">
+              {selectedInvestigation.disciplinary_report.witnesses.map((witness, index) => (
+                <li key={index}>
+                  {witness.name} {witness.contact && `- ${witness.contact}`}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+    </Col>
+  </Row>
+</Alert>
+
                 
                 {/* Repeated Violation Alert */}
                 {selectedInvestigation.is_repeat_violation && (
@@ -1568,195 +1602,199 @@ const ManagerDisciplinaryManagement = () => {
         </Form>
       </Modal>
       
-      {/* Report Details Modal */}
-      <Modal show={showReportDetailsModal} onHide={() => setShowReportDetailsModal(false)} size="xl" scrollable>
-        <Modal.Header closeButton>
-          <Modal.Title>
-            <i className="fas fa-file-alt me-2"></i>
-            Report Details - {selectedReportForDetails?.report_number}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          {selectedReportForDetails && (
-            <>
-              {/* Report Information */}
-              <Alert variant="primary" className="mb-4">
-                <Row>
-                  <Col md={6}>
-                    <h6><i className="fas fa-user me-2"></i>Employee Information</h6>
-                    <p><strong>Name:</strong> {selectedReportForDetails.employee?.first_name} {selectedReportForDetails.employee?.last_name}</p>
-                    <p><strong>Employee ID:</strong> {selectedReportForDetails.employee?.employee_id}</p>
-                    <p><strong>Department:</strong> {selectedReportForDetails.employee?.department}</p>
-                    <p><strong>Position:</strong> {selectedReportForDetails.employee?.position}</p>
-                  </Col>
-                  <Col md={6}>
-                    <h6><i className="fas fa-info-circle me-2"></i>Report Information</h6>
-                    <p><strong>Status:</strong> 
-                      <Badge bg={getStatusColor(selectedReportForDetails.overall_status || selectedReportForDetails.status)} className="ms-2">
-                        {getDetailedStatus(selectedReportForDetails)}
-                      </Badge>
-                    </p>
-                    <p><strong>Priority:</strong> 
-                      <Badge bg={getPriorityColor(selectedReportForDetails.priority)} className="ms-2">
-                        {selectedReportForDetails.priority}
-                      </Badge>
-                    </p>
-                    <p><strong>Submitted:</strong> {formatDateTime(selectedReportForDetails.created_at)}</p>
-                  </Col>
-                </Row>
-              </Alert>
-              
-              {/* Incident Details */}
-              <div className="mb-4">
-                <h6><i className="fas fa-exclamation-triangle me-2"></i>Incident Details</h6>
-                <Row>
-                  <Col md={6}>
-                    <p><strong>Category:</strong> {selectedReportForDetails.disciplinary_category?.name}</p>
-                    <p><strong>Severity:</strong> 
-                      <Badge bg={getSeverityColor(selectedReportForDetails.disciplinary_category?.severity_level)} className="ms-2">
-                        {selectedReportForDetails.disciplinary_category?.severity_level}
-                      </Badge>
-                    </p>
-                    <p><strong>Incident Date:</strong> {formatDate(selectedReportForDetails.incident_date)}</p>
-                    <p><strong>Location:</strong> {selectedReportForDetails.location || 'Not specified'}</p>
-                  </Col>
-                  <Col md={6}>
-                    <p><strong>Immediate Action Taken:</strong></p>
-                    <div className="bg-light p-2 rounded">
-                      {selectedReportForDetails.immediate_action_taken || 'None specified'}
-                    </div>
-                  </Col>
-                </Row>
-                
-                <div className="mt-3">
-                  <p><strong>Description:</strong></p>
-                  <div className="bg-light p-3 rounded">
-                    {selectedReportForDetails.incident_description}
-                  </div>
-                </div>
-                
-                {selectedReportForDetails.evidence && (
-                  <div className="mt-3">
-                    <p><strong>Evidence:</strong></p>
-                    <div className="bg-light p-3 rounded">
-                      {selectedReportForDetails.evidence}
-                    </div>
-                  </div>
-                )}
-                
-                {selectedReportForDetails.witnesses && selectedReportForDetails.witnesses.length > 0 && (
-                  <div className="mt-3">
-                    <p><strong>Witnesses:</strong></p>
-                    <div className="bg-light p-3 rounded">
-                      {selectedReportForDetails.witnesses.map((witness, index) => (
-                        <div key={index} className="mb-2">
-                          <strong>{witness.name}</strong>
-                          {witness.contact && ` - ${witness.contact}`}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+{/* Report Details Modal */}
+<Modal show={showReportDetailsModal} onHide={() => setShowReportDetailsModal(false)} size="xl" scrollable>
+  <Modal.Header closeButton>
+    <Modal.Title>
+      <i className="fas fa-file-alt me-2"></i>
+      Report Details - {selectedReportForDetails?.report_number}
+    </Modal.Title>
+  </Modal.Header>
+  <Modal.Body>
+    {selectedReportForDetails && (
+      <>
+        {/* Report Information */}
+        <Alert variant="primary" className="mb-4">
+          <Row>
+            <Col md={6}>
+              <h6><i className="fas fa-user me-2"></i>Employee Information</h6>
+              <p><strong>Name:</strong> {selectedReportForDetails.employee?.first_name} {selectedReportForDetails.employee?.last_name}</p>
+              <p><strong>Employee ID:</strong> {selectedReportForDetails.employee?.employee_id || 'N/A'}</p>
+              <p><strong>Department:</strong> {selectedReportForDetails.employee?.department || 'N/A'}</p>
+              <p><strong>Position:</strong> {selectedReportForDetails.employee?.position || 'N/A'}</p>
+            </Col>
+            <Col md={6}>
+              <h6><i className="fas fa-info-circle me-2"></i>Report Information</h6>
+              <p><strong>Status:</strong> 
+                <Badge bg={getStatusColor(selectedReportForDetails.overall_status || selectedReportForDetails.status)} className="ms-2">
+                  {getDetailedStatus(selectedReportForDetails)}
+                </Badge>
+              </p>
+              <p><strong>Priority:</strong> 
+                <Badge bg={getPriorityColor(selectedReportForDetails.priority)} className="ms-2">
+                  {selectedReportForDetails.priority || 'N/A'}
+                </Badge>
+              </p>
+              <p><strong>Submitted:</strong> {formatDateTime(selectedReportForDetails.created_at)}</p>
+            </Col>
+          </Row>
+        </Alert>
+        
+        {/* Incident Details */}
+        <div className="mb-4">
+          <h6><i className="fas fa-exclamation-triangle me-2"></i>Incident Details</h6>
+          <Row>
+            <Col md={6}>
+              <p><strong>Category:</strong> {selectedReportForDetails.disciplinary_category?.name || 'N/A'}</p>
+              <p><strong>Severity:</strong> 
+                {selectedReportForDetails.disciplinary_category?.severity_level ? (
+                  <Badge 
+                    bg={getSeverityColor(selectedReportForDetails.disciplinary_category.severity_level)} 
+                    className="ms-2"
+                  >
+                    {selectedReportForDetails.disciplinary_category.severity_level}
+                  </Badge>
+                ) : 'N/A'}
+              </p>
+              <p><strong>Incident Date:</strong> {formatDate(selectedReportForDetails.incident_date)}</p>
+              <p><strong>Location:</strong> {selectedReportForDetails.location || 'Not specified'}</p>
+            </Col>
+            <Col md={6}>
+              <p><strong>Immediate Action Taken:</strong></p>
+              <div className="bg-light p-2 rounded">
+                {selectedReportForDetails.immediate_action_taken || 'None specified'}
               </div>
-              
-              {/* Disciplinary Actions */}
-              {selectedReportForDetails.disciplinary_actions && selectedReportForDetails.disciplinary_actions.length > 0 && (
-                <div className="mb-4">
-                  <h6><i className="fas fa-gavel me-2"></i>Disciplinary Actions</h6>
-                  {selectedReportForDetails.disciplinary_actions.map((action, index) => (
-                    <Card key={action.id} className="mb-3">
-                      <Card.Header>
-                        <Row className="align-items-center">
-                          <Col>
-                            <h6 className="mb-0">Action #{action.action_number || action.id}</h6>
-                          </Col>
-                          <Col xs="auto">
-                            <Badge bg={getStatusColor(action.status)}>
-                              {formatStatus(action.status)}
-                            </Badge>
-                          </Col>
-                        </Row>
-                      </Card.Header>
-                      <Card.Body>
-                        <Row>
-                          <Col md={6}>
-                            <p><strong>Action Type:</strong> {action.action_type?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                            <p><strong>Effective Date:</strong> {formatDate(action.effective_date)}</p>
-                            {action.investigator && (
-                              <p><strong>Investigator:</strong> {action.investigator.first_name} {action.investigator.last_name}</p>
-                            )}
-                          </Col>
-                          <Col md={6}>
-                            <p><strong>Issued By:</strong> {action.issued_by?.first_name} {action.issued_by?.last_name}</p>
-                            <p><strong>Issued Date:</strong> {formatDate(action.created_at)}</p>
-                          </Col>
-                        </Row>
-                        
-                        <div className="mt-3">
-                          <p><strong>Action Details:</strong></p>
-                          <div className="bg-light p-2 rounded">
-                            {action.action_details}
-                          </div>
-                        </div>
-                        
-                        {action.employee_explanation && (
-                          <div className="mt-3">
-                            <p><strong>Employee Explanation:</strong></p>
-                            <div className="bg-info bg-opacity-10 p-2 rounded">
-                              {action.employee_explanation}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {action.investigation_notes && (
-                          <div className="mt-3">
-                            <p><strong>Investigation Notes:</strong></p>
-                            <div className="bg-warning bg-opacity-10 p-2 rounded">
-                              {action.investigation_notes}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {action.verdict && (
-                          <div className="mt-3">
-                            <Alert variant={action.verdict === 'dismissed' ? 'secondary' : 'success'}>
-                              <h6><i className="fas fa-balance-scale me-2"></i>Final Verdict</h6>
-                              <p><strong>Decision:</strong> 
-                                <Badge bg={action.verdict === 'dismissed' ? 'secondary' : 'success'} className="ms-2">
-                                  {action.verdict === 'guilty' ? 'Action Upheld' :
-                                   action.verdict === 'dismissed' ? 'Action Dismissed' :
-                                   formatStatus(action.verdict)}
-                                </Badge>
-                              </p>
-                              {action.verdict_details && (
-                                <div>
-                                  <strong>Details:</strong>
-                                  <div className="bg-white p-2 rounded mt-1">
-                                    {action.verdict_details}
-                                  </div>
-                                </div>
-                              )}
-                              {action.verdict_issued_at && (
-                                <p><strong>Issued:</strong> {formatDateTime(action.verdict_issued_at)}</p>
-                              )}
-                            </Alert>
-                          </div>
-                        )}
-                      </Card.Body>
-                    </Card>
-                  ))}
-                </div>
-              )}
-              
-              {(!selectedReportForDetails.disciplinary_actions || selectedReportForDetails.disciplinary_actions.length === 0) && (
-                <Alert variant="info">
-                  <i className="fas fa-info-circle me-2"></i>
-                  No disciplinary actions have been issued for this report yet.
-                </Alert>
-              )}
-            </>
+            </Col>
+          </Row>
+          
+          <div className="mt-3">
+            <p><strong>Description:</strong></p>
+            <div className="bg-light p-3 rounded">
+              {selectedReportForDetails.incident_description || 'No description provided'}
+            </div>
+          </div>
+          
+          {selectedReportForDetails.evidence && (
+            <div className="mt-3">
+              <p><strong>Evidence:</strong></p>
+              <div className="bg-light p-3 rounded">
+                {selectedReportForDetails.evidence}
+              </div>
+            </div>
           )}
-        </Modal.Body>
+          
+          {selectedReportForDetails.witnesses && selectedReportForDetails.witnesses.length > 0 && (
+            <div className="mt-3">
+              <p><strong>Witnesses:</strong></p>
+              <div className="bg-light p-3 rounded">
+                {selectedReportForDetails.witnesses.map((witness, index) => (
+                  <div key={index} className="mb-2">
+                    <strong>{witness.name}</strong>
+                    {witness.contact && ` - ${witness.contact}`}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Disciplinary Actions */}
+        {selectedReportForDetails.disciplinary_actions?.length > 0 ? (
+          <div className="mb-4">
+            <h6><i className="fas fa-gavel me-2"></i>Disciplinary Actions</h6>
+            {selectedReportForDetails.disciplinary_actions.map((action) => (
+              <Card key={action.id} className="mb-3">
+                <Card.Header>
+                  <Row className="align-items-center">
+                    <Col>
+                      <h6 className="mb-0">Action #{action.action_number || action.id}</h6>
+                    </Col>
+                    <Col xs="auto">
+                      <Badge bg={getStatusColor(action.status)}>
+                        {formatStatus(action.status)}
+                      </Badge>
+                    </Col>
+                  </Row>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={6}>
+                      <p><strong>Action Type:</strong> {action.action_type?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
+                      <p><strong>Effective Date:</strong> {formatDate(action.effective_date)}</p>
+                      {action.investigator && (
+                        <p><strong>Investigator:</strong> {action.investigator.first_name} {action.investigator.last_name}</p>
+                      )}
+                    </Col>
+                    <Col md={6}>
+                      <p><strong>Issued By:</strong> {action.issued_by?.first_name} {action.issued_by?.last_name}</p>
+                      <p><strong>Issued Date:</strong> {formatDate(action.created_at)}</p>
+                    </Col>
+                  </Row>
+                  
+                  <div className="mt-3">
+                    <p><strong>Action Details:</strong></p>
+                    <div className="bg-light p-2 rounded">
+                      {action.action_details}
+                    </div>
+                  </div>
+                  
+                  {action.employee_explanation && (
+                    <div className="mt-3">
+                      <p><strong>Employee Explanation:</strong></p>
+                      <div className="bg-info bg-opacity-10 p-2 rounded">
+                        {action.employee_explanation}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {action.investigation_notes && (
+                    <div className="mt-3">
+                      <p><strong>Investigation Notes:</strong></p>
+                      <div className="bg-warning bg-opacity-10 p-2 rounded">
+                        {action.investigation_notes}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {action.verdict && (
+                    <div className="mt-3">
+                      <Alert variant={action.verdict === 'dismissed' ? 'secondary' : 'success'}>
+                        <h6><i className="fas fa-balance-scale me-2"></i>Final Verdict</h6>
+                        <p><strong>Decision:</strong> 
+                          <Badge bg={action.verdict === 'dismissed' ? 'secondary' : 'success'} className="ms-2">
+                            {action.verdict === 'guilty' ? 'Action Upheld' :
+                             action.verdict === 'dismissed' ? 'Action Dismissed' :
+                             formatStatus(action.verdict)}
+                          </Badge>
+                        </p>
+                        {action.verdict_details && (
+                          <div>
+                            <strong>Details:</strong>
+                            <div className="bg-white p-2 rounded mt-1">
+                              {action.verdict_details}
+                            </div>
+                          </div>
+                        )}
+                        {action.verdict_issued_at && (
+                          <p><strong>Issued:</strong> {formatDateTime(action.verdict_issued_at)}</p>
+                        )}
+                      </Alert>
+                    </div>
+                  )}
+                </Card.Body>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Alert variant="info">
+            <i className="fas fa-info-circle me-2"></i>
+            No disciplinary actions have been issued for this report yet.
+          </Alert>
+        )}
+      </>
+    )}
+  </Modal.Body>
+
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowReportDetailsModal(false)}>
             Close
