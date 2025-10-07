@@ -2,19 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Badge, Form, Modal, Alert } from 'react-bootstrap';
 import { Calendar, ChevronLeft, ChevronRight, Plus, Edit3, Trash2, Eye, X, Check, AlertCircle, Clock } from 'lucide-react';
 import { 
-  getHrCalendarEvents, 
-  createHrCalendarEvent, 
-  updateHrCalendarEvent, 
-  deleteHrCalendarEvent,
-  getTodaysEvents,
-  getUpcomingEvents,
-  cancelHrCalendarEvent,
-  completeHrCalendarEvent 
+  hrCalendarApi,
+  employeeCalendarApi,
+  formatEventForForm,
+  formatEventForDisplay,
+  getEventTypeColor,
+  getEventTypeIcon,
+  getInvitationStatusColor,
+  getInvitationStatusText
 } from '../../api/calendar';
 import './MyCalendar.css';
 
 const MyCalendar = () => {
   const [events, setEvents] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('create'); // 'create', 'edit', 'view'
@@ -30,7 +33,9 @@ const MyCalendar = () => {
     end_time: '',
     event_type: 'meeting',
     blocks_leave_submissions: true,
-    date: ''
+    location: '',
+    date: '',
+    invited_employees: []
   });
 
   const eventTypes = [
@@ -54,12 +59,17 @@ const MyCalendar = () => {
       const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
       const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
       
-      const response = await getHrCalendarEvents({
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0]
-      });
+      const [eventsResponse, employeesResponse] = await Promise.all([
+        hrCalendarApi.getEvents({
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0]
+        }),
+        hrCalendarApi.getEmployees()
+      ]);
 
-      setEvents(response.data.data || []);
+      setEvents(eventsResponse.data || []);
+      setEmployees(employeesResponse.data || []);
+      setFilteredEmployees(employeesResponse.data || []);
     } catch (error) {
       console.error('Error loading calendar data:', error);
       if (showLoadingIndicator) {
@@ -125,15 +135,29 @@ const MyCalendar = () => {
       end_time: '',
       event_type: 'meeting',
       blocks_leave_submissions: true,
-      date: dateValue
+      location: '',
+      date: dateValue,
+      invited_employees: []
     });
+    setEmployeeSearchTerm('');
+    setFilteredEmployees(employees);
   };
 
-  const handleCreateEvent = (date = null) => {
+  const handleCreateEvent = async (date = null) => {
     setSelectedDate(date || new Date());
     resetForm();
     setModalType('create');
     setSelectedEvent(null);
+    
+    // Refresh employee list to ensure it's current
+    try {
+      const employeesResponse = await hrCalendarApi.getEmployees();
+      setEmployees(employeesResponse.data || []);
+      setFilteredEmployees(employeesResponse.data || []);
+    } catch (error) {
+      console.error('Error refreshing employee list:', error);
+    }
+    
     setShowModal(true);
   };
 
@@ -142,7 +166,7 @@ const MyCalendar = () => {
     handleCreateEvent(date);
   };
 
-  const handleEditEvent = (event) => {
+  const handleEditEvent = async (event) => {
     const eventDate = new Date(event.start_datetime);
     const startTime = eventDate.toTimeString().slice(0, 5);
     const endDate = new Date(event.end_datetime);
@@ -161,11 +185,25 @@ const MyCalendar = () => {
       end_time: endTime,
       event_type: event.event_type,
       blocks_leave_submissions: event.blocks_leave_submissions,
-      date: formattedDate
+      location: event.location || '',
+      date: formattedDate,
+      invited_employees: event.invited_employees ? event.invited_employees.map(emp => emp.id) : []
     });
     setSelectedDate(eventDate);
     setModalType('edit');
     setSelectedEvent(event);
+    setEmployeeSearchTerm('');
+    
+    // Refresh employee list to ensure it's current
+    try {
+      const employeesResponse = await hrCalendarApi.getEmployees();
+      setEmployees(employeesResponse.data || []);
+      setFilteredEmployees(employeesResponse.data || []);
+    } catch (error) {
+      console.error('Error refreshing employee list:', error);
+      setFilteredEmployees(employees);
+    }
+    
     setShowModal(true);
   };
 
@@ -213,10 +251,10 @@ const MyCalendar = () => {
       delete eventData.end_time;
       
       if (modalType === 'create') {
-        await createHrCalendarEvent(eventData);
+        await hrCalendarApi.createEvent(eventData);
         showAlert('Event created successfully!', 'success');
       } else if (modalType === 'edit') {
-        await updateHrCalendarEvent(selectedEvent.id, eventData);
+        await hrCalendarApi.updateEvent(selectedEvent.id, eventData);
         showAlert('Event updated successfully!', 'success');
       }
       
@@ -234,7 +272,7 @@ const MyCalendar = () => {
   const handleDeleteEvent = async (eventId) => {
     if (window.confirm('Are you sure you want to delete this event?')) {
       try {
-        await deleteHrCalendarEvent(eventId);
+        await hrCalendarApi.deleteEvent(eventId);
         showAlert('Event deleted successfully!', 'success');
         loadData();
       } catch (error) {
@@ -247,7 +285,7 @@ const MyCalendar = () => {
   const handleCancelEvent = async (eventId) => {
     if (window.confirm('Are you sure you want to cancel this event?')) {
       try {
-        await cancelHrCalendarEvent(eventId);
+        await hrCalendarApi.cancelEvent(eventId);
         showAlert('Event cancelled successfully!', 'info');
         loadData();
       } catch (error) {
@@ -259,12 +297,34 @@ const MyCalendar = () => {
 
   const handleCompleteEvent = async (eventId) => {
     try {
-      await completeHrCalendarEvent(eventId);
+      await hrCalendarApi.completeEvent(eventId);
       showAlert('Event marked as completed!', 'success');
       loadData();
     } catch (error) {
       console.error('Error completing event:', error);
       showAlert('Error completing event. Please try again.', 'danger');
+    }
+  };
+
+  const handleEmployeeToggle = (employeeId) => {
+    setFormData(prev => ({
+      ...prev,
+      invited_employees: prev.invited_employees.includes(employeeId)
+        ? prev.invited_employees.filter(id => id !== employeeId)
+        : [...prev.invited_employees, employeeId]
+    }));
+  };
+
+  const handleEmployeeSearch = (searchTerm) => {
+    setEmployeeSearchTerm(searchTerm);
+    if (searchTerm.trim() === '') {
+      setFilteredEmployees(employees);
+    } else {
+      const filtered = employees.filter(employee =>
+        employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        employee.email.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredEmployees(filtered);
     }
   };
 
@@ -463,7 +523,7 @@ const MyCalendar = () => {
               </Row>
               
               <Row className="mb-3">
-                <Col md={6}>
+                <Col md={4}>
                   <strong>Event Type:</strong>
                   <div>
                     <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }} className="mt-1">
@@ -471,7 +531,13 @@ const MyCalendar = () => {
                     </Badge>
                   </div>
                 </Col>
-                <Col md={6}>
+                <Col md={4}>
+                  <strong>Location:</strong>
+                  <div className="mt-1">
+                    {selectedEvent.location || 'Not specified'}
+                  </div>
+                </Col>
+                <Col md={4}>
                   <strong>Blocks Leave Submissions:</strong>
                   <div>
                     {selectedEvent.blocks_leave_submissions ? (
@@ -495,7 +561,7 @@ const MyCalendar = () => {
               </Row>
               
               <hr />
-              
+
               <Row>
                 <Col md={6}>
                   <small className="text-muted">
@@ -558,6 +624,19 @@ const MyCalendar = () => {
                 />
               </Form.Group>
               
+              <Form.Group className="mb-3">
+                <Form.Label>Location</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="Enter meeting location (optional)"
+                />
+                <Form.Text className="text-muted">
+                  Specify the meeting room, address, or virtual meeting link.
+                </Form.Text>
+              </Form.Group>
+              
               <Row>
                 <Col md={4}>
                   <Form.Group className="mb-3">
@@ -609,6 +688,50 @@ const MyCalendar = () => {
                 <Form.Text className="text-muted">
                   When enabled, employees will not be able to submit leave requests during this event's time period.
                 </Form.Text>
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Invite Employees (Optional)</Form.Label>
+                <Form.Text className="text-muted d-block mb-2">
+                  Select specific employees to invite. If no employees are selected, this will be a public event visible to all employees.
+                </Form.Text>
+                
+                {/* Employee Search */}
+                <Form.Control
+                  type="text"
+                  placeholder="Search employees by name or email..."
+                  value={employeeSearchTerm}
+                  onChange={(e) => handleEmployeeSearch(e.target.value)}
+                  className="mb-3 employee-search-input"
+                />
+                
+                <div className="employee-selection">
+                  {filteredEmployees.length > 0 ? (
+                    filteredEmployees.map(employee => (
+                      <Form.Check
+                        key={employee.id}
+                        type="checkbox"
+                        id={`employee-${employee.id}`}
+                        label={`${employee.name} (${employee.email})`}
+                        checked={formData.invited_employees.includes(employee.id)}
+                        onChange={() => handleEmployeeToggle(employee.id)}
+                        className="mb-2"
+                      />
+                    ))
+                  ) : (
+                    <div className="text-muted text-center py-3">
+                      {employeeSearchTerm ? 'No employees found matching your search.' : 'No employees available.'}
+                    </div>
+                  )}
+                </div>
+                
+                {formData.invited_employees.length > 0 && (
+                  <div className="mt-2">
+                    <small className="employee-selection-count">
+                      {formData.invited_employees.length} employee(s) selected
+                    </small>
+                  </div>
+                )}
               </Form.Group>
             </Form>
           )}

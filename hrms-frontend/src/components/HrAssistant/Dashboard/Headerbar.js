@@ -3,7 +3,6 @@ import React from 'react';
 import { FaEnvelope, FaBell } from 'react-icons/fa';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useUserProfile from '../../../hooks/useUserProfile';
-import profileImg from './profile.png';
 
 const HeaderBar = () => {
   const location = useLocation();
@@ -14,9 +13,8 @@ const HeaderBar = () => {
   let pageTitle = 'Dashboard';
 
   const handleProfileClick = () => {
-    // Navigate to employee records or profile management section
-    // Since this is HR Assistant, they might want to go to employee records
-    navigate('/dashboard/hr-assistant/employee-records');
+    // Navigate to HR Assistant profile page
+    navigate('/dashboard/hr-assistant/profile');
   };
 
   if (pathname.includes('employee-records')) pageTitle = 'Employee Records';
@@ -27,6 +25,7 @@ const HeaderBar = () => {
   else if (pathname.includes('disciplinary')) pageTitle = 'Disciplinary Action';
   else if (pathname.includes('recruitment')) pageTitle = 'Recruitment';
   else if (pathname.includes('reports')) pageTitle = 'Report Generation';
+  else if (pathname.includes('profile')) pageTitle = 'Profile';
 
   return (
     <div className="header-bar">
@@ -41,10 +40,10 @@ const HeaderBar = () => {
             {loading ? 'Loading...' : userProfile?.name || 'User'}
           </span>
           <img 
-            src={profileImg} 
+            src="https://i.pravatar.cc/40" 
             alt="User Profile" 
             onClick={handleProfileClick}
-            style={{ cursor: 'pointer' }}
+            style={{ cursor: 'pointer', width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #0d6efd' }}
             title={`Go to Profile - ${userProfile?.name || 'User'}`}
           />
         </div>

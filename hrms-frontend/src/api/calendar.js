@@ -1,32 +1,164 @@
-import axios from 'axios';
+import axios from '../axios';
 
-const API = axios.create({
-  baseURL: 'http://localhost:8000/api',
-  withCredentials: true,
-});
+// HR Calendar API functions
+export const hrCalendarApi = {
+  // Get all HR calendar events
+  getEvents: async (params = {}) => {
+    const response = await axios.get('/hr-calendar', { params });
+    return response.data;
+  },
 
-// Add auth token to requests
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Create a new HR calendar event
+  createEvent: async (eventData) => {
+    const response = await axios.post('/hr-calendar', eventData);
+    return response.data;
+  },
+
+  // Get a specific event
+  getEvent: async (id) => {
+    const response = await axios.get(`/hr-calendar/${id}`);
+    return response.data;
+  },
+
+  // Update an event
+  updateEvent: async (id, eventData) => {
+    const response = await axios.put(`/hr-calendar/${id}`, eventData);
+    return response.data;
+  },
+
+  // Delete an event
+  deleteEvent: async (id) => {
+    const response = await axios.delete(`/hr-calendar/${id}`);
+    return response.data;
+  },
+
+  // Cancel an event
+  cancelEvent: async (id) => {
+    const response = await axios.put(`/hr-calendar/${id}/cancel`);
+    return response.data;
+  },
+
+  // Complete an event
+  completeEvent: async (id) => {
+    const response = await axios.put(`/hr-calendar/${id}/complete`);
+    return response.data;
+  },
+
+  // Get today's events
+  getTodaysEvents: async () => {
+    const response = await axios.get('/hr-calendar/todays-events');
+    return response.data;
+  },
+
+  // Get upcoming events
+  getUpcomingEvents: async () => {
+    const response = await axios.get('/hr-calendar/upcoming');
+    return response.data;
+  },
+
+  // Check HR availability
+  checkHrAvailability: async () => {
+    const response = await axios.get('/hr-calendar/check-availability');
+    return response.data;
+  },
+
+  // Get employees for invitations
+  getEmployees: async () => {
+    const response = await axios.get('/hr-calendar/employees');
+    return response.data;
   }
-  return config;
-});
+};
 
-// HR Calendar Event APIs
-export const getHrCalendarEvents = (params = {}) => API.get('/hr-calendar', { params });
-export const createHrCalendarEvent = (data) => API.post('/hr-calendar', data);
-export const getHrCalendarEvent = (id) => API.get(`/hr-calendar/${id}`);
-export const updateHrCalendarEvent = (id, data) => API.put(`/hr-calendar/${id}`, data);
-export const deleteHrCalendarEvent = (id) => API.delete(`/hr-calendar/${id}`);
+// Employee Calendar API functions
+export const employeeCalendarApi = {
+  // Get employee's personal calendar
+  getMyCalendar: async (params = {}) => {
+    const response = await axios.get('/employee-calendar', { params });
+    return response.data;
+  },
 
-// Specific calendar actions
-export const getTodaysEvents = () => API.get('/hr-calendar/todays-events');
-export const getUpcomingEvents = () => API.get('/hr-calendar/upcoming');
-export const checkHrAvailability = () => API.get('/hr-calendar/check-availability');
-export const cancelHrCalendarEvent = (id) => API.put(`/hr-calendar/${id}/cancel`);
-export const completeHrCalendarEvent = (id) => API.put(`/hr-calendar/${id}/complete`);
+  // Respond to a meeting invitation
+  respondToInvitation: async (eventId, status) => {
+    const response = await axios.post(`/employee-calendar/${eventId}/respond`, {
+      status: status
+    });
+    return response.data;
+  }
+};
 
-// Leave request availability check
-export const checkLeaveSubmissionAvailability = () => API.get('/hr-calendar/check-availability');
+// Utility functions
+export const formatEventForForm = (event) => {
+  if (!event) return null;
+  
+  return {
+    title: event.title,
+    description: event.description,
+    start_datetime: event.start_datetime_manila || event.start_datetime,
+    end_datetime: event.end_datetime_manila || event.end_datetime,
+    event_type: event.event_type,
+    blocks_leave_submissions: event.blocks_leave_submissions,
+    invited_employees: event.invited_employees ? event.invited_employees.map(emp => emp.id) : []
+  };
+};
+
+export const formatEventForDisplay = (event) => {
+  if (!event) return null;
+  
+  return {
+    ...event,
+    startDate: event.start_date_manila || event.start_datetime.split('T')[0],
+    startTime: event.start_time_manila || event.start_datetime.split('T')[1].substring(0, 5),
+    endTime: event.end_time_manila || event.end_datetime.split('T')[1].substring(0, 5),
+    formattedDate: event.date_formatted,
+    formattedStartTime: event.start_time_formatted,
+    formattedEndTime: event.end_time_formatted
+  };
+};
+
+export const getEventTypeColor = (eventType) => {
+  const colors = {
+    meeting: '#3b82f6',
+    training: '#10b981',
+    interview: '#f59e0b',
+    break: '#6b7280',
+    unavailable: '#ef4444',
+    other: '#8b5cf6'
+  };
+  return colors[eventType] || colors.other;
+};
+
+export const getEventTypeIcon = (eventType) => {
+  const icons = {
+    meeting: '👥',
+    training: '📚',
+    interview: '💼',
+    break: '☕',
+    unavailable: '🚫',
+    other: '📅'
+  };
+  return icons[eventType] || icons.other;
+};
+
+export const getInvitationStatusColor = (status) => {
+  const colors = {
+    pending: '#f59e0b',
+    accepted: '#10b981',
+    declined: '#ef4444'
+  };
+  return colors[status] || colors.pending;
+};
+
+export const getInvitationStatusText = (status) => {
+  const texts = {
+    pending: 'Pending',
+    accepted: 'Accepted',
+    declined: 'Declined'
+  };
+  return texts[status] || 'Unknown';
+};
+
+// Legacy function for leave submission availability check
+export const checkLeaveSubmissionAvailability = async () => {
+  const response = await hrCalendarApi.checkHrAvailability();
+  return response;
+};

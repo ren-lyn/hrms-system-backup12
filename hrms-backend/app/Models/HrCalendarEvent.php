@@ -20,7 +20,8 @@ class HrCalendarEvent extends Model
         'event_type',
         'status',
         'created_by',
-        'blocks_leave_submissions'
+        'blocks_leave_submissions',
+        'location'
     ];
 
     protected $casts = [
@@ -33,6 +34,50 @@ class HrCalendarEvent extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    // Relationship with event invitations
+    public function invitations()
+    {
+        return $this->hasMany(CalendarEventInvitation::class, 'event_id');
+    }
+
+    // Relationship with invited employees
+    public function invitedEmployees()
+    {
+        return $this->belongsToMany(User::class, 'calendar_event_invitations', 'event_id', 'employee_id')
+                    ->withPivot('status', 'responded_at')
+                    ->withTimestamps();
+    }
+
+    // Get accepted invitations
+    public function acceptedInvitations()
+    {
+        return $this->invitations()->accepted();
+    }
+
+    // Get pending invitations
+    public function pendingInvitations()
+    {
+        return $this->invitations()->pending();
+    }
+
+    // Get declined invitations
+    public function declinedInvitations()
+    {
+        return $this->invitations()->declined();
+    }
+
+    // Check if event has specific employees invited
+    public function hasInvitedEmployees()
+    {
+        return $this->invitations()->exists();
+    }
+
+    // Check if event is public (no specific employees invited)
+    public function isPublicEvent()
+    {
+        return !$this->hasInvitedEmployees();
     }
 
     // Scope to get active events (ongoing or future)
@@ -121,6 +166,7 @@ class HrCalendarEvent extends Model
             'event_type' => $this->event_type,
             'status' => $this->status,
             'blocks_leave_submissions' => $this->blocks_leave_submissions,
+            'location' => $this->location,
             'is_ongoing' => $this->start_datetime <= now() && $this->end_datetime >= now(),
             'created_by' => $this->creator ? $this->creator->name : 'System',
             'created_at' => $this->created_at->toISOString(),
@@ -131,7 +177,25 @@ class HrCalendarEvent extends Model
             // Precomputed Manila date to avoid off-by-one issues on client
             'start_date_manila' => $startTimeManila->format('Y-m-d'),
             'start_time_manila' => $startTimeManila->format('H:i'),
-            'end_time_manila' => $endTimeManila->format('H:i')
+            'end_time_manila' => $endTimeManila->format('H:i'),
+            // Invitation information
+            'is_public_event' => $this->isPublicEvent(),
+            'has_invited_employees' => $this->hasInvitedEmployees(),
+            'invited_employees' => $this->invitedEmployees->map(function($employee) {
+                return [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'email' => $employee->email,
+                    'status' => $employee->pivot->status,
+                    'responded_at' => $employee->pivot->responded_at
+                ];
+            }),
+            'invitation_stats' => [
+                'total_invited' => $this->invitations()->count(),
+                'accepted' => $this->invitations()->accepted()->count(),
+                'pending' => $this->invitations()->pending()->count(),
+                'declined' => $this->invitations()->declined()->count()
+            ]
         ];
     }
 }

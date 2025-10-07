@@ -161,13 +161,47 @@ class ManagerDisciplinaryController extends Controller
         // Load relationships for notification
         $report->load(['employee', 'disciplinaryCategory']);
         
-        // Notify HR staff
+        // Notify HR Staff only (Disciplinary Actions are HR Staff's responsibility)
         $hrStaff = EmployeeProfile::whereHas('user.role', function($query) {
-            $query->whereIn('name', ['hr_assistant', 'hr_staff']);
+            $query->where('name', 'HR Staff');
         })->get();
         
         foreach ($hrStaff as $staff) {
             $staff->user->notify(new DisciplinaryReportSubmitted($report));
+        }
+
+        // Notify managers in the same department
+        try {
+            $department = $report->employee->department ?? 'Not Specified';
+            
+            $managers = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'Manager');
+            })->whereHas('employeeProfile', function($query) use ($department) {
+                $query->where('department', $department);
+            })->get();
+
+            // If no managers in same department, get all managers
+            if ($managers->isEmpty()) {
+                $managers = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'Manager');
+                })->get();
+            }
+
+            foreach ($managers as $manager) {
+                $manager->notify(new \App\Notifications\DisciplinaryReportSubmittedToManager($report));
+            }
+
+            \Log::info('Disciplinary report submission notifications sent to managers', [
+                'report_id' => $report->id,
+                'employee_id' => $report->employee_id,
+                'department' => $department,
+                'managers_notified' => $managers->count()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send disciplinary report notifications to managers', [
+                'report_id' => $report->id,
+                'error' => $e->getMessage()
+            ]);
         }
         
         return response()->json([
@@ -347,7 +381,7 @@ class ManagerDisciplinaryController extends Controller
         
         // Notify HR staff that investigation is complete
         $hrStaff = EmployeeProfile::whereHas('user.role', function($query) {
-            $query->whereIn('name', ['hr_assistant', 'hr_staff']);
+            $query->whereIn('name', ['HR Assistant', 'HR Staff']);
         })->get();
         
         foreach ($hrStaff as $staff) {

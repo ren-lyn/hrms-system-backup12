@@ -33,6 +33,7 @@ import ApplicationsDashboard from "./components/HrAssistant/Dashboard/Applicatio
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import StandaloneAssistantDashboard from './components/HrAssistant/Dashboard/StandaloneAssistantDashboard';
+import HrAssistantProfile from './components/HrAssistant/HrAssistantProfile';
 
 function App() {
   useEffect(() => {
@@ -77,6 +78,7 @@ function App() {
           <Route path="job-postings" element={<JobPostings />} />
           <Route path="applications" element={<ApplicationsDashboard />} />
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
+          <Route path="profile" element={<HrAssistantProfile />} />
 
         </Route>
 

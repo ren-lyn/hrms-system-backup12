@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { fetchNotifications, markNotificationRead, getNotificationAction, getNotificationIcon } from '../../api/notifications';
 
-const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation }) => {
+const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -78,6 +78,21 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
         case 'OPEN_CASH_ADVANCE':
           if (onOpenCashAdvance && notificationAction.id) {
             onOpenCashAdvance(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_CALENDAR':
+          if (onOpenCalendar) {
+            onOpenCalendar(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_JOB_APPLICATIONS':
+          if (onOpenJobApplications) {
+            onOpenJobApplications(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_JOB_POSTINGS':
+          if (onOpenJobPostings) {
+            onOpenJobPostings(notificationAction.id, notificationAction.data);
           }
           break;
         default:

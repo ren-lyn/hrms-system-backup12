@@ -6,16 +6,19 @@ import {
   CalendarDays,
   ClipboardList,
   AlertCircle,
-  Bell,
+  Bell as BellIcon,
   LogOut,
   FileText,
   CalendarCheck
 } from 'lucide-react';
 import useUserProfile from '../hooks/useUserProfile';
+import useEmployeeCount from '../hooks/useEmployeeCount';
 import ManagerLeaveManagement from '../components/Manager/ManagerLeaveManagement';
 import ManagerEmployeeEvaluations from '../components/Manager/ManagerEmployeeEvaluations';
 import ManagerDisciplinaryManagement from '../components/Manager/ManagerDisciplinaryManagement';
 import ManagerProfile from '../components/Manager/ManagerProfile';
+import ManagerCalendar from '../components/Manager/ManagerCalendar';
+import Bell from '../components/Notifications/Bell';
 
 
 const ManagerDashboard = () => {
@@ -24,11 +27,12 @@ const ManagerDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const { userProfile, loading } = useUserProfile();
+  const { total: employeeTotal, loading: employeeCountLoading, error: employeeCountError } = useEmployeeCount();
 
   const links = [
     { icon: <Home size={18} />, label: 'Dashboard', view: 'dashboard' },
     { icon: <CalendarCheck size={18} />, label: 'Leave Request', view: 'leave-request' },
-    { icon: <CalendarDays size={18} />, label: 'Attendance Monitor', view: 'attendance' },
+    { icon: <CalendarDays size={18} />, label: 'My Calendar', view: 'calendar' },
     { icon: <ClipboardList size={18} />, label: 'Evaluations', view: 'evaluations' },
     { icon: <AlertCircle size={18} />, label: 'Disciplinary Cases', view: 'disciplinary' },
     { icon: <FileText size={18} />, label: 'Reports', view: 'reports' },
@@ -76,10 +80,38 @@ const ManagerDashboard = () => {
     setActiveView(view);
   };
 
+  // Notification handlers
+  const handleOpenLeave = (leaveId, data) => {
+    setActiveView('leave-request');
+    // You can add additional logic to highlight specific leave request
+  };
+
+  const handleOpenCashAdvance = (cashAdvanceId, data) => {
+    // Navigate to cash advance management if available
+    console.log('Open cash advance:', cashAdvanceId, data);
+  };
+
+  const handleOpenEvaluation = (evaluationId, data) => {
+    setActiveView('evaluations');
+    // You can add additional logic to highlight specific evaluation
+  };
+
+  const handleOpenDisciplinary = (disciplinaryId, data) => {
+    setActiveView('disciplinary');
+    // You can add additional logic to highlight specific disciplinary case
+  };
+
+  const handleOpenCalendar = (eventId, data) => {
+    setActiveView('calendar');
+    // You can add additional logic to highlight specific calendar event
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case 'leave-request':
         return <ManagerLeaveManagement />;
+      case 'calendar':
+        return <ManagerCalendar />;
       case 'evaluations':
         return <ManagerEmployeeEvaluations />;
       case 'disciplinary':
@@ -101,7 +133,10 @@ const ManagerDashboard = () => {
             { title: 'Evaluation Completion', value: '82%' },
             { title: 'Open Violations', value: '12' },
             { title: 'Avg. Resolve Time', value: '3.4 days' },
-            { title: 'Total Employees', value: '120' },
+            { 
+              title: 'Total Employees', 
+              value: employeeCountLoading ? 'Loading...' : employeeCountError ? 'Error' : employeeTotal.toString()
+            },
           ].map((item, idx) => (
             <div key={idx} style={styles.card}>
               <h3 style={styles.cardTitle}>{item.title}</h3>
@@ -150,6 +185,7 @@ const ManagerDashboard = () => {
             </ul>
           </div>
         </div>
+
       </>
     );
   };
@@ -228,19 +264,26 @@ const ManagerDashboard = () => {
         </div>
 
         {/* Main Content */}
-        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-          {activeView !== 'leave-request' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
+        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+          {activeView !== 'leave-request' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
             <>
               {/* Header */}
               <div style={styles.header}>
                 <h1 style={styles.headerTitle}>
                   {activeView === 'leave-request' ? 'Leave Management' : 
+                   activeView === 'calendar' ? 'My Calendar' :
                    activeView === 'evaluations' ? 'Employee Evaluations' :
                    activeView === 'disciplinary' ? 'Disciplinary Management' :
                    activeView === 'profile' ? 'Profile' : 'Manager Dashboard'}
                 </h1>
                 <div style={styles.headerIcons}>
-                  <Bell color="#fff" size={20} style={{ marginRight: '20px', cursor: 'pointer' }} />
+                  <Bell 
+                    onOpenLeave={handleOpenLeave}
+                    onOpenCashAdvance={handleOpenCashAdvance}
+                    onOpenEvaluation={handleOpenEvaluation}
+                    onOpenDisciplinary={handleOpenDisciplinary}
+                    onOpenCalendar={handleOpenCalendar}
+                  />
                   <span style={{ color: '#fff', marginRight: '12px', fontSize: '14px', fontWeight: '500' }}>
                     {loading ? 'Loading...' : userProfile?.name || 'Manager'}
                   </span>

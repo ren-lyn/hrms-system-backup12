@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
+import useEmployeeCount from '../../../hooks/useEmployeeCount';
 
 export default function StandaloneAssistantDashboard() {
   // ---------- Styles (scoped) ----------
@@ -92,8 +93,22 @@ export default function StandaloneAssistantDashboard() {
     { name: 'Concina, Renelyn S.', date: 'Feb 15–18', status: 'Sick Leave' },
     { name: 'Osias, Shariel D.', date: 'Feb 15–20', status: 'Vacation Leave' },
   ]);
-  const [totals, setTotals] = useState({ total: 120, fullTime: 95, training: 25, trendText: '▲ +5%' });
+  // Use real employee count data
+  const { total, fullTime, training, loading: employeeCountLoading, error: employeeCountError } = useEmployeeCount();
+  const [totals, setTotals] = useState({ total: 0, fullTime: 0, training: 0, trendText: '▲ +5%' });
   const [modalKind, setModalKind] = useState(null); // 'revenue' | 'calendar' | 'absent' | 'employees' | null
+
+  // Update totals when employee count data changes
+  useEffect(() => {
+    if (!employeeCountLoading && !employeeCountError) {
+      setTotals(prev => ({
+        ...prev,
+        total,
+        fullTime,
+        training
+      }));
+    }
+  }, [total, fullTime, training, employeeCountLoading, employeeCountError]);
 
   // ---------- Chart refs ----------
   const revenueCanvasRef = useRef(null);
@@ -185,7 +200,7 @@ export default function StandaloneAssistantDashboard() {
     const ctx = empSparkRef.current.getContext('2d');
     const labels = ['Jan','Feb','Mar','Apr','May','Jun'];
     const base = [100,105,108,110,114];
-    const data = [...base, totals.total || 120];
+    const data = [...base, totals.total || 0];
     empSparkChartRef.current = new Chart(ctx, {
       type: 'line',
       data: { labels, datasets: [{ data, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.12)', fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2 }] },
@@ -403,16 +418,26 @@ export default function StandaloneAssistantDashboard() {
         <article className="hrasst-card" tabIndex={0} role="button" onClick={() => setModalKind('employees')} onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setModalKind('employees'); } }} aria-label="Open Total Employees details">
           <div className="hrasst-card-header">
             <h2 className="hrasst-card-title">Total Employees</h2>
+            {employeeCountLoading && <span className="hrasst-kicker">Loading...</span>}
+            {employeeCountError && <span className="hrasst-kicker" style={{color: '#ef4444'}}>Error</span>}
           </div>
           <div className="hrasst-divider" />
           <div className="hrasst-total-wrap">
-            <div className="hrasst-total-num">{totals.total}</div>
+            <div className="hrasst-total-num">
+              {employeeCountLoading ? '...' : employeeCountError ? '--' : totals.total}
+            </div>
             <div className="hrasst-trend" title="vs last month">{totals.trendText}</div>
           </div>
           <div className="hrasst-emp-spark"><canvas ref={empSparkRef} /></div>
           <div className="hrasst-breakdown">
-            <div className="hrasst-kv"><span>Full-Time:</span> <strong>{totals.fullTime}</strong></div>
-            <div className="hrasst-kv"><span>Training:</span> <strong>{totals.training}</strong></div>
+            <div className="hrasst-kv">
+              <span>Full-Time:</span> 
+              <strong>{employeeCountLoading ? '...' : employeeCountError ? '--' : totals.fullTime}</strong>
+            </div>
+            <div className="hrasst-kv">
+              <span>Training:</span> 
+              <strong>{employeeCountLoading ? '...' : employeeCountError ? '--' : totals.training}</strong>
+            </div>
           </div>
         </article>
       </section>
@@ -490,10 +515,24 @@ export default function StandaloneAssistantDashboard() {
                   </div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                  <div className="hrasst-kv" style={{fontSize:14}}><span>Total:</span> <strong>{totals.total}</strong></div>
-                  <div className="hrasst-kv" style={{fontSize:14}}><span>Full-Time:</span> <strong>{totals.fullTime}</strong></div>
-                  <div className="hrasst-kv" style={{fontSize:14}}><span>Training:</span> <strong>{totals.training}</strong></div>
+                  <div className="hrasst-kv" style={{fontSize:14}}>
+                    <span>Total:</span> 
+                    <strong>{employeeCountLoading ? 'Loading...' : employeeCountError ? 'Error' : totals.total}</strong>
+                  </div>
+                  <div className="hrasst-kv" style={{fontSize:14}}>
+                    <span>Full-Time:</span> 
+                    <strong>{employeeCountLoading ? 'Loading...' : employeeCountError ? 'Error' : totals.fullTime}</strong>
+                  </div>
+                  <div className="hrasst-kv" style={{fontSize:14}}>
+                    <span>Training:</span> 
+                    <strong>{employeeCountLoading ? 'Loading...' : employeeCountError ? 'Error' : totals.training}</strong>
+                  </div>
                   <div className="hrasst-kv" style={{fontSize:14}}><span>Trend:</span> <strong>{totals.trendText}</strong></div>
+                  {employeeCountError && (
+                    <div style={{fontSize:12,color:'#ef4444',marginTop:8}}>
+                      Error loading employee data: {employeeCountError}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

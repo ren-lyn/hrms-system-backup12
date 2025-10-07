@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, useMemo } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import axios from 'axios';
@@ -20,15 +20,19 @@ import {
   faChartBar,
   faClock,
   faBars,
-  faExclamationTriangle
+  faExclamationTriangle,
+  faPlane
 } from '@fortawesome/free-solid-svg-icons';
-import EmbeddedLeaveForm from '../components/Employee/EmbeddedLeaveForm';
-import EmployeeProfile from '../components/Employee/EmployeeProfile';
-import LeaveRequestView from '../components/Employee/LeaveRequestView';
-import CashAdvanceForm from '../components/Employee/CashAdvanceForm';
-import EmployeeDisciplinaryNotice from '../components/Employee/EmployeeDisciplinaryNotice';
 import NotificationSection from '../components/Notifications/NotificationSection';
-import CashAdvanceView from '../components/Employee/CashAdvanceView';
+
+// Lazy load components for better performance
+const EmbeddedLeaveForm = React.lazy(() => import('../components/Employee/EmbeddedLeaveForm'));
+const EmployeeProfile = React.lazy(() => import('../components/Employee/EmployeeProfile'));
+const LeaveRequestView = React.lazy(() => import('../components/Employee/LeaveRequestView'));
+const CashAdvanceForm = React.lazy(() => import('../components/Employee/CashAdvanceForm'));
+const EmployeeDisciplinaryNotice = React.lazy(() => import('../components/Employee/EmployeeDisciplinaryNotice'));
+const EmployeeCalendar = React.lazy(() => import('../components/Employee/EmployeeCalendar'));
+const CashAdvanceView = React.lazy(() => import('../components/Employee/CashAdvanceView'));
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -49,7 +53,37 @@ const EmployeeDashboard = () => {
   const [selectedCashAdvanceId, setSelectedCashAdvanceId] = useState(null);
   const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
   const [evaluationNotificationData, setEvaluationNotificationData] = useState(null);
+  const [calendarNotificationData, setCalendarNotificationData] = useState(null);
 
+  // Data cache for faster loading
+  const [dataCache, setDataCache] = useState({
+    profile: null,
+    evaluations: null,
+    lastFetch: null
+  });
+
+
+  // Preload data for faster navigation
+  const preloadData = useMemo(() => {
+    return async (userId) => {
+      if (!userId) return;
+      
+      try {
+        // Preload evaluations in background
+        const evalRes = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${userId}/results`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        
+        setDataCache(prev => ({
+          ...prev,
+          evaluations: evalRes.data?.data || [],
+          lastFetch: Date.now()
+        }));
+      } catch (e) {
+        console.error('Failed to preload evaluations', e);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -61,13 +95,16 @@ const EmployeeDashboard = () => {
         });
         setEmployeeName(res.data.name);
         setUserId(res.data.id);
+        
+        // Preload data in background
+        preloadData(res.data.id);
       } catch (err) {
         console.error('Failed to fetch user info', err);
       }
     };
 
     fetchUser();
-  }, []);
+  }, [preloadData]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -118,6 +155,7 @@ const EmployeeDashboard = () => {
       case 'payroll-summary': return 'Payslip Summary';
       case 'timesheet': return 'Timesheet';
       case 'leave-request': return selectedLeaveId ? 'Leave Request Details' : 'Leave Application Form';
+      case 'my-calendar': return 'My Calendar';
       case 'cash-advance': return selectedCashAdvanceId ? 'Cash Advance Details' : 'Cash Advance';
       case 'evaluation-summary': return selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Summary';
       case 'disciplinary-notice': return 'Disciplinary Notice';
@@ -125,17 +163,36 @@ const EmployeeDashboard = () => {
     }
   };
 
-  // Fetch evaluations for the logged-in employee
+  // Fetch evaluations for the logged-in employee (optimized with cache)
   const loadEmployeeEvaluations = async (empId) => {
     try {
       setEvalLoading(true);
       setEvalResults([]);
       setEvalDetail(null);
-      const res = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${empId}/results`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      const results = res.data?.data || [];
-      setEvalResults(results);
+      
+      // Check cache first
+      const cacheAge = Date.now() - (dataCache.lastFetch || 0);
+      const isCacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes
+      
+      let results = [];
+      if (dataCache.evaluations && isCacheValid) {
+        results = dataCache.evaluations;
+        setEvalResults(results);
+      } else {
+        const res = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${empId}/results`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+        results = res.data?.data || [];
+        setEvalResults(results);
+        
+        // Update cache
+        setDataCache(prev => ({
+          ...prev,
+          evaluations: results,
+          lastFetch: Date.now()
+        }));
+      }
+      
       if (results.length > 0) {
         setSelectedEvalId(results[0].id);
         await loadEvaluationDetail(results[0].id);
@@ -193,139 +250,188 @@ const EmployeeDashboard = () => {
     }
   }, [activeView, userId, selectedEvaluationId]);
 
+  // Loading fallback component
+  const LoadingFallback = ({ message = "Loading..." }) => (
+    <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '200px' }}>
+      <div className="text-center">
+        <Spinner animation="border" role="status" className="mb-3">
+          <span className="visually-hidden">Loading...</span>
+        </Spinner>
+        <div className="text-muted">{message}</div>
+      </div>
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeView) {
       case 'dashboard':
         return (
-          <div className="row g-4">
-            <div className="col-md-6">
-              <NotificationSection 
-                onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
-                onOpenCashAdvance={(cashAdvanceId) => { setSelectedCashAdvanceId(cashAdvanceId); setActiveView('cash-advance'); }}
-                onOpenEvaluation={(evaluationId, notificationData) => { 
-                  setSelectedEvaluationId(evaluationId);
-                  setEvaluationNotificationData(notificationData);
-                  setActiveView('evaluation-summary'); 
-                }}
-                onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
-              />
+          <div className="responsive-dashboard-grid">
+            <div className="responsive-card">
+              <div className="responsive-card-body">
+                <NotificationSection 
+                  onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
+                  onOpenCashAdvance={(cashAdvanceId) => { setSelectedCashAdvanceId(cashAdvanceId); setActiveView('cash-advance'); }}
+                  onOpenEvaluation={(evaluationId, notificationData) => { 
+                    setSelectedEvaluationId(evaluationId);
+                    setEvaluationNotificationData(notificationData);
+                    setActiveView('evaluation-summary'); 
+                  }}
+                   onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
+                   onOpenCalendar={(eventId, notificationData) => {
+                     setCalendarNotificationData(notificationData);
+                     setActiveView('my-calendar');
+                   }}
+                 />
+              </div>
             </div>
-            <div className="col-md-6">
-              <div className="card shadow-sm p-3 rounded-4">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h6 className="text-secondary m-0">
+            <div className="responsive-card">
+              <div className="responsive-card-body">
+                <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
+                  <h6 className="text-secondary m-0 text-responsive-md">
                     <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" /> Calendar
                   </h6>
-                  <span className="small text-muted">
+                  <span className="small text-muted text-responsive-sm">
                     <FontAwesomeIcon icon={faClock} className="me-1" />
                     {timeNow.toLocaleTimeString()}
                   </span>
                 </div>
-                <Calendar onChange={setCalendarDate} value={calendarDate} className="w-100 border-0" />
+                <div className="responsive-calendar">
+                  <Calendar onChange={setCalendarDate} value={calendarDate} className="w-100 border-0" />
+                </div>
               </div>
             </div>
           </div>
         );
       case 'leave-request':
         if (selectedLeaveId) {
-          return <LeaveRequestView leaveId={selectedLeaveId} onBack={() => { setSelectedLeaveId(null); setActiveView('dashboard'); }} />;
+          return (
+            <Suspense fallback={<LoadingFallback message="Loading leave request details..." />}>
+              <LeaveRequestView leaveId={selectedLeaveId} onBack={() => { setSelectedLeaveId(null); setActiveView('dashboard'); }} />
+            </Suspense>
+          );
         }
         return (
-          <div>
+          <Suspense fallback={<LoadingFallback message="Loading leave form..." />}>
             <EmbeddedLeaveForm />
-          </div>
+          </Suspense>
         );
       case 'profile':
-        return <EmployeeProfile />;
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading profile..." />}>
+            <EmployeeProfile />
+          </Suspense>
+        );
       case 'cash-advance':
         if (selectedCashAdvanceId) {
           return (
-            <CashAdvanceView 
-              cashAdvanceId={selectedCashAdvanceId} 
-              onBack={() => { setSelectedCashAdvanceId(null); setActiveView('dashboard'); }} 
-            />
+            <Suspense fallback={<LoadingFallback message="Loading cash advance details..." />}>
+              <CashAdvanceView 
+                cashAdvanceId={selectedCashAdvanceId} 
+                onBack={() => { setSelectedCashAdvanceId(null); setActiveView('dashboard'); }} 
+              />
+            </Suspense>
           );
         }
-        return <CashAdvanceForm />;
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading cash advance form..." />}>
+            <CashAdvanceForm />
+          </Suspense>
+        );
       case 'evaluation-summary':
         return (
-          <div className="card p-3">
-            <div className="d-flex align-items-center gap-2 mb-3">
-              <span className="fw-semibold">
-                {selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Results'}
-              </span>
-              {evalLoading && <Spinner animation="border" size="sm" />}
-              {selectedEvaluationId && (
-                <Button 
-                  variant="outline-secondary" 
-                  size="sm" 
-                  onClick={() => {
-                    setSelectedEvaluationId(null);
-                    setEvaluationNotificationData(null);
-                    setEvalDetail(null);
-                  }}
-                >
-                  ← Back to All Evaluations
-                </Button>
-              )}
-            </div>
-
-            {/* Show notification alert if opened from notification */}
-            {evaluationNotificationData && (
-              <div className="alert alert-info mb-3">
-                <i className="fas fa-bell me-2"></i>
-                <strong>Notification:</strong> {evaluationNotificationData.message || 'New evaluation result available'}
-              </div>
-            )}
-
-            {/* Show evaluation selector only when not viewing specific evaluation */}
-            {!selectedEvaluationId && evalResults.length > 0 && (
-              <div className="d-flex gap-2 align-items-center mb-3">
-                <Form.Label className="mb-0">Select Evaluation:</Form.Label>
-                <Form.Select
-                  value={selectedEvalId || ''}
-                  onChange={async (e) => {
-                    const id = parseInt(e.target.value, 10);
-                    setSelectedEvalId(id);
-                    await loadEvaluationDetail(id);
-                  }}
-                  style={{ maxWidth: 320 }}
-                >
-                  {evalResults.map(ev => (
-                    <option key={ev.id} value={ev.id}>{new Date(ev.submitted_at).toLocaleString()} — {ev.form_title || 'Form'}</option>
-                  ))}
-                </Form.Select>
-              </div>
-            )}
-
-            {(!evalLoading && evalResults.length === 0 && !selectedEvaluationId) && (
-              <div className="text-muted">No evaluation results found.</div>
-            )}
-
-            {evalDetail && (
-              <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-                <EvaluationResult 
-                  result={evalDetail} 
-                  onBack={() => {
-                    if (selectedEvaluationId) {
-                      // If opened from notification, go back to dashboard
+          <div className="responsive-card">
+            <div className="responsive-card-body">
+              <div className="d-flex align-items-center gap-2 mb-3 responsive-header">
+                <span className="fw-semibold text-responsive-lg">
+                  {selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Results'}
+                </span>
+                {evalLoading && <Spinner animation="border" size="sm" />}
+                {selectedEvaluationId && (
+                  <Button 
+                    variant="outline-secondary" 
+                    size="sm" 
+                    className="responsive-btn"
+                    onClick={() => {
                       setSelectedEvaluationId(null);
                       setEvaluationNotificationData(null);
-                      setActiveView('dashboard');
-                    } else {
-                      // Otherwise go back to dashboard
-                      setActiveView('dashboard');
-                    }
-                  }} 
-                  showBackButton={true}
-                  backButtonText={selectedEvaluationId ? 'Back to Dashboard' : 'Back to Dashboard'}
-                />
+                      setEvalDetail(null);
+                    }}
+                  >
+                    ← Back to All Evaluations
+                  </Button>
+                )}
               </div>
-            )}
+
+              {/* Show notification alert if opened from notification */}
+              {evaluationNotificationData && (
+                <div className="alert alert-info mb-3">
+                  <i className="fas fa-bell me-2"></i>
+                  <strong>Notification:</strong> {evaluationNotificationData.message || 'New evaluation result available'}
+                </div>
+              )}
+
+              {/* Show evaluation selector only when not viewing specific evaluation */}
+              {!selectedEvaluationId && evalResults.length > 0 && (
+                <div className="responsive-form-row mb-3">
+                  <div className="responsive-form-col">
+                    <Form.Label className="mb-2 text-responsive-md">Select Evaluation:</Form.Label>
+                    <Form.Select
+                      value={selectedEvalId || ''}
+                      onChange={async (e) => {
+                        const id = parseInt(e.target.value, 10);
+                        setSelectedEvalId(id);
+                        await loadEvaluationDetail(id);
+                      }}
+                      className="responsive-form-control"
+                    >
+                      {evalResults.map(ev => (
+                        <option key={ev.id} value={ev.id}>{new Date(ev.submitted_at).toLocaleString()} — {ev.form_title || 'Form'}</option>
+                      ))}
+                    </Form.Select>
+                  </div>
+                </div>
+              )}
+
+              {(!evalLoading && evalResults.length === 0 && !selectedEvaluationId) && (
+                <div className="text-muted text-responsive-md">No evaluation results found.</div>
+              )}
+
+              {evalDetail && (
+                <div className="responsive-scrollbar" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                  <EvaluationResult 
+                    result={evalDetail} 
+                    onBack={() => {
+                      if (selectedEvaluationId) {
+                        // If opened from notification, go back to dashboard
+                        setSelectedEvaluationId(null);
+                        setEvaluationNotificationData(null);
+                        setActiveView('dashboard');
+                      } else {
+                        // Otherwise go back to dashboard
+                        setActiveView('dashboard');
+                      }
+                    }} 
+                    showBackButton={true}
+                    backButtonText={selectedEvaluationId ? 'Back to Dashboard' : 'Back to Dashboard'}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         );
       case 'disciplinary-notice':
-        return <EmployeeDisciplinaryNotice />;
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading disciplinary notices..." />}>
+            <EmployeeDisciplinaryNotice />
+          </Suspense>
+        );
+      case 'my-calendar':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading calendar..." />}>
+            <EmployeeCalendar />
+          </Suspense>
+        );
       default:
         return (
           <div className="card p-4">
@@ -367,8 +473,15 @@ const EmployeeDashboard = () => {
               className={`hrms-unified-nav-link ${activeView === 'leave-request' ? 'hrms-unified-active' : ''}`}
               onClick={() => setActiveView('leave-request')}
             >
-              <FontAwesomeIcon icon={faCalendarAlt} />
+              <FontAwesomeIcon icon={faPlane} />
               <span>Leave Request</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'my-calendar' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('my-calendar')}
+            >
+              <FontAwesomeIcon icon={faCalendarAlt} />
+              <span>My Calendar</span>
             </button>
             <button
               className={`hrms-unified-nav-link ${activeView === 'cash-advance' ? 'hrms-unified-active' : ''}`}
@@ -457,11 +570,11 @@ const EmployeeDashboard = () => {
           </div>
 
           {/* Header */}
-          <div className="container-fluid py-3 px-3 px-md-5">
-            <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
-              <h4 className="fw-bold text-primary mb-2 mb-md-0">{getHeaderTitle()}</h4>
-              <div className="d-flex align-items-center gap-3">
-                <FontAwesomeIcon icon={faEnvelope} size="lg" className="text-primary" />
+          <div className="container-fluid padding-responsive">
+            <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 responsive-header">
+              <h4 className="fw-bold text-primary mb-2 mb-md-0 text-responsive-lg">{getHeaderTitle()}</h4>
+              <div className="d-flex align-items-center gap-3 responsive-actions">
+                <FontAwesomeIcon icon={faEnvelope} size="lg" className="text-primary hide-on-mobile" />
                 <Bell 
                   onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
                   onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
@@ -471,8 +584,12 @@ const EmployeeDashboard = () => {
                     setEvaluationNotificationData(notificationData);
                     setActiveView('evaluation-summary'); 
                   }}
+                  onOpenCalendar={(eventId, notificationData) => {
+                    setCalendarNotificationData(notificationData);
+                    setActiveView('my-calendar');
+                  }}
                 />
-                <span className="fw-semibold text-dark">{employeeName || 'Employee'}</span>
+                <span className="fw-semibold text-dark text-responsive-md hide-on-mobile">{employeeName || 'Employee'}</span>
                 <img 
                   src="https://i.pravatar.cc/40" 
                   alt="Profile" 
@@ -491,7 +608,9 @@ const EmployeeDashboard = () => {
             </div>
 
             {/* Content Section */}
-            {renderContent()}
+            <div className="responsive-container">
+              {renderContent()}
+            </div>
           </div>
         </div>
       </div>

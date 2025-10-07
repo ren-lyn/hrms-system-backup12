@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\HrCalendarEvent;
+use App\Models\CalendarEventInvitation;
+use App\Models\User;
+use App\Notifications\MeetingInvitation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
@@ -15,7 +19,7 @@ class HrCalendarController extends Controller
      */
     public function index(Request $request)
     {
-        $query = HrCalendarEvent::with('creator');
+        $query = HrCalendarEvent::with(['creator', 'invitedEmployees']);
 
         // Filter by date range if provided
         if ($request->has('start_date') && $request->has('end_date')) {
@@ -64,7 +68,9 @@ class HrCalendarController extends Controller
             'start_datetime' => 'required|date|after_or_equal:now',
             'end_datetime' => 'required|date|after:start_datetime',
             'event_type' => 'required|in:meeting,training,interview,break,unavailable,other',
-            'blocks_leave_submissions' => 'boolean'
+            'blocks_leave_submissions' => 'boolean',
+            'invited_employees' => 'nullable|array',
+            'invited_employees.*' => 'exists:users,id'
         ]);
 
         $validated['created_by'] = Auth::id();
@@ -76,6 +82,27 @@ class HrCalendarController extends Controller
 
         // Create the event
         $event = HrCalendarEvent::create($validated);
+
+        // Handle employee invitations
+        $invitedEmployees = $request->get('invited_employees', []);
+        if (!empty($invitedEmployees)) {
+            foreach ($invitedEmployees as $employeeId) {
+                CalendarEventInvitation::create([
+                    'event_id' => $event->id,
+                    'employee_id' => $employeeId,
+                    'status' => 'pending'
+                ]);
+
+                // Send notification to the employee
+                $employee = User::find($employeeId);
+                if ($employee) {
+                    $employee->notify(new MeetingInvitation($event));
+                }
+            }
+        }
+
+        // Load the event with relationships for response
+        $event->load(['creator', 'invitedEmployees']);
 
         // Check for overlaps and warn (but don't prevent creation)
         if ($event->hasOverlap()) {
@@ -243,6 +270,122 @@ class HrCalendarController extends Controller
             'success' => true,
             'data' => $event->fresh()->toApiFormat(),
             'message' => 'HR calendar event marked as completed.'
+        ]);
+    }
+
+    /**
+     * Get employee's personal calendar events (invited events + public events).
+     */
+    public function employeeCalendar(Request $request)
+    {
+        $user = Auth::user();
+        
+        $query = HrCalendarEvent::with(['creator', 'invitedEmployees'])
+            ->where(function($q) use ($user) {
+                // Events where user is invited
+                $q->whereHas('invitations', function($invitationQuery) use ($user) {
+                    $invitationQuery->where('employee_id', $user->id);
+                })
+                // OR public events (no specific invitations)
+                ->orWhereDoesntHave('invitations');
+            });
+
+        // Filter by date range if provided
+        if ($request->has('start_date') && $request->has('end_date')) {
+            $startDate = Carbon::parse($request->start_date)->startOfDay();
+            $endDate = Carbon::parse($request->end_date)->endOfDay();
+            
+            $query->whereBetween('start_datetime', [$startDate, $endDate]);
+        } elseif ($request->has('date')) {
+            // Filter by specific date
+            $date = Carbon::parse($request->date);
+            $query->whereDate('start_datetime', $date);
+        } else {
+            // Default: show events for the next 30 days
+            $query->whereBetween('start_datetime', [now(), now()->addDays(30)]);
+        }
+
+        // Filter by status
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $events = $query->orderBy('start_datetime')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $events->map(function($event) use ($user) {
+                $eventData = $event->toApiFormat();
+                
+                // Add user's invitation status if they were invited
+                $invitation = $event->invitations()->where('employee_id', $user->id)->first();
+                if ($invitation) {
+                    $eventData['my_invitation_status'] = $invitation->status;
+                    $eventData['my_responded_at'] = $invitation->responded_at;
+                } else {
+                    $eventData['my_invitation_status'] = null;
+                    $eventData['my_responded_at'] = null;
+                }
+                
+                return $eventData;
+            }),
+            'total' => $events->count()
+        ]);
+    }
+
+    /**
+     * Respond to a meeting invitation.
+     */
+    public function respondToInvitation(Request $request, $eventId)
+    {
+        $user = Auth::user();
+        
+        $invitation = CalendarEventInvitation::where('event_id', $eventId)
+            ->where('employee_id', $user->id)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'status' => 'required|in:accepted,declined'
+        ]);
+
+        $invitation->update([
+            'status' => $validated['status'],
+            'responded_at' => now()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invitation response recorded successfully.',
+            'data' => [
+                'event_id' => $eventId,
+                'status' => $validated['status'],
+                'responded_at' => $invitation->responded_at
+            ]
+        ]);
+    }
+
+    /**
+     * Get all employees for invitation selection.
+     */
+    public function getEmployees()
+    {
+        $employees = User::whereHas('role', function($query) {
+            $query->whereIn('name', ['Employee', 'Manager', 'HR Staff', 'HR Assistant']);
+        })->select('id', 'first_name', 'last_name', 'email')
+          ->orderBy('first_name')
+          ->orderBy('last_name')
+          ->get()
+          ->map(function($user) {
+              return [
+                  'id' => $user->id,
+                  'name' => $user->name,
+                  'email' => $user->email
+              ];
+          });
+
+        return response()->json([
+            'success' => true,
+            'data' => $employees
         ]);
     }
 }

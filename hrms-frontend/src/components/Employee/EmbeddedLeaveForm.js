@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Form, Button, Alert } from 'react-bootstrap';
+import { Row, Col, Form, Button, Alert, Modal } from 'react-bootstrap';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest } from '../../api/leave';
+import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, getMyLeaveRequests, downloadLeavePdf } from '../../api/leave';
 import axios from '../../axios';
 import './EmbeddedLeaveForm.css';
 
 const EmbeddedLeaveForm = () => {
+  const [activeTab, setActiveTab] = useState('form'); // 'form', 'details', 'history'
   const [formData, setFormData] = useState({
     company: 'Cabuyao Concrete Development Corporation',
     name: '',
@@ -22,98 +23,219 @@ const EmbeddedLeaveForm = () => {
     applicantName: ''
   });
 
-  const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveHistory, setLeaveHistory] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
 
-  // Auto-fill user info from multiple sources
-  useEffect(() => {
-    const loadEmployeeData = async () => {
-      console.log('Loading employee profile data...');
-      
-      // First, try localStorage for immediate display
-      const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
-      console.log('User info from localStorage:', userInfo);
-      
-      if (userInfo.name || userInfo.first_name) {
-        const fullName = userInfo.name || `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim();
+  // Load employee data function (optimized with caching)
+  const loadEmployeeData = async () => {
+    console.log('Loading employee profile data...');
+    
+    // Check cache first
+    const cachedData = localStorage.getItem('employeeProfile');
+    const cacheTime = localStorage.getItem('employeeProfileTime');
+    const now = Date.now();
+    const cacheAge = now - (cacheTime ? parseInt(cacheTime) : 0);
+    const isCacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes
+    
+    if (cachedData && isCacheValid) {
+      try {
+        const profileData = JSON.parse(cachedData);
+        const profile = profileData.profile;
+        const fullName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+        
         setFormData(prev => ({
           ...prev,
           name: fullName,
-          department: userInfo.department || 'Not Set',
+          department: profile.department || 'Not Set',
           applicantName: fullName,
           company: 'Cabuyao Concrete Development Corporation'
         }));
+        
+        console.log('Form data loaded from cache:', { name: fullName, department: profile.department });
+        
+        // Still fetch fresh data in background
+        fetchFreshEmployeeData();
+        return;
+      } catch (e) {
+        console.error('Error parsing cached data:', e);
+      }
+    }
+    
+    // Fallback to localStorage for immediate display
+    const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+    console.log('User info from localStorage:', userInfo);
+    
+    if (userInfo.name || userInfo.first_name) {
+      const fullName = userInfo.name || `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim();
+      setFormData(prev => ({
+        ...prev,
+        name: fullName,
+        department: userInfo.department || 'Not Set',
+        applicantName: fullName,
+        company: 'Cabuyao Concrete Development Corporation'
+      }));
+    }
+    
+    // Fetch fresh data
+    await fetchFreshEmployeeData();
+  };
+
+  const fetchFreshEmployeeData = async () => {
+    try {
+      let response;
+      try {
+        console.log('Trying main profile API...');
+        // Try the main profile API first (from EmployeeController)
+        response = await axios.get('/employee/profile', {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        console.log('Profile API response:', response.data);
+      } catch (profileError) {
+        console.log('Profile API failed, trying leave profile API:', profileError.message);
+        try {
+          // Try the leave profile API
+          response = await getEmployeeProfile();
+          console.log('Leave profile API response:', response.data);
+        } catch (leaveError) {
+          console.log('Leave profile API failed, trying test API:', leaveError.message);
+          // Fallback to test API for development
+          response = await getEmployeeProfileTest(6);
+          console.log('Test API response:', response.data);
+        }
       }
       
-      // Then try API to get more complete data
-      try {
-        let response;
-        try {
-          console.log('Trying main profile API...');
-          // Try the main profile API first (from EmployeeController)
-          response = await axios.get('/employee/profile', {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem('token')}`
-            }
-          });
-          console.log('Profile API response:', response.data);
-        } catch (profileError) {
-          console.log('Profile API failed, trying leave profile API:', profileError.message);
-          try {
-            // Try the leave profile API
-            response = await getEmployeeProfile();
-            console.log('Leave profile API response:', response.data);
-          } catch (leaveError) {
-            console.log('Leave profile API failed, trying test API:', leaveError.message);
-            // Fallback to test API for development
-            response = await getEmployeeProfileTest(6);
-            console.log('Test API response:', response.data);
-          }
-        }
-        
-        let profileData = response.data;
-        console.log('Profile data loaded from API:', profileData);
-        
-        // Handle different API response formats
-        if (profileData.profile) {
-          // EmployeeController response format
-          profileData = profileData.profile;
-        }
-        
-        if (profileData) {
-          const employeeName = profileData.employee_name || 
-                             profileData.name || 
-                             `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim();
-          
-          setFormData(prev => ({
-            ...prev,
-            name: employeeName || prev.name,
-            department: profileData.department || prev.department,
-            applicantName: employeeName || prev.applicantName,
-            company: profileData.company || 'Cabuyao Concrete Development Corporation'
-          }));
-        }
-      } catch (error) {
-        console.error('Failed to load employee profile from API:', error);
-        // If API fails and we don't have localStorage data, set default values
-        if (!userInfo.name && !userInfo.first_name) {
-          setFormData(prev => ({
-            ...prev,
-            name: 'Test Employee',
-            department: 'IT Department',
-            applicantName: 'Test Employee'
-          }));
-        }
+      let profileData = response.data;
+      console.log('Profile data loaded from API:', profileData);
+      
+      // Handle different API response formats
+      if (profileData.profile) {
+        // EmployeeController response format
+        profileData = profileData.profile;
       }
-    };
-    
-    loadEmployeeData();
-  }, []); // Load once on component mount
+      
+      if (profileData) {
+        const employeeName = profileData.employee_name || 
+                           profileData.name || 
+                           `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim();
+        
+        setFormData(prev => ({
+          ...prev,
+          name: employeeName || prev.name,
+          department: profileData.department || prev.department,
+          applicantName: employeeName || prev.applicantName,
+          company: profileData.company || 'Cabuyao Concrete Development Corporation'
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load employee profile from API:', error);
+      // If API fails, check localStorage for fallback data
+      const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!userInfo.name && !userInfo.first_name) {
+        setFormData(prev => ({
+          ...prev,
+          name: 'Test Employee',
+          department: 'IT Department',
+          applicantName: 'Test Employee'
+        }));
+      }
+    }
+  };
 
+  // Instant data loading when switching tabs
+  useEffect(() => {
+    if (activeTab === 'details' || activeTab === 'history') {
+      // Load data instantly when viewing details or history tabs
+      loadLeaveData();
+    }
+  }, [activeTab]);
+
+  // Load data on component initialization
+  useEffect(() => {
+    loadEmployeeData();
+    loadLeaveData();
+  }, []);
+
+  // Monitor leaveRequests changes
+  useEffect(() => {
+    console.log('Leave requests updated - count:', leaveRequests.length);
+  }, [leaveRequests]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup function - no intervals to clear
+    };
+  }, []);
+
+  // Fetch leave requests from backend API
+  const fetchLeaveRequests = async () => {
+    try {
+      const response = await getMyLeaveRequests();
+      const allRequests = response.data.data || [];
+      
+      // Separate requests based on status for real-time categorization
+      const pendingRequests = allRequests.filter(request => {
+        // Keep in Details: anything NOT approved or rejected by HR Assistant
+        return request.status !== 'approved' && 
+               request.status !== 'rejected' &&
+               request.status !== 'completed';
+      });
+      
+      const historyRequests = allRequests.filter(request => {
+        // Move to History: approved, rejected, or completed requests
+        return request.status === 'approved' || 
+               request.status === 'rejected' ||
+               request.status === 'completed';
+      });
+      
+      setLeaveRequests(pendingRequests);
+      setLeaveHistory(historyRequests);
+      
+      console.log('Leave requests fetched:', {
+        pending: pendingRequests.length,
+        history: historyRequests.length,
+        total: allRequests.length
+      });
+    } catch (error) {
+      console.error('Error fetching leave requests:', error);
+    }
+  };
+
+  // Load leave requests data instantly
+  const loadLeaveData = async () => {
+    try {
+      // Use the new fetchLeaveRequests function
+      await fetchLeaveRequests();
+    } catch (error) {
+      console.error('Failed to load leave data:', error);
+    }
+  };
+
+  
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
-    setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
+    // Remove auto-hide timeout for instant feedback
   };
+
+  const handleDownloadPdf = (requestId) => {
+    // Download PDF for the leave request
+    downloadLeavePdf(requestId);
+  };
+
+
+  const handleTabClick = (tabName) => {
+    setActiveTab(tabName);
+    if (tabName === 'details' || tabName === 'history') {
+      // Instant refresh when switching to details/history tabs
+      loadLeaveData();
+    }
+  };
+
 
   const calculateDaysAndHours = (startDate, endDate) => {
     if (!startDate || !endDate) return { days: 0, hours: 0 };
@@ -137,16 +259,23 @@ const EmbeddedLeaveForm = () => {
     };
   };
 
-  const handleDateChange = (dates) => {
-    const [start, end] = dates;
-    const { days } = calculateDaysAndHours(start, end);
-
+  const handleStartDateChange = (date) => {
+    const { days } = calculateDaysAndHours(date, formData.endDate);
     setFormData(prev => ({
       ...prev,
-      startDate: start,
-      endDate: end,
+      startDate: date,
       totalDays: days,
-      totalHours: 0 // Default to 0 for full day leaves, user can manually enter for partial days
+      totalHours: 0
+    }));
+  };
+
+  const handleEndDateChange = (date) => {
+    const { days } = calculateDaysAndHours(formData.startDate, date);
+    setFormData(prev => ({
+      ...prev,
+      endDate: date,
+      totalDays: days,
+      totalHours: 0
     }));
   };
 
@@ -187,16 +316,31 @@ const EmbeddedLeaveForm = () => {
     }
     
     console.log('Form data before submission:', formData);
-    setLoading(true);
+
+    // Create the request object first to ensure it shows in UI regardless of API success/failure
+    const formatDateForAPI = (date) => {
+      if (!date) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const newRequest = {
+      id: Date.now(), // Use timestamp as temporary ID
+      type: formData.leaveType,
+      from: formatDateForAPI(formData.startDate),
+      to: formatDateForAPI(formData.endDate),
+      days: formData.totalDays,
+      status: 'submitted',
+      stage: 'manager', // Initially shows "Under Manager"
+      submitted_at: new Date().toISOString(),
+      reason: formData.reason
+    };
+
+    console.log('Creating new request object:', newRequest);
 
     try {
-      const formatDateForAPI = (date) => {
-        if (!date) return '';
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
 
       // Use FormData for file upload
       const submitData = new FormData();
@@ -244,8 +388,8 @@ const EmbeddedLeaveForm = () => {
       console.log('Leave request submitted successfully:', response);
       
       showAlert('Leave application submitted successfully! HR will review your request shortly.', 'success');
-
-      // Reset form
+      
+      // Reset form after successful submission
       setFormData(prev => ({
         ...prev,
         leaveType: 'Vacation Leave',
@@ -255,6 +399,14 @@ const EmbeddedLeaveForm = () => {
         totalHours: 0,
         reason: ''
       }));
+      
+      // Switch to details tab to show the new request
+      setActiveTab('details');
+      
+      // Fetch updated leave requests from backend
+      await fetchLeaveRequests();
+      
+      console.log('Leave request submitted and details updated');
     } catch (error) {
       console.error('Error submitting leave request:', error);
       console.error('Error details:', {
@@ -280,204 +432,581 @@ const EmbeddedLeaveForm = () => {
       }
       
       showAlert(`Error: ${errorMessage}`, 'danger');
-    } finally {
-      setLoading(false);
     }
   };
 
+  // Render Leave Details component with organized table design
+  const renderLeaveDetails = () => {
+    if (leaveRequests.length === 0) {
+      return (
+        <div className="empty-state">
+          <div className="empty-icon">📋</div>
+          <h3>No Leave Currently Being Processed</h3>
+          <p>You don't have any leave requests being processed at the moment. Go to the "Leave Request Form" tab to submit a new leave request, and it will appear here with real-time status updates.</p>
+        </div>
+      );
+    }
+
+    // Create table data from real backend leave requests
+    const tableData = leaveRequests.map((request, index) => {
+      // Map backend status to display status
+      let displayStatus = 'Under Manager';
+      let severity = 'warning';
+      
+      if (request.status === 'pending') {
+        displayStatus = 'Under Manager';
+        severity = 'warning';
+      } else if (request.status === 'manager_approved') {
+        displayStatus = 'Process of HR Assistant';
+        severity = 'info';
+      } else if (request.status === 'manager_rejected') {
+        displayStatus = 'Manager Rejected';
+        severity = 'danger';
+      } else if (request.status === 'approved') {
+        displayStatus = 'Approved';
+        severity = 'success';
+      } else if (request.status === 'rejected') {
+        displayStatus = 'Rejected';
+        severity = 'danger';
+      }
+      
+      return {
+        department: request.department || 'N/A',
+        name: request.employee_name || 'N/A',
+        leaveType: request.type || 'N/A',
+        status: displayStatus,
+        startDate: request.from ? new Date(request.from).toLocaleDateString() : 'N/A',
+        endDate: request.to ? new Date(request.to).toLocaleDateString() : 'N/A',
+        totalDays: request.total_days || 0,
+        reason: request.reason || 'N/A',
+        severity: severity
+      };
+    });
+
+    return (
+      <div className="leave-details-container responsive-container">
+        <div className="details-table-container responsive-table-container">
+          <table className="details-table responsive-table">
+            <thead>
+              <tr>
+                <th className="col-department text-responsive-sm">DEPARTMENT</th>
+                <th className="col-name text-responsive-sm">NAME</th>
+                <th className="col-leave-type text-responsive-sm">LEAVE TYPE</th>
+                <th className="col-status text-responsive-sm">STATUS</th>
+                <th className="col-start-date text-responsive-sm">START DATE</th>
+                <th className="col-end-date text-responsive-sm">END DATE</th>
+                <th className="col-total-days text-responsive-sm">TOTAL DAYS</th>
+                <th className="col-reason text-responsive-sm">REASON</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableData.map((row, index) => (
+                <tr key={index} className={`table-row ${index % 2 === 0 ? 'even' : 'odd'}`}>
+                  <td className="department-cell">
+                    <span className="department-text text-responsive-sm">{row.department}</span>
+                  </td>
+                  <td className="name-cell">
+                    <span className="name-text text-responsive-sm">{row.name}</span>
+                  </td>
+                  <td className="leave-type-cell">
+                    <span className="leave-type-text text-responsive-sm">{row.leaveType}</span>
+                  </td>
+                  <td className="status-cell">
+                    <span className={`status-badge-table ${row.severity} text-responsive-sm`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="start-date-cell">
+                    <span className="start-date-text text-responsive-sm">{row.startDate}</span>
+                  </td>
+                  <td className="end-date-cell">
+                    <span className="end-date-text text-responsive-sm">{row.endDate}</span>
+                  </td>
+                  <td className="total-days-cell">
+                    <div className="total-days-badge">
+                      <span className="days-count text-responsive-sm">{row.totalDays}</span>
+                      <span className="days-label text-responsive-sm">day{row.totalDays > 1 ? 's' : ''}</span>
+                    </div>
+                  </td>
+                  <td className="reason-cell">
+                    <span className="reason-text text-responsive-sm" title={row.reason}>
+                      {row.reason && row.reason.length > 50 ? row.reason.substring(0, 50) + '...' : row.reason || 'N/A'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // Render Leave History component with table format
+  const renderLeaveHistory = () => {
+    if (leaveHistory.length === 0) {
+      return (
+        <div className="empty-state">
+          <div className="empty-icon">📚</div>
+          <h3>No Leave History</h3>
+          <p>There is no leave history available. Your completed leave requests will appear here once they are processed and approved or rejected.</p>
+        </div>
+      );
+    }
+
+    // Get current user info for display
+    const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+    const currentUser = userInfo.name || formData.name || 'N/A';
+    const currentDepartment = userInfo.department || formData.department || 'N/A';
+    
+    // Create table data from leave history
+    const historyTableData = leaveHistory.map((request, index) => ({
+      department: request.department || currentDepartment,
+      name: request.employee_name || currentUser,
+      leaveType: request.type,
+      payTerms: request.terms || 'With Pay',
+      status: request.status === 'approved' ? 'Approved' :
+              request.status === 'rejected' ? 'Rejected' :
+              request.status === 'completed' ? 'Approved' : 'Completed',
+      startDate: request.from ? new Date(request.from).toLocaleDateString() : 'N/A',
+      endDate: request.to ? new Date(request.to).toLocaleDateString() : 'N/A', 
+      totalDays: request.total_days || 0,
+      totalHours: request.total_hours || (request.total_days ? request.total_days * 8 : 0),
+      requestId: request.id,
+      reason: request.reason,
+      approvedDate: request.approved_at ? new Date(request.approved_at).toLocaleDateString() : 'N/A',
+      severity: request.status === 'approved' || request.status === 'completed' ? 'success' : 
+               request.status === 'rejected' ? 'danger' : 'info'
+    }));
+
+    const handleViewRequest = (requestId) => {
+      // Find the request in the history
+      const request = leaveHistory.find(req => req.id === requestId);
+      if (request) {
+        setSelectedRequest(request);
+        setShowModal(true);
+      }
+    };
+
+    return (
+      <div className="leave-history-container">
+        <div className="details-table-container">
+          <table className="details-table">
+            <thead>
+              <tr>
+                <th className="col-department">DEPARTMENT</th>
+                <th className="col-name">NAME</th>
+                <th className="col-leave-type">LEAVE TYPE</th>
+                <th className="col-pay-terms">PAY TERMS</th>
+                <th className="col-status">STATUS</th>
+                <th className="col-start-date">START DATE</th>
+                <th className="col-end-date">END DATE</th>
+                <th className="col-total-days">TOTAL DAYS</th>
+                <th className="col-actions">ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyTableData.map((row, index) => (
+                <tr key={index} className={`table-row ${index % 2 === 0 ? 'even' : 'odd'}`}>
+                  <td className="department-cell">
+                    <span className="department-text">{row.department}</span>
+                  </td>
+                  <td className="name-cell">
+                    <span className="name-text">{row.name}</span>
+                  </td>
+                  <td className="leave-type-cell">
+                    <span className="leave-type-text">{row.leaveType}</span>
+                  </td>
+                  <td className="pay-terms-cell">
+                    <span className="pay-terms-text">{row.payTerms}</span>
+                  </td>
+                  <td className="status-cell">
+                    <span className={`status-badge-table ${row.severity}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="start-date-cell">
+                    <span className="start-date-text">{row.startDate}</span>
+                  </td>
+                  <td className="end-date-cell">
+                    <span className="end-date-text">{row.endDate}</span>
+                  </td>
+                  <td className="total-days-cell">
+                    <div className="total-days-badge">
+                      <span className="days-count">{row.totalDays}</span>
+                      <span className="days-label">day{row.totalDays > 1 ? 's' : ''}</span>
+                    </div>
+                  </td>
+                  <td className="actions-cell">
+                    <button 
+                      className="action-button view"
+                      onClick={() => handleViewRequest(row.requestId)}
+                      title={`View details for Leave Request #${row.requestId}`}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="embedded-leave-form">
+    <div className="leave-request-container responsive-container">
+     
+      {/* Navigation Tabs */}
+      <div className="leave-tabs responsive-header">
+        <div 
+          className={`tab responsive-btn ${activeTab === 'form' ? 'active' : ''}`}
+          onClick={() => handleTabClick('form')}
+        >
+          <span className="tab-icon hide-on-mobile">📝</span>
+          <span className="text-responsive-md">Leave Request Form</span>
+        </div>
+        <div 
+          className={`tab responsive-btn ${activeTab === 'details' ? 'active' : ''}`}
+          onClick={() => handleTabClick('details')}
+        >
+          <span className="tab-icon hide-on-mobile">📋</span>
+          <span className="text-responsive-md">Leave Details</span>
+        </div>
+        <div 
+          className={`tab responsive-btn ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => handleTabClick('history')}
+        >
+          <span className="tab-icon hide-on-mobile">🕐</span>
+          <span className="text-responsive-md">Leave History</span>
+        </div>
+      </div>
+
+      {/* Alert Section */}
       {alert.show && (
         <Alert
           variant={alert.type}
           dismissible
           onClose={() => setAlert({ show: false, message: '', type: '' })}
+          className="custom-alert"
         >
           {alert.message}
         </Alert>
       )}
 
-      <Form onSubmit={handleSubmit}>
-        {/* Top Section */}
-        <Row className="mb-3">
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label className="form-label">Company</Form.Label>
-              <Form.Control
-                type="text"
-                value={formData.company}
-                readOnly
-                className="underlined-input bg-light"
-                title="Company name is pre-filled"
-              />
-            </Form.Group>
+      {/* Content based on active tab */}
+      {activeTab === 'form' && (
+        <>
+          {/* Info Message */}
+          <div className="info-message">
+            <span className="info-icon">ℹ️</span>
+            Complete the form below to submit your leave request. Your request will go through the approval process.
+          </div>
 
-            <Form.Group className="mb-3">
-              <Form.Label className="form-label">Name</Form.Label>
-              <Form.Control
-                type="text"
-                value={formData.name}
-                readOnly
-                className="underlined-input bg-light"
-                title="Auto-filled from your employee profile"
-              />
-            </Form.Group>
-          </Col>
-
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label className="form-label">Date Filed</Form.Label>
-              <Form.Control
-                type="date"
-                value={formData.dateFiled}
-                readOnly
-                className="underlined-input"
-              />
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label className="form-label">Department</Form.Label>
-              <Form.Control
-                type="text"
-                value={formData.department}
-                readOnly
-                className="underlined-input bg-light"
-                title="Auto-filled from your employee profile"
-              />
-            </Form.Group>
-          </Col>
-        </Row>
-
-        {/* Leave Type Section */}
-        <Row className="mb-3">
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="form-label">Leave Type</Form.Label>
-              <Form.Select
-                value={formData.leaveType}
-                onChange={(e) => setFormData({ ...formData, leaveType: e.target.value })}
-                className="form-select-custom"
-                required
-              >
-                <option value="Vacation Leave">Vacation Leave</option>
-                <option value="Sick Leave">Sick Leave</option>
-                <option value="Emergency Leave">Emergency Leave</option>
-                <option value="Maternity Leave">Maternity Leave</option>
-                <option value="Paternity Leave">Paternity Leave</option>
-                <option value="Personal Leave">Personal Leave</option>
-                <option value="Bereavement Leave">Bereavement Leave</option>
-              </Form.Select>
-            </Form.Group>
-          </Col>
-          
-          <Col md={6}>
-            <div className="bg-light p-3 rounded">
-              <small className="text-muted">
-                <strong>Note:</strong> Pay terms and leave category will be determined by HR during the approval process.
-              </small>
-            </div>
-          </Col>
-        </Row>
-
-        {/* Dates Section */}
-        <Row className="mb-3">
-          <Col md={6}>
-            <Form.Group>
-              <Form.Label className="form-label">Dates</Form.Label>
-              <div className="date-input-wrapper">
-                <DatePicker
-                  selected={formData.startDate}
-                  onChange={handleDateChange}
-                  startDate={formData.startDate}
-                  endDate={formData.endDate}
-                  selectsRange
-                  minDate={new Date()}
-                  placeholderText="Select date range"
-                  className="date-range-input"
-                  dateFormat="yyyy-MM-dd"
-                />
-                <CalendarIcon className="calendar-icon" size={20} />
+          {/* Form Section */}
+          <div className="form-container responsive-form-container">
+            <Form onSubmit={handleSubmit}>
+              {/* Company and Date Filed Row */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Company</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formData.company}
+                      readOnly
+                      className="form-input readonly responsive-form-control"
+                      title="Company name is pre-filled"
+                    />
+                  </Form.Group>
+                </div>
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Date Filed</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={new Date(formData.dateFiled).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '/')}
+                      readOnly
+                      className="form-input readonly responsive-form-control"
+                    />
+                  </Form.Group>
+                </div>
               </div>
-            </Form.Group>
-          </Col>
 
-          <Col md={3}>
-            <Form.Group>
-              <Form.Label className="form-label">Total Days</Form.Label>
-              <Form.Control
-                type="number"
-                value={formData.totalDays}
-                readOnly
-                className="calculation-input bg-light"
-                title="Auto-calculated from selected dates"
-              />
-            
-            </Form.Group>
-          </Col>
+              {/* Name and Department Row */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Name <span className="required">*</span></Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formData.name}
+                      readOnly
+                      className="form-input readonly responsive-form-control"
+                      title="Auto-filled from your employee profile"
+                    />
+                  </Form.Group>
+                </div>
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Department <span className="required">*</span></Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formData.department}
+                      readOnly
+                      className="form-input readonly responsive-form-control"
+                      title="Auto-filled from your employee profile"
+                    />
+                  </Form.Group>
+                </div>
+              </div>
 
-          <Col md={3}>
-            <Form.Group>
-              <Form.Label className="form-label">Total Hours</Form.Label>
-              <Form.Control
-                type="number"
-                value={formData.totalHours === 0 ? '' : formData.totalHours}
-                onChange={(e) => {
-                  const hours = parseFloat(e.target.value) || 0;
-                  if (hours <= 8) {
-                    setFormData({ ...formData, totalHours: hours });
-                  } else {
-                    // Show warning if trying to enter more than 8 hours
-                    showAlert('Maximum 8 hours allowed for partial day leaves', 'warning');
-                  }
-                }}
-                min="0"
-                max="8"
-                step="0.5"
-                className="calculation-input"
-                placeholder={formData.totalDays * 8}
-                title="Leave empty for full day leaves, or enter hours for partial day leaves (max 8 per day)"
-              />
-            
-            </Form.Group>
-          </Col>
-        </Row>
+              {/* Leave Type Row */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Leave Type <span className="required">*</span></Form.Label>
+                    <Form.Select
+                      value={formData.leaveType}
+                      onChange={(e) => setFormData({ ...formData, leaveType: e.target.value })}
+                      className="form-select responsive-form-control"
+                      required
+                    >
+                      <option value="Vacation Leave">Vacation Leave</option>
+                      <option value="Sick Leave">Sick Leave</option>
+                      <option value="Emergency Leave">Emergency Leave</option>
+                      <option value="Maternity Leave">Maternity Leave</option>
+                      <option value="Paternity Leave">Paternity Leave</option>
+                      <option value="Personal Leave">Personal Leave</option>
+                      <option value="Bereavement Leave">Bereavement Leave</option>
+                    </Form.Select>
+                  </Form.Group>
+                </div>
+              </div>
 
-        {/* Reason & Signature */}
-        <Row className="mb-3">
-          <Col md={8}>
-            <Form.Group>
-              <Form.Label className="form-label">Reason</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={4}
-                value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                className="reason-textarea"
-              />
-            </Form.Group>
-          </Col>
+              {/* Note Section */}
+              <Row className="form-row">
+                <Col md={12}>
+                  <div className="note-section">
+                    <span className="note-icon">ℹ️</span>
+                    <span className="note-text">
+                      <strong>Note:</strong> Pay terms and leave category will be determined by HR during the approval process.
+                    </span>
+                  </div>
+                </Col>
+              </Row>
 
-          <Col md={4}>
-            <Form.Label className="form-label">Applicant Name</Form.Label>
-            <Form.Control
-              type="text"
-              value={formData.applicantName}
-              onChange={(e) => setFormData({ ...formData, applicantName: e.target.value })}
-              className="underlined-input text-center mb-3"
-            />
+              {/* Dates Row */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Start Date <span className="required">*</span></Form.Label>
+                    <div className="date-input-wrapper">
+                      <Form.Control
+                        type="date"
+                        value={formData.startDate ? formData.startDate.toISOString().split('T')[0] : ''}
+                        onChange={(e) => handleStartDateChange(new Date(e.target.value))}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="form-input date-input responsive-form-control"
+                        placeholder="mm/dd/yyyy"
+                        required
+                      />
+                      <CalendarIcon className="calendar-icon hide-on-mobile" size={16} />
+                    </div>
+                  </Form.Group>
+                </div>
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">End Date <span className="required">*</span></Form.Label>
+                    <div className="date-input-wrapper">
+                      <Form.Control
+                        type="date"
+                        value={formData.endDate ? formData.endDate.toISOString().split('T')[0] : ''}
+                        onChange={(e) => handleEndDateChange(new Date(e.target.value))}
+                        min={formData.startDate ? formData.startDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                        className="form-input date-input responsive-form-control"
+                        placeholder="mm/dd/yyyy"
+                        required
+                      />
+                      <CalendarIcon className="calendar-icon hide-on-mobile" size={16} />
+                    </div>
+                  </Form.Group>
+                </div>
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Total Days</Form.Label>
+                    <div className="total-days-display">
+                      <span className="days-number text-responsive-lg">{formData.totalDays}</span>
+                      <span className="total-hours-text text-responsive-sm">{formData.totalDays === 0 ? '0 total hours' : `${formData.totalDays * 8} total hours`}</span>
+                    </div>
+                  </Form.Group>
+                </div>
+              </div>
 
-          </Col>
-        </Row>
+              {/* Reason Section */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Reason</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={4}
+                      value={formData.reason}
+                      onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                      className="form-textarea responsive-form-control"
+                      placeholder="Please provide the reason for your leave request..."
+                      required
+                    />
+                  </Form.Group>
+                </div>
+              </div>
 
-        {/* Submit Button */}
-        <Row>
-          <Col className="text-end">
-            <Button variant="success" type="submit" disabled={loading}>
-              {loading ? 'Submitting...' : 'Submit Leave Request'}
-            </Button>
-          </Col>
-        </Row>
-      </Form>
+          {/* Submit Button Row */}
+          <div className="responsive-form-row">
+            <div className="responsive-form-col text-start">
+              <Button 
+                type="submit"
+                className="submit-button-form responsive-btn"
+              >
+                <span className="submit-icon hide-on-mobile">📋</span>
+                Submit Leave Request
+              </Button>
+            </div>
+          </div>
+            </Form>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'details' && (
+        <div className="tab-content">
+          {renderLeaveDetails()}
+        </div>
+      )}
+
+      {activeTab === 'history' && (
+        <div className="tab-content">
+          {renderLeaveHistory()}
+        </div>
+      )}
+
+      {/* Leave Request Details Modal */}
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered className="responsive-modal">
+        <Modal.Header closeButton>
+          <Modal.Title className="text-responsive-lg">Leave Request Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="responsive-modal">
+          {selectedRequest && (
+            <div className="leave-request-summary">
+              <Row>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Employee Name:</label>
+                    <span>{selectedRequest.employee_name || formData.name}</span>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Department:</label>
+                    <span>{selectedRequest.department || formData.department}</span>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Leave Type:</label>
+                    <span>{selectedRequest.type}</span>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Status:</label>
+                    <span className={`status-badge ${selectedRequest.status === 'approved' ? 'success' : selectedRequest.status === 'rejected' ? 'danger' : 'info'}`}>
+                      {selectedRequest.status === 'approved' ? 'Approved' : 
+                       selectedRequest.status === 'rejected' ? 'Rejected' : 
+                       selectedRequest.status === 'completed' ? 'Approved' : 'Completed'}
+                    </span>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Start Date:</label>
+                    <span>{selectedRequest.from ? new Date(selectedRequest.from).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>End Date:</label>
+                    <span>{selectedRequest.to ? new Date(selectedRequest.to).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Total Days:</label>
+                    <span>{selectedRequest.total_days || 0} day{(selectedRequest.total_days || 0) > 1 ? 's' : ''}</span>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Total Hours:</label>
+                    <span>{selectedRequest.total_hours || ((selectedRequest.total_days || 0) * 8)} hours</span>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Pay Terms:</label>
+                    <span>{selectedRequest.terms || 'With Pay'}</span>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="summary-field">
+                    <label>Date Filed:</label>
+                    <span>{selectedRequest.date_filed ? new Date(selectedRequest.date_filed).toLocaleDateString() : 'N/A'}</span>
+                  </div>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={12}>
+                  <div className="summary-field">
+                    <label>Reason:</label>
+                    <span>{selectedRequest.reason || 'N/A'}</span>
+                  </div>
+                </Col>
+              </Row>
+              {selectedRequest.approved_at && (
+                <Row>
+                  <Col md={12}>
+                    <div className="summary-field">
+                      <label>Approved Date:</label>
+                      <span>{new Date(selectedRequest.approved_at).toLocaleDateString()}</span>
+                    </div>
+                  </Col>
+                </Row>
+              )}
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button 
+            variant="danger" 
+            onClick={() => handleDownloadPdf(selectedRequest.id)}
+            className="me-2"
+          >
+            Download PDF
+          </Button>
+          <Button variant="secondary" onClick={() => setShowModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

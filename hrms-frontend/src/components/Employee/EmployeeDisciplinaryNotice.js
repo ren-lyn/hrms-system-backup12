@@ -19,6 +19,7 @@ import {
   getMyAction,
   submitExplanation,
   getDashboardStats,
+  downloadActionPdf,
   formatStatus,
   getStatusColor,
   getPriorityColor,
@@ -48,13 +49,52 @@ const EmployeeDisciplinaryNotice = () => {
   const loadData = async () => {
     try {
       setLoading(true);
+      
+      // Check cache first
+      const cachedActions = localStorage.getItem('disciplinaryActions');
+      const cachedStats = localStorage.getItem('disciplinaryStats');
+      const cacheTime = localStorage.getItem('disciplinaryCacheTime');
+      const now = Date.now();
+      const cacheAge = now - (cacheTime ? parseInt(cacheTime) : 0);
+      const isCacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes
+      
+      if (cachedActions && cachedStats && isCacheValid) {
+        try {
+          setActions(JSON.parse(cachedActions));
+          setStats(JSON.parse(cachedStats));
+          setLoading(false);
+          
+          // Still fetch fresh data in background
+          fetchFreshData();
+          return;
+        } catch (e) {
+          console.error('Error parsing cached disciplinary data:', e);
+        }
+      }
+      
+      // Fetch fresh data
+      await fetchFreshData();
+    } catch (error) {
+      console.error('Error loading disciplinary data:', error);
+      toast.error('Failed to load disciplinary information');
+      setLoading(false);
+    }
+  };
+
+  const fetchFreshData = async () => {
+    try {
       await Promise.all([
         loadActions(),
         loadStats()
       ]);
+      
+      // Cache the data
+      localStorage.setItem('disciplinaryActions', JSON.stringify(actions));
+      localStorage.setItem('disciplinaryStats', JSON.stringify(stats));
+      localStorage.setItem('disciplinaryCacheTime', Date.now().toString());
     } catch (error) {
-      console.error('Error loading disciplinary data:', error);
-      toast.error('Failed to load disciplinary information');
+      console.error('Error fetching fresh disciplinary data:', error);
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -107,17 +147,10 @@ const EmployeeDisciplinaryNotice = () => {
 
   const handleDownloadPDF = async (actionId) => {
     try {
-      const axios = (await import('axios')).default;
-      
       // Show loading toast
       const loadingToast = toast.loading('Generating PDF...');
       
-      const response = await axios.get(`http://localhost:8000/api/employee/disciplinary/actions/${actionId}/pdf`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('auth_token') || localStorage.getItem('token')}`
-        },
-        responseType: 'blob'
-      });
+      const response = await downloadActionPdf(actionId);
       
       // Check if the response is actually a PDF
       if (response.data.type === 'application/json') {
@@ -165,6 +198,7 @@ const EmployeeDisciplinaryNotice = () => {
       toast.error(errorMessage);
     }
   };
+
 
   const submitEmployeeExplanation = async () => {
     if (!explanation.trim()) {
@@ -246,49 +280,41 @@ const EmployeeDisciplinaryNotice = () => {
   }
 
   return (
-    <div>
+    <div className="responsive-container" style={{ padding: '20px' }}>
       {/* Header and Stats */}
       <div className="mb-4">
-        <h4 className="fw-bold text-primary mb-3">
-          <i className="fas fa-exclamation-triangle me-2"></i>
+        <h4 className="fw-bold text-primary mb-3 text-responsive-lg">
+          <i className="fas fa-exclamation-triangle me-2 hide-on-mobile"></i>
           My Disciplinary Actions
         </h4>
         
         {Object.keys(stats).length > 0 && (
-          <Row className="mb-4">
-            <Col md={3}>
-              <Card className="text-center border-warning">
-                <Card.Body>
-                  <h3 className="text-warning">{stats.pending_explanations || 0}</h3>
-                  <p className="mb-0 small">Pending Explanations</p>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="text-center border-info">
-                <Card.Body>
-                  <h3 className="text-info">{stats.under_investigation || 0}</h3>
-                  <p className="mb-0 small">Under Investigation</p>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="text-center border-success">
-                <Card.Body>
-                  <h3 className="text-success">{stats.completed_actions || 0}</h3>
-                  <p className="mb-0 small">Completed Actions</p>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={3}>
-              <Card className="text-center border-danger">
-                <Card.Body>
-                  <h3 className="text-danger">{stats.overdue_explanations || 0}</h3>
-                  <p className="mb-0 small">Overdue Explanations</p>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
+          <div className="responsive-dashboard-grid mb-4" style={{ gap: '20px' }}>
+            <div className="responsive-card text-center border-warning" style={{ marginBottom: '15px' }}>
+              <div className="responsive-card-body">
+                <h3 className="text-warning text-responsive-lg">{stats.pending_explanations || 0}</h3>
+                <p className="mb-0 text-responsive-sm">Pending Explanations</p>
+              </div>
+            </div>
+            <div className="responsive-card text-center border-info" style={{ marginBottom: '15px' }}>
+              <div className="responsive-card-body">
+                <h3 className="text-info text-responsive-lg">{stats.under_investigation || 0}</h3>
+                <p className="mb-0 text-responsive-sm">Under Investigation</p>
+              </div>
+            </div>
+            <div className="responsive-card text-center border-success" style={{ marginBottom: '15px' }}>
+              <div className="responsive-card-body">
+                <h3 className="text-success text-responsive-lg">{stats.completed_actions || 0}</h3>
+                <p className="mb-0 text-responsive-sm">Completed Actions</p>
+              </div>
+            </div>
+            <div className="responsive-card text-center border-danger" style={{ marginBottom: '15px' }}>
+              <div className="responsive-card-body">
+                <h3 className="text-danger text-responsive-lg">{stats.overdue_explanations || 0}</h3>
+                <p className="mb-0 text-responsive-sm">Overdue Explanations</p>
+              </div>
+            </div>
+          </div>
         )}
 
         {stats.overdue_explanations > 0 && (
@@ -299,20 +325,20 @@ const EmployeeDisciplinaryNotice = () => {
         )}
       </div>
 
-      <Card className="shadow-sm">
-        <Card.Header>
-          <Row className="align-items-center">
-            <Col>
-              <h5 className="mb-0">
-                <i className="fas fa-list me-2"></i>
+      <div className="responsive-card shadow-sm" style={{ marginTop: '20px' }}>
+        <div className="responsive-header">
+          <div className="responsive-form-row align-items-center">
+            <div className="responsive-form-col">
+              <h5 className="mb-0 text-responsive-lg">
+                <i className="fas fa-list me-2 hide-on-mobile"></i>
                 Disciplinary Actions
               </h5>
-            </Col>
-            <Col xs="auto">
+            </div>
+            <div className="responsive-form-col">
               <Form.Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                style={{ width: '200px' }}
+                className="responsive-form-control"
               >
                 <option value="all">All Status</option>
                 <option value="action_issued">Action Issued</option>
@@ -323,11 +349,11 @@ const EmployeeDisciplinaryNotice = () => {
                 <option value="awaiting_verdict">Awaiting Verdict</option>
                 <option value="completed">Completed</option>
               </Form.Select>
-            </Col>
-          </Row>
-        </Card.Header>
+            </div>
+          </div>
+        </div>
         
-        <Card.Body>
+        <div className="responsive-card-body">
           {actions.length === 0 ? (
             <Alert variant="info" className="text-center py-4">
               <i className="fas fa-info-circle me-2"></i>
@@ -337,27 +363,27 @@ const EmployeeDisciplinaryNotice = () => {
               }
             </Alert>
           ) : (
-            <div className="table-responsive">
-              <Table hover>
+            <div className="table-responsive responsive-table-container">
+              <Table hover className="responsive-table">
                 <thead>
                   <tr>
-                    <th>Action ID</th>
-                    <th>Action Type</th>
-                    <th>Violation</th>
-                    <th>Status</th>
-                    <th>Effective Date</th>
-                    <th>Issued Date</th>
-                    <th>Actions</th>
+                    <th className="text-responsive-sm">Action ID</th>
+                    <th className="text-responsive-sm">Action Type</th>
+                    <th className="text-responsive-sm">Violation</th>
+                    <th className="text-responsive-sm">Status</th>
+                    <th className="text-responsive-sm">Effective Date</th>
+                    <th className="text-responsive-sm">Issued Date</th>
+                    <th className="text-responsive-sm">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {actions.map(action => (
                     <tr key={action.id}>
                       <td>
-                        <strong>DA-{action.id}</strong>
+                        <strong className="text-responsive-sm">DA-{action.id}</strong>
                       </td>
                       <td>
-                        <Badge bg="primary">
+                        <Badge bg="primary" className="text-responsive-sm">
                           {getActionTypeDisplay(action.action_type)}
                         </Badge>
                       </td>
@@ -386,13 +412,14 @@ const EmployeeDisciplinaryNotice = () => {
                       <td>{formatDate(action.effective_date)}</td>
                       <td>{formatDate(action.created_at)}</td>
                       <td>
-                        <div className="d-flex gap-1">
+                        <div className="d-flex gap-1 responsive-btn-group">
                           <Button
                             variant="outline-info"
                             size="sm"
                             onClick={() => handleViewDetails(action)}
+                            className="responsive-btn"
                           >
-                            <i className="fas fa-eye me-1"></i>
+                            <i className="fas fa-eye me-1 hide-on-mobile"></i>
                             View
                           </Button>
                           
@@ -404,22 +431,13 @@ const EmployeeDisciplinaryNotice = () => {
                               size="sm"
                               onClick={() => handleSubmitExplanation(action)}
                               title={action.employee_explanation ? 'Update your explanation' : 'Submit your explanation'}
+                              className="responsive-btn"
                             >
-                              <i className="fas fa-edit me-1"></i>
+                              <i className="fas fa-edit me-1 hide-on-mobile"></i>
                               {action.employee_explanation ? 'Update' : 'Explain'}
                             </Button>
                           )}
                           
-                          {/* PDF Download button */}
-                          <Button
-                            variant="outline-success"
-                            size="sm"
-                            onClick={() => handleDownloadPDF(action.id)}
-                            title="Download PDF"
-                          >
-                            <i className="fas fa-download me-1"></i>
-                            PDF
-                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -428,13 +446,13 @@ const EmployeeDisciplinaryNotice = () => {
               </Table>
             </div>
           )}
-        </Card.Body>
-      </Card>
+        </div>
+      </div>
 
       {/* Detail Modal */}
-      <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} size="lg">
+      <Modal show={showDetailModal} onHide={() => setShowDetailModal(false)} size="lg" className="responsive-modal">
         <Modal.Header closeButton>
-          <Modal.Title>
+          <Modal.Title className="text-responsive-lg">
             Disciplinary Action Details - DA-{selectedAction?.id}
           </Modal.Title>
         </Modal.Header>
@@ -554,7 +572,7 @@ const EmployeeDisciplinaryNotice = () => {
             Close
           </Button>
           
-          {/* PDF Download button */}
+          {/* Download PDF button */}
           <Button 
             variant="success" 
             onClick={() => handleDownloadPDF(selectedAction?.id)}
@@ -581,13 +599,13 @@ const EmployeeDisciplinaryNotice = () => {
       </Modal>
 
       {/* Explanation Modal */}
-      <Modal show={showExplanationModal} onHide={() => setShowExplanationModal(false)} size="lg">
+      <Modal show={showExplanationModal} onHide={() => setShowExplanationModal(false)} size="lg" className="responsive-modal">
         <Modal.Header closeButton>
-        <Modal.Title>
+        <Modal.Title className="text-responsive-lg">
             {selectedAction?.employee_explanation ? 'Update' : 'Submit'} Explanation - DA-{selectedAction?.id}
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
+        <Modal.Body className="responsive-modal">
           {selectedAction && (
             <div>
               <Alert variant="warning">

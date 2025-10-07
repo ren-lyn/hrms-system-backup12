@@ -314,6 +314,28 @@ class ManagerEvaluationController extends Controller
                 ]);
             }
 
+            // Send notification to HR Staff only (Evaluations are HR Staff's responsibility)
+            try {
+                $hrStaff = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'HR Staff');
+                })->get();
+
+                foreach ($hrStaff as $hr) {
+                    $hr->notify(new \App\Notifications\EvaluationSubmitted($evaluation));
+                }
+
+                \Log::info('Evaluation submission notifications sent to HR', [
+                    'evaluation_id' => $evaluation->id,
+                    'employee_id' => $evaluation->employee_id,
+                    'hr_staff_notified' => $hrStaff->count()
+                ]);
+            } catch (\Exception $hrNotificationError) {
+                \Log::error('Failed to send evaluation notification to HR', [
+                    'evaluation_id' => $evaluation->id,
+                    'error' => $hrNotificationError->getMessage()
+                ]);
+            }
+
             // Load the evaluation with all related data for response
             $evaluation->load(['employee.employeeProfile', 'manager', 'evaluationForm', 'responses.question']);
 

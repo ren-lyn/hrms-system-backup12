@@ -35,6 +35,29 @@ class JobPostingController extends Controller
             'status' => $request->status ?? 'Open',  // Default to 'Open' if not provided
         ]);
 
+        // Send notification to HR Staff only (Job Posting is HR Staff's responsibility)
+        try {
+            $hrStaff = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'HR Staff');
+            })->get();
+
+            foreach ($hrStaff as $hr) {
+                $hr->notify(new \App\Notifications\JobPostingCreated($jobPosting));
+            }
+
+            \Log::info('Job posting creation notifications sent', [
+                'job_posting_id' => $jobPosting->id,
+                'title' => $jobPosting->title,
+                'department' => $jobPosting->department,
+                'hr_staff_notified' => $hrStaff->count()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send job posting creation notifications', [
+                'job_posting_id' => $jobPosting->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json([
             'message' => 'Job posting created successfully.',
             'job_posting' => $jobPosting

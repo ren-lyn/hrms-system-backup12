@@ -1,0 +1,360 @@
+/* Employee Dashboard Overview Styles */
+.employee-dashboard-overview {
+  padding: 0;
+}
+
+/* Welcome Card Gradient */
+.bg-gradient-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+/* Card Hover Effects */
+.employee-dashboard-overview .card {
+  transition: all 0.3s ease;
+  border-radius: 12px;
+}
+
+.employee-dashboard-overview .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Quick Stats Cards */
+.employee-dashboard-overview .card-body.text-center {
+  padding: 1.5rem 1rem;
+}
+
+.employee-dashboard-overview .card-body.text-center .fs-2 {
+  font-size: 2.5rem !important;
+  margin-bottom: 0.5rem;
+}
+
+.employee-dashboard-overview .card-body.text-center h5 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+}
+
+.employee-dashboard-overview .card-body.text-center small {
+  font-size: 0.85rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+/* List Group Items */
+.employee-dashboard-overview .list-group-item {
+  border-radius: 8px !important;
+  margin-bottom: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.employee-dashboard-overview .list-group-item:hover {
+  background-color: #f8f9fa !important;
+  transform: translateX(4px);
+}
+
+.employee-dashboard-overview .list-group-item.bg-light {
+  background-color: #e3f2fd !important;
+  border-left: 4px solid #2196f3;
+}
+
+/* Badge Styles */
+.employee-dashboard-overview .badge {
+  font-size: 0.75rem;
+  padding: 0.4em 0.8em;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* Button Styles */
+.employee-dashboard-overview .btn {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.employee-dashboard-overview .btn:hover {
+  transform: translateY(-1px);
+}
+
+.employee-dashboard-overview .btn-outline-primary {
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.employee-dashboard-overview .btn-outline-primary:hover {
+  background-color: #007bff;
+  border-color: #007bff;
+  color: white;
+}
+
+.employee-dashboard-overview .btn-outline-success {
+  border-color: #28a745;
+  color: #28a745;
+}
+
+.employee-dashboard-overview .btn-outline-success:hover {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: white;
+}
+
+.employee-dashboard-overview .btn-outline-info {
+  border-color: #17a2b8;
+  color: #17a2b8;
+}
+
+.employee-dashboard-overview .btn-outline-info:hover {
+  background-color: #17a2b8;
+  border-color: #17a2b8;
+  color: white;
+}
+
+.employee-dashboard-overview .btn-outline-warning {
+  border-color: #ffc107;
+  color: #ffc107;
+}
+
+.employee-dashboard-overview .btn-outline-warning:hover {
+  background-color: #ffc107;
+  border-color: #ffc107;
+  color: #212529;
+}
+
+/* Icon Styles */
+.employee-dashboard-overview .text-primary {
+  color: #007bff !important;
+}
+
+.employee-dashboard-overview .text-warning {
+  color: #ffc107 !important;
+}
+
+.employee-dashboard-overview .text-success {
+  color: #28a745 !important;
+}
+
+.employee-dashboard-overview .text-info {
+  color: #17a2b8 !important;
+}
+
+/* Event Type Icons */
+.employee-dashboard-overview .rounded-circle {
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Empty State Styles */
+.employee-dashboard-overview .opacity-25 {
+  opacity: 0.25 !important;
+}
+
+.employee-dashboard-overview .fs-1 {
+  font-size: 3rem !important;
+}
+
+.employee-dashboard-overview .fs-3 {
+  font-size: 1.75rem !important;
+}
+
+/* Loading Spinner */
+.employee-dashboard-overview .spinner-border {
+  width: 3rem;
+  height: 3rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .employee-dashboard-overview .card-body {
+    padding: 1rem;
+  }
+  
+  .employee-dashboard-overview .card-body.text-center {
+    padding: 1rem 0.5rem;
+  }
+  
+  .employee-dashboard-overview .card-body.text-center .fs-2 {
+    font-size: 2rem !important;
+  }
+  
+  .employee-dashboard-overview .card-body.text-center h5 {
+    font-size: 1.5rem;
+  }
+  
+  .employee-dashboard-overview .d-grid {
+    gap: 0.75rem !important;
+  }
+  
+  .employee-dashboard-overview .btn {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .employee-dashboard-overview .card-body.text-center .fs-2 {
+    font-size: 1.75rem !important;
+  }
+  
+  .employee-dashboard-overview .card-body.text-center h5 {
+    font-size: 1.25rem;
+  }
+  
+  .employee-dashboard-overview .list-group-item {
+    padding: 0.75rem 0;
+  }
+  
+  .employee-dashboard-overview .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  
+  .employee-dashboard-overview .text-end {
+    text-align: left !important;
+    margin-top: 0.5rem;
+  }
+}
+
+/* Animation for loading states */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.employee-dashboard-overview .card {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.employee-dashboard-overview .card:nth-child(1) { animation-delay: 0.1s; }
+.employee-dashboard-overview .card:nth-child(2) { animation-delay: 0.2s; }
+.employee-dashboard-overview .card:nth-child(3) { animation-delay: 0.3s; }
+.employee-dashboard-overview .card:nth-child(4) { animation-delay: 0.4s; }
+
+/* Custom scrollbar for list groups */
+.employee-dashboard-overview .list-group {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.employee-dashboard-overview .list-group::-webkit-scrollbar {
+  width: 4px;
+}
+
+.employee-dashboard-overview .list-group::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.employee-dashboard-overview .list-group::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.employee-dashboard-overview .list-group::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Status indicator styles */
+.employee-dashboard-overview .status-indicator {
+  position: relative;
+  display: inline-block;
+}
+
+.employee-dashboard-overview .status-indicator::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -12px;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+/* Enhanced button group styles */
+.employee-dashboard-overview .d-grid .btn {
+  text-align: left;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.employee-dashboard-overview .d-grid .btn span {
+  display: flex;
+  align-items: center;
+}
+
+/* Card header enhancements */
+.employee-dashboard-overview .card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  border-radius: 12px 12px 0 0 !important;
+  padding: 1rem 1.25rem;
+}
+
+.employee-dashboard-overview .card-header h5 {
+  color: #495057;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Text color improvements */
+.employee-dashboard-overview .text-muted {
+  color: #6c757d !important;
+}
+
+.employee-dashboard-overview .text-primary {
+  color: #007bff !important;
+}
+
+/* Icon sizing consistency */
+.employee-dashboard-overview .me-2 {
+  margin-right: 0.5rem !important;
+}
+
+.employee-dashboard-overview .me-3 {
+  margin-right: 1rem !important;
+}
+
+/* Flex utilities */
+.employee-dashboard-overview .flex-grow-1 {
+  flex-grow: 1 !important;
+}
+
+/* Spacing utilities */
+.employee-dashboard-overview .mb-1 {
+  margin-bottom: 0.25rem !important;
+}
+
+.employee-dashboard-overview .mb-2 {
+  margin-bottom: 0.5rem !important;
+}
+
+.employee-dashboard-overview .mb-3 {
+  margin-bottom: 1rem !important;
+}
+
+.employee-dashboard-overview .mb-4 {
+  margin-bottom: 1.5rem !important;
+}
+
+.employee-dashboard-overview .py-3 {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.employee-dashboard-overview .py-4 {
+  padding-top: 1.5rem !important;
+  padding-bottom: 1.5rem !important;
+}

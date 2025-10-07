@@ -3,7 +3,7 @@ import { fetchNotifications, getNotificationAction, getNotificationIcon } from '
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/free-solid-svg-icons';
 
-const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation, onOpenDisciplinary }) => {
+const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation, onOpenDisciplinary, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -71,8 +71,23 @@ const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation,
           onOpenCashAdvance(notificationAction.id, notificationAction.data);
         }
         break;
-      default:
-        console.log('No specific action for notification type:', notification.type);
+        case 'OPEN_CALENDAR':
+          if (onOpenCalendar) {
+            onOpenCalendar(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_JOB_APPLICATIONS':
+          if (onOpenJobApplications) {
+            onOpenJobApplications(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_JOB_POSTINGS':
+          if (onOpenJobPostings) {
+            onOpenJobPostings(notificationAction.id, notificationAction.data);
+          }
+          break;
+        default:
+          console.log('No specific action for notification type:', notification.type);
     }
   };
 

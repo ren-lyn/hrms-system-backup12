@@ -125,6 +125,7 @@ export const getMyActions = (params = {}) => API.get('/employee/disciplinary/act
 export const getMyAction = (id) => API.get(`/employee/disciplinary/actions/${id}`);
 export const submitExplanation = (id, data) => API.post(`/employee/disciplinary/actions/${id}/explanation`, data);
 export const getDashboardStats = () => API.get('/employee/disciplinary/dashboard/stats');
+export const downloadActionPdf = (id) => API.get(`/employee/disciplinary/actions/${id}/pdf`, { responseType: 'blob' });
 
 // ===== UTILITY FUNCTIONS =====
 

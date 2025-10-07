@@ -84,6 +84,31 @@ class ApplicationController extends Controller
             'resume_path' => $resumePath,
         ]);
 
+        // Send notification to HR Staff only (Job Applications are HR Staff's responsibility)
+        try {
+            $application->load(['jobPosting', 'applicant']);
+            
+            $hrStaff = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'HR Staff');
+            })->get();
+
+            foreach ($hrStaff as $hr) {
+                $hr->notify(new \App\Notifications\JobApplicationSubmitted($application));
+            }
+
+            \Log::info('Job application submission notifications sent', [
+                'application_id' => $application->id,
+                'applicant_id' => $applicant->id,
+                'job_posting_id' => $request->job_posting_id,
+                'hr_staff_notified' => $hrStaff->count()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send job application submission notifications', [
+                'application_id' => $application->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json([
             'message' => 'Application submitted successfully.',
             'application' => $application->load(['jobPosting', 'applicant'])
@@ -102,6 +127,26 @@ class ApplicationController extends Controller
             'status' => $request->status,
             'reviewed_at' => now(),
         ]);
+
+        // Send notification to applicant about status change
+        try {
+            $application->load(['jobPosting', 'applicant']);
+            
+            if ($application->applicant && $application->applicant->user) {
+                $application->applicant->user->notify(new \App\Notifications\JobApplicationStatusChanged($application));
+            }
+
+            \Log::info('Job application status change notification sent', [
+                'application_id' => $application->id,
+                'applicant_id' => $application->applicant_id,
+                'new_status' => $request->status
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send job application status change notification', [
+                'application_id' => $application->id,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return response()->json([
             'message' => 'Application status updated successfully.',

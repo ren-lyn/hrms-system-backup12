@@ -257,6 +257,54 @@ class LeaveRequestController extends Controller
 
         $leaveRequest->save();
 
+        // Send notification to managers and HR staff
+        try {
+            $leaveRequest->load(['employee.employeeProfile']);
+            $department = $leaveRequest->employee->employeeProfile->department ?? $leaveRequest->department;
+            
+            // Get managers in the same department
+            $managers = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'Manager');
+            })->whereHas('employeeProfile', function($query) use ($department) {
+                $query->where('department', $department);
+            })->get();
+
+            // If no managers in same department, get all managers
+            if ($managers->isEmpty()) {
+                $managers = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'Manager');
+                })->get();
+            }
+
+            // Get HR Assistant only (Leave Management is HR Assistant's responsibility)
+            $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'HR Assistant');
+            })->get();
+
+            // Notify managers
+            foreach ($managers as $manager) {
+                $manager->notify(new \App\Notifications\LeaveRequestSubmitted($leaveRequest));
+            }
+
+            // Notify HR Assistants only (not HR Staff)
+            foreach ($hrAssistants as $hrAssistant) {
+                $hrAssistant->notify(new \App\Notifications\LeaveRequestSubmittedToHR($leaveRequest));
+            }
+
+            \Log::info('Leave request submission notifications sent', [
+                'leave_request_id' => $leaveRequest->id,
+                'employee_id' => $leaveRequest->employee_id,
+                'department' => $department,
+                'managers_notified' => $managers->count(),
+                'hr_assistants_notified' => $hrAssistants->count()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send leave request submission notifications', [
+                'leave_request_id' => $leaveRequest->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json([
             'message' => 'Leave request submitted successfully',
             'data' => $leaveRequest->load('employee')

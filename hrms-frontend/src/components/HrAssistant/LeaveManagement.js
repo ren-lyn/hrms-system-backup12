@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert } from 'react-bootstrap';
 import { Search, Calendar, Download, Eye, Check, X, FileText } from 'lucide-react';
-import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, rejectLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
+import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
 import jsPDF from 'jspdf';
 import axios from '../../axios';
 import './LeaveManagement.css';
@@ -108,9 +108,6 @@ const LeaveManagement = () => {
       if (actionType === 'approve') {
         response = await approveLeaveRequest(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been approved successfully!`, 'success');
-      } else if (actionType === 'reject') {
-        response = await rejectLeaveRequest(selectedLeave.id, remarks);
-        showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been rejected.`, 'info');
       } else if (actionType === 'confirm_rejection') {
         response = await confirmManagerRejection(selectedLeave.id, remarks);
         showAlert(`Manager rejection confirmed for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)}. Employee has been notified.`, 'info');
@@ -839,14 +836,6 @@ const LeaveManagement = () => {
                           >
                             <Check size={14} />
                           </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => handleAction(request, 'reject')}
-                            title="Reject leave request"
-                          >
-                            <X size={14} />
-                          </Button>
                         </>
                       ) : request.status === 'manager_rejected' ? (
                         <>
@@ -885,7 +874,6 @@ const LeaveManagement = () => {
         <Modal.Header closeButton>
           <Modal.Title>
             {actionType === 'approve' ? 'Approve' : 
-             actionType === 'reject' ? 'Reject' : 
              actionType === 'confirm_rejection' ? 'Confirm Manager Rejection' : 'Process'} Leave Request
           </Modal.Title>
         </Modal.Header>
@@ -913,11 +901,10 @@ const LeaveManagement = () => {
             Cancel
           </Button>
           <Button 
-            variant={actionType === 'approve' ? 'success' : actionType === 'confirm_rejection' ? 'warning' : 'danger'} 
+            variant={actionType === 'approve' ? 'success' : actionType === 'confirm_rejection' ? 'warning' : 'primary'} 
             onClick={confirmAction}
           >
             {actionType === 'approve' ? 'Approve' : 
-             actionType === 'reject' ? 'Reject' : 
              actionType === 'confirm_rejection' ? 'Confirm Rejection' : 'Process'}
           </Button>
         </Modal.Footer>

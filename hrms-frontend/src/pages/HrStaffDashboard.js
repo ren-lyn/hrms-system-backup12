@@ -7,6 +7,9 @@ import EmployeeRecords from './HrAssistant/EmployeeRecords';
 import EvaluationAdministration from '../components/EvaluationAdministration';
 import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
 import HrStaffProfile from '../components/HrStaff/HrStaffProfile';
+import StaffCalendar from '../components/HrAssistant/StaffCalendar';
+import DisciplinaryManagement from '../components/HrAssistant/DisciplinaryManagement';
+import LeaveManagement from '../components/HrAssistant/LeaveManagement';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -21,10 +24,11 @@ import {
   faFileAlt,
   faBars,
   faEnvelope,
-  faBell,
+  faBell as faBellIcon,
   faClock,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import Bell from '../components/Notifications/Bell';
 
 const HrStaffDashboard = () => {
   const [activeView, setActiveView] = useState("dashboard");
@@ -64,6 +68,42 @@ const HrStaffDashboard = () => {
   const showSuccess = (message) => toast.success(message);
   const showError = (message) => toast.error(message);
   const showInfo = (message) => toast.info(message);
+
+  // Notification handlers
+  const handleOpenLeave = (leaveId, data) => {
+    setActiveView('leave');
+    // You can add additional logic to highlight specific leave request
+  };
+
+  const handleOpenCashAdvance = (cashAdvanceId, data) => {
+    // Navigate to cash advance management if available
+    console.log('Open cash advance:', cashAdvanceId, data);
+  };
+
+  const handleOpenEvaluation = (evaluationId, data) => {
+    setActiveView('evaluation');
+    // You can add additional logic to highlight specific evaluation
+  };
+
+  const handleOpenDisciplinary = (disciplinaryId, data) => {
+    setActiveView('disciplinary');
+    // You can add additional logic to highlight specific disciplinary case
+  };
+
+  const handleOpenCalendar = (eventId, data) => {
+    setActiveView('calendar');
+    // You can add additional logic to highlight specific calendar event
+  };
+
+  const handleOpenJobApplications = (applicationId, data) => {
+    setActiveView('job-applications');
+    // You can add additional logic to highlight specific application
+  };
+
+  const handleOpenJobPostings = (jobPostingId, data) => {
+    setActiveView('job-posting');
+    // You can add additional logic to highlight specific job posting
+  };
 
   // Logout functionality
   const handleLogout = async (e) => {
@@ -143,6 +183,8 @@ const HrStaffDashboard = () => {
         return "Disciplinary Action & Issuance";
       case "leave":
         return "Leave";
+      case "calendar":
+        return "My Calendar";
       case "recruitment":
         return "Recruitment";
       case "onboarding":
@@ -222,6 +264,7 @@ const HrStaffDashboard = () => {
               </div>
             </div>
           </div>
+
         </>
       );
     }
@@ -240,6 +283,18 @@ const HrStaffDashboard = () => {
 
     if (activeView === "evaluation") {
       return <EvaluationAdministration />;
+    }
+
+    if (activeView === "calendar") {
+      return <StaffCalendar />;
+    }
+
+    if (activeView === "disciplinary") {
+      return <DisciplinaryManagement />;
+    }
+
+    if (activeView === "leave") {
+      return <LeaveManagement />;
     }
 
     if (activeView === "profile") {
@@ -365,6 +420,14 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
+                onClick={() => setActiveView("calendar")}
+                className={`hrms-unified-nav-link ${activeView === 'calendar' ? 'hrms-unified-active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> My Calendar
+              </button>
+            </li>
+            <li>
+              <button
                 onClick={() => setActiveView("recruitment")}
                 className={`hrms-unified-nav-link ${activeView === 'recruitment' ? 'hrms-unified-active' : ''}`}
               >
@@ -394,7 +457,7 @@ const HrStaffDashboard = () => {
         <div className="flex-grow-1 hrms-main-content hrms-scrollable-main-content" style={{ background: "linear-gradient(to bottom right, #f0f4f8, #d9e2ec)" }}>
           {/* Header - hidden for job-posting, job-applications, and profile */}
           <div className="container-fluid py-3 px-3 px-md-5">
-            {activeView !== "job-posting" && activeView !== "job-applications" && activeView !== "profile" && (
+            {activeView !== "job-posting" && activeView !== "job-applications" && activeView !== "calendar" && activeView !== "profile" && (
               <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
                 <h4 className="fw-bold text-primary mb-2 mb-md-0">
                   {getHeaderTitle()}
@@ -405,10 +468,14 @@ const HrStaffDashboard = () => {
                     size="lg"
                     className="text-primary"
                   />
-                  <FontAwesomeIcon
-                    icon={faBell}
-                    size="lg"
-                    className="text-primary"
+                  <Bell 
+                    onOpenLeave={handleOpenLeave}
+                    onOpenCashAdvance={handleOpenCashAdvance}
+                    onOpenEvaluation={handleOpenEvaluation}
+                    onOpenDisciplinary={handleOpenDisciplinary}
+                    onOpenCalendar={handleOpenCalendar}
+                    onOpenJobApplications={handleOpenJobApplications}
+                    onOpenJobPostings={handleOpenJobPostings}
                   />
                   <span className="fw-semibold text-dark">
                     {loading ? 'Loading...' : userProfile?.name || 'HR Staff'}

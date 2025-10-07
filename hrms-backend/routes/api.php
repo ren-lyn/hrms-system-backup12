@@ -252,11 +252,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/todays-events', [HrCalendarController::class, 'todaysEvents']); // Today's events
         Route::get('/upcoming', [HrCalendarController::class, 'upcomingEvents']); // Upcoming events
         Route::get('/check-availability', [HrCalendarController::class, 'checkHrAvailability']); // Check if HR is available
+        Route::get('/employees', [HrCalendarController::class, 'getEmployees']); // Get employees for invitations
         Route::get('/{id}', [HrCalendarController::class, 'show']); // View specific event
         Route::put('/{id}', [HrCalendarController::class, 'update']); // Update event
         Route::delete('/{id}', [HrCalendarController::class, 'destroy']); // Delete event
         Route::put('/{id}/cancel', [HrCalendarController::class, 'cancel']); // Cancel event
         Route::put('/{id}/complete', [HrCalendarController::class, 'complete']); // Complete event
+    });
+
+    // Employee Calendar Management
+    Route::prefix('employee-calendar')->group(function () {
+        Route::get('/', [HrCalendarController::class, 'employeeCalendar']); // Get employee's calendar
+        Route::post('/{eventId}/respond', [HrCalendarController::class, 'respondToInvitation']); // Respond to invitation
     });
 
     // Disciplinary Management Routes

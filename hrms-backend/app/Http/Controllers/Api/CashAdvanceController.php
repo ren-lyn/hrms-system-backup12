@@ -49,6 +49,53 @@ class CashAdvanceController extends Controller
             'status' => 'pending',
         ]);
 
+        // Send notification to HR staff and managers
+        try {
+            $department = $profile->department ?? 'Not Specified';
+            
+            // Get HR Assistant only (Cash Advance is HR Assistant's responsibility)
+            $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'HR Assistant');
+            })->get();
+
+            // Get managers in the same department
+            $managers = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'Manager');
+            })->whereHas('employeeProfile', function($query) use ($department) {
+                $query->where('department', $department);
+            })->get();
+
+            // If no managers in same department, get all managers
+            if ($managers->isEmpty()) {
+                $managers = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'Manager');
+                })->get();
+            }
+
+            // Notify HR Assistants only (not HR Staff)
+            foreach ($hrAssistants as $hrAssistant) {
+                $hrAssistant->notify(new \App\Notifications\CashAdvanceSubmitted($cashAdvanceRequest));
+            }
+
+            // Notify managers
+            foreach ($managers as $manager) {
+                $manager->notify(new \App\Notifications\CashAdvanceSubmitted($cashAdvanceRequest));
+            }
+
+            Log::info('Cash advance submission notifications sent', [
+                'cash_advance_id' => $cashAdvanceRequest->id,
+                'employee_id' => $user->id,
+                'department' => $department,
+                'hr_assistants_notified' => $hrAssistants->count(),
+                'managers_notified' => $managers->count()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send cash advance submission notifications', [
+                'cash_advance_id' => $cashAdvanceRequest->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json([
             'message' => 'Cash advance request submitted successfully',
             'data' => $cashAdvanceRequest,
