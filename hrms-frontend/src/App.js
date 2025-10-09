@@ -23,6 +23,7 @@ import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagemen
 import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
 import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Calendar
 import DisciplinaryManagement from './components/HrAssistant/DisciplinaryManagement'; // ✅ New Disciplinary Management
+import JobApplications from './components/JobApplications'; // ✅ Professional Job Applications
 
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -51,6 +52,7 @@ function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
+        <Route path="/jobs" element={<JobApplications />} /> {/* Professional Job Applications */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
@@ -78,7 +80,7 @@ function App() {
           <Route path="job-postings" element={<JobPostings />} />
           <Route path="applications" element={<ApplicationsDashboard />} />
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
-          <Route path="profile" element={<HrAssistantProfile />} />
+          <Route path="profile" element={<HrAssistantProfile />} /> 
 
         </Route>
 
@@ -110,7 +112,9 @@ function App() {
               <ApplicantDashboard />
             </ProtectedRoute>
           }
-        />
+        >
+          <Route index element={<div>Welcome Applicant</div>} />
+        </Route>
 
         {/* ✅ Employee with nested routes (so sidebar layout is preserved) */}
         <Route

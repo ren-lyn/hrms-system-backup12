@@ -12,7 +12,10 @@ class JobPostingController extends Controller
     // HR staff/assistant view with applications
     public function index()
     {
-        return JobPosting::with('applications')->latest()->get();
+        return JobPosting::with('applications')
+            ->select('id', 'hr_staff_id', 'title', 'description', 'requirements', 'department', 'position', 'salary_min', 'salary_max', 'salary_notes', 'status', 'created_at', 'updated_at')
+            ->latest()
+            ->get();
     }
 
     // Store new job posting
@@ -23,15 +26,49 @@ class JobPostingController extends Controller
             'description' => 'required|string',
             'requirements' => 'required|string',
             'department' => 'required|string',
+            'position' => 'required|string',
             'status' => 'sometimes|in:Open,Closed',  // Made optional with default
         ]);
 
+        // Check for existing job posting with same department and position
+        $existingJob = JobPosting::where('department', $request->department)
+            ->where('position', $request->position)
+            ->where('status', 'Open')
+            ->first();
+
+        if ($existingJob) {
+            return response()->json([
+                'message' => 'A job posting for this department and position already exists.',
+                'duplicate_detected' => true,
+                'existing_job' => [
+                    'id' => $existingJob->id,
+                    'title' => $existingJob->title,
+                    'department' => $existingJob->department,
+                    'position' => $existingJob->position,
+                    'created_at' => $existingJob->created_at,
+                    'salary_range' => [
+                        'min' => $existingJob->salary_min,
+                        'max' => $existingJob->salary_max,
+                        'notes' => $existingJob->salary_notes
+                    ]
+                ],
+                'suggestion' => 'Please update the existing post instead of creating a duplicate.'
+            ], 409);
+        }
+
+        // Get salary range for the position
+        $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
+        
         $jobPosting = JobPosting::create([
             'hr_staff_id' => Auth::check() ? Auth::id() : null,
             'title' => $request->title,
             'description' => $request->description,
             'requirements' => $request->requirements,
             'department' => $request->department,
+            'position' => $request->position,
+            'salary_min' => $salaryRange['min'] ?? null,
+            'salary_max' => $salaryRange['max'] ?? null,
+            'salary_notes' => $salaryRange['notes'] ?? null,
             'status' => $request->status ?? 'Open',  // Default to 'Open' if not provided
         ]);
 
@@ -74,16 +111,28 @@ class JobPostingController extends Controller
             'description' => 'required|string',
             'requirements' => 'required|string',
             'department' => 'required|string',
+            'position' => 'required|string',
             'status' => 'required|in:Open,Closed',
         ]);
 
-        $job->update($request->only([
+        // Get salary range for the position
+        $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
+        
+        $updateData = $request->only([
             'title',
             'description',
             'requirements',
             'department',
+            'position',
             'status'
-        ]));
+        ]);
+        
+        // Add salary information
+        $updateData['salary_min'] = $salaryRange['min'] ?? null;
+        $updateData['salary_max'] = $salaryRange['max'] ?? null;
+        $updateData['salary_notes'] = $salaryRange['notes'] ?? null;
+        
+        $job->update($updateData);
 
         return response()->json(['message' => 'Updated successfully.']);
     }
@@ -100,7 +149,7 @@ class JobPostingController extends Controller
     public function getPublicJobPostings()
     {
         return JobPosting::where('status', 'Open')
-            ->select('id', 'title', 'description', 'requirements', 'department', 'status', 'created_at')
+            ->select('id', 'title', 'description', 'requirements', 'department', 'position', 'salary_min', 'salary_max', 'salary_notes', 'status', 'created_at')
             ->latest()
             ->get();
     }
@@ -113,5 +162,11 @@ class JobPostingController extends Controller
         $job->save();
 
         return response()->json(['success' => true, 'status' => $job->status]);
+    }
+
+    // Get salary ranges for positions
+    public function getSalaryRanges()
+    {
+        return response()->json(JobPosting::getSalaryRanges());
     }
 }

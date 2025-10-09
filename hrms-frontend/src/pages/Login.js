@@ -385,20 +385,6 @@ const Login = () => {
               <p>Please enter your credentials to continue</p>
             </div>
 
-            <div className="role-selector">
-              <button
-                className={`role-btn ${role === 'Admin' ? 'active' : ''}`}
-                onClick={() => setRole('Admin')}
-              >
-                Administrator
-              </button>
-              <button
-                className={`role-btn ${role === 'Employee' ? 'active' : ''}`}
-                onClick={() => setRole('Employee')}
-              >
-                Employee
-              </button>
-            </div>
 
             {error && <div className="error-alert">{error}</div>}
 

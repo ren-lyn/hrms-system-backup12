@@ -15,15 +15,28 @@ const JobPostings = () => {
     description: "",
     requirements: "",
     department: "",
+    position: "",
     status: "Open",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [expandedJob, setExpandedJob] = useState(null);
 
+  // Department-Position mapping as specified by user
+  const departmentPositions = {
+    "HR Department": ["HR Staff", "HR Assistant"],
+    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker"],
+    "Logistics Department": ["Driver", "Helper", "Admin Staff", "Maintenance Foreman", "Maintenance Assistant"],
+    "Accounting Department": ["Accounting Staff", "Accounting Assistant"]
+  };
+
   // New loading states to prevent multiple toasts
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  
+  // Duplicate job posting detection states
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateJobInfo, setDuplicateJobInfo] = useState(null);
 
   // Toast notification helpers - same as EmployeeRecords
   const showError = (message) => toast.error(message);
@@ -43,7 +56,14 @@ const JobPostings = () => {
       } else if (error.response.status === 404) {
         showWarning('Resource not found.');
       } else if (error.response.status === 409) {
-        // Handle duplicate job title or conflicts
+        // Handle duplicate job posting detection
+        if (error.response.data?.duplicate_detected) {
+          setDuplicateJobInfo(error.response.data);
+          setShowDuplicateModal(true);
+          return; // Don't show error toast for duplicate detection
+        }
+        
+        // Handle other conflicts
         const message = error.response.data?.message || '';
         if (message.toLowerCase().includes('title')) {
           showError('Job title already exists. Please use a different title.');
@@ -98,7 +118,14 @@ const JobPostings = () => {
 
   // Handle input changes
   const handleChange = (e) => {
-    setCurrentJob({ ...currentJob, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    if (name === 'department') {
+      // Reset position when department changes
+      setCurrentJob({ ...currentJob, department: value, position: "" });
+    } else {
+      setCurrentJob({ ...currentJob, [name]: value });
+    }
   };
 
   // Add new job
@@ -109,6 +136,7 @@ const JobPostings = () => {
       description: "",
       requirements: "",
       department: "",
+      position: "",
       status: "Open",
     });
     setIsEditing(false);
@@ -173,6 +201,10 @@ const JobPostings = () => {
       showError('Department is required.');
       return false;
     }
+    if (!currentJob.position.trim()) {
+      showError('Position is required.');
+      return false;
+    }
     return true;
   };
 
@@ -213,6 +245,7 @@ const JobPostings = () => {
         description: "",
         requirements: "",
         department: "",
+        position: "",
         status: "Open",
       });
       setIsEditing(false);
@@ -234,6 +267,7 @@ const JobPostings = () => {
       description: "",
       requirements: "",
       department: "",
+      position: "",
       status: "Open",
     });
   };
@@ -241,6 +275,30 @@ const JobPostings = () => {
   // Toggle expand/collapse
   const toggleExpand = (id) => {
     setExpandedJob(expandedJob === id ? null : id);
+  };
+
+  // Handle updating existing job posting
+  const handleUpdateExisting = () => {
+    setShowDuplicateModal(false);
+    const existingJob = duplicateJobInfo.existing_job;
+    setCurrentJob({
+      id: existingJob.id,
+      title: existingJob.title,
+      description: currentJob.description,
+      requirements: currentJob.requirements,
+      department: existingJob.department,
+      position: existingJob.position,
+      status: "Open",
+    });
+    setIsEditing(true);
+    setDuplicateJobInfo(null);
+    showInfo('Editing the existing job posting. You can update the details as needed.');
+  };
+
+  // Handle closing duplicate modal
+  const handleCloseDuplicateModal = () => {
+    setShowDuplicateModal(false);
+    setDuplicateJobInfo(null);
   };
 
   return (
@@ -354,6 +412,21 @@ const JobPostings = () => {
                             <strong>Department:</strong> {job.department}
                           </Card.Text>
                         )}
+                        {job.position && (
+                          <Card.Text className="text-secondary small">
+                            <strong>Position:</strong> {job.position}
+                          </Card.Text>
+                        )}
+                        {job.salary_min && job.salary_max && (
+                          <Card.Text className="text-secondary small">
+                            <strong>Salary Range:</strong> ₱{Number(job.salary_min).toLocaleString()} – ₱{Number(job.salary_max).toLocaleString()}
+                            {job.salary_notes && (
+                              <div className="text-muted" style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>
+                                {job.salary_notes}
+                              </div>
+                            )}
+                          </Card.Text>
+                        )}
                       </div>
                     </Collapse>
 
@@ -435,17 +508,44 @@ const JobPostings = () => {
                 required
               />
             </Form.Group>
-            <Form.Group>
+            <Form.Group className="mb-3">
               <Form.Label className="fw-semibold">Department *</Form.Label>
-              <Form.Control
-                type="text"
+              <Form.Select
                 name="department"
                 value={currentJob.department}
                 onChange={handleChange}
-                placeholder="Enter department (e.g., IT, HR, Sales)"
                 className="rounded-3"
                 required
-              />
+              >
+                <option value="">Select Department</option>
+                <option value="HR Department">HR Department</option>
+                <option value="Production Department">Production Department</option>
+                <option value="Logistics Department">Logistics Department</option>
+                <option value="Accounting Department">Accounting Department</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group>
+              <Form.Label className="fw-semibold">Position *</Form.Label>
+              <Form.Select
+                name="position"
+                value={currentJob.position}
+                onChange={handleChange}
+                className="rounded-3"
+                required
+                disabled={!currentJob.department}
+              >
+                <option value="">Select Position</option>
+                {currentJob.department && departmentPositions[currentJob.department] && 
+                  departmentPositions[currentJob.department].map((position, index) => (
+                    <option key={index} value={position}>{position}</option>
+                  ))
+                }
+              </Form.Select>
+              {!currentJob.department && (
+                <Form.Text className="text-muted">
+                  Please select a department first to view available positions.
+                </Form.Text>
+              )}
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
@@ -476,7 +576,94 @@ const JobPostings = () => {
         </Form>
       </Modal>
 
+      {/* Duplicate Job Posting Detection Modal */}
+      <Modal show={showDuplicateModal} onHide={handleCloseDuplicateModal} centered size="lg">
+        <Modal.Header closeButton style={{
+          background: "linear-gradient(135deg, #dc3545, #c82333)",
+          color: "white",
+        }}>
+          <Modal.Title className="fw-bold">
+            <i className="bi bi-x-circle me-2"></i>
+            Duplicate Job Posting Not Allowed
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {duplicateJobInfo && (
+            <>
+              <div className="alert alert-danger border-0" style={{ backgroundColor: '#f8d7da' }}>
+                <h6 className="fw-bold text-danger mb-2">
+                  <i className="bi bi-x-circle me-2"></i>
+                  Cannot Create Duplicate Job Posting
+                </h6>
+                <p className="mb-0 text-danger">
+                  {duplicateJobInfo.message}
+                </p>
+              </div>
+              
+              <div className="row">
+                <div className="col-md-6">
+                  <div className="card border-primary">
+                    <div className="card-header bg-primary text-white">
+                      <h6 className="mb-0">Existing Job Posting</h6>
+                    </div>
+                    <div className="card-body">
+                      <p><strong>Title:</strong> {duplicateJobInfo.existing_job.title}</p>
+                      <p><strong>Department:</strong> {duplicateJobInfo.existing_job.department}</p>
+                      <p><strong>Position:</strong> {duplicateJobInfo.existing_job.position}</p>
+                      <p><strong>Salary Range:</strong> ₱{Number(duplicateJobInfo.existing_job.salary_range.min).toLocaleString()} - ₱{Number(duplicateJobInfo.existing_job.salary_range.max).toLocaleString()}</p>
+                      <p className="mb-0"><strong>Posted:</strong> {new Date(duplicateJobInfo.existing_job.created_at).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="card border-warning">
+                    <div className="card-header bg-warning text-dark">
+                      <h6 className="mb-0">Attempted New Posting</h6>
+                    </div>
+                    <div className="card-body">
+                      <p><strong>Title:</strong> {currentJob.title}</p>
+                      <p><strong>Department:</strong> {currentJob.department}</p>
+                      <p><strong>Position:</strong> {currentJob.position}</p>
+                      <p><strong>Description:</strong> {currentJob.description?.substring(0, 100)}...</p>
+                      <p className="mb-0"><strong>Requirements:</strong> {currentJob.requirements?.substring(0, 100)}...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-4 text-center">
+                <div className="alert alert-info border-0">
+                  <p className="mb-0">
+                    <strong>Suggestion:</strong> {duplicateJobInfo.suggestion}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <div className="d-flex gap-3 w-100">
+            <Button
+              variant="outline-secondary"
+              onClick={handleCloseDuplicateModal}
+              className="flex-fill"
+            >
+              <i className="bi bi-x-lg me-1"></i>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleUpdateExisting}
+              className="flex-fill"
+            >
+              <i className="bi bi-pencil-square me-1"></i>
+              Update Existing Post
+            </Button>
+          </div>
+        </Modal.Footer>
+      </Modal>
 
+      <ToastContainer position="top-right" />
     </div>
   );
 };

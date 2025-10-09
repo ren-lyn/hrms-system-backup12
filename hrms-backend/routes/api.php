@@ -26,9 +26,11 @@ Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(functio
     Route::put('/job-postings/{id}', [JobPostingController::class, 'update']);
     Route::delete('/job-postings/{id}', [JobPostingController::class, 'destroy']);
     Route::put('/job-postings/{id}/toggle', [JobPostingController::class, 'toggleStatus']);
+    Route::get('/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
     Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
 });
 Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
+Route::get('/public/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
 
 // Route::middleware(['auth:sanctum', 'role:HR Assistant'])->group(function () {
 //     Route::put('/employees/{id}', [EmployeeController::class, 'update']);
@@ -122,8 +124,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/applications', [ApplicationController::class, 'index']);
     Route::get('/applications/job/{jobId}', [ApplicationController::class, 'getByJobPosting']);
     Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
+    Route::post('/applications/{id}/schedule-interview', [ApplicationController::class, 'scheduleInterview']);
+    Route::post('/applications/{id}/send-offer', [ApplicationController::class, 'sendOffer']);
     Route::get('/applications/{id}/resume', [ApplicationController::class, 'downloadResume']);
     Route::get('/applications/stats', [ApplicationController::class, 'getStats']);
+    Route::get('/applications/status-updates/{since?}', [ApplicationController::class, 'getStatusUpdates']);
+    
+    // Applicant routes
+    Route::get('/my-applications', [ApplicationController::class, 'myApplications']);
+    Route::post('/applications/{id}/accept-offer', [ApplicationController::class, 'acceptOffer']);
+    Route::post('/applications/{id}/decline-offer', [ApplicationController::class, 'declineOffer']);
 });
 
 Route::get('/test', function () {

@@ -9,6 +9,8 @@ use App\Models\Applicant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ApplicationController extends Controller
 {
@@ -72,6 +74,28 @@ class ApplicationController extends Controller
             return response()->json(['message' => 'You have already applied for this job.'], 409);
         }
 
+        // Check if applicant has any existing applications to prevent applying to multiple positions
+        $anyExistingApplication = Application::where('applicant_id', $applicant->id)
+            ->whereIn('status', ['Applied', 'ShortListed', 'Interview', 'Offer Sent', 'Offer Accepted'])
+            ->with(['jobPosting'])
+            ->first();
+
+        if ($anyExistingApplication) {
+            return response()->json([
+                'message' => 'You already have an active application in progress.',
+                'details' => [
+                    'existing_application' => [
+                        'job_title' => $anyExistingApplication->jobPosting->title,
+                        'position' => $anyExistingApplication->jobPosting->position,
+                        'department' => $anyExistingApplication->jobPosting->department,
+                        'status' => $anyExistingApplication->status,
+                        'applied_at' => $anyExistingApplication->applied_at
+                    ]
+                ],
+                'suggestion' => 'Please wait for your current application to be processed before applying to other positions.'
+            ], 409);
+        }
+
         // Handle file upload
         $resumePath = $request->file('resume')->store('resumes', 'public');
 
@@ -96,14 +120,14 @@ class ApplicationController extends Controller
                 $hr->notify(new \App\Notifications\JobApplicationSubmitted($application));
             }
 
-            \Log::info('Job application submission notifications sent', [
+            Log::info('Job application submission notifications sent', [
                 'application_id' => $application->id,
                 'applicant_id' => $applicant->id,
                 'job_posting_id' => $request->job_posting_id,
                 'hr_staff_notified' => $hrStaff->count()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to send job application submission notifications', [
+            Log::error('Failed to send job application submission notifications', [
                 'application_id' => $application->id,
                 'error' => $e->getMessage()
             ]);
@@ -119,7 +143,7 @@ class ApplicationController extends Controller
     public function updateStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:Applied,Pending,Under Review,Interview,Hired,Rejected'
+            'status' => 'required|in:Applied,ShortListed,Interview,Offer Sent,Offer Accepted,Rejected'
         ]);
 
         $application = Application::findOrFail($id);
@@ -136,18 +160,18 @@ class ApplicationController extends Controller
                 $application->applicant->user->notify(new \App\Notifications\JobApplicationStatusChanged($application));
             }
 
-            \Log::info('Job application status change notification sent', [
+            Log::info('Job application status change notification sent', [
                 'application_id' => $application->id,
                 'applicant_id' => $application->applicant_id,
                 'new_status' => $request->status
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to send job application status change notification', [
+            Log::error('Failed to send job application status change notification', [
                 'application_id' => $application->id,
                 'error' => $e->getMessage()
             ]);
         }
-
+        
         return response()->json([
             'message' => 'Application status updated successfully.',
             'application' => $application->load(['jobPosting', 'applicant'])
@@ -171,19 +195,155 @@ class ApplicationController extends Controller
 );
     }
 
+    // Schedule interview for application
+    public function scheduleInterview(Request $request, $id)
+    {
+        $request->validate([
+            'date' => 'required|date|after:now',
+            'time' => 'required',
+            'type' => 'required|string',
+            'location' => 'nullable|string',
+            'notes' => 'nullable|string'
+        ]);
+
+        $application = Application::findOrFail($id);
+        
+        // Update application status to Interview if not already
+        if ($application->status !== 'Interview') {
+            $application->update(['status' => 'Interview']);
+        }
+
+        // Here you would typically save interview details to a separate interviews table
+        // For now, we'll just return success
+
+        return response()->json([
+            'message' => 'Interview scheduled successfully.',
+            'application' => $application->load(['jobPosting', 'applicant'])
+        ]);
+    }
+
+    // Send job offer to applicant
+    public function sendOffer(Request $request, $id)
+    {
+        $application = Application::findOrFail($id);
+        
+        // Update status to Offer Sent
+        $application->update(['status' => 'Offer Sent']);
+        
+        // Here you could send email notification to applicant
+        // Mail::to($application->applicant->email)->send(new JobOfferMail($application));
+        
+        return response()->json([
+            'message' => 'Job offer sent successfully.',
+            'application' => $application->load(['jobPosting', 'applicant'])
+        ]);
+    }
+    
+    // Accept job offer
+    public function acceptOffer(Request $request, $id)
+    {
+        try {
+            DB::beginTransaction();
+            
+            $application = Application::findOrFail($id);
+            
+            // Verify the application status is 'Offer Sent'
+            if ($application->status !== 'Offer Sent') {
+                return response()->json([
+                    'message' => 'Invalid application status for offer acceptance.'
+                ], 400);
+            }
+            
+            // Update status to Offer Accepted
+            $application->update(['status' => 'Offer Accepted']);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Job offer accepted successfully.',
+                'application' => $application->load(['jobPosting', 'applicant'])
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Failed to accept offer. Please try again.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    // Decline job offer
+    public function declineOffer(Request $request, $id)
+    {
+        $application = Application::findOrFail($id);
+        
+        // Verify the application status is 'Offer Sent'
+        if ($application->status !== 'Offer Sent') {
+            return response()->json([
+                'message' => 'Invalid application status for offer decline.'
+            ], 400);
+        }
+        
+        // Update status to Rejected
+        $application->update(['status' => 'Rejected']);
+        
+        return response()->json([
+            'message' => 'Job offer declined.',
+            'application' => $application->load(['jobPosting', 'applicant'])
+        ]);
+    }
+    
+    // Get applicant's own applications
+    public function myApplications(Request $request)
+    {
+        $user = $request->user();
+        
+        // Get applications for the current user (assuming they have an applicant profile)
+        $applications = Application::with(['jobPosting', 'applicant'])
+            ->whereHas('applicant', function($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })
+            ->latest()
+            ->get();
+        
+        return response()->json($applications);
+    }
+
     // Get application statistics for HR dashboard
     public function getStats()
     {
         $stats = [
             'total_applications' => Application::count(),
-            'pending_applications' => Application::where('status', 'Pending')->count(),
-            'under_review' => Application::where('status', 'Under Review')->count(),
-            'hired' => Application::where('status', 'Hired')->count(),
-            'accepted' => Application::where('status', 'Hired')->count(), // alias for frontend label
+            'applied' => Application::where('status', 'Applied')->count(),
+            'shortlisted' => Application::where('status', 'ShortListed')->count(),
+            'interview' => Application::where('status', 'Interview')->count(),
+            'offer_sent' => Application::where('status', 'Offer Sent')->count(),
+            'offer_accepted' => Application::where('status', 'Offer Accepted')->count(),
             'rejected' => Application::where('status', 'Rejected')->count(),
             'applications_this_month' => Application::whereMonth('applied_at', now()->month)->count(),
         ];
 
         return response()->json($stats);
+    }
+    
+    // Get application status updates for real-time sync
+    public function getStatusUpdates(Request $request, $since = null)
+    {
+        $query = Application::with(['jobPosting', 'applicant']);
+        
+        // If timestamp provided, get updates since then
+        if ($since) {
+            $query->where('updated_at', '>', $since);
+        } else {
+            // Default to updates in last hour
+            $query->where('updated_at', '>', now()->subHour());
+        }
+        
+        $applications = $query->latest('updated_at')->get();
+        
+        return response()->json([
+            'applications' => $applications,
+            'timestamp' => now()->toISOString()
+        ]);
     }
 }

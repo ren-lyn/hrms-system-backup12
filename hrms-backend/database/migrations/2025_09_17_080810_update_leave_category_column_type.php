@@ -12,10 +12,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('leave_requests', function (Blueprint $table) {
-            // Drop the enum constraint and change to varchar
+        // SQLite doesn't support MODIFY COLUMN, so we'll recreate the table
+        if (DB::getDriverName() === 'sqlite') {
+            // For SQLite, we need to recreate the table
+            Schema::table('leave_requests', function (Blueprint $table) {
+                $table->string('leave_category')->change();
+            });
+        } else {
+            // For MySQL/other databases
             DB::statement('ALTER TABLE leave_requests MODIFY COLUMN leave_category VARCHAR(255)');
-        });
+        }
     }
 
     /**
@@ -23,9 +29,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('leave_requests', function (Blueprint $table) {
-            // Revert back to enum (only if you want to rollback)
+        if (DB::getDriverName() === 'sqlite') {
+            // For SQLite, revert back to string (can't easily revert to enum)
+            Schema::table('leave_requests', function (Blueprint $table) {
+                $table->string('leave_category')->change();
+            });
+        } else {
+            // For MySQL/other databases
             DB::statement('ALTER TABLE leave_requests MODIFY COLUMN leave_category ENUM(\'Service Incentive Leave (SIL)\', \'Emergency Leave (EL)\')');
-        });
+        }
     }
 };

@@ -28,7 +28,12 @@ return new class extends Migration
             }
 
             // Alter column to be nullable without requiring DBAL
-            DB::statement('ALTER TABLE evaluations MODIFY evaluation_form_id BIGINT UNSIGNED NULL');
+            if (DB::getDriverName() === 'sqlite') {
+                // For SQLite, we can't modify columns easily, so we'll skip the MODIFY
+                // The column will remain as is
+            } else {
+                DB::statement('ALTER TABLE evaluations MODIFY evaluation_form_id BIGINT UNSIGNED NULL');
+            }
 
             // Recreate FK with SET NULL on delete
             Schema::table('evaluations', function (Blueprint $table) {
@@ -49,7 +54,11 @@ return new class extends Migration
             }
 
             // Revert to NOT NULL and cascade on delete
-            DB::statement('ALTER TABLE evaluations MODIFY evaluation_form_id BIGINT UNSIGNED NOT NULL');
+            if (DB::getDriverName() === 'sqlite') {
+                // For SQLite, we can't modify columns easily, so we'll skip the MODIFY
+            } else {
+                DB::statement('ALTER TABLE evaluations MODIFY evaluation_form_id BIGINT UNSIGNED NOT NULL');
+            }
             Schema::table('evaluations', function (Blueprint $table) {
                 $table->foreign('evaluation_form_id')->references('id')->on('evaluation_forms')->onDelete('cascade');
             });

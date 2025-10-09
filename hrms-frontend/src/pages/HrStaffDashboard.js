@@ -18,7 +18,6 @@ import {
   faChartBar,
   faExclamationTriangle,
   faCalendarAlt,
-  faUserPlus,
   faClipboardList,
   faSignOutAlt,
   faFileAlt,
@@ -185,10 +184,6 @@ const HrStaffDashboard = () => {
         return "Leave";
       case "calendar":
         return "My Calendar";
-      case "recruitment":
-        return "Recruitment";
-      case "onboarding":
-        return "Onboarding";
       case "profile":
         return "Profile";
       default:
@@ -424,22 +419,6 @@ const HrStaffDashboard = () => {
                 className={`hrms-unified-nav-link ${activeView === 'calendar' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> My Calendar
-              </button>
-            </li>
-            <li>
-              <button
-                onClick={() => setActiveView("recruitment")}
-                className={`hrms-unified-nav-link ${activeView === 'recruitment' ? 'hrms-unified-active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Recruitment
-              </button>
-            </li>
-            <li>
-              <button
-                onClick={() => setActiveView("onboarding")}
-                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faClipboardList} className="me-2" /> Onboarding
               </button>
             </li>
           </ul>

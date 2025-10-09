@@ -12,8 +12,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Use raw SQL to modify the enum column
-        DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Pending', 'Under Review', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+        if (DB::getDriverName() === 'sqlite') {
+            // For SQLite, we can't modify enum columns easily, so we'll skip this migration
+            // The status column will remain as string type
+            Schema::table('applications', function (Blueprint $table) {
+                $table->string('status')->default('Applied')->change();
+            });
+        } else {
+            // For MySQL/other databases
+            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Pending', 'Under Review', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+        }
     }
 
     /**
@@ -21,7 +29,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Revert back to original enum values
-        DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+        if (DB::getDriverName() === 'sqlite') {
+            // For SQLite, revert to string
+            Schema::table('applications', function (Blueprint $table) {
+                $table->string('status')->default('Applied')->change();
+            });
+        } else {
+            // For MySQL/other databases
+            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+        }
     }
 };
