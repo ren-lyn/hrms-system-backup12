@@ -14,12 +14,14 @@ import {
   faChartLine,
   faRocket,
   faDollarSign,
-  faShieldAlt
+  faShieldAlt,
+  faUserTie
 } from '@fortawesome/free-solid-svg-icons';
 import OrientationScheduling from './OrientationScheduling';
 import StartingDateManagement from './StartingDateManagement';
 import SalarySetup from './SalarySetup';
 import BenefitsEnrollment from './BenefitsEnrollment';
+import EmployeeProfileCreation from './EmployeeProfileCreation';
 
 const OnboardingDashboard = () => {
   const [onboardingRecords, setOnboardingRecords] = useState([]);
@@ -178,6 +180,13 @@ const OnboardingDashboard = () => {
                 >
                   <FontAwesomeIcon icon={faShieldAlt} className="me-2" />
                   Benefits Enrollment
+                </Button>
+                <Button
+                  variant={activeTab === 'employee-profile' ? 'primary' : 'outline-primary'}
+                  onClick={() => setActiveTab('employee-profile')}
+                >
+                  <FontAwesomeIcon icon={faUserTie} className="me-2" />
+                  Employee Profile
                 </Button>
               </div>
               {activeTab === 'overview' && (
@@ -362,6 +371,10 @@ const OnboardingDashboard = () => {
 
       {activeTab === 'benefits' && (
         <BenefitsEnrollment />
+      )}
+
+      {activeTab === 'employee-profile' && (
+        <EmployeeProfileCreation />
       )}
     </div>
   );
