@@ -24,6 +24,50 @@ class EmployeeController extends Controller
         return response()->json($employees);
     }
 
+    // GET /employees/missing-profiles
+    public function missingProfiles()
+    {
+        $users = User::where('role_id', '!=', 5)
+            ->doesntHave('employeeProfile')
+            ->get(['id', 'first_name', 'last_name', 'email', 'role_id']);
+
+        return response()->json([
+            'count' => $users->count(),
+            'users' => $users,
+        ]);
+    }
+
+    // POST /employees/fix-missing-profiles
+    public function fixMissingProfiles()
+    {
+        $missingUsers = User::where('role_id', '!=', 5)
+            ->doesntHave('employeeProfile')
+            ->get();
+
+        $created = [];
+        foreach ($missingUsers as $user) {
+            $profile = $user->employeeProfile()->create([
+                'first_name' => $user->first_name ?? 'Unknown',
+                'last_name' => $user->last_name ?? 'User',
+                'email' => $user->email,
+                'position' => 'Staff',
+                'department' => null,
+                'employment_status' => 'Full Time',
+                'hire_date' => now()->toDateString(),
+            ]);
+            $created[] = [
+                'user_id' => $user->id,
+                'profile_id' => $profile->id,
+                'email' => $user->email,
+            ];
+        }
+
+        return response()->json([
+            'created_count' => count($created),
+            'created' => $created,
+        ]);
+    }
+
     // POST /employees
     // POST /employees
 public function store(Request $request)

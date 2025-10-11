@@ -10,7 +10,7 @@ class DisciplinaryActionSeeder extends Seeder
 {
     public function run()
     {
-        EmployeeProfile::inRandomOrder()->take(5)->each(function ($employee) {
+        EmployeeProfile::inRandomOrder()->take(10)->each(function ($employee) {
             DisciplinaryAction::factory()->create([
                 'employee_id' => $employee->id,
             ]);

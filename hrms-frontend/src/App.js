@@ -23,7 +23,8 @@ import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagemen
 import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
 import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Calendar
 import DisciplinaryManagement from './components/HrAssistant/DisciplinaryManagement'; // ✅ New Disciplinary Management
-import JobApplications from './components/JobApplications'; // ✅ Professional Job Applications
+import JobApplications from './components/JobApplications'; // ✅ Professional Job 
+import AttendanceDashboard from './components/HrAssistant/AttendanceDashboard';
 
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -80,7 +81,8 @@ function App() {
           <Route path="job-postings" element={<JobPostings />} />
           <Route path="applications" element={<ApplicationsDashboard />} />
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
-          <Route path="profile" element={<HrAssistantProfile />} /> 
+          <Route path="profile" element={<HrAssistantProfile />} />
+          <Route path="attendance" element={<AttendanceDashboard />} /> 
 
         </Route>
 

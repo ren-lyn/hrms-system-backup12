@@ -18,7 +18,7 @@ class JobPostingSeeder extends Seeder
             $q->where('name', 'HR Staff');
         })->inRandomOrder()->first();
 
-        // Create the exact job postings from the image
+        // Create sample job postings
         $jobPostings = [
             [
                 'title' => 'SUPPLY CHAIN SUPERVISOR',
@@ -59,7 +59,47 @@ class JobPostingSeeder extends Seeder
                 'department' => 'Mindanao Branch - Davao City',
                 'status' => 'Open',
                 'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
-            ]
+            ],
+            [
+                'title' => 'LOGISTICS COORDINATOR',
+                'description' => 'Coordinate routing, dispatch, and shipment tracking to ensure on-time deliveries.',
+                'requirements' => 'Bachelor\'s degree preferred. 2+ years in logistics or supply chain. Proficient with routing and WMS tools.',
+                'department' => 'Logistics Department',
+                'status' => 'Open',
+                'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
+            ],
+            [
+                'title' => 'PLANT SUPERVISOR',
+                'description' => 'Oversee daily plant operations, safety compliance, and production targets.',
+                'requirements' => 'Engineering or related field. 3+ years supervisory experience in manufacturing.',
+                'department' => 'Production Department',
+                'status' => 'Open',
+                'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
+            ],
+            [
+                'title' => 'HR RECRUITER',
+                'description' => 'Manage end-to-end recruitment including sourcing, screening, and onboarding.',
+                'requirements' => 'Bachelor in Psychology/HR. Strong interviewing skills. Familiar with ATS.',
+                'department' => 'HR Department',
+                'status' => 'Open',
+                'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
+            ],
+            [
+                'title' => 'DRIVER',
+                'description' => 'Safely transport materials and finished goods; maintain vehicle logs.',
+                'requirements' => 'Valid professional driver\'s license. Knowledge of basic vehicle maintenance.',
+                'department' => 'Logistics Department',
+                'status' => 'Open',
+                'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
+            ],
+            [
+                'title' => 'ACCOUNTING ASSISTANT',
+                'description' => 'Assist with AP/AR, reconciliations, and month-end close activities.',
+                'requirements' => 'BS in Accountancy/Finance. Knowledge of bookkeeping and Excel.',
+                'department' => 'Accounting Department',
+                'status' => 'Open',
+                'hr_staff_id' => $hrStaff ? $hrStaff->id : 1,
+            ],
         ];
 
         foreach ($jobPostings as $jobData) {

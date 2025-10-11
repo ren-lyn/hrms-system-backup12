@@ -84,7 +84,7 @@ const useUserProfile = () => {
       console.error('Error fetching user profile:', err);
       setError(err.message || 'Failed to load user profile');
       
-      // Fallback to localStorage if available
+        // Fallback to localStorage if available
       try {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
@@ -96,8 +96,9 @@ const useUserProfile = () => {
             displayPosition = user.position;
           } else if (user.job_title) {
             displayPosition = user.job_title;
-          } else if (user.role) {
-            displayPosition = user.role;
+            } else if (user.role) {
+              // Ensure role is rendered as a string even if it's an object
+              displayPosition = typeof user.role === 'string' ? user.role : (user.role?.name || 'Employee');
           }
           
           setUserProfile({
@@ -106,10 +107,10 @@ const useUserProfile = () => {
             firstName: user.first_name || '',
             lastName: user.last_name || '',
             email: user.email || '',
-            role: displayPosition, // Use the prioritized position as the role display
+              role: displayPosition, // Use the prioritized position as the role display
             department: user.department || '',
             position: displayPosition,
-            rawRole: user.role || 'Employee' // Keep the actual role for reference
+              rawRole: (typeof user.role === 'string' ? user.role : (user.role?.name || 'Employee')) // Keep the actual role for reference
           });
         }
       } catch (storageError) {

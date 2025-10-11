@@ -18,6 +18,9 @@ use App\Http\Controllers\Api\NotificationStreamController;
 use App\Http\Controllers\ManagerDisciplinaryController;
 use App\Http\Controllers\HRDisciplinaryController;
 use App\Http\Controllers\EmployeeDisciplinaryController;
+use App\Http\Controllers\Api\holidayController;
+use App\Http\Controllers\Api\PayrollController;
+use App\Http\Controllers\Api\AttendanceController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -44,6 +47,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 
 Route::get('/employees', [EmployeeController::class, 'index']);
+Route::get('/employees/missing-profiles', [EmployeeController::class, 'missingProfiles']);
+Route::post('/employees/fix-missing-profiles', [EmployeeController::class, 'fixMissingProfiles']);
 Route::post('/employees', [EmployeeController::class, 'store']);
 
 Route::post('/login', [AuthController::class, 'login'])->name('login');
@@ -270,6 +275,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}/complete', [HrCalendarController::class, 'complete']); // Complete event
     });
 
+        // Holiday Management
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('holidays')->group(function () {
+		Route::get('/', [HolidayController::class, 'index']);
+		Route::post('/', [HolidayController::class, 'store']);
+		Route::put('/{id}', [HolidayController::class, 'update']);
+		Route::delete('/{id}', [HolidayController::class, 'destroy']);
+    });
+
+    // Payroll attendance summary feed
+    Route::middleware(['role:HR Assistant,HR Staff'])->get('/payroll/attendance-summary', [PayrollController::class, 'attendanceSummary']);
+
     // Employee Calendar Management
     Route::prefix('employee-calendar')->group(function () {
         Route::get('/', [HrCalendarController::class, 'employeeCalendar']); // Get employee's calendar
@@ -350,5 +366,29 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/dashboard/stats', [EmployeeDisciplinaryController::class, 'getDashboardStats']);
     });
     
+    // Attendance Management Routes
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('attendance')->group(function () {
+        Route::get('/dashboard', [AttendanceController::class, 'dashboard']); // Dashboard data
+        Route::get('/export', [AttendanceController::class, 'export']); // Export CSV report
+        Route::get('/', [AttendanceController::class, 'index']); // List attendance with filters
+        Route::post('/', [AttendanceController::class, 'store']); // Create attendance record
+        Route::put('/{id}', [AttendanceController::class, 'update']); // Update attendance record
+        Route::delete('/{id}', [AttendanceController::class, 'destroy']); // Delete attendance record
+        
+        // Import routes
+        Route::post('/import/validate', [AttendanceController::class, 'validateImport']); // Validate file and detect period
+        Route::post('/import', [AttendanceController::class, 'import']); // Import from Excel
+        Route::get('/import/template', [AttendanceController::class, 'getImportTemplate']); // Get template info
+        Route::get('/import/history', [AttendanceController::class, 'importHistory']); // Import history
+        Route::get('/import/{id}', [AttendanceController::class, 'importDetails']); // Import details
+        Route::delete('/import/{id}', [AttendanceController::class, 'deleteImport']); // Delete import record
+    });
 });
+
+
+    
+    
+
+
+
 

@@ -49,7 +49,7 @@ const Sidebar = () => {
           <FaMoneyCheckAlt /> <span>Payroll</span>
         </NavLink>
         <NavLink
-          to="/hr-assistant/attendance"
+          to="attendance"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >
           <FaCalendarCheck /> <span>Attendance</span>

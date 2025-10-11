@@ -14,7 +14,7 @@ class CreateAttendancesTable extends Migration
             $table->date('date');
             $table->time('clock_in')->nullable();
             $table->time('clock_out')->nullable();
-            $table->enum('status', ['Present', 'Absent', 'Late', 'On Leave'])->default('Absent');
+            $table->enum('status', ['Present', 'Absent', 'Late', 'On Leave', 'Holiday (No Work)', 'Holiday (Worked)'])->default('Absent');
             $table->timestamps();
 
             $table->unique(['employee_id', 'date']); // Ensure one record per employee per day
