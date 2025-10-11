@@ -1,7 +1,8 @@
 import React from 'react';
+import { Outlet } from 'react-router-dom';
 
 const ApplicantDashboard = () => {
-  return <h2>Welcome to the Applicant Dashboard</h2>;
+  return <Outlet />;
 };
 
 export default ApplicantDashboard;

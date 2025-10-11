@@ -97,6 +97,12 @@ const Sidebar = () => {
           <FaClipboardList /> <span>Job Applications</span>
         </NavLink>
         <NavLink
+          to="onboarding"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaUserPlus /> <span>Onboarding</span>
+        </NavLink>
+        <NavLink
           to="/hr-assistant/reports"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >

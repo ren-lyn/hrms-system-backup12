@@ -36,6 +36,8 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import StandaloneAssistantDashboard from './components/HrAssistant/Dashboard/StandaloneAssistantDashboard';
 import HrAssistantProfile from './components/HrAssistant/HrAssistantProfile';
+import OnboardingDashboard from './components/HrAssistant/OnboardingDashboard';
+import PersonalOnboarding from './components/PersonalOnboarding';
 
 function App() {
   useEffect(() => {
@@ -80,6 +82,7 @@ function App() {
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
           <Route path="job-postings" element={<JobPostings />} />
           <Route path="applications" element={<ApplicationsDashboard />} />
+          <Route path="onboarding" element={<OnboardingDashboard />} />
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
           <Route path="profile" element={<HrAssistantProfile />} />
           <Route path="attendance" element={<AttendanceDashboard />} /> 
@@ -116,6 +119,7 @@ function App() {
           }
         >
           <Route index element={<div>Welcome Applicant</div>} />
+          <Route path="onboarding" element={<PersonalOnboarding />} />
         </Route>
 
         {/* ✅ Employee with nested routes (so sidebar layout is preserved) */}

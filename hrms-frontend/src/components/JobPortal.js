@@ -24,6 +24,7 @@ export default function JobPortal() {
   const [showDuplicateApplicationModal, setShowDuplicateApplicationModal] = useState(false);
   const [duplicateApplicationInfo, setDuplicateApplicationInfo] = useState(null);
   const [resumeError, setResumeError] = useState('');
+  const [hasOnboardingAccess, setHasOnboardingAccess] = useState(false);
 
   // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
@@ -34,11 +35,63 @@ export default function JobPortal() {
       setUserRole(role);
       if (role === 'Applicant') {
         fetchUserApplications();
+        checkOnboardingAccess();
       }
     }
     fetchJobs();
     
   }, []);
+
+  // Refresh onboarding access when applications change
+  useEffect(() => {
+    if (isLoggedIn && userRole === 'Applicant') {
+      checkOnboardingAccess();
+    }
+  }, [userApplications, isLoggedIn, userRole]);
+
+  // Check if applicant has onboarding access
+  const checkOnboardingAccess = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const userId = localStorage.getItem('userId');
+      
+      // For registered applicants, show onboarding access
+      // This allows them to access onboarding even if they haven't been hired yet
+      setHasOnboardingAccess(true);
+      
+      // Optional: Check if user has any applications with "Offer Accepted" or "Hired" status
+      // This can be used for additional features or different button states
+      try {
+        const applicationsResponse = await axios.get(`http://localhost:8000/api/my-applications`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const hasAcceptedApplication = applicationsResponse.data.some(app => 
+          app.status === 'Offer Accepted' || app.status === 'Hired'
+        );
+        
+        // Check if user has an onboarding record
+        try {
+          const onboardingResponse = await axios.get(`http://localhost:8000/api/onboarding-records/user/${userId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          // User has onboarding record - they can access onboarding
+          setHasOnboardingAccess(true);
+        } catch (error) {
+          // No onboarding record found, but user is registered
+          // Still show the button as they might be eligible
+          setHasOnboardingAccess(true);
+        }
+      } catch (error) {
+        // If applications API fails, still show onboarding for registered users
+        setHasOnboardingAccess(true);
+      }
+    } catch (error) {
+      console.error('Error checking onboarding access:', error);
+      // Default to showing onboarding for registered applicants
+      setHasOnboardingAccess(true);
+    }
+  };
 
   // Fetch job postings from backend
   const fetchJobs = async () => {
@@ -103,8 +156,14 @@ export default function JobPortal() {
     localStorage.removeItem('userId');
     setIsLoggedIn(false);
     setUserRole(null);
+    setHasOnboardingAccess(false);
     // Optionally redirect to home or show a message
     window.location.reload(); // Refresh the page to reset any cached data
+  };
+
+  const handleOnboardingClick = () => {
+    // Navigate to onboarding page
+    navigate('/dashboard/applicant/onboarding');
   };
 
   const handleApplyClick = (job) => {
@@ -366,15 +425,15 @@ export default function JobPortal() {
               >
                 Browse Jobs
               </button>
-              {isLoggedIn && userRole === 'Applicant' && (
+              {isLoggedIn && userRole === 'Applicant' && hasOnboardingAccess && (
                 <button 
-                  onClick={() => navigate('/dashboard/applicant')}
+                  onClick={handleOnboardingClick}
                   className="btn nav-link text-white px-3 py-2 rounded border-0"
                   style={{ transition: 'background-color 0.3s' }}
                   onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
                   onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 >
-                  <i className="bi bi-person-check me-1"></i>My Applications
+                  <i className="bi bi-person-check me-1"></i>My Onboarding
                 </button>
               )}
               <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
@@ -522,6 +581,35 @@ export default function JobPortal() {
                 >
                   Browse Jobs
                 </button>
+                {isLoggedIn && userRole === 'Applicant' && hasOnboardingAccess && (
+                  <button 
+                    onClick={() => {
+                      handleOnboardingClick();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="btn text-white text-start p-3 rounded border-0 d-flex align-items-center"
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      border: '2px solid transparent',
+                      transition: 'all 0.3s ease',
+                      minHeight: '50px',
+                      fontSize: '1.1rem',
+                      fontWeight: '500'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                      e.target.style.borderColor = 'rgba(255,255,255,0.5)';
+                      e.target.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                      e.target.style.borderColor = 'transparent';
+                      e.target.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    <i className="bi bi-person-check me-2"></i>My Onboarding
+                  </button>
+                )}
                 <hr style={{ borderColor: 'rgba(255,255,255,0.3)', margin: '10px 0' }} />
                 {isLoggedIn ? (
                   <div className="d-flex flex-column gap-2">

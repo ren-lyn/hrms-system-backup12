@@ -24,6 +24,7 @@ const JobApplications = () => {
   const [activeTab, setActiveTab] = useState('browse'); // browse, my-applications
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   
   // Toast helpers
   const showSuccess = (message) => toast.success(message);
@@ -33,8 +34,8 @@ const JobApplications = () => {
   useEffect(() => {
     checkAuthStatus();
     fetchJobs();
-    if (isLoggedIn && userRole === 'Applicant') {
-      fetchMyApplications();
+    if (isLoggedIn && (userRole === 'Applicant' || userRole === 'HR Staff' || userRole === 'HR Assistant')) {
+      fetchApplications();
     }
   }, [isLoggedIn, userRole]);
 
@@ -44,6 +45,7 @@ const JobApplications = () => {
     if (token && role) {
       setIsLoggedIn(true);
       setUserRole(role);
+      console.log('User logged in with role:', role);
     }
   };
 
@@ -105,7 +107,7 @@ const JobApplications = () => {
     }
   };
 
-  const fetchMyApplications = async () => {
+  const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get('http://localhost:8000/api/my-applications', {
@@ -136,8 +138,79 @@ const JobApplications = () => {
           status: 'Interview',
           applied_at: new Date(Date.now() - 259200000).toISOString(),
           progress_percentage: 60
+        },
+        {
+          id: 3,
+          job_posting: {
+            title: 'HR Specialist',
+            department: 'Human Resources'
+          },
+          status: 'ShortListed',
+          applied_at: new Date(Date.now() - 172800000).toISOString(),
+          progress_percentage: 40
+        },
+        {
+          id: 4,
+          job_posting: {
+            title: 'Financial Analyst',
+            department: 'Finance'
+          },
+          status: 'Offered',
+          applied_at: new Date(Date.now() - 345600000).toISOString(),
+          progress_percentage: 80
+        },
+        {
+          id: 5,
+          job_posting: {
+            title: 'Sales Representative',
+            department: 'Sales'
+          },
+          status: 'Offered Accepted',
+          applied_at: new Date(Date.now() - 432000000).toISOString(),
+          progress_percentage: 90
+        },
+        {
+          id: 6,
+          job_posting: {
+            title: 'Customer Support',
+            department: 'Customer Service'
+          },
+          status: 'Onboarding',
+          applied_at: new Date(Date.now() - 518400000).toISOString(),
+          progress_percentage: 95
+        },
+        {
+          id: 7,
+          job_posting: {
+            title: 'Data Analyst',
+            department: 'IT Department'
+          },
+          status: 'Hired',
+          applied_at: new Date(Date.now() - 604800000).toISOString(),
+          progress_percentage: 100
+        },
+        {
+          id: 8,
+          job_posting: {
+            title: 'Graphic Designer',
+            department: 'Marketing'
+          },
+          status: 'Rejected',
+          applied_at: new Date(Date.now() - 691200000).toISOString(),
+          progress_percentage: 0
+        },
+        {
+          id: 9,
+          job_posting: {
+            title: 'Project Manager',
+            department: 'Operations'
+          },
+          status: 'Pending',
+          applied_at: new Date(Date.now() - 777600000).toISOString(),
+          progress_percentage: 10
         }
       ]);
+      console.log('Mock applications loaded:', myApplications.length);
     }
   };
 
@@ -217,7 +290,7 @@ const JobApplications = () => {
       resetApplicationForm();
       
       // Refresh applications list
-      fetchMyApplications();
+      fetchApplications();
 
     } catch (error) {
       console.error('Error submitting application:', error);
@@ -266,6 +339,22 @@ const JobApplications = () => {
     return departments.sort();
   };
 
+  const getApplicationStats = () => {
+    const stats = {
+      total: myApplications.length,
+      pending: myApplications.filter(app => ['Applied', 'Pending'].includes(app.status)).length,
+      shortlisted: myApplications.filter(app => app.status === 'ShortListed').length,
+      interview: myApplications.filter(app => app.status === 'Interview').length,
+      offered: myApplications.filter(app => app.status === 'Offered').length,
+      offeredAccepted: myApplications.filter(app => app.status === 'Offered Accepted').length,
+      onboarding: myApplications.filter(app => app.status === 'Onboarding').length,
+      hired: myApplications.filter(app => app.status === 'Hired').length,
+      rejected: myApplications.filter(app => app.status === 'Rejected').length
+    };
+    console.log('Application stats:', stats);
+    return stats;
+  };
+
   const filteredJobs = jobs.filter(job => {
     const matchesSearch = 
       job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -276,6 +365,14 @@ const JobApplications = () => {
     
     return matchesSearch && matchesDepartment && job.status === 'Open';
   });
+
+  const filteredApplications = myApplications.filter(application => {
+    const matchesStatus = statusFilter === 'all' || application.status === statusFilter;
+    return matchesStatus;
+  });
+
+  // Debug logging
+  console.log('JobApplications render - isLoggedIn:', isLoggedIn, 'userRole:', userRole, 'activeTab:', activeTab, 'myApplications.length:', myApplications.length);
 
   if (loading) {
     return (
@@ -323,18 +420,98 @@ const JobApplications = () => {
               <i className="bi bi-search me-2"></i>
               Browse Jobs ({jobs.filter(j => j.status === 'Open').length})
             </Button>
-            {isLoggedIn && userRole === 'Applicant' && (
+            {isLoggedIn && (userRole === 'Applicant' || userRole === 'HR Staff' || userRole === 'HR Assistant') && (
               <Button
                 variant={activeTab === 'my-applications' ? 'primary' : 'outline-primary'}
                 onClick={() => setActiveTab('my-applications')}
               >
                 <i className="bi bi-person-check me-2"></i>
-                My Applications ({myApplications.length})
+                {userRole === 'Applicant' ? 'My Applications' : 'All Applications'} ({myApplications.length})
               </Button>
             )}
           </div>
         </Col>
       </Row>
+
+      {/* Application Statistics Cards - Only for HR Staff and HR Assistant */}
+      {isLoggedIn && (userRole === 'HR Staff' || userRole === 'HR Assistant') && activeTab === 'my-applications' && (
+        <Row className="mb-4">
+          <Col>
+            <Card className="border-0 shadow-sm">
+              <Card.Header className="bg-gradient text-white">
+                <h5 className="mb-0 fw-bold">
+                  <i className="bi bi-bar-chart me-2"></i>
+                  Application Statistics
+                </h5>
+              </Card.Header>
+              <Card.Body>
+                <Row className="g-3">
+                  {(() => {
+                    const stats = getApplicationStats();
+                    return [
+                      { label: 'Total Applicants', value: stats.total, color: 'primary', icon: 'bi-people' },
+                      { label: 'Pending', value: stats.pending, color: 'warning', icon: 'bi-clock' },
+                      { label: 'Shortlisted', value: stats.shortlisted, color: 'info', icon: 'bi-star' },
+                      { label: 'Interview', value: stats.interview, color: 'secondary', icon: 'bi-person-video3' },
+                      { label: 'Offered', value: stats.offered, color: 'success', icon: 'bi-gift' },
+                      { label: 'Offer Accepted', value: stats.offeredAccepted, color: 'success', icon: 'bi-check-circle' },
+                      { label: 'Onboarding', value: stats.onboarding, color: 'dark', icon: 'bi-person-workspace' },
+                      { label: 'Hired', value: stats.hired, color: 'success', icon: 'bi-person-check' },
+                      { label: 'Rejected', value: stats.rejected, color: 'danger', icon: 'bi-x-circle' }
+                    ].map((stat, index) => (
+                      <Col key={index} className="col">
+                        <div 
+                          className={`card border-0 shadow-sm h-100 text-center p-3 stats-card ${stat.color === 'primary' ? 'stats-card-featured' : 'stats-card'}`}
+                          style={{ 
+                            cursor: 'pointer',
+                            backgroundColor: stat.color === 'primary' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'white',
+                            color: stat.color === 'primary' ? 'white' : 'inherit'
+                          }}
+                          onClick={() => {
+                            const statusMap = {
+                              'Total Applicants': 'all',
+                              'Pending': 'Applied',
+                              'Shortlisted': 'ShortListed',
+                              'Interview': 'Interview',
+                              'Offered': 'Offered',
+                              'Offer Accepted': 'Offered Accepted',
+                              'Onboarding': 'Onboarding',
+                              'Hired': 'Hired',
+                              'Rejected': 'Rejected'
+                            };
+                            setStatusFilter(statusMap[stat.label] || 'all');
+                          }}
+                        >
+                          <div className={`stats-icon-wrapper ${stat.color === 'primary' ? 'stats-icon-wrapper-featured' : 'stats-icon-wrapper-sm'}`} 
+                               style={{ 
+                                 width: stat.color === 'primary' ? '50px' : '40px', 
+                                 height: stat.color === 'primary' ? '50px' : '40px',
+                                 backgroundColor: stat.color === 'primary' ? 'rgba(255,255,255,0.2)' : `var(--bs-${stat.color})`,
+                                 borderRadius: '50%',
+                                 margin: '0 auto 10px',
+                                 display: 'flex',
+                                 alignItems: 'center',
+                                 justifyContent: 'center'
+                               }}>
+                            <i className={`${stat.icon} ${stat.color === 'primary' ? 'text-white' : `text-white`}`} 
+                               style={{ fontSize: stat.color === 'primary' ? '1.5rem' : '1.2rem' }}></i>
+                          </div>
+                          <h6 className={`mb-1 ${stat.color === 'primary' ? 'text-white' : ''}`} style={{ fontSize: '1rem' }}>
+                            {stat.value}
+                          </h6>
+                          <small className={`${stat.color === 'primary' ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.75rem' }}>
+                            {stat.label}
+                          </small>
+                        </div>
+                      </Col>
+                    ));
+                  })()}
+                </Row>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Browse Jobs Tab */}
       {activeTab === 'browse' && (
@@ -474,28 +651,69 @@ const JobApplications = () => {
       )}
 
       {/* My Applications Tab */}
-      {activeTab === 'my-applications' && isLoggedIn && userRole === 'Applicant' && (
+      {activeTab === 'my-applications' && isLoggedIn && (userRole === 'Applicant' || userRole === 'HR Staff' || userRole === 'HR Assistant') && (
         <div>
+          {/* Status Filter - Only for HR Staff and HR Assistant */}
+          {(userRole === 'HR Staff' || userRole === 'HR Assistant') && (
+            <Card className="border-0 shadow-sm mb-4">
+              <Card.Body>
+                <Row className="align-items-center">
+                  <Col md={6}>
+                    <Form.Group>
+                      <Form.Label className="small fw-bold text-muted">Filter by Status</Form.Label>
+                      <Form.Select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="Applied">Applied</option>
+                        <option value="Pending">Pending</option>
+                        <option value="ShortListed">Shortlisted</option>
+                        <option value="Interview">Interview</option>
+                        <option value="Offered">Offered</option>
+                        <option value="Offered Accepted">Offered Accepted</option>
+                        <option value="Onboarding">Onboarding</option>
+                        <option value="Hired">Hired</option>
+                        <option value="Rejected">Rejected</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6} className="text-end">
+                    <small className="text-muted">
+                      Showing {filteredApplications.length} of {myApplications.length} applications
+                    </small>
+                  </Col>
+                </Row>
+              </Card.Body>
+            </Card>
+          )}
+
           <Card className="border-0 shadow-sm">
             <Card.Header className="bg-light">
               <h5 className="mb-0 fw-bold">
                 <i className="bi bi-list-check me-2"></i>
-                My Applications
+                {userRole === 'Applicant' ? 'My Applications' : 'All Applications'}
               </h5>
             </Card.Header>
             <Card.Body>
-              {myApplications.length === 0 ? (
+              {(userRole === 'Applicant' ? myApplications : filteredApplications).length === 0 ? (
                 <div className="text-center py-5">
                   <i className="bi bi-inbox display-4 text-secondary mb-3"></i>
-                  <h5 className="text-muted">No applications yet</h5>
-                  <p className="text-muted">Start by browsing and applying for jobs</p>
+                  <h5 className="text-muted">
+                    {userRole === 'Applicant' ? 'No applications yet' : 'No applications found'}
+                  </h5>
+                  <p className="text-muted">
+                    {userRole === 'Applicant' ? 'Start by browsing and applying for jobs' : 'Try adjusting your filter criteria'}
+                  </p>
+                  {userRole === 'Applicant' && (
                   <Button variant="primary" onClick={() => setActiveTab('browse')}>
                     Browse Jobs
                   </Button>
+                  )}
                 </div>
               ) : (
                 <Row>
-                  {myApplications.map((application) => (
+                  {(userRole === 'Applicant' ? myApplications : filteredApplications).map((application) => (
                     <Col lg={6} key={application.id} className="mb-4">
                       <motion.div
                         whileHover={{ scale: 1.01 }}
@@ -662,6 +880,29 @@ const JobApplications = () => {
         .job-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+        }
+
+        .stats-card {
+          transition: all 0.3s ease;
+          cursor: pointer;
+        }
+        
+        .stats-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+        }
+
+        .stats-card-featured {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+          color: white !important;
+        }
+
+        .stats-icon-wrapper {
+          transition: all 0.3s ease;
+        }
+
+        .stats-card:hover .stats-icon-wrapper {
+          transform: scale(1.1);
         }
       `}</style>
     </div>

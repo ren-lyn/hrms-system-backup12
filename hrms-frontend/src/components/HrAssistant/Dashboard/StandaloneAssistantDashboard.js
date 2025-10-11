@@ -330,13 +330,6 @@ export default function StandaloneAssistantDashboard() {
     <div className="hrasst-wrapper" aria-label="HR Assistant Dashboard">
       <style>{styles}</style>
 
-      <div className="hrasst-header" role="region" aria-label="Header">
-        <h1>Dashboard</h1>
-        <span className="hrasst-status" title="Module is ready to connect">
-          <span className="hrasst-dot" aria-hidden="true"></span>
-          Ready to connect
-        </span>
-      </div>
 
       <section className="hrasst-grid" aria-label="Dashboard Grid">
         {/* Revenue Report */}

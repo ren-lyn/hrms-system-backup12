@@ -7,6 +7,7 @@ import EmployeeRecords from './HrAssistant/EmployeeRecords';
 import EvaluationAdministration from '../components/EvaluationAdministration';
 import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
 import HrStaffProfile from '../components/HrStaff/HrStaffProfile';
+import OnboardingDashboard from "../components/HrAssistant/OnboardingDashboard";
 import StaffCalendar from '../components/HrAssistant/StaffCalendar';
 import DisciplinaryManagement from '../components/HrAssistant/DisciplinaryManagement';
 import LeaveManagement from '../components/HrAssistant/LeaveManagement';
@@ -18,7 +19,7 @@ import {
   faChartBar,
   faExclamationTriangle,
   faCalendarAlt,
-  faClipboardList,
+  faUserPlus,
   faSignOutAlt,
   faFileAlt,
   faBars,
@@ -184,6 +185,8 @@ const HrStaffDashboard = () => {
         return "Leave";
       case "calendar":
         return "My Calendar";
+      case "onboarding":
+        return "Onboarding";
       case "profile":
         return "Profile";
       default:
@@ -290,6 +293,14 @@ const HrStaffDashboard = () => {
 
     if (activeView === "leave") {
       return <LeaveManagement />;
+    }
+
+    if (activeView === "calendar") {
+      return <StaffCalendar />;
+    }
+
+    if (activeView === "onboarding") {
+      return <OnboardingDashboard />;
     }
 
     if (activeView === "profile") {
@@ -419,6 +430,22 @@ const HrStaffDashboard = () => {
                 className={`hrms-unified-nav-link ${activeView === 'calendar' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> My Calendar
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => setActiveView("onboarding")}
+                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Onboarding
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => setActiveView("profile")}
+                className={`hrms-unified-nav-link ${activeView === 'profile' ? 'hrms-unified-active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faUsers} className="me-2" /> Profile
               </button>
             </li>
           </ul>
