@@ -14,6 +14,9 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   margin-bottom: 20px;
+  height: fit-content;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
 }
 
 .profile-card-header {
@@ -90,6 +93,10 @@
 @media (max-width: 768px) {
   .manager-profile-container.dashboard-embedded {
     padding: 10px;
+  }
+  
+  .profile-card {
+    max-height: calc(100vh - 150px);
   }
   
   .profile-card-header {

@@ -103,6 +103,8 @@
   overflow: hidden;
   transition: all 0.3s ease;
   height: fit-content;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
 }
 
 .dashboard-embedded .profile-card {
@@ -292,6 +294,10 @@
   .employee-profile-container.dashboard-embedded {
     padding: 10px 5px;
     max-height: calc(100vh - 80px);
+  }
+  
+  .profile-card {
+    max-height: calc(100vh - 150px);
   }
 
   .profile-header {

@@ -17,6 +17,9 @@
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  height: fit-content;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
 }
 
 .profile-card:hover {
@@ -234,6 +237,10 @@
 @media (max-width: 768px) {
   .hr-assistant-profile-container {
     padding: 15px;
+  }
+  
+  .profile-card {
+    max-height: calc(100vh - 150px);
   }
   
   .profile-card-header {
