@@ -25,6 +25,8 @@ import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Cale
 import DisciplinaryManagement from './components/HrAssistant/DisciplinaryManagement'; // ✅ New Disciplinary Management
 import JobApplications from './components/JobApplications'; // ✅ Professional Job 
 import AttendanceDashboard from './components/HrAssistant/AttendanceDashboard';
+import EnhancedPayrollDashboard from './components/HrAssistant/EnhancedPayrollDashboard';
+
 
 
 import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
@@ -86,6 +88,7 @@ function App() {
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
           <Route path="profile" element={<HrAssistantProfile />} />
           <Route path="attendance" element={<AttendanceDashboard />} /> 
+          <Route path="payroll" element={<EnhancedPayrollDashboard />} />
 
         </Route>
 
