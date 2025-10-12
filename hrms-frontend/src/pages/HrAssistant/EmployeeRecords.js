@@ -712,25 +712,114 @@ const EmployeeRecords = () => {
         return;
       }
 
-      const doc = new jsPDF();
+      console.log('Starting PDF export for', filteredEmployees.length, 'employees');
+
+      // Initialize jsPDF
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPosition = 30;
+
+      console.log('PDF document initialized successfully');
+
+      // Header
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Employee Records Report', pageWidth / 2, 20, { align: 'center' });
       
-      // Use autoTable function directly on the document
-      doc.autoTable({
-        head: [['Name', 'Email', 'Position', 'Department', 'Salary']],
-        body: filteredEmployees.map(emp => [
-          `${emp.employee_profile?.first_name} ${emp.employee_profile?.last_name}`,
-          emp.email,
-          emp.employee_profile?.position,
-          emp.employee_profile?.department,
-          emp.employee_profile?.salary,
-        ])
+      // Date and time
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, 30);
+      doc.text(`Total Records: ${filteredEmployees.length}`, pageWidth - margin, 30, { align: 'right' });
+
+      yPosition = 45;
+
+      // Table headers
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      const headers = ['Name', 'Email', 'Position', 'Department', 'Salary'];
+      const colWidths = [40, 50, 35, 35, 30];
+      let xPosition = margin;
+
+      headers.forEach((header, index) => {
+        doc.text(header, xPosition, yPosition);
+        xPosition += colWidths[index];
       });
-      doc.save('employee_records.pdf');
+
+      yPosition += 5;
+      doc.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Table data
+      doc.setFont('helvetica', 'normal');
+      filteredEmployees.forEach((emp, index) => {
+        // Check if we need a new page
+        if (yPosition > pageHeight - 30) {
+          doc.addPage();
+          yPosition = margin;
+        }
+        
+        // Format salary properly
+        let salaryText = 'N/A';
+        if (emp.employee_profile?.salary) {
+          console.log('Raw salary data:', emp.employee_profile.salary, 'Type:', typeof emp.employee_profile.salary);
+          const salaryValue = parseFloat(emp.employee_profile.salary);
+          console.log('Parsed salary value:', salaryValue);
+          if (!isNaN(salaryValue)) {
+            salaryText = salaryValue.toFixed(2);
+            console.log('Formatted salary:', salaryText);
+          }
+        }
+        
+        const rowData = [
+          `${emp.employee_profile?.first_name || ''} ${emp.employee_profile?.last_name || ''}`.substring(0, 25),
+          (emp.email || 'N/A').substring(0, 30),
+          (emp.employee_profile?.position || 'N/A').substring(0, 20),
+          (emp.employee_profile?.department || 'N/A').substring(0, 20),
+          salaryText
+        ];
+        
+        xPosition = margin;
+        rowData.forEach((data, colIndex) => {
+          doc.text(data, xPosition, yPosition);
+          xPosition += colWidths[colIndex];
+        });
+        
+        yPosition += 5;
+      });
+
+      // Footer
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Total Records: ${filteredEmployees.length}`, margin, pageHeight - 15);
+      doc.text('Cabuyao Concrete Development Corporation', pageWidth - margin, pageHeight - 15, { align: 'right' });
+
+      // Save the PDF
+      const fileName = `Employee_Records_${new Date().toISOString().split('T')[0]}.pdf`;
+      console.log('Attempting to save PDF as:', fileName);
+      
+      doc.save(fileName);
+      console.log('PDF saved successfully');
 
       showSuccess(`PDF file exported successfully! (${filteredEmployees.length} employees)`);
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      handleAxiosError(error, 'Failed to export PDF file. Please try again.');
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      
+      let errorMessage = 'Failed to export PDF file. Please try again.';
+      if (error.message?.includes('jsPDF')) {
+        errorMessage = 'PDF library error. Please refresh the page and try again.';
+      } else if (error.message?.includes('save')) {
+        errorMessage = 'Error saving PDF file. Please check your browser settings.';
+      }
+      
+      showError(errorMessage);
     }
   };
 
@@ -769,17 +858,8 @@ const EmployeeRecords = () => {
       console.log('Employee name:', employeeName);
       
       // Initialize jsPDF
-      if (typeof jsPDF !== 'function') {
-        throw new Error('jsPDF is not properly loaded');
-      }
-      
-      const doc = new jsPDF();
+      const doc = new jsPDF('p', 'mm', 'a4');
       console.log('jsPDF initialized successfully');
-      
-      // Test basic functionality
-      if (typeof doc.text !== 'function') {
-        throw new Error('jsPDF document methods are not available');
-      }
       
       // Employee name (header)
       doc.setFontSize(18);
@@ -875,13 +955,22 @@ const EmployeeRecords = () => {
       doc.setFontSize(10);
       doc.setTextColor(80);
       
+      // Format salary properly
+      let salaryText = 'N/A';
+      if (profile?.salary) {
+        const salaryValue = parseFloat(profile.salary);
+        if (!isNaN(salaryValue)) {
+          salaryText = salaryValue.toFixed(2);
+        }
+      }
+      
       const employmentInfo = [
         ['Position:', profile?.position || 'N/A'],
         ['Department:', profile?.department || 'N/A'],
         ['Employment Status:', profile?.employment_status || 'N/A'],
         ['Date Started:', profile?.hire_date || 'N/A'],
         ['Tenure:', profile?.tenurity || 'N/A'],
-        ['Salary:', profile?.salary ? `₱${Number(profile.salary).toLocaleString()}` : 'N/A']
+        ['Salary:', salaryText]
       ];
       
       employmentInfo.forEach(([label, value]) => {
@@ -962,6 +1051,8 @@ const EmployeeRecords = () => {
         errorMessage = 'PDF library error. Please refresh the page and try again.';
       } else if (error.message?.includes('text')) {
         errorMessage = 'Error processing employee data for PDF. Some fields may contain invalid characters.';
+      } else if (error.message?.includes('save')) {
+        errorMessage = 'Error saving PDF file. Please check your browser settings.';
       }
       
       showError(errorMessage);
@@ -1917,7 +2008,7 @@ const EmployeeRecords = () => {
                       <div className="view-field">
                         <label className="fw-semibold text-muted">Salary</label>
                         <div className="view-value">
-                          {viewingEmployee.employee_profile?.salary ? `₱${Number(viewingEmployee.employee_profile.salary).toLocaleString()}` : 'N/A'}
+                          {viewingEmployee.employee_profile?.salary ? `₱${parseFloat(viewingEmployee.employee_profile.salary).toFixed(2)}` : 'N/A'}
                         </div>
                       </div>
                     </div>

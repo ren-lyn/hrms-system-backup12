@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert } from 'react-bootstrap';
-import { Search, DollarSign, Download, Eye, Check, X, Clock, TrendingUp } from 'lucide-react';
+import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert, Nav, Tab } from 'react-bootstrap';
+import { Search, DollarSign, Download, Eye, Check, X, Clock, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
 import { 
   fetchCashAdvanceRequests, 
   getCashAdvanceStats, 
@@ -8,6 +8,7 @@ import {
   rejectCashAdvanceRequest,
   downloadCashAdvancePdf 
 } from '../../api/cashAdvances';
+import jsPDF from 'jspdf';
 import './CashAdvanceManagement.css';
 
 const CashAdvanceManagement = () => {
@@ -30,6 +31,7 @@ const CashAdvanceManagement = () => {
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [activeTab, setActiveTab] = useState('pending');
 
   useEffect(() => {
     // Load data once when component mounts
@@ -117,9 +119,23 @@ const CashAdvanceManagement = () => {
                          request.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          request.company?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || request.status === statusFilter;
+    // Filter by active tab
+    let matchesTab = false;
+    switch (activeTab) {
+      case 'pending':
+        matchesTab = request.status === 'pending';
+        break;
+      case 'approved':
+        matchesTab = request.status === 'approved';
+        break;
+      case 'rejected':
+        matchesTab = request.status === 'rejected';
+        break;
+      default:
+        matchesTab = true;
+    }
     
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesTab;
   });
 
   const getStatusBadge = (status) => {
@@ -159,6 +175,118 @@ const CashAdvanceManagement = () => {
       showAlert('❌ Failed to download PDF. Please try again.', 'danger');
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleExportAll = async () => {
+    if (filteredRequests.length === 0) {
+      showAlert('No cash advance requests to export.', 'warning');
+      return;
+    }
+
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
+      const tableStartY = 60;
+      let yPosition = tableStartY;
+
+      // Header
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Cash Advance Requests Report', pageWidth / 2, 20, { align: 'center' });
+      
+      // Tab label
+      const tabLabel = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`${tabLabel} Requests`, pageWidth / 2, 30, { align: 'center' });
+      
+      // Date and time
+      pdf.setFontSize(10);
+      pdf.text(`Generated on: ${new Date().toLocaleString()}`, margin, 40);
+      pdf.text(`Total Records: ${filteredRequests.length}`, pageWidth - margin, 40, { align: 'right' });
+
+      // Table headers
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      const headers = ['Employee', 'Company', 'Department', 'Date Filed', 'Amount', 'Status'];
+      const colWidths = [35, 35, 30, 25, 25, 20];
+      let xPosition = margin;
+
+      headers.forEach((header, index) => {
+        pdf.text(header, xPosition, yPosition);
+        xPosition += colWidths[index];
+      });
+
+      yPosition += 5;
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+      yPosition += 5;
+
+      // Table data
+      pdf.setFont('helvetica', 'normal');
+      filteredRequests.forEach((request, index) => {
+        // Check if we need a new page
+        if (yPosition > pageHeight - 30) {
+          pdf.addPage();
+          yPosition = 20;
+          
+          // Redraw headers on new page
+          pdf.setFont('helvetica', 'bold');
+          xPosition = margin;
+          headers.forEach((header, headerIndex) => {
+            pdf.text(header, xPosition, yPosition);
+            xPosition += colWidths[headerIndex];
+          });
+          yPosition += 5;
+          pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+          yPosition += 5;
+          pdf.setFont('helvetica', 'normal');
+        }
+
+        // Clean amount formatting - extract only numeric value
+        const cleanAmount = (amount) => {
+          if (!amount) return '0.00';
+          // Remove any non-numeric characters except decimal point
+          const numericValue = String(amount).replace(/[^\d.-]/g, '');
+          const parsedAmount = parseFloat(numericValue) || 0;
+          return parsedAmount.toFixed(2);
+        };
+
+        const rowData = [
+          request.name || 'N/A',
+          request.company || 'N/A',
+          request.department || 'N/A',
+          formatDate(request.date_field),
+          cleanAmount(request.amount_ca),
+          request.status.charAt(0).toUpperCase() + request.status.slice(1)
+        ];
+
+        xPosition = margin;
+        rowData.forEach((data, colIndex) => {
+          const cellData = data.length > 15 ? data.substring(0, 15) + '...' : data;
+          pdf.text(cellData, xPosition, yPosition);
+          xPosition += colWidths[colIndex];
+        });
+
+        yPosition += 5;
+      });
+
+      // Footer
+      pdf.setFontSize(8);
+      pdf.text(`Total Records: ${filteredRequests.length}`, margin, pageHeight - 15);
+      pdf.text('Cabuyao Concrete Development Corporation', pageWidth - margin, pageHeight - 15, { align: 'right' });
+      
+      // Save the PDF
+      const fileName = `Cash_Advance_${tabLabel.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      showAlert(`Report exported successfully: ${fileName}`, 'success');
+      
+    } catch (error) {
+      console.error('Error exporting report:', error);
+      showAlert('Error generating report. Please try again.', 'danger');
     }
   };
 
@@ -281,7 +409,13 @@ const CashAdvanceManagement = () => {
             >
               🔄 Refresh
             </Button>
-            <Button variant="outline-danger" size="sm">
+            <Button 
+              variant="outline-danger" 
+              size="sm"
+              onClick={handleExportAll}
+              disabled={filteredRequests.length === 0}
+              title="Export filtered cash advance requests to PDF"
+            >
               <Download size={16} className="me-1" />
               Export
             </Button>
@@ -289,10 +423,43 @@ const CashAdvanceManagement = () => {
         </Col>
       </Row>
 
-      {/* Table */}
+      {/* Tabbed Cash Advance Requests */}
       <Card>
         <Card.Body className="p-0">
-          <div className="cash-advance-table-container">
+          <Tab.Container activeKey={activeTab} onSelect={setActiveTab}>
+            <Nav variant="tabs" className="border-bottom">
+              <Nav.Item>
+                <Nav.Link eventKey="pending" className="d-flex align-items-center">
+                  <Clock size={16} className="me-2" />
+                  Pending Requests
+                  <Badge bg="warning" className="ms-2">
+                    {cashAdvanceRequests.filter(r => r.status === 'pending').length}
+                  </Badge>
+                </Nav.Link>
+              </Nav.Item>
+              <Nav.Item>
+                <Nav.Link eventKey="approved" className="d-flex align-items-center">
+                  <CheckCircle size={16} className="me-2" />
+                  Approved Requests
+                  <Badge bg="success" className="ms-2">
+                    {cashAdvanceRequests.filter(r => r.status === 'approved').length}
+                  </Badge>
+                </Nav.Link>
+              </Nav.Item>
+              <Nav.Item>
+                <Nav.Link eventKey="rejected" className="d-flex align-items-center">
+                  <XCircle size={16} className="me-2" />
+                  Rejected Requests
+                  <Badge bg="danger" className="ms-2">
+                    {cashAdvanceRequests.filter(r => r.status === 'rejected').length}
+                  </Badge>
+                </Nav.Link>
+              </Nav.Item>
+            </Nav>
+            
+            <Tab.Content>
+              <Tab.Pane eventKey="pending">
+                <div className="cash-advance-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
             <Table responsive className="cash-advance-table" style={{ minWidth: '1200px' }}>
               <thead>
               <tr>
@@ -349,8 +516,6 @@ const CashAdvanceManagement = () => {
                       >
                         <Eye size={14} />
                       </Button>
-                      {request.status === 'pending' && (
-                        <>
                           <Button
                             variant="success"
                             size="sm"
@@ -368,8 +533,6 @@ const CashAdvanceManagement = () => {
                           >
                             <X size={14} />
                           </Button>
-                        </>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -380,8 +543,164 @@ const CashAdvanceManagement = () => {
           
           {filteredRequests.length === 0 && (
             <div className="text-center p-4">
-              <DollarSign size={48} className="text-muted mb-3" />
-              <p className="text-muted">No cash advance requests found.</p>
+                    <Clock size={48} className="text-muted mb-3" />
+                    <p className="text-muted">No pending cash advance requests found.</p>
+                    {searchTerm && (
+                      <Button variant="outline-primary" onClick={() => setSearchTerm('')}>
+                        Clear Search
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </Tab.Pane>
+              
+              <Tab.Pane eventKey="approved">
+                <div className="cash-advance-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
+                  <Table responsive className="cash-advance-table" style={{ minWidth: '1200px' }}>
+                    <thead>
+                    <tr>
+                      <th>👤 Employee Name</th>
+                      <th>Company</th>
+                      <th>Department</th>
+                      <th>Date Filed</th>
+                      <th>Amount Requested</th>
+                      <th>Remaining CA</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((request) => (
+                      <tr key={request.id}>
+                        <td>
+                          <div className="employee-info">
+                            <strong>{request.name}</strong>
+                            <div className="small text-muted">ID: {request.user_id}</div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="company-text">{request.company}</span>
+                        </td>
+                        <td>
+                          <span className="department-text">{request.department}</span>
+                        </td>
+                        <td>{formatDate(request.date_field)}</td>
+                        <td>
+                          <strong className="amount-text">{formatAmount(request.amount_ca)}</strong>
+                        </td>
+                        <td>
+                          <span className="remaining-ca-text">
+                            {request.rem_ca ? formatAmount(request.rem_ca) : 'N/A'}
+                          </span>
+                        </td>
+                        <td>
+                          {getStatusBadge(request.status)}
+                          {request.hr_remarks && (
+                            <div className="small text-muted mt-1">
+                              <em>Remarks: {request.hr_remarks.substring(0, 30)}...</em>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => handleAction(request, 'view')}
+                              title="View Form"
+                            >
+                              <Eye size={14} />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  </Table>
+                </div>
+                
+                {filteredRequests.length === 0 && (
+                  <div className="text-center p-4">
+                    <CheckCircle size={48} className="text-muted mb-3" />
+                    <p className="text-muted">No approved cash advance requests found.</p>
+                    {searchTerm && (
+                      <Button variant="outline-primary" onClick={() => setSearchTerm('')}>
+                        Clear Search
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </Tab.Pane>
+              
+              <Tab.Pane eventKey="rejected">
+                <div className="cash-advance-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
+                  <Table responsive className="cash-advance-table" style={{ minWidth: '1200px' }}>
+                    <thead>
+                    <tr>
+                      <th>👤 Employee Name</th>
+                      <th>Company</th>
+                      <th>Department</th>
+                      <th>Date Filed</th>
+                      <th>Amount Requested</th>
+                      <th>Remaining CA</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((request) => (
+                      <tr key={request.id}>
+                        <td>
+                          <div className="employee-info">
+                            <strong>{request.name}</strong>
+                            <div className="small text-muted">ID: {request.user_id}</div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="company-text">{request.company}</span>
+                        </td>
+                        <td>
+                          <span className="department-text">{request.department}</span>
+                        </td>
+                        <td>{formatDate(request.date_field)}</td>
+                        <td>
+                          <strong className="amount-text">{formatAmount(request.amount_ca)}</strong>
+                        </td>
+                        <td>
+                          <span className="remaining-ca-text">
+                            {request.rem_ca ? formatAmount(request.rem_ca) : 'N/A'}
+                          </span>
+                        </td>
+                        <td>
+                          {getStatusBadge(request.status)}
+                          {request.hr_remarks && (
+                            <div className="small text-muted mt-1">
+                              <em>Remarks: {request.hr_remarks.substring(0, 30)}...</em>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => handleAction(request, 'view')}
+                              title="View Form"
+                            >
+                              <Eye size={14} />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  </Table>
+                </div>
+                
+                {filteredRequests.length === 0 && (
+                  <div className="text-center p-4">
+                    <XCircle size={48} className="text-muted mb-3" />
+                    <p className="text-muted">No rejected cash advance requests found.</p>
               {searchTerm && (
                 <Button variant="outline-primary" onClick={() => setSearchTerm('')}>
                   Clear Search
@@ -389,6 +708,9 @@ const CashAdvanceManagement = () => {
               )}
             </div>
           )}
+              </Tab.Pane>
+            </Tab.Content>
+          </Tab.Container>
         </Card.Body>
       </Card>
 

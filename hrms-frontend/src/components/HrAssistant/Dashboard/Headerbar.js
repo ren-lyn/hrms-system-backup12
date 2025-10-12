@@ -21,8 +21,13 @@ const HeaderBar = () => {
   else if (pathname.includes('payroll')) pageTitle = 'Payroll';
   else if (pathname.includes('attendance')) pageTitle = 'Attendance';
   else if (pathname.includes('leave')) pageTitle = 'Leave Management';
+  else if (pathname.includes('my-calendar')) pageTitle = 'My Calendar';
+  else if (pathname.includes('cash-advances')) pageTitle = 'Cash Advance';
   else if (pathname.includes('evaluation')) pageTitle = 'Employee Evaluation';
   else if (pathname.includes('disciplinary')) pageTitle = 'Disciplinary Action';
+  else if (pathname.includes('job-postings')) pageTitle = 'Job Postings';
+  else if (pathname.includes('applications')) pageTitle = 'Job Applications';
+  else if (pathname.includes('onboarding')) pageTitle = 'Onboarding';
   else if (pathname.includes('recruitment')) pageTitle = 'Recruitment';
   else if (pathname.includes('reports')) pageTitle = 'Report Generation';
   else if (pathname.includes('profile')) pageTitle = 'Profile';
@@ -33,10 +38,10 @@ const HeaderBar = () => {
         <h2>{pageTitle}</h2>
       </div>
       <div className="header-right">
-        <FaEnvelope />
-        <FaBell />
+        <FaEnvelope style={{ color: '#ffffff' }} />
+        <FaBell style={{ color: '#ffffff' }} />
         <div className="profile-tab" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="profile-name" style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>
+          <span className="profile-name" style={{ fontSize: '14px', fontWeight: '500', color: '#ffffff' }}>
             {loading ? 'Loading...' : userProfile?.name || 'User'}
           </span>
           <img 
