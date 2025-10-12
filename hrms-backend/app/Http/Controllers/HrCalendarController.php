@@ -369,19 +369,23 @@ class HrCalendarController extends Controller
      */
     public function getEmployees()
     {
-        $employees = User::whereHas('role', function($query) {
-            $query->whereIn('name', ['Employee', 'Manager', 'HR Staff', 'HR Assistant']);
-        })->select('id', 'first_name', 'last_name', 'email')
-          ->orderBy('first_name')
-          ->orderBy('last_name')
-          ->get()
-          ->map(function($user) {
-              return [
-                  'id' => $user->id,
-                  'name' => $user->name,
-                  'email' => $user->email
-              ];
-          });
+        $employees = User::with('employeeProfile')
+            ->whereHas('role', function($query) {
+                $query->whereIn('name', ['Employee', 'Manager', 'HR Staff', 'HR Assistant']);
+            })
+            ->whereHas('employeeProfile') // Only include users with employee profiles
+            ->select('id', 'first_name', 'last_name', 'email')
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get()
+            ->map(function($user) {
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'position' => $user->employeeProfile ? $user->employeeProfile->position : null
+                ];
+            });
 
         return response()->json([
             'success' => true,

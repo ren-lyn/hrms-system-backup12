@@ -18,6 +18,7 @@ const MyCalendar = () => {
   const [employees, setEmployees] = useState([]);
   const [filteredEmployees, setFilteredEmployees] = useState([]);
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [positionFilter, setPositionFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('create'); // 'create', 'edit', 'view'
@@ -140,6 +141,7 @@ const MyCalendar = () => {
       invited_employees: []
     });
     setEmployeeSearchTerm('');
+    setPositionFilter('all');
     setFilteredEmployees(employees);
   };
 
@@ -315,17 +317,64 @@ const MyCalendar = () => {
     }));
   };
 
+  const handleSelectAll = () => {
+    const allFilteredEmployeeIds = filteredEmployees.map(emp => emp.id);
+    const allSelected = allFilteredEmployeeIds.every(id => formData.invited_employees.includes(id));
+    
+    if (allSelected) {
+      // Deselect all filtered employees
+      setFormData(prev => ({
+        ...prev,
+        invited_employees: prev.invited_employees.filter(id => !allFilteredEmployeeIds.includes(id))
+      }));
+    } else {
+      // Select all filtered employees
+      setFormData(prev => ({
+        ...prev,
+        invited_employees: [...new Set([...prev.invited_employees, ...allFilteredEmployeeIds])]
+      }));
+    }
+  };
+
   const handleEmployeeSearch = (searchTerm) => {
     setEmployeeSearchTerm(searchTerm);
-    if (searchTerm.trim() === '') {
-      setFilteredEmployees(employees);
-    } else {
-      const filtered = employees.filter(employee =>
+    filterEmployees(searchTerm, positionFilter);
+  };
+
+  const handlePositionFilter = (position) => {
+    setPositionFilter(position);
+    filterEmployees(employeeSearchTerm, position);
+  };
+
+  const filterEmployees = (searchTerm, position) => {
+    let filtered = employees;
+
+    // Filter by position
+    if (position !== 'all') {
+      filtered = filtered.filter(employee => 
+        employee.position && employee.position.toLowerCase() === position.toLowerCase()
+      );
+    }
+
+    // Filter by search term
+    if (searchTerm.trim() !== '') {
+      filtered = filtered.filter(employee =>
         employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         employee.email.toLowerCase().includes(searchTerm.toLowerCase())
       );
-      setFilteredEmployees(filtered);
     }
+
+    setFilteredEmployees(filtered);
+  };
+
+  const getUniquePositions = () => {
+    const positions = employees
+      .map(employee => employee.position)
+      .filter(position => position && position.trim() !== '')
+      .map(position => position.trim());
+    
+    // Remove duplicates and sort alphabetically
+    return [...new Set(positions)].sort();
   };
 
   const getEventTypeColor = (eventType) => {
@@ -696,14 +745,44 @@ const MyCalendar = () => {
                   Select specific employees to invite. If no employees are selected, this will be a public event visible to all employees.
                 </Form.Text>
                 
-                {/* Employee Search */}
-                <Form.Control
-                  type="text"
-                  placeholder="Search employees by name or email..."
-                  value={employeeSearchTerm}
-                  onChange={(e) => handleEmployeeSearch(e.target.value)}
-                  className="mb-3 employee-search-input"
-                />
+                {/* Employee Search and Filter */}
+                <Row className="mb-3">
+                  <Col md={8}>
+                    <Form.Control
+                      type="text"
+                      placeholder="Search employees by name or email..."
+                      value={employeeSearchTerm}
+                      onChange={(e) => handleEmployeeSearch(e.target.value)}
+                      className="employee-search-input"
+                    />
+                  </Col>
+                  <Col md={4}>
+                    <Form.Select
+                      value={positionFilter}
+                      onChange={(e) => handlePositionFilter(e.target.value)}
+                    >
+                      <option value="all">All Positions</option>
+                      {getUniquePositions().map(position => (
+                        <option key={position} value={position}>
+                          {position}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Col>
+                </Row>
+                
+                {/* Select All Option */}
+                {filteredEmployees.length > 0 && (
+                  <Form.Check
+                    type="checkbox"
+                    id="select-all-employees"
+                    label={`Select All (${filteredEmployees.length} employees)`}
+                    checked={filteredEmployees.every(emp => formData.invited_employees.includes(emp.id))}
+                    onChange={handleSelectAll}
+                    className="mb-3 select-all-checkbox"
+                    style={{ fontWeight: 'bold', borderBottom: '1px solid #dee2e6', paddingBottom: '8px' }}
+                  />
+                )}
                 
                 <div className="employee-selection">
                   {filteredEmployees.length > 0 ? (
@@ -720,7 +799,7 @@ const MyCalendar = () => {
                     ))
                   ) : (
                     <div className="text-muted text-center py-3">
-                      {employeeSearchTerm ? 'No employees found matching your search.' : 'No employees available.'}
+                      {employeeSearchTerm || positionFilter !== 'all' ? 'No employees found matching your search/filter.' : 'No employees available.'}
                     </div>
                   )}
                 </div>
