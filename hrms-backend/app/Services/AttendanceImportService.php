@@ -66,7 +66,9 @@ class AttendanceImportService
                 // Use PhpSpreadsheet directly to avoid Laravel Excel temp file issues
                 $spreadsheet = IOFactory::load($filePath);
                 $worksheet = $spreadsheet->getActiveSheet();
-                $rows = $worksheet->toArray();
+                // Get raw values (not formatted) to avoid locale-specific formatting issues
+                // Parameters: nullValue, calculateFormulas, formatData, returnCellRef
+                $rows = $worksheet->toArray(null, true, false, false);
                 
                 if (count($rows) < 2) {
                     $this->importResults['errors'][] = 'Excel file is empty or missing data rows.';
@@ -134,9 +136,9 @@ class AttendanceImportService
                 }
 
                 // Collect all raw punch data using the correct headers
-                // Start from row 2 (index 1) since actual data starts there (row 1 is headers)
+                // Start from row after header row since actual data starts there
                 $rawPunches = [];
-                for ($i = 1; $i < count($rows); $i++) {
+                for ($i = $headerRowIndex + 1; $i < count($rows); $i++) {
                     $rowData = [];
                     foreach ($actualHeaders as $index => $header) {
                         // Use normalized header names for consistent access
@@ -148,10 +150,8 @@ class AttendanceImportService
                 
                 Log::info('Collected ' . count($rawPunches) . ' raw punch records');
 
-                // Process each row individually
-                foreach ($rawPunches as $rowData) {
-                    $this->processRow($rowData);
-                }
+                // Process aggregated punches (group by employee and date)
+                $this->processAggregatedPunchData($rawPunches);
             }
 
             // Update import record with results
@@ -206,267 +206,10 @@ class AttendanceImportService
 
         fclose($file);
         
-        // Process each row individually
-        foreach ($rawPunches as $rowData) {
-            $this->processRow($rowData);
-        }
+        // Process aggregated punches (group by employee and date)
+        $this->processAggregatedPunchData($rawPunches);
     }
 
-    /**
-     * Process each row from the Excel file
-     */
-    protected function processRow($row)
-    {
-        try {
-            // Convert row to array for easier access
-            if (is_object($row) && method_exists($row, 'toArray')) {
-                $rowData = $row->toArray();
-            } elseif (is_object($row)) {
-                $rowData = (array) $row;
-            } else {
-                $rowData = $row;
-            }
-            
-            // Log the row data for debugging
-            Log::info('Processing row data:', $rowData);
-            
-            // Skip empty rows or header rows - check multiple possible column names
-            $hasPersonId = (!empty($rowData['person_id']) && 
-                           $rowData['person_id'] !== 'Person ID' && 
-                           strtolower((string) $rowData['person_id']) !== 'person id') ||
-                          (!empty($rowData['biometric_id']) && 
-                           $rowData['biometric_id'] !== 'Biometric ID' && 
-                           strtolower((string) $rowData['biometric_id']) !== 'biometric id');
-            $hasEmployeeId = (!empty($rowData['employee_id']) && 
-                             $rowData['employee_id'] !== 'Employee ID' && 
-                             strtolower((string) $rowData['employee_id']) !== 'employee id') ||
-                            (!empty($rowData['emp_id']) && 
-                             $rowData['emp_id'] !== 'Emp ID' && 
-                             strtolower((string) $rowData['emp_id']) !== 'emp id');
-            $hasPersonName = (!empty($rowData['person_name']) && 
-                             strtolower((string) $rowData['person_name']) !== 'person name') ||
-                            (!empty($rowData['employee_name']) && 
-                             strtolower((string) $rowData['employee_name']) !== 'employee name') ||
-                            (!empty($rowData['name']) && 
-                             strtolower((string) $rowData['name']) !== 'name') ||
-                            (!empty($rowData['full_name']) && 
-                             strtolower((string) $rowData['full_name']) !== 'full name');
-            $hasDate = (!empty($rowData['date']) && 
-                       $rowData['date'] !== 'Date' && 
-                       strtolower((string) $rowData['date']) !== 'date') ||
-                      (!empty($rowData['punch_date']) && 
-                       $rowData['punch_date'] !== 'Punch Date' && 
-                       strtolower((string) $rowData['punch_date']) !== 'punch date') ||
-                      (!empty($rowData['attendance_date']) && 
-                       $rowData['attendance_date'] !== 'Attendance Date' && 
-                       strtolower((string) $rowData['attendance_date']) !== 'attendance date') ||
-                      (!empty($rowData['work_date']) && 
-                       $rowData['work_date'] !== 'Work Date' && 
-                       strtolower((string) $rowData['work_date']) !== 'work date');
-            
-            // Check if this row contains header values (common header text)
-            $isHeaderRow = false;
-            $headerValues = [
-                'person id', 'person name', 'employee id', 'employee name', 'name', 'full name',
-                'date', 'punch date', 'attendance date', 'work date',
-                'time in', 'time out', 'clock in', 'clock out', 'attendance record',
-                'status', 'verify type', 'timezone', 'source', 'day', 'total hours'
-            ];
-            
-            foreach ($rowData as $key => $value) {
-                $normalizedValue = strtolower(trim((string) $value));
-                if (in_array($normalizedValue, $headerValues)) {
-                    $isHeaderRow = true;
-                    break;
-                }
-            }
-            
-            // Also check for any non-empty data in the row
-            $hasAnyData = false;
-            foreach ($rowData as $key => $value) {
-                if (!empty($value) && $value !== '' && $value !== null) {
-                    $hasAnyData = true;
-                    break;
-                }
-            }
-            
-            Log::info('Row validation - Person ID: ' . ($hasPersonId ? 'YES' : 'NO') . 
-                     ', Employee ID: ' . ($hasEmployeeId ? 'YES' : 'NO') . 
-                     ', Person Name: ' . ($hasPersonName ? 'YES' : 'NO') . 
-                     ', Date: ' . ($hasDate ? 'YES' : 'NO') . 
-                     ', Is Header Row: ' . ($isHeaderRow ? 'YES' : 'NO') . 
-                     ', Has Any Data: ' . ($hasAnyData ? 'YES' : 'NO'));
-            
-            // Skip header rows or rows with no valid data
-            if ($isHeaderRow || (!$hasPersonId && !$hasEmployeeId && !$hasPersonName && !$hasDate && !$hasAnyData)) {
-                Log::warning('Skipping row - header row or no valid data found');
-                $this->importResults['skipped']++;
-                return;
-            }
-
-            // Find employee by biometric ID or employee ID
-            $employee = $this->findEmployee($rowData);
-            
-            if (!$employee) {
-                $this->importResults['failed']++;
-                $identifier = $rowData['person_id'] ?? 'Unknown';
-                $nameForMsg = isset($rowData['person_name']) ? (string) $rowData['person_name'] : 'N/A';
-                $this->importResults['errors'][] = "Employee not found (ID: {$identifier}, Name: {$nameForMsg})";
-                Log::warning('Employee not found during import', [
-                    'person_id' => $rowData['person_id'] ?? null,
-                    'person_name' => $rowData['person_name'] ?? null,
-                    'row_data' => $rowData
-                ]);
-                return;
-            }
-
-            // Parse and validate date (check multiple possible date columns)
-            $dateValue = $rowData['date'] ?? 
-                        $rowData['punch_date'] ?? 
-                        $rowData['attendance_date'] ?? 
-                        $rowData['work_date'] ?? 
-                        null;
-            $date = $this->parseDate($dateValue);
-            if (!$date) {
-                $this->importResults['failed']++;
-                $this->importResults['errors'][] = "Invalid date format for Person ID: {$rowData['person_id']}";
-                return;
-            }
-
-            // Process punch data (first/last punch per day)
-            $this->processPunchData($rowData, $employee, $date);
-
-            $this->importResults['success']++;
-            Log::info('Punch record processed successfully', [
-                'employee_id' => $employee->id,
-                'date' => $date,
-                'punch_time' => $rowData['attendance_record'] ?? null
-            ]);
-            
-        } catch (Exception $e) {
-            $this->importResults['failed']++;
-            $this->importResults['errors'][] = "Error processing row: " . $e->getMessage();
-            Log::error('Row processing error: ' . $e->getMessage(), ['row' => $rowData ?? null, 'exception' => $e]);
-        }
-    }
-
-    /**
-     * Process raw punches by aggregating them per employee per day
-     */
-    protected function processAggregatedPunches($rawPunches)
-    {
-        // Group punches by employee and date
-        $groupedPunches = [];
-        
-        Log::info('Processing ' . count($rawPunches) . ' raw punch records');
-        
-        foreach ($rawPunches as $index => $punchData) {
-            Log::info("Processing punch record {$index}:", $punchData);
-            
-            // Skip empty rows or header rows
-            $hasPersonId = !empty($punchData['Person ID']) && $punchData['Person ID'] !== 'Person ID';
-            $hasPersonName = !empty($punchData['Person Name']) && strtolower((string) $punchData['Person Name']) !== 'person name';
-            $hasPunchDate = !empty($punchData['Punch Date']) && $punchData['Punch Date'] !== 'Punch Date';
-
-            Log::info("Record validation - Person ID: " . ($hasPersonId ? 'YES' : 'NO') . ", Person Name: " . ($hasPersonName ? 'YES' : 'NO') . ", Punch Date: " . ($hasPunchDate ? 'YES' : 'NO'));
-
-            if (!$hasPersonId && !$hasPersonName && !$hasPunchDate) {
-                Log::warning("Skipping record {$index} - no valid data found");
-                $this->importResults['skipped']++;
-                continue;
-            }
-
-            // Parse date and time
-            $date = $this->parseDate($punchData['Punch Date']);
-            $time = $this->parseTime($punchData['Attendance record']);
-            
-            if (!$date || !$time) {
-                $this->importResults['failed']++;
-                $this->importResults['errors'][] = "Invalid date or time format for Person ID: {$punchData['Person ID']}";
-                continue;
-            }
-
-            // Create unique key for employee-date combination
-            $personId = $punchData['Person ID'] ?? 'unknown';
-            $dateKey = $date->format('Y-m-d');
-            $key = "{$personId}_{$dateKey}";
-
-            if (!isset($groupedPunches[$key])) {
-                $groupedPunches[$key] = [
-                    'person_id' => $personId,
-                    'person_name' => $punchData['Person Name'] ?? null,
-                    'date' => $date,
-                    'punches' => [],
-                    'verify_type' => $punchData['Verify Type'] ?? null,
-                    'timezone' => $punchData['TimeZone'] ?? null,
-                    'source' => $punchData['Source'] ?? null
-                ];
-            }
-
-            // Add punch time to the group
-            $groupedPunches[$key]['punches'][] = $time;
-        }
-
-        // Process each employee-date group
-        foreach ($groupedPunches as $group) {
-            $this->processEmployeeDayPunches($group);
-        }
-    }
-
-    /**
-     * Process punches for a single employee on a single day
-     */
-    protected function processEmployeeDayPunches($group)
-    {
-        try {
-            // Find employee
-            $employee = $this->findEmployeeByPersonId($group['person_id'], $group['person_name']);
-            
-            if (!$employee) {
-                $this->importResults['failed']++;
-                $this->importResults['errors'][] = "Employee not found (ID: {$group['person_id']}, Name: {$group['person_name']})";
-                return;
-            }
-
-            // Sort punches by time to get first and last
-            sort($group['punches']);
-            $firstPunch = $group['punches'][0];
-            $lastPunch = end($group['punches']);
-
-            // Prepare attendance data
-            $attendanceData = [
-                'employee_id' => $employee->id,
-                'employee_biometric_id' => $group['person_id'],
-                'date' => $group['date']->format('Y-m-d'), // Ensure date is stored as Y-m-d format only
-                'clock_in' => $firstPunch,
-                'clock_out' => $lastPunch,
-                'break_out' => null,
-                'break_in' => null,
-                'remarks' => $group['verify_type'] ?? $group['source'] ?? null,
-                'total_hours' => $this->calculateWorkingHours($firstPunch, $lastPunch, null, null),
-                'overtime_hours' => max(0, $this->calculateWorkingHours($firstPunch, $lastPunch, null, null) - 8),
-                'undertime_hours' => max(0, 8 - $this->calculateWorkingHours($firstPunch, $lastPunch, null, null)),
-                'status' => $this->determineStatusWithShift($employee, $group['date'], $firstPunch, $lastPunch, $this->calculateWorkingHours($firstPunch, $lastPunch, null, null))
-            ];
-
-            // Create or update attendance record
-            $this->createOrUpdateAttendance($attendanceData);
-
-            $this->importResults['success']++;
-            Log::info('Attendance record imported successfully', [
-                'employee_id' => $employee->id,
-                'date' => $group['date'],
-                'clock_in' => $firstPunch,
-                'clock_out' => $lastPunch,
-                'total_punches' => count($group['punches'])
-            ]);
-
-        } catch (Exception $e) {
-            $this->importResults['failed']++;
-            $this->importResults['errors'][] = "Error processing employee day punches: " . $e->getMessage();
-            Log::error('Employee day processing error: ' . $e->getMessage(), ['group' => $group ?? null, 'exception' => $e]);
-        }
-    }
 
     /**
      * Find employee by Person ID with fallback to name matching
@@ -514,83 +257,252 @@ class AttendanceImportService
     }
 
     /**
-     * Process punch data to create attendance records
+     * Process aggregated punch data - groups punches by employee and date
      */
-    protected function processPunchData($rowData, $employee, $date)
+    protected function processAggregatedPunchData($rawPunches)
     {
-        // Check if we have separate time-in and time-out columns
-        $timeIn = $this->parseTime($rowData['time_in'] ?? null);
-        $timeOut = $this->parseTime($rowData['time_out'] ?? null);
+        // Group punches by employee and date
+        $groupedPunches = [];
         
-        // If no separate columns, use attendance_record as punch time
-        if (!$timeIn && !$timeOut) {
-            $punchTime = $this->parseTime($rowData['attendance_record']);
-            if (!$punchTime) {
-                return; // Skip invalid punch times
-            }
+        Log::info('Processing ' . count($rawPunches) . ' raw punch records');
+        
+        foreach ($rawPunches as $index => $punchData) {
+            Log::info("Processing raw punch row {$index}", [
+                'person_id' => $punchData['person_id'] ?? 'N/A',
+                'person_name' => $punchData['person_name'] ?? 'N/A',
+                'punch_date' => $punchData['punch_date'] ?? $punchData['date'] ?? 'N/A',
+                'attendance_record' => $punchData['attendance_record'] ?? 'N/A'
+            ]);
+            // Skip empty rows or header rows
+            $hasPersonId = (!empty($punchData['person_id']) && 
+                           $punchData['person_id'] !== 'Person ID' && 
+                           strtolower((string) $punchData['person_id']) !== 'person id') ||
+                          (!empty($punchData['biometric_id']) && 
+                           $punchData['biometric_id'] !== 'Biometric ID' && 
+                           strtolower((string) $punchData['biometric_id']) !== 'biometric id');
+            $hasEmployeeId = (!empty($punchData['employee_id']) && 
+                             $punchData['employee_id'] !== 'Employee ID' && 
+                             strtolower((string) $punchData['employee_id']) !== 'employee id') ||
+                            (!empty($punchData['emp_id']) && 
+                             $punchData['emp_id'] !== 'Emp ID' && 
+                             strtolower((string) $punchData['emp_id']) !== 'emp id');
+            $hasPersonName = (!empty($punchData['person_name']) && 
+                             strtolower((string) $punchData['person_name']) !== 'person name') ||
+                            (!empty($punchData['employee_name']) && 
+                             strtolower((string) $punchData['employee_name']) !== 'employee name') ||
+                            (!empty($punchData['name']) && 
+                             strtolower((string) $punchData['name']) !== 'name') ||
+                            (!empty($punchData['full_name']) && 
+                             strtolower((string) $punchData['full_name']) !== 'full name');
+            $hasDate = (!empty($punchData['date']) && 
+                       $punchData['date'] !== 'Date' && 
+                       strtolower((string) $punchData['date']) !== 'date') ||
+                      (!empty($punchData['punch_date']) && 
+                       $punchData['punch_date'] !== 'Punch Date' && 
+                       strtolower((string) $punchData['punch_date']) !== 'punch date') ||
+                      (!empty($punchData['attendance_date']) && 
+                       $punchData['attendance_date'] !== 'Attendance Date' && 
+                       strtolower((string) $punchData['attendance_date']) !== 'attendance date') ||
+                      (!empty($punchData['work_date']) && 
+                       $punchData['work_date'] !== 'Work Date' && 
+                       strtolower((string) $punchData['work_date']) !== 'work date');
             
-            // Use updateOrCreate to handle duplicates properly
-            $attendance = Attendance::updateOrCreate(
-                [
-                    'employee_id' => $employee->id,
-                    'date' => $date->format('Y-m-d') // Ensure date is stored as Y-m-d format only
-                ],
-                [
-                    'employee_biometric_id' => $rowData['person_id'] ?? $rowData['employee_id'] ?? null,
-                    'remarks' => $rowData['status'] ?? $rowData['verify_type'] ?? null
-                ]
-            );
-
-            // Determine if this is first punch (time-in) or last punch (time-out)
-            if (!$attendance->clock_in) {
-                // First punch of the day = time-in
-                $attendance->clock_in = $punchTime;
-            } else {
-                // Subsequent punches = time-out (update if later)
-                $currentClockOut = $attendance->clock_out ? Carbon::parse($attendance->clock_out) : null;
-                $newPunchTime = Carbon::parse($punchTime);
-                
-                if (!$currentClockOut || $newPunchTime->gt($currentClockOut)) {
-                    $attendance->clock_out = $punchTime;
+            // Check if this row contains header values
+            $isHeaderRow = false;
+            $headerValues = [
+                'person id', 'person name', 'employee id', 'employee name', 'name', 'full name',
+                'date', 'punch date', 'attendance date', 'work date',
+                'time in', 'time out', 'clock in', 'clock out', 'attendance record',
+                'status', 'verify type', 'timezone', 'source', 'day', 'total hours'
+            ];
+            
+            foreach ($punchData as $key => $value) {
+                $normalizedValue = strtolower(trim((string) $value));
+                if (in_array($normalizedValue, $headerValues)) {
+                    $isHeaderRow = true;
+                    break;
                 }
             }
-        } else {
-            // We have separate time-in and time-out columns
-            $attendance = Attendance::updateOrCreate(
-                [
-                    'employee_id' => $employee->id,
-                    'date' => $date->format('Y-m-d')
-                ],
-                [
-                    'employee_biometric_id' => $rowData['person_id'] ?? $rowData['employee_id'] ?? null,
-                    'clock_in' => $timeIn,
-                    'clock_out' => $timeOut,
-                    'remarks' => $rowData['status'] ?? $rowData['verify_type'] ?? null
-                ]
-            );
+            
+            if ($isHeaderRow || (!$hasPersonId && !$hasEmployeeId && !$hasPersonName && !$hasDate)) {
+                Log::warning("Skipping row {$index}: isHeader={$isHeaderRow}, hasPersonId={$hasPersonId}, hasDate={$hasDate}", [
+                    'row_data' => $punchData
+                ]);
+                $this->importResults['skipped']++;
+                continue;
+            }
+
+            // Parse date
+            $dateValue = $punchData['date'] ?? 
+                        $punchData['punch_date'] ?? 
+                        $punchData['attendance_date'] ?? 
+                        $punchData['work_date'] ?? 
+                        null;
+            $date = $this->parseDate($dateValue);
+            
+            if (!$date) {
+                $this->importResults['failed']++;
+                $identifier = $punchData['person_id'] ?? $punchData['employee_id'] ?? 'Unknown';
+                $this->importResults['errors'][] = "Invalid date format for ID: {$identifier}";
+                continue;
+            }
+
+            // Check if we have separate time_in/time_out columns or attendance_record
+            $timeIn = $this->parseTime($punchData['time_in'] ?? null);
+            $timeOut = $this->parseTime($punchData['time_out'] ?? null);
+            $attendanceRecord = $this->parseTime($punchData['attendance_record'] ?? null);
+            
+            // Create unique key for employee-date combination
+            $personId = $punchData['person_id'] ?? $punchData['biometric_id'] ?? $punchData['employee_id'] ?? $punchData['emp_id'] ?? 'unknown';
+            $personName = $punchData['person_name'] ?? $punchData['employee_name'] ?? $punchData['name'] ?? $punchData['full_name'] ?? null;
+            $dateKey = $date->format('Y-m-d');
+            $key = "{$personId}_{$dateKey}";
+
+            if (!isset($groupedPunches[$key])) {
+                $groupedPunches[$key] = [
+                    'person_id' => $personId,
+                    'person_name' => $personName,
+                    'date' => $date,
+                    'punches' => [],
+                    'time_in' => null,
+                    'time_out' => null,
+                    'verify_type' => $punchData['verify_type'] ?? null,
+                    'timezone' => $punchData['timezone'] ?? null,
+                    'source' => $punchData['source'] ?? null,
+                    'status' => $punchData['status'] ?? null,
+                    'row_data' => $punchData
+                ];
+            }
+
+            // If we have separate time_in/time_out columns, use them directly
+            if ($timeIn || $timeOut) {
+                if ($timeIn) {
+                    $groupedPunches[$key]['time_in'] = $timeIn;
+                }
+                if ($timeOut) {
+                    $groupedPunches[$key]['time_out'] = $timeOut;
+                }
+            } elseif ($attendanceRecord) {
+                // Add punch time to the group for aggregation
+                Log::info("Adding punch for {$personId} on {$dateKey}: {$attendanceRecord}");
+                $groupedPunches[$key]['punches'][] = $attendanceRecord;
+            }
         }
 
-        // Calculate total hours if both times are present
-        if ($attendance->clock_in && $attendance->clock_out) {
-            $attendance->total_hours = $this->calculateWorkingHours(
-                $attendance->clock_in->format('H:i:s'),
-                $attendance->clock_out->format('H:i:s')
-            );
-            $attendance->overtime_hours = max(0, $attendance->total_hours - 8);
-            $attendance->undertime_hours = max(0, 8 - $attendance->total_hours);
+        Log::info('Grouped into ' . count($groupedPunches) . ' employee-date combinations');
+
+        // Process each employee-date group
+        foreach ($groupedPunches as $group) {
+            $this->processEmployeeDayPunchGroup($group);
         }
+    }
 
-        // Determine status using enhanced logic
-        $attendance->status = $this->determineEnhancedStatus(
-            $employee,
-            $date,
-            $attendance->clock_in?->format('H:i:s'),
-            $attendance->clock_out?->format('H:i:s'),
-            $attendance->total_hours ?? 0,
-            $rowData['status'] ?? null
-        );
+    /**
+     * Process punches for a single employee on a single day
+     */
+    protected function processEmployeeDayPunchGroup($group)
+    {
+        try {
+            // Find employee
+            $employee = $this->findEmployee($group['row_data']);
+            
+            if (!$employee) {
+                $this->importResults['failed']++;
+                $this->importResults['errors'][] = "Employee not found (ID: {$group['person_id']}, Name: {$group['person_name']})";
+                Log::warning('Employee not found during import', [
+                    'person_id' => $group['person_id'],
+                    'person_name' => $group['person_name']
+                ]);
+                return;
+            }
 
-        $attendance->save();
+            // Determine clock_in and clock_out
+            $clockIn = null;
+            $clockOut = null;
+
+            // If we have explicit time_in/time_out, use them
+            if ($group['time_in'] || $group['time_out']) {
+                $clockIn = $group['time_in'];
+                $clockOut = $group['time_out'];
+            } elseif (!empty($group['punches'])) {
+                // Log punches before sorting
+                Log::info('Raw punches before sorting for employee ' . $employee->id, [
+                    'punches' => $group['punches']
+                ]);
+                
+                // Sort punches chronologically by converting to Carbon timestamps
+                usort($group['punches'], function($a, $b) {
+                    try {
+                        $timeA = Carbon::parse($a);
+                        $timeB = Carbon::parse($b);
+                        return $timeA->timestamp - $timeB->timestamp;
+                    } catch (Exception $e) {
+                        // Fallback to string comparison if parsing fails
+                        return strcmp($a, $b);
+                    }
+                });
+                
+                $clockIn = $group['punches'][0]; // First punch = Time In
+                $clockOut = end($group['punches']); // Last punch = Time Out
+                
+                Log::info('Aggregated punches for employee ' . $employee->id . ' on ' . $group['date']->format('Y-m-d'), [
+                    'total_punches' => count($group['punches']),
+                    'all_punches_sorted' => $group['punches'],
+                    'first_punch_time_in' => $clockIn,
+                    'last_punch_time_out' => $clockOut
+                ]);
+            }
+
+            // Prepare attendance data
+            $attendanceData = [
+                'employee_id' => $employee->id,
+                'employee_biometric_id' => $group['person_id'],
+                'date' => $group['date']->format('Y-m-d'),
+                'clock_in' => $clockIn,
+                'clock_out' => $clockOut,
+                'break_out' => null,
+                'break_in' => null,
+                'remarks' => $group['verify_type'] ?? $group['source'] ?? null,
+            ];
+
+            // Calculate total hours if both times are present
+            if ($clockIn && $clockOut) {
+                $attendanceData['total_hours'] = $this->calculateWorkingHours($clockIn, $clockOut, null, null);
+                $attendanceData['overtime_hours'] = max(0, $attendanceData['total_hours'] - 8);
+                $attendanceData['undertime_hours'] = max(0, 8 - $attendanceData['total_hours']);
+            } else {
+                $attendanceData['total_hours'] = 0;
+                $attendanceData['overtime_hours'] = 0;
+                $attendanceData['undertime_hours'] = 0;
+            }
+
+            // Determine status using enhanced logic
+            $attendanceData['status'] = $this->determineEnhancedStatus(
+                $employee,
+                $group['date'],
+                $clockIn,
+                $clockOut,
+                $attendanceData['total_hours'],
+                $group['status']
+            );
+
+            // Create or update attendance record
+            $this->createOrUpdateAttendance($attendanceData);
+
+            $this->importResults['success']++;
+            Log::info('Attendance record imported successfully', [
+                'employee_id' => $employee->id,
+                'date' => $group['date']->format('Y-m-d'),
+                'clock_in' => $clockIn,
+                'clock_out' => $clockOut,
+                'total_punches' => count($group['punches'])
+            ]);
+
+        } catch (Exception $e) {
+            $this->importResults['failed']++;
+            $this->importResults['errors'][] = "Error processing employee day punches: " . $e->getMessage();
+            Log::error('Employee day processing error: ' . $e->getMessage(), ['group' => $group ?? null, 'exception' => $e]);
+        }
     }
 
     /**
@@ -964,20 +876,45 @@ class AttendanceImportService
                 return null;
             }
 
-            // Handle Excel time serials (fraction of a day)
-            if (is_numeric($timeString)) {
-                $secondsInDay = 24 * 60 * 60;
-                $totalSeconds = (int) round(((float) $timeString - floor((float) $timeString)) * $secondsInDay);
-                // Normalize to 0..86399
-                $totalSeconds = ($totalSeconds % $secondsInDay + $secondsInDay) % $secondsInDay;
-                $hours = floor($totalSeconds / 3600);
-                $minutes = floor(($totalSeconds % 3600) / 60);
-                $seconds = $totalSeconds % 60;
-                return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+            // Handle malformed date strings (e.g., "1月1日" which is Excel date formatting issue)
+            // These occur when Excel time values are incorrectly read as dates
+            $timeStringStr = (string) $timeString;
+            if (preg_match('/[月日年]/', $timeStringStr) || preg_match('/^[0-9]{1,2}\/[0-9]{1,2}$/', $timeStringStr)) {
+                // This is likely a date that should be a time - skip it and log warning
+                Log::warning("Skipping malformed time value (appears to be date): {$timeStringStr}");
+                return null;
             }
 
-            return Carbon::parse((string) $timeString)->format('H:i:s');
+            // Handle Excel time serials (fraction of a day)
+            if (is_numeric($timeString)) {
+                $floatValue = (float) $timeString;
+                
+                // If the value is between 0 and 1, it's a time fraction
+                if ($floatValue >= 0 && $floatValue < 1) {
+                    $secondsInDay = 24 * 60 * 60;
+                    $totalSeconds = (int) round($floatValue * $secondsInDay);
+                    $hours = floor($totalSeconds / 3600);
+                    $minutes = floor(($totalSeconds % 3600) / 60);
+                    $seconds = $totalSeconds % 60;
+                    return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+                }
+                
+                // If value is > 1, extract the fractional part (time component)
+                if ($floatValue > 1) {
+                    $timeFraction = $floatValue - floor($floatValue);
+                    $secondsInDay = 24 * 60 * 60;
+                    $totalSeconds = (int) round($timeFraction * $secondsInDay);
+                    $hours = floor($totalSeconds / 3600);
+                    $minutes = floor(($totalSeconds % 3600) / 60);
+                    $seconds = $totalSeconds % 60;
+                    return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
+                }
+            }
+
+            // Try to parse as regular time string (HH:MM:SS or HH:MM)
+            return Carbon::parse($timeStringStr)->format('H:i:s');
         } catch (Exception $e) {
+            Log::warning("Failed to parse time: {$timeString}, error: " . $e->getMessage());
             return null;
         }
     }
@@ -1280,7 +1217,8 @@ class AttendanceImportService
             } else {
                 $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
                 $worksheet = $spreadsheet->getActiveSheet();
-                $rows = $worksheet->toArray();
+                // Get raw values (not formatted) to avoid locale-specific formatting issues
+                $rows = $worksheet->toArray(null, true, false, false);
                 
                 // Log all rows for debugging
                 Log::info('Excel file rows count: ' . count($rows));
