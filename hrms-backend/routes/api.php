@@ -281,7 +281,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}/complete', [HrCalendarController::class, 'complete']); // Complete event
     });
 
-        // Holiday Management
+    // Holiday Management
     Route::middleware(['role:HR Assistant,HR Staff'])->prefix('holidays')->group(function () {
 		Route::get('/', [HolidayController::class, 'index']);
 		Route::post('/', [HolidayController::class, 'store']);
@@ -455,7 +455,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/actions/{id}/pdf', [EmployeeDisciplinaryController::class, 'downloadPdf']);
         Route::get('/dashboard/stats', [EmployeeDisciplinaryController::class, 'getDashboardStats']);
     });
-    
+
     // Attendance Management Routes
     Route::middleware(['role:HR Assistant,HR Staff'])->prefix('attendance')->group(function () {
         Route::get('/dashboard', [AttendanceController::class, 'dashboard']); // Dashboard data

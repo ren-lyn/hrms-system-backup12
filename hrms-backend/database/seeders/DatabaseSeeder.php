@@ -33,6 +33,7 @@ class DatabaseSeeder extends Seeder
             // EvaluationSeeder::class,
             DisciplinaryActionSeeder::class,
             PayrollDataSeeder::class,
+            EmployeeShiftSeeder::class,
             // OnboardingTaskSeeder::class,
             // ResignationFlagSeeder::class,
         ]);

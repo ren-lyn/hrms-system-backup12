@@ -322,6 +322,9 @@ class AttendanceController extends Controller
                 $query->whereBetween('date', [$request->date_from, $request->date_to]);
             }
 
+            // Filter out invalid dates (before 2000-01-01)
+            $query->whereDate('date', '>=', '2000-01-01');
+
             if ($request->has('employee_id')) {
                 $query->where('employee_id', $request->employee_id);
             }
@@ -392,7 +395,7 @@ class AttendanceController extends Controller
                 Storage::disk('local')->delete($filePath);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Could not detect date range from file. Please ensure the file has a Date column with valid dates.'
+                    'message' => 'Could not detect date range from file. Please ensure the file has a Punch Date column with valid dates.'
                 ], 400);
             }
 

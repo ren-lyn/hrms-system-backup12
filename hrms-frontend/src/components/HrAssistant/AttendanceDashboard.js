@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Container, 
   Row, 
@@ -28,6 +28,7 @@ import {
 } from 'react-icons/fa';
 import { format } from 'date-fns';
 import axios from '../../axios';
+import { useDebounce } from '../../utils/debounce';
 
 const AttendanceDashboard = () => {
     // Get current month start and end dates
@@ -75,8 +76,10 @@ const AttendanceDashboard = () => {
     const [dateFrom, setDateFrom] = useState(defaultDates.start);
     const [dateTo, setDateTo] = useState(defaultDates.end);
     const [searchInput, setSearchInput] = useState(''); // User's input
-    const [searchQuery, setSearchQuery] = useState(''); // Actual search query (triggered on Enter)
     const [statusFilter, setStatusFilter] = useState('all');
+    
+    // Debounce search input for better performance
+    const debouncedSearch = useDebounce(searchInput, 500);
 
     // All records state
     const [allRecords, setAllRecords] = useState([]);
@@ -89,9 +92,9 @@ const AttendanceDashboard = () => {
     useEffect(() => {
         fetchAttendanceData();
         fetchAllAttendanceRecords(1);
-    }, [dateFrom, dateTo, searchQuery, statusFilter]);
+    }, [dateFrom, dateTo, debouncedSearch, statusFilter]);
 
-    const fetchAttendanceData = async () => {
+    const fetchAttendanceData = useCallback(async () => {
         setLoading(true);
         try {
             const params = {
@@ -99,8 +102,8 @@ const AttendanceDashboard = () => {
                 date_to: dateTo
             };
             
-            if (searchQuery) {
-                params.search = searchQuery;
+            if (debouncedSearch) {
+                params.search = debouncedSearch;
             }
             
             if (statusFilter && statusFilter !== 'all') {
@@ -120,9 +123,9 @@ const AttendanceDashboard = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [dateFrom, dateTo, debouncedSearch, statusFilter]);
 
-    const fetchAllAttendanceRecords = async (page = 1) => {
+    const fetchAllAttendanceRecords = useCallback(async (page = 1) => {
         setAllLoading(true);
         try {
             const params = {
@@ -131,7 +134,7 @@ const AttendanceDashboard = () => {
                 per_page: allPerPage,
                 page
             };
-            if (searchQuery) params.search = searchQuery;
+            if (debouncedSearch) params.search = debouncedSearch;
             if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
 
             const res = await axios.get('/attendance', { params });
@@ -158,22 +161,17 @@ const AttendanceDashboard = () => {
         } finally {
             setAllLoading(false);
         }
-    };
+    }, [dateFrom, dateTo, debouncedSearch, statusFilter, allPerPage]);
 
-    const handleResetFilters = () => {
+    const handleResetFilters = useCallback(() => {
         const dates = getCurrentMonthDates();
         setDateFrom(dates.start);
         setDateTo(dates.end);
         setSearchInput('');
-        setSearchQuery('');
         setStatusFilter('all');
-    };
+    }, []);
 
-    const handleSearchKeyPress = (e) => {
-        if (e.key === 'Enter') {
-            setSearchQuery(searchInput);
-        }
-    };
+    // Search is now handled by debounced value, no need for Enter key
 
     const handleExport = async () => {
         try {
@@ -258,6 +256,7 @@ const AttendanceDashboard = () => {
             if (response.data.success) {
                 alert(`Import completed successfully!\n\nImported: ${response.data.data.imported}\nFailed: ${response.data.data.failed}\nSkipped: ${response.data.data.skipped}`);
                 fetchAttendanceData();
+                fetchAllAttendanceRecords(1); // Refresh the records table
                 setShowImportModal(false);
                 setSelectedFile(null);
                 setDetectedPeriod(null);
@@ -467,10 +466,9 @@ const AttendanceDashboard = () => {
                                         <Form.Control
                                             type="text"
                                             size="sm"
-                                            placeholder="Name, position, department... (Press Enter to search)"
+                                            placeholder="Name, position, department..."
                                             value={searchInput}
                                             onChange={(e) => setSearchInput(e.target.value)}
-                                            onKeyPress={handleSearchKeyPress}
                                         />
                                     </Form.Group>
                                 </Col>
@@ -578,38 +576,42 @@ const AttendanceDashboard = () => {
                     <Table hover>
                         <thead className="table-light">
                             <tr>
-                                <th>Employee</th>
+                                <th>Employee ID</th>
+                                <th>Name</th>
                                 <th>Date</th>
-                                <th>Clock In</th>
-                                <th>Clock Out</th>
-                                <th>Hours</th>
+                                <th>Day</th>
+                                <th>Time-in</th>
+                                <th>Time-out</th>
                                 <th>Status</th>
+                                <th>Total Hours</th>
                             </tr>
                         </thead>
                         <tbody>
                             {allRecords.map((row) => (
                                 <tr key={`${row.employee?.id || row.employee_id}-${row.date}-${row.clock_in || ''}`}>
                                     <td>
-                                        <div className="d-flex align-items-center">
-                                            <div className="bg-primary rounded-circle d-flex justify-content-center align-items-center text-white fw-bold me-3" style={{ width: '35px', height: '35px', fontSize: '0.75rem' }}>
-                                                {(row.employee?.first_name?.[0] || row.employee_first_name?.[0] || 'U')}{(row.employee?.last_name?.[0] || row.employee_last_name?.[0] || 'N')}
-                                            </div>
-                                            <div>
-                                                <div className="fw-medium">
-                                                    {(row.employee?.first_name || row.employee_first_name) || ''} {(row.employee?.last_name || row.employee_last_name) || ''}
-                                                </div>
-                                                <small className="text-muted">
-                                                    {row.employee?.position || row.position || ''}
-                                                </small>
-                                            </div>
+                                        <Badge bg="info" className="font-monospace">
+                                            {row.employee?.employee_id || row.employee_biometric_id || '--'}
+                                        </Badge>
+                                    </td>
+                                    <td>
+                                        <div className="fw-medium">
+                                            {(row.employee?.first_name || '')} {(row.employee?.last_name || '')}
                                         </div>
+                                        <small className="text-muted">
+                                            {row.employee?.position || ''}
+                                        </small>
                                     </td>
                                     <td>
                                         {row.date ? (
-                                            <>
-                                                <div className="fw-medium">{format(new Date(row.date), 'MMM dd, yyyy')}</div>
-                                                <small className="text-muted">{format(new Date(row.date), 'EEEE')}</small>
-                                            </>
+                                            <div className="fw-medium">{format(new Date(row.date), 'MMM dd, yyyy')}</div>
+                                        ) : (
+                                            <div className="text-muted">--</div>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {row.date ? (
+                                            <small className="text-muted">{format(new Date(row.date), 'EEEE')}</small>
                                         ) : (
                                             <div className="text-muted">--</div>
                                         )}
@@ -625,9 +627,6 @@ const AttendanceDashboard = () => {
                                         </Badge>
                                     </td>
                                     <td>
-                                        <span className="fw-medium">{row.total_hours ? `${row.total_hours}h` : '--'}</span>
-                                    </td>
-                                    <td>
                                         <Badge bg={
                                             row.status === 'Present' ? 'success' :
                                             row.status === 'Late' ? 'warning' :
@@ -638,6 +637,9 @@ const AttendanceDashboard = () => {
                                         }>
                                             {row.status || '—'}
                                         </Badge>
+                                    </td>
+                                    <td>
+                                        <span className="fw-medium">{row.total_hours ? `${row.total_hours}h` : '--'}</span>
                                     </td>
                                 </tr>
                             ))}
@@ -729,8 +731,8 @@ const AttendanceDashboard = () => {
                     
                     <Alert variant="info" className="small mb-0">
                         <FaClipboardList className="me-2" />
-                        <strong>Required columns:</strong> Biometric ID, Date, Clock In, Clock Out<br />
-                        <strong>Optional columns:</strong> Break Out, Break In, Status, Remarks
+                        <strong>Required columns:</strong> Person ID, Person Name, Punch Date, Attendance record<br />
+                        <strong>Optional columns:</strong> Verify Type, TimeZone, Source
                     </Alert>
                 </Modal.Body>
                 <Modal.Footer>

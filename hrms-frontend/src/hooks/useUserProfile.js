@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { apiService } from '../services/apiService';
 
 const useUserProfile = () => {
   const [userProfile, setUserProfile] = useState(null);
@@ -7,7 +7,7 @@ const useUserProfile = () => {
   const [error, setError] = useState(null);
 
   // Define fetchUserProfile outside of useEffect to make it accessible to refreshProfile
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError(null);
@@ -17,15 +17,10 @@ const useUserProfile = () => {
         throw new Error('No authentication token found');
       }
 
-      // Try to get user info from auth endpoint first
-      const response = await axios.get('http://localhost:8000/api/auth/user', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      // Try to get user info from auth endpoint first with caching
+      const { data: user, fromCache } = await apiService.getUserProfile({ forceRefresh });
 
-      if (response.data) {
-        const user = response.data;
+      if (user) {
         
         // Prioritize position information from most specific to least specific
         let displayPosition = 'Employee';
@@ -50,13 +45,8 @@ const useUserProfile = () => {
         });
       } else {
         // Fallback to employee profile endpoint
-        const profileResponse = await axios.get('http://localhost:8000/api/employee/profile', {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-
-        const profile = profileResponse.data.profile || profileResponse.data;
+        const { data: profileData } = await apiService.getEmployeeProfile({ forceRefresh });
+        const profile = profileData.profile || profileData;
         
         // Prioritize position information from employee profile
         let displayPosition = 'Employee';
@@ -127,7 +117,7 @@ const useUserProfile = () => {
 
   // Function to refresh user profile
   const refreshProfile = async () => {
-    await fetchUserProfile();
+    await fetchUserProfile(true); // Force refresh
   };
 
   return {

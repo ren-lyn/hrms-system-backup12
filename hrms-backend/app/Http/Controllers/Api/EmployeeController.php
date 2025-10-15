@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\EmployeeProfile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class EmployeeController extends Controller
 {
@@ -16,10 +17,15 @@ class EmployeeController extends Controller
     public function index()
     {
         //abort(500, "Simulated server error");
-        $employees = User::with('employeeProfile', 'role')
-            ->where('role_id', '!=', 5) // Exclude Applicants
-            ->whereHas('employeeProfile') // Must have an employee profile
-            ->get();
+        
+        // Cache employees data for 10 minutes
+        $employees = Cache::remember('employees_list', 600, function () {
+            return User::with(['employeeProfile', 'role:id,name'])
+                ->select('id', 'first_name', 'last_name', 'email', 'role_id')
+                ->where('role_id', '!=', 5) // Exclude Applicants
+                ->whereHas('employeeProfile') // Must have an employee profile
+                ->get();
+        });
 
         return response()->json($employees);
     }
@@ -58,6 +64,7 @@ class EmployeeController extends Controller
             $created[] = [
                 'user_id' => $user->id,
                 'profile_id' => $profile->id,
+                'employee_id' => $profile->employee_id,
                 'email' => $user->email,
             ];
         }
@@ -138,8 +145,8 @@ public function store(Request $request)
         'last_name'  => $validated['last_name'],
     ]);
 
-    // Create employee profile with all new fields
-    $user->employeeProfile()->create([
+    // Create employee profile with all new fields (employee_id will be auto-generated)
+    $profile = $user->employeeProfile()->create([
         // Personal Information
         'first_name'     => $validated['first_name'],
         'last_name'      => $validated['last_name'],

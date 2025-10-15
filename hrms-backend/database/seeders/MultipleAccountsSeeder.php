@@ -60,6 +60,7 @@ class MultipleAccountsSeeder extends Seeder
 
     private function createFixedUsers(array $users): void
     {
+        $employeeCounter = 1005; // Start from EM1005 (after DefaultAccountsSeeder uses EM1001-EM1003)
         foreach ($users as $u) {
             $roleId = Role::where('name', $u['role'])->value('id');
 
@@ -75,15 +76,17 @@ class MultipleAccountsSeeder extends Seeder
 
             // Only create employee profile for non-Applicants
             if ($u['role'] !== 'Applicant') {
-            $user->employeeProfile()->updateOrCreate([], [
+                $profile = $user->employeeProfile()->updateOrCreate([], [
+                    'employee_id' => 'EM' . $employeeCounter,
                     'first_name' => $u['first_name'],
                     'last_name' => $u['last_name'],
                     'email' => $u['email'],
                     'position' => $u['position'],
                     'department' => $u['department'],
-                'employment_status' => 'Full Time',
+                    'employment_status' => 'Full Time',
                     'hire_date' => now()->subDays(120)->toDateString(),
-            ]);
+                ]);
+                $employeeCounter++;
             }
         }
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { apiService } from '../services/apiService';
 
 const useEmployeeCount = () => {
   const [employeeCount, setEmployeeCount] = useState({
@@ -10,19 +10,12 @@ const useEmployeeCount = () => {
     error: null
   });
 
-  const fetchEmployeeCount = useCallback(async () => {
+  const fetchEmployeeCount = useCallback(async (forceRefresh = false) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setEmployeeCount(prev => ({ ...prev, loading: false, error: 'No authentication token' }));
-        return;
-      }
+      setEmployeeCount(prev => ({ ...prev, loading: true, error: null }));
 
-      const response = await axios.get('http://localhost:8000/api/employees', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      const employees = response.data || [];
+      const { data: employees, fromCache } = await apiService.getEmployees({}, { forceRefresh });
+      
       const total = employees.length;
       
       // Calculate full-time vs training based on employment status
@@ -45,6 +38,11 @@ const useEmployeeCount = () => {
         loading: false,
         error: null
       });
+
+      // Log cache usage for debugging
+      if (fromCache) {
+        console.log('Employee count loaded from cache');
+      }
     } catch (error) {
       console.error('Failed to fetch employee count:', error);
       setEmployeeCount(prev => ({
@@ -61,7 +59,7 @@ const useEmployeeCount = () => {
 
   return {
     ...employeeCount,
-    refetch: fetchEmployeeCount
+    refetch: () => fetchEmployeeCount(true) // Force refresh
   };
 };
 

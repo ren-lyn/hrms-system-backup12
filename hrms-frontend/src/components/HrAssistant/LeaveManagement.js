@@ -4,6 +4,7 @@ import { Search, Calendar, Download, Eye, Check, X, FileText, Clock, CheckCircle
 import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
 import jsPDF from 'jspdf';
 import axios from '../../axios';
+import { useDebounce } from '../../utils/debounce';
 import './LeaveManagement.css';
 
 const LeaveManagement = () => {
@@ -14,6 +15,7 @@ const LeaveManagement = () => {
   });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [showModal, setShowModal] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState(null);
@@ -36,7 +38,7 @@ const LeaveManagement = () => {
   useEffect(() => {
     loadData();
     fetchCurrentUser();
-    // Set up auto-refresh every 30 seconds for real-time updates
+    // Set up auto-refresh every 5 minutes for real-time updates (reduced from 30s)
     const interval = setInterval(loadData, 300000);
     
     // Handle window resize for responsive design
@@ -62,7 +64,7 @@ const LeaveManagement = () => {
     }
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [requestsResponse, statsResponse] = await Promise.all([
@@ -91,12 +93,12 @@ const LeaveManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const showAlert = (message, type) => {
+  const showAlert = useCallback((message, type) => {
     setAlert({ show: true, message, type });
     setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
-  };
+  }, []);
 
   const handleAction = async (leave, type) => {
     setSelectedLeave(leave);

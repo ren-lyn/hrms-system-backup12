@@ -302,24 +302,37 @@ GET /api/attendance/import/history?per_page=20&status=completed
 ### Excel/CSV Columns
 
 **Required:**
-- `Biometric ID` or `Employee ID` - Employee identifier
-- `Date` - Attendance date (YYYY-MM-DD or MM/DD/YYYY)
-- `Clock In` - Clock in time (HH:MM or HH:MM:SS)
-- `Clock Out` - Clock out time (HH:MM or HH:MM:SS)
+- `Person ID` - Employee identifier (e.g., EM1002, EM1001)
+- `Person Name` - Employee full name
+- `Punch Date` - Attendance date (MM/DD/YYYY format)
+- `Attendance record` - Punch time (HH:MM:SS format)
 
 **Optional:**
-- `Break Out` - Break start time
-- `Break In` - Break end time
-- `Status` - Attendance status (Present, Absent, Late)
-- `Remarks` - Additional notes
+- `Verify Type` - Verification method (e.g., Fingerprint)
+- `TimeZone` - Time zone (e.g., +08:00)
+- `Source` - Source identifier
+
+### Processing Logic
+The system automatically processes raw fingerprint punch data by:
+1. **Grouping punches** by employee and date
+2. **Taking first punch** as Time-In
+3. **Taking last punch** as Time-Out
+4. **Calculating working hours** and status
 
 ### Example File Structure
 
-| Biometric ID | Date | Clock In | Clock Out | Break Out | Break In | Status | Remarks |
-|--------------|------|----------|-----------|-----------|----------|--------|---------|
-| 1001 | 2025-10-01 | 08:00 | 17:00 | 12:00 | 13:00 | Present | |
-| 1002 | 2025-10-01 | 08:15 | 17:05 | 12:00 | 13:00 | Late | |
-| 1003 | 2025-10-01 | | | | | Absent | Sick leave |
+| Person ID | Person Name | Punch Date | Attendance record | Verify Type | TimeZone | Source |
+|-----------|-------------|------------|-------------------|-------------|----------|---------|
+| EM1002 | Renelyn Concina | 10/14/2025 | 08:00:00 | Fingerprint | +08:00 | UWH5253600013 |
+| EM1002 | Renelyn Concina | 10/14/2025 | 12:00:00 | Fingerprint | +08:00 | UWH5253600013 |
+| EM1002 | Renelyn Concina | 10/14/2025 | 13:00:00 | Fingerprint | +08:00 | UWH5253600013 |
+| EM1002 | Renelyn Concina | 10/14/2025 | 17:00:00 | Fingerprint | +08:00 | UWH5253600013 |
+| EM1001 | Crystal Anne Barayang | 10/13/2025 | 08:15:00 | Fingerprint | +08:00 | UWH5253600013 |
+| EM1001 | Crystal Anne Barayang | 10/13/2025 | 17:30:00 | Fingerprint | +08:00 | UWH5253600013 |
+
+**Result:** 
+- EM1002: Time-In 08:00:00, Time-Out 17:00:00 (8 hours)
+- EM1001: Time-In 08:15:00, Time-Out 17:30:00 (9.25 hours, 1.25 overtime)
 
 ---
 

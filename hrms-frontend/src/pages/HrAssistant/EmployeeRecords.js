@@ -12,6 +12,7 @@ import './EmployeeRecords.css'; // Import custom styles
 
 const EmployeeRecords = () => {
   const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -195,6 +196,7 @@ const EmployeeRecords = () => {
   // Fetch employees
   const fetchEmployees = useCallback(async (silent = false) => {
     try {
+      if (!silent) setLoading(true);
       const token = localStorage.getItem('token');
       if (!token) {
         showError('Authentication token not found. Please log in again.');
@@ -239,6 +241,8 @@ const EmployeeRecords = () => {
       }
     } catch (error) {
       handleAxiosError(error, 'Failed to load employee records. Please try again.');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -681,6 +685,7 @@ const EmployeeRecords = () => {
       }
       
       const csvData = filteredEmployees.map(emp => ({
+        'Employee ID' : emp.employee_profile?.employee_id || 'N/A',
         'Name': `${emp.employee_profile?.first_name} ${emp.employee_profile?.last_name}`,
         'Email': emp.email,
         'Position': emp.employee_profile?.position,
@@ -880,6 +885,7 @@ const EmployeeRecords = () => {
       doc.setTextColor(80);
       
       const personalInfo = [
+        ['Employee ID:', profile?.employee_id || 'N/A'],
         ['Full Name:', employeeName],
         ['Nickname:', profile?.nickname || 'N/A'],
         ['Civil Status:', profile?.civil_status || 'N/A'],
@@ -1154,11 +1160,20 @@ const EmployeeRecords = () => {
         </div>
       </div>
 
+       {loading ? (
+        <div className="text-center py-5">
+          <Spinner animation="border" role="status" variant="primary" style={{ width: '3rem', height: '3rem' }}>
+            <span className="visually-hidden">Loading...</span>
+          </Spinner>
+          <p className="mt-3 text-muted">Loading employee records...</p>
+        </div>
+      ) : (
 
       <div className="table-responsive">
         <Table bordered hover>
           <thead className="table-light">
             <tr>
+              <th>Employee ID</th>
               <th>Name</th>
               <th>Position</th>
               <th>Department</th>
@@ -1176,6 +1191,9 @@ const EmployeeRecords = () => {
               
               return (
                 <tr key={emp.id} className={isRecentlyUpdated ? 'table-info' : ''}>
+                  <td>
+                    <span className="badge bg-primary">{emp.employee_profile?.employee_id || 'N/A'}</span>
+                  </td>
                   <td>
                     {emp.employee_profile?.first_name} {emp.employee_profile?.last_name}
                     {isRecentlyUpdated && <span className="badge bg-success ms-2" title="Recently updated">New</span>}
@@ -1219,6 +1237,7 @@ const EmployeeRecords = () => {
           </tbody>
         </Table>
       </div>
+      )}
 
       {/* Evaluation Results Modal */}
       <Modal show={showEvalModal} onHide={() => setShowEvalModal(false)} size="xl" className="employee-eval-modal">
@@ -1291,6 +1310,7 @@ const EmployeeRecords = () => {
               </div>
               <div className="section-content p-3">
                 <div className="row g-3">
+                  
                   <div className="col-md-6">
                     <Form.Group>
                       <Form.Label>Full Name <span className="text-danger">*</span></Form.Label>
@@ -1827,6 +1847,14 @@ const EmployeeRecords = () => {
                 </div>
                 <div className="section-content p-3">
                   <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="view-field">
+                        <label className="fw-semibold text-muted">Employee ID</label>
+                        <div className="view-value">
+                          <span className="badge bg-primary">{viewingEmployee.employee_profile?.employee_id || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
                     <div className="col-md-6">
                       <div className="view-field">
                         <label className="fw-semibold text-muted">Full Name</label>

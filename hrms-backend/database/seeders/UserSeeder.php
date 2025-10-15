@@ -25,6 +25,7 @@ class UserSeeder extends Seeder
         // Create comprehensive employee profile for HR Assistant
         $hrUser->employeeProfile()->create([
             // Personal Information
+            'employee_id' => 'EM1001',
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
             'nickname' => 'Juan',

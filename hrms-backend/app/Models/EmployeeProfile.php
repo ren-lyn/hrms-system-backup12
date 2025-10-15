@@ -11,6 +11,7 @@ class EmployeeProfile extends Model
     protected $fillable = [
         'user_id',
         'employee_id',
+        'shift_id',
         'first_name',
         'last_name',
         'nickname',
@@ -90,5 +91,56 @@ class EmployeeProfile extends Model
     public function resignationFlag()
     {
         return $this->hasOne(ResignationFlag::class);
+    }
+
+    public function shift()
+    {
+        return $this->belongsTo(EmployeeShift::class);
+    }
+
+    /**
+     * Generate a unique employee ID in format EM####
+     */
+    public static function generateEmployeeId()
+    {
+        do {
+            // Generate a random 4-digit number
+            $number = str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+            $employeeId = 'EM' . $number;
+        } while (self::where('employee_id', $employeeId)->exists());
+
+        return $employeeId;
+    }
+
+    /**
+     * Boot method to auto-generate employee_id when creating
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($employee) {
+            if (empty($employee->employee_id)) {
+                $employee->employee_id = self::generateEmployeeId();
+            }
+        });
+    }
+
+    /**
+     * Get the next sequential employee ID
+     */
+    public static function getNextEmployeeId()
+    {
+        $lastEmployee = self::where('employee_id', 'like', 'EM%')
+            ->whereRaw('CAST(SUBSTRING(employee_id, 3) AS UNSIGNED) < 10000') // Only consider IDs under 10000
+            ->orderByRaw('CAST(SUBSTRING(employee_id, 3) AS UNSIGNED) DESC')
+            ->first();
+        
+        if ($lastEmployee) {
+            $lastNumber = (int) substr($lastEmployee->employee_id, 2);
+            return 'EM' . ($lastNumber + 1);
+        }
+        
+        return 'EM1001';
     }
 }

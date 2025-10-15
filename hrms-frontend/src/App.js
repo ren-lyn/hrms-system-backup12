@@ -1,45 +1,50 @@
 import axios from 'axios';
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Login from './pages/Login';
-import RegisterApplicant from './pages/RegisterApplicant';
-import JobPortal from './components/JobPortal'; // Add this import
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './responsive.css'; // Import responsive CSS
-
-import HrStaffDashboard from './pages/HrStaffDashboard';
-import ManagerDashboard from './pages/ManagerDashboard';
-import ApplicantDashboard from './pages/ApplicantDashboard';
-import EmployeeDashboard from './pages/EmployeeDashboard';
-
-import ProtectedRoute from './components/ProtectedRoute';
-import HrAssistantLayout from './pages/HrAssistant/HrAssistantLayout';
-import EmployeeRecords from './pages/HrAssistant/EmployeeRecords';
-
-import LeaveManagement from './components/HrAssistant/LeaveManagement'; // ✅ New HR Assistant leave management
-
-import CashAdvanceManagement from './components/HrAssistant/CashAdvanceManagement'; // ✅ New Cash Advance management
-import LeaveApplicationForm from './components/Employee/LeaveApplicationForm'; // ✅ New Employee leave form
-import MyCalendar from './components/HrAssistant/MyCalendar'; // ✅ New HR Calendar
-import DisciplinaryManagement from './components/HrAssistant/DisciplinaryManagement'; // ✅ New Disciplinary Management
-import JobApplications from './components/JobApplications'; // ✅ Professional Job 
-import AttendanceDashboard from './components/HrAssistant/AttendanceDashboard';
-import EnhancedPayrollDashboard from './components/HrAssistant/EnhancedPayrollDashboard';
-
-
-
-import EmployeeEvaluationList from './pages/HrAssistant/Evaluations/EmployeeEvaluationList';
-import EvaluationForm from './pages/HrAssistant/Evaluations/EvaluationForm';
-import EvaluationAdministration from './components/EvaluationAdministration';
-import JobPostings from './components/JobPostings';
-import ApplicationsDashboard from "./components/HrAssistant/Dashboard/ApplicationsDashboard";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import StandaloneAssistantDashboard from './components/HrAssistant/Dashboard/StandaloneAssistantDashboard';
-import HrAssistantProfile from './components/HrAssistant/HrAssistantProfile';
-import OnboardingDashboard from './components/HrAssistant/OnboardingDashboard';
-import PersonalOnboarding from './components/PersonalOnboarding';
+
+// Lazy load components for better performance
+const Login = lazy(() => import('./pages/Login'));
+const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
+const JobPortal = lazy(() => import('./components/JobPortal'));
+const HrStaffDashboard = lazy(() => import('./pages/HrStaffDashboard'));
+const ManagerDashboard = lazy(() => import('./pages/ManagerDashboard'));
+const ApplicantDashboard = lazy(() => import('./pages/ApplicantDashboard'));
+const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'));
+const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
+const HrAssistantLayout = lazy(() => import('./pages/HrAssistant/HrAssistantLayout'));
+const EmployeeRecords = lazy(() => import('./pages/HrAssistant/EmployeeRecords'));
+const LeaveManagement = lazy(() => import('./components/HrAssistant/LeaveManagement'));
+const CashAdvanceManagement = lazy(() => import('./components/HrAssistant/CashAdvanceManagement'));
+const LeaveApplicationForm = lazy(() => import('./components/Employee/LeaveApplicationForm'));
+const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
+const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/DisciplinaryManagement'));
+const JobApplications = lazy(() => import('./components/JobApplications'));
+const AttendanceDashboard = lazy(() => import('./components/HrAssistant/AttendanceDashboard'));
+const EnhancedPayrollDashboard = lazy(() => import('./components/HrAssistant/EnhancedPayrollDashboard'));
+const EmployeeEvaluationList = lazy(() => import('./pages/HrAssistant/Evaluations/EmployeeEvaluationList'));
+const EvaluationForm = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationForm'));
+const EvaluationAdministration = lazy(() => import('./components/EvaluationAdministration'));
+const JobPostings = lazy(() => import('./components/JobPostings'));
+const ApplicationsDashboard = lazy(() => import('./components/HrAssistant/Dashboard/ApplicationsDashboard'));
+const StandaloneAssistantDashboard = lazy(() => import('./components/HrAssistant/Dashboard/StandaloneAssistantDashboard'));
+const HrAssistantProfile = lazy(() => import('./components/HrAssistant/HrAssistantProfile'));
+const OnboardingDashboard = lazy(() => import('./components/HrAssistant/OnboardingDashboard'));
+const PersonalOnboarding = lazy(() => import('./components/PersonalOnboarding'));
+const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
+
+// Loading component
+const LoadingSpinner = () => (
+  <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
+    <div className="spinner-border text-primary" role="status">
+      <span className="visually-hidden">Loading...</span>
+    </div>
+  </div>
+);
 
 function App() {
   useEffect(() => {
@@ -53,8 +58,12 @@ function App() {
     <Router>
       {/* ✅ Toast container goes here so it works globally */}
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
+      
+      {/* Performance Monitor - disabled by default */}
+      {false && process.env.NODE_ENV === 'development' && <PerformanceMonitor />}
 
-      <Routes>
+      <Suspense fallback={<LoadingSpinner />}>
+        <Routes>
         {/* Public Routes */}
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
         <Route path="/jobs" element={<JobApplications />} /> {/* Professional Job Applications */}
@@ -137,7 +146,8 @@ function App() {
           <Route index element={<div>Welcome Employee</div>} />
           <Route path="leave-request" element={<LeaveApplicationForm />} />
         </Route>
-      </Routes>
+        </Routes>
+      </Suspense>
     </Router>
   );
 }

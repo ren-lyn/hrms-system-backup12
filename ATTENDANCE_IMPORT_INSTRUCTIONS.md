@@ -62,26 +62,26 @@ This HRMS system includes sample attendance data and templates for importing emp
 ### Required Columns
 | Column | Description | Example |
 |--------|-------------|---------|
-| `employee_id` | Unique employee identifier | 1, 2, 3... |
-| `first_name` | Employee first name | John |
-| `last_name` | Employee last name | Doe |
-| `position` | Job title | Software Developer |
-| `department` | Department name | IT Department |
-| `date` | Attendance date | 2024-12-01 |
-| `clock_in` | Start time | 08:00:00 |
-| `clock_out` | End time | 17:00:00 |
-| `break_out` | Break start time | 12:00:00 |
-| `break_in` | Break end time | 13:00:00 |
-| `status` | Attendance status | Present, Late, Absent, On Leave |
-| `total_hours` | Total work hours | 8.00 |
-| `overtime_hours` | Extra hours worked | 1.25 |
-| `undertime_hours` | Hours short of full day | 0.50 |
-| `remarks` | Additional notes | Traffic delay, Sick leave |
+| `Person ID` | Unique employee identifier | EM1002, EM1001 |
+| `Person Name` | Employee full name | Renelyn Concina, Crystal Anne Barayang |
+| `Punch Date` | Attendance date | 10/14/2025, 10/13/2025 |
+| `Attendance record` | Punch time | 11:23:50, 01:05:30, 00:22:46 |
+| `Verify Type` | Verification method (Optional) | Fingerprint |
+| `TimeZone` | Time zone (Optional) | +08:00 |
+| `Source` | Source identifier (Optional) | UWH5253600013 |
+
+### Processing Logic
+The system processes raw fingerprint punch data by:
+1. **Collecting all punches** per employee per day from the Excel file
+2. **Extracting first punch** as Time-In (clock_in)
+3. **Extracting last punch** as Time-Out (clock_out)
+4. **Calculating total hours** based on time-in and time-out
+5. **Determining status** (Present, Late, Absent, etc.) based on working hours
 
 ### Status Options
-- **Present** - Employee worked normal hours
+- **Present** - Employee worked normal hours (8+ hours)
 - **Late** - Employee arrived after scheduled time
-- **Absent** - Employee did not come to work
+- **Absent** - Employee did not come to work (no punches)
 - **On Leave** - Employee on approved leave
 
 ## How to Import

@@ -27,6 +27,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $hrStaff->employeeProfile()->updateOrCreate([], [
+            'employee_id' => 'EM1002',
             'first_name' => 'Helen',
             'last_name' => 'Ramos',
             'email' => 'hrstaff@company.com',
@@ -47,6 +48,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $manager->employeeProfile()->updateOrCreate([], [
+            'employee_id' => 'EM1003',
             'first_name' => 'Marco',
             'last_name' => 'Santos',
             'email' => 'manager@company.com',
@@ -67,6 +69,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $employee->employeeProfile()->updateOrCreate([], [
+            'employee_id' => 'EM1004',
             'first_name' => 'Emily',
             'last_name' => 'Reyes',
             'email' => 'employee@company.com',
