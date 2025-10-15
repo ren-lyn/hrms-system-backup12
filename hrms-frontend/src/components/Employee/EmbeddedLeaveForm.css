@@ -147,6 +147,7 @@
   color: #1976d2;
 }
 
+
 /* Form Labels */
 .form-label {
   font-weight: 500;
@@ -594,6 +595,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .status-badge-table.info {

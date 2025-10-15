@@ -14,7 +14,7 @@ const EmbeddedLeaveForm = () => {
     name: '',
     dateFiled: new Date().toISOString().split('T')[0],
     department: '',
-    leaveType: 'Vacation Leave',
+    leaveType: 'Sick Leave',
     startDate: null,
     endDate: null,
     totalDays: 0,
@@ -28,6 +28,8 @@ const EmbeddedLeaveForm = () => {
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [remainingLeaves, setRemainingLeaves] = useState(3);
+  const [paidLeaveStatus, setPaidLeaveStatus] = useState({ hasPaidLeave: true, paidLeavesUsed: 0 });
 
   // Load employee data function (optimized with caching)
   const loadEmployeeData = async () => {
@@ -196,6 +198,12 @@ const EmbeddedLeaveForm = () => {
       setLeaveRequests(pendingRequests);
       setLeaveHistory(historyRequests);
       
+      // Calculate remaining leaves for current month
+      calculateRemainingLeaves(allRequests);
+      
+      // Calculate paid leave status for current year
+      calculatePaidLeaveStatus(allRequests);
+      
       console.log('Leave requests fetched:', {
         pending: pendingRequests.length,
         history: historyRequests.length,
@@ -214,6 +222,59 @@ const EmbeddedLeaveForm = () => {
     } catch (error) {
       console.error('Failed to load leave data:', error);
     }
+  };
+
+  // Calculate remaining leaves for current month
+  const calculateRemainingLeaves = (allRequests) => {
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    
+    // Count leaves filed in current month
+    const currentMonthLeaves = allRequests.filter(request => {
+      const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
+      return requestDate.getMonth() === currentMonth && 
+             requestDate.getFullYear() === currentYear;
+    }).length;
+    
+    const remaining = Math.max(0, 3 - currentMonthLeaves);
+    setRemainingLeaves(remaining);
+    return remaining;
+  };
+
+  // Calculate paid leave status for current year
+  const calculatePaidLeaveStatus = (allRequests) => {
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    
+    // Count paid leaves used in current year
+    const paidLeavesUsed = allRequests.filter(request => {
+      const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
+      const isCurrentYear = requestDate.getFullYear() === currentYear;
+      const isPaidLeave = request.terms === 'With Pay' || request.pay_terms === 'With Pay' || 
+                         (request.status === 'approved' && !request.terms); // Default to paid if no terms specified
+      return isCurrentYear && isPaidLeave;
+    }).length;
+    
+    const hasPaidLeave = paidLeavesUsed < 1; // Employee gets 1 paid leave per year
+    
+    setPaidLeaveStatus({ hasPaidLeave, paidLeavesUsed });
+    return { hasPaidLeave, paidLeavesUsed };
+  };
+
+  // Get maximum allowed days for each leave type
+  const getMaxDaysForLeaveType = (leaveType) => {
+    const leaveLimits = {
+      'Sick Leave': 5,
+      'Vacation Leave': 5,
+      'Emergency Leave': 5,
+      'Maternity Leave – 105 days': 105,
+      'Paternity Leave – 7 days': 7,
+      'Leave for Victims of Violence Against Women and Their Children (VAWC) – 10 days': 10,
+      'Parental Leave – 7 days': 7,
+      'Women\'s Special Leave – 60 days': 60
+    };
+    return leaveLimits[leaveType] || 0;
   };
 
   
@@ -310,8 +371,21 @@ const EmbeddedLeaveForm = () => {
       return;
     }
     
+    // Check if there's already a leave request being processed
+    if (leaveRequests.length > 0) {
+      showAlert('You still have a leave request being processed.', 'warning');
+      return;
+    }
+    
     if (formData.totalHours > 8) {
       showAlert('Total hours cannot be more than 8 hours per day.', 'warning');
+      return;
+    }
+    
+    // Check if total days exceed the limit for the selected leave type
+    const maxDays = getMaxDaysForLeaveType(formData.leaveType);
+    if (formData.totalDays > maxDays) {
+      showAlert(`You can only file up to ${maxDays} days for ${formData.leaveType.split(' – ')[0]}.`, 'warning');
       return;
     }
     
@@ -389,10 +463,21 @@ const EmbeddedLeaveForm = () => {
       
       showAlert('Leave application submitted successfully! HR will review your request shortly.', 'success');
       
+      // Decrease remaining leaves counter
+      setRemainingLeaves(prev => Math.max(0, prev - 1));
+      
+      // Update paid leave status (assume new leave is paid if employee still has paid leave available)
+      setPaidLeaveStatus(prev => {
+        if (prev.hasPaidLeave) {
+          return { hasPaidLeave: false, paidLeavesUsed: prev.paidLeavesUsed + 1 };
+        }
+        return prev;
+      });
+      
       // Reset form after successful submission
       setFormData(prev => ({
         ...prev,
-        leaveType: 'Vacation Leave',
+        leaveType: 'Sick Leave',
         startDate: null,
         endDate: null,
         totalDays: 0,
@@ -450,14 +535,14 @@ const EmbeddedLeaveForm = () => {
     // Create table data from real backend leave requests
     const tableData = leaveRequests.map((request, index) => {
       // Map backend status to display status
-      let displayStatus = 'Under Manager';
+      let displayStatus = 'For Approval (Manager)';
       let severity = 'warning';
       
       if (request.status === 'pending') {
-        displayStatus = 'Under Manager';
+        displayStatus = 'For Approval (Manager)';
         severity = 'warning';
       } else if (request.status === 'manager_approved') {
-        displayStatus = 'Process of HR Assistant';
+        displayStatus = 'For Approval (HR Assistant)';
         severity = 'info';
       } else if (request.status === 'manager_rejected') {
         displayStatus = 'Manager Rejected';
@@ -773,13 +858,14 @@ const EmbeddedLeaveForm = () => {
                       className="form-select responsive-form-control"
                       required
                     >
-                      <option value="Vacation Leave">Vacation Leave</option>
                       <option value="Sick Leave">Sick Leave</option>
+                      <option value="Vacation Leave">Vacation Leave</option>
                       <option value="Emergency Leave">Emergency Leave</option>
-                      <option value="Maternity Leave">Maternity Leave</option>
-                      <option value="Paternity Leave">Paternity Leave</option>
-                      <option value="Personal Leave">Personal Leave</option>
-                      <option value="Bereavement Leave">Bereavement Leave</option>
+                      <option value="Maternity Leave – 105 days">Maternity Leave</option>
+                      <option value="Paternity Leave – 7 days">Paternity Leave</option>
+                      <option value="Leave for Victims of Violence Against Women and Their Children (VAWC) – 10 days">Leave for Victims of Violence Against Women and Their Children (VAWC)</option>
+                      <option value="Parental Leave – 7 days">Parental Leave – 7 days</option>
+                      <option value="Women's Special Leave – 60 days">Women's Special Leave</option>
                     </Form.Select>
                   </Form.Group>
                 </div>
@@ -789,9 +875,11 @@ const EmbeddedLeaveForm = () => {
               <Row className="form-row">
                 <Col md={12}>
                   <div className="note-section">
-                    <span className="note-icon">ℹ️</span>
                     <span className="note-text">
-                      <strong>Note:</strong> Pay terms and leave category will be determined by HR during the approval process.
+                      <strong>Note:</strong> You have <strong>{remainingLeaves}</strong> more leave{remainingLeaves !== 1 ? 's' : ''} remaining this month. {paidLeaveStatus.hasPaidLeave ? 
+                        `You have 1 leave request with pay.` : 
+                        `Your next leave request is without pay. You will receive paid leave again next year.`
+                      }
                     </span>
                   </div>
                 </Col>
@@ -863,16 +951,13 @@ const EmbeddedLeaveForm = () => {
               </div>
 
           {/* Submit Button Row */}
-          <div className="responsive-form-row">
-            <div className="responsive-form-col text-start">
-              <Button 
-                type="submit"
-                className="submit-button-form responsive-btn"
-              >
-                <span className="submit-icon hide-on-mobile">📋</span>
-                Submit Leave Request
-              </Button>
-            </div>
+          <div className="d-flex justify-content-end">
+            <Button 
+              type="submit"
+              className="submit-button-form responsive-btn"
+            >
+              Submit Leave Request
+            </Button>
           </div>
             </Form>
           </div>
