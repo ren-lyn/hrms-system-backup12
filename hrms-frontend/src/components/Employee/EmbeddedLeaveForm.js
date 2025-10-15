@@ -30,6 +30,7 @@ const EmbeddedLeaveForm = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [remainingLeaves, setRemainingLeaves] = useState(3);
   const [paidLeaveStatus, setPaidLeaveStatus] = useState({ hasPaidLeave: true, paidLeavesUsed: 0 });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Load employee data function (optimized with caching)
   const loadEmployeeData = async () => {
@@ -247,16 +248,15 @@ const EmbeddedLeaveForm = () => {
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
     
-    // Count paid leaves used in current year
-    const paidLeavesUsed = allRequests.filter(request => {
+    // Count all leaves used in current year (assume all are paid unless specified otherwise)
+    const currentYearLeaves = allRequests.filter(request => {
       const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
-      const isCurrentYear = requestDate.getFullYear() === currentYear;
-      const isPaidLeave = request.terms === 'With Pay' || request.pay_terms === 'With Pay' || 
-                         (request.status === 'approved' && !request.terms); // Default to paid if no terms specified
-      return isCurrentYear && isPaidLeave;
+      return requestDate.getFullYear() === currentYear;
     }).length;
     
-    const hasPaidLeave = paidLeavesUsed < 1; // Employee gets 1 paid leave per year
+    // Employee gets 1 paid leave per year
+    const hasPaidLeave = currentYearLeaves < 1;
+    const paidLeavesUsed = currentYearLeaves;
     
     setPaidLeaveStatus({ hasPaidLeave, paidLeavesUsed });
     return { hasPaidLeave, paidLeavesUsed };
@@ -280,7 +280,23 @@ const EmbeddedLeaveForm = () => {
   
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
-    // Remove auto-hide timeout for instant feedback
+    // Scroll to top to show alert message
+    setTimeout(() => scrollToTop(), 100);
+    // Auto-dismiss alert after 3 seconds
+    setTimeout(() => {
+      setAlert({ show: false, message: '', type: '' });
+    }, 3000);
+  };
+
+  // Scroll to top of the form container
+  const scrollToTop = () => {
+    const formContainer = document.querySelector('.leave-request-container');
+    if (formContainer) {
+      formContainer.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start' 
+      });
+    }
   };
 
   const handleDownloadPdf = (requestId) => {
@@ -341,8 +357,17 @@ const EmbeddedLeaveForm = () => {
   };
 
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    setShowConfirmModal(false);
+    await handleFormSubmit();
+  };
+
+  const handleFormSubmit = async () => {
     
     // Validate required fields
     if (!formData.startDate || !formData.endDate) {
@@ -466,14 +491,6 @@ const EmbeddedLeaveForm = () => {
       // Decrease remaining leaves counter
       setRemainingLeaves(prev => Math.max(0, prev - 1));
       
-      // Update paid leave status (assume new leave is paid if employee still has paid leave available)
-      setPaidLeaveStatus(prev => {
-        if (prev.hasPaidLeave) {
-          return { hasPaidLeave: false, paidLeavesUsed: prev.paidLeavesUsed + 1 };
-        }
-        return prev;
-      });
-      
       // Reset form after successful submission
       setFormData(prev => ({
         ...prev,
@@ -490,6 +507,14 @@ const EmbeddedLeaveForm = () => {
       
       // Fetch updated leave requests from backend
       await fetchLeaveRequests();
+      
+      // Update paid leave status after fetching (to ensure it's based on current data)
+      setPaidLeaveStatus(prev => {
+        if (prev.hasPaidLeave) {
+          return { hasPaidLeave: false, paidLeavesUsed: prev.paidLeavesUsed + 1 };
+        }
+        return prev;
+      });
       
       console.log('Leave request submitted and details updated');
     } catch (error) {
@@ -864,7 +889,7 @@ const EmbeddedLeaveForm = () => {
                       <option value="Maternity Leave – 105 days">Maternity Leave</option>
                       <option value="Paternity Leave – 7 days">Paternity Leave</option>
                       <option value="Leave for Victims of Violence Against Women and Their Children (VAWC) – 10 days">Leave for Victims of Violence Against Women and Their Children (VAWC)</option>
-                      <option value="Parental Leave – 7 days">Parental Leave – 7 days</option>
+                      <option value="Parental Leave – 7 days">Parental Leave</option>
                       <option value="Women's Special Leave – 60 days">Women's Special Leave</option>
                     </Form.Select>
                   </Form.Group>
@@ -1089,6 +1114,31 @@ const EmbeddedLeaveForm = () => {
           </Button>
           <Button variant="secondary" onClick={() => setShowModal(false)}>
             Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Confirmation Modal */}
+      <Modal show={showConfirmModal} onHide={() => setShowConfirmModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Confirm Leave Request</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>Are you sure you want to submit this leave request?</p>
+          <div className="confirmation-details">
+            <p><strong>Leave Type:</strong> {formData.leaveType}</p>
+            <p><strong>Start Date:</strong> {formData.startDate ? formData.startDate.toLocaleDateString() : 'Not selected'}</p>
+            <p><strong>End Date:</strong> {formData.endDate ? formData.endDate.toLocaleDateString() : 'Not selected'}</p>
+            <p><strong>Total Days:</strong> {formData.totalDays} day{formData.totalDays !== 1 ? 's' : ''}</p>
+            <p><strong>Reason:</strong> {formData.reason || 'Not provided'}</p>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleConfirmSubmit}>
+            Yes, Submit Leave Request
           </Button>
         </Modal.Footer>
       </Modal>

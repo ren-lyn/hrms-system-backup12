@@ -1129,3 +1129,27 @@
 .form-select:focus {
   outline: none;
 }
+
+/* Confirmation Modal Styles */
+.confirmation-details {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.confirmation-details p {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.confirmation-details p:last-child {
+  margin-bottom: 0;
+}
+
+.confirmation-details strong {
+  color: #495057;
+  min-width: 100px;
+  display: inline-block;
+}
