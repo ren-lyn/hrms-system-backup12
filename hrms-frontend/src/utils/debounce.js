@@ -2,6 +2,8 @@
  * Debounce utility for optimizing search inputs and frequent operations
  * Delays execution until after wait milliseconds have elapsed since the last call
  */
+
+import { useState, useEffect } from 'react';
 export function debounce(func, wait = 300) {
   let timeout;
   
@@ -35,8 +37,6 @@ export function throttle(func, wait = 300) {
 /**
  * React hook for debounced values
  */
-import { useState, useEffect } from 'react';
-
 export function useDebounce(value, delay = 300) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
