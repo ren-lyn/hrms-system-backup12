@@ -40,4 +40,3 @@ const OnboardingProgressBar = ({
 };
 
 export default OnboardingProgressBar;
-

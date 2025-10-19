@@ -113,6 +113,7 @@ const PersonalOnboarding = () => {
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [profileData, setProfileData] = useState({
     address: '',
     contactNo: '',
@@ -206,7 +207,7 @@ const PersonalOnboarding = () => {
         
         // Application Status History
         status_history: [
-          { status: 'Applied', date: '2025-01-05', completed: true },
+          { status: 'Pending', date: '2025-01-05', completed: true },
           { status: 'Shortlisted', date: '2025-01-08', completed: true },
           { status: 'Interview', date: '2025-01-12', completed: true },
           { status: 'Offered', date: '2025-01-15', completed: true },
@@ -515,54 +516,54 @@ const PersonalOnboarding = () => {
   const NavigationTabs = () => (
     <div className="row mb-4" style={{ position: 'sticky', top: '0', zIndex: '1001' }}>
       <div className="col-12">
-        <div className="bg-white rounded-3 shadow-sm p-3">
-          <div className="navigation-tabs d-flex flex-wrap gap-2">
+        <div className="modern-tab-container">
+          <div className="tab-navigation">
             <button 
-              className={`btn ${currentPage === 'application-status' ? 'btn-primary' : 'btn-outline-primary'} btn-sm`}
+              className={`modern-tab ${currentPage === 'application-status' ? 'active' : ''}`}
               onClick={() => setCurrentPage('application-status')}
             >
-              <FontAwesomeIcon icon={faChartLine} className="me-2" />
-              <span className="d-none d-sm-inline">Application Status</span>
-              <span className="d-sm-none">Status</span>
+              <FontAwesomeIcon icon={faChartLine} className="tab-icon" />
+              <span className="tab-label">Application Status</span>
+              <div className="tab-indicator"></div>
             </button>
-            {availableTabs.includes('offer') && (
-              <button 
-                className={`btn ${currentPage === 'offer' ? 'btn-primary' : 'btn-outline-primary'} btn-sm`}
-                onClick={() => setCurrentPage('offer')}
-              >
-                <FontAwesomeIcon icon={faGift} className="me-2" />
-                <span className="d-none d-sm-inline">Offer Letter</span>
-                <span className="d-sm-none">Offer</span>
-              </button>
-            )}
             {availableTabs.includes('interview') && (
               <button 
-                className={`btn ${currentPage === 'interview' ? 'btn-primary' : 'btn-outline-primary'} btn-sm`}
+                className={`modern-tab ${currentPage === 'interview' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('interview')}
               >
-                <FontAwesomeIcon icon={faUserTie} className="me-2" />
-                <span className="d-none d-sm-inline">Interview Schedule</span>
-                <span className="d-sm-none">Interview</span>
+                <FontAwesomeIcon icon={faUserTie} className="tab-icon" />
+                <span className="tab-label">Interview Schedule</span>
+                <div className="tab-indicator"></div>
+              </button>
+            )}
+            {availableTabs.includes('offer') && (
+              <button 
+                className={`modern-tab ${currentPage === 'offer' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('offer')}
+              >
+                <FontAwesomeIcon icon={faGift} className="tab-icon" />
+                <span className="tab-label">Offer Letter</span>
+                <div className="tab-indicator"></div>
               </button>
             )}
             {availableTabs.includes('onboarding') && (
               <button 
-                className={`btn ${currentPage === 'onboarding' ? 'btn-primary' : 'btn-outline-primary'} btn-sm`}
+                className={`modern-tab ${currentPage === 'onboarding' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('onboarding')}
               >
-                <FontAwesomeIcon icon={faRocket} className="me-2" />
-                <span className="d-none d-sm-inline">Onboarding</span>
-                <span className="d-sm-none">Onboard</span>
+                <FontAwesomeIcon icon={faRocket} className="tab-icon" />
+                <span className="tab-label">Onboarding</span>
+                <div className="tab-indicator"></div>
               </button>
             )}
             {availableTabs.includes('onboarding') && (
               <button 
-                className={`btn ${currentPage === 'progress' ? 'btn-primary' : 'btn-outline-primary'} btn-sm`}
+                className={`modern-tab ${currentPage === 'progress' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('progress')}
               >
-                <FontAwesomeIcon icon={faTrophy} className="me-2" />
-                <span className="d-none d-sm-inline">Progress Tracker</span>
-                <span className="d-sm-none">Progress</span>
+                <FontAwesomeIcon icon={faTrophy} className="tab-icon" />
+                <span className="tab-label">Progress Tracker</span>
+                <div className="tab-indicator"></div>
               </button>
             )}
           </div>
@@ -574,48 +575,6 @@ const PersonalOnboarding = () => {
    // Application Status Page
    const ApplicationStatusPage = () => (
      <div className="container-fluid p-0">
-       {/* Hero Section */}
-       <div className="onboarding-gradient-bg p-5 mb-4">
-         <div className="row align-items-center">
-           <div className="col-md-8">
-             <div className="d-flex align-items-center mb-3">
-               <div className="onboarding-icon-wrapper me-4" style={{ 
-                 width: '80px', 
-                 height: '80px',
-                 backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                 backdropFilter: 'blur(10px)'
-               }}>
-                 <FontAwesomeIcon icon={faChartLine} size="2x" style={{ color: 'white' }} />
-               </div>
-               <div>
-                 <h1 className="onboarding-welcome-title mb-2" style={{ 
-                   fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', 
-                   fontWeight: '700',
-                   marginLeft: '-10px'
-                 }}>
-                   Application Status & History
-                 </h1>
-                 <p className="onboarding-welcome-subtitle mb-0" style={{ 
-                   fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-                   marginLeft: '-10px'
-                 }}>
-                   Track your application progress and stay updated on your journey
-                 </p>
-               </div>
-             </div>
-           </div>
-           <div className="col-md-4 text-center">
-             <div className="onboarding-icon-wrapper onboarding-pulse-animation" style={{ 
-               width: '120px', 
-               height: '120px', 
-               margin: '0 auto',
-               backgroundColor: 'rgba(255, 255, 255, 0.2)'
-             }}>
-               <FontAwesomeIcon icon={faBriefcase} size="3x" style={{ color: 'white' }} />
-             </div>
-           </div>
-         </div>
-       </div>
 
        {/* Congratulations Message */}
        <div className="container-fluid px-4 mb-4">
@@ -637,13 +596,19 @@ const PersonalOnboarding = () => {
                      fontWeight: '700',
                      marginLeft: '-10px'
                    }}>
-                     Congratulations! You've been moved to the Onboarding Stage.
+                     {onboardingData?.status_history?.find(s => s.status === 'Pending') 
+                       ? 'Application Submitted Successfully!'
+                       : 'Congratulations! You\'ve been moved to the Onboarding Stage.'
+                     }
                    </h2>
                    <p className="onboarding-welcome-subtitle mb-0" style={{ 
                      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
                      marginLeft: '-10px'
                    }}>
-                     Please complete the steps below to start your employment process at <strong>CCDC</strong>.
+                     {onboardingData?.status_history?.find(s => s.status === 'Pending') 
+                       ? 'Your application is now under review. We will notify you of any updates or next steps.'
+                       : 'Please complete the steps below to start your employment process at <strong>CCDC</strong>.'
+                     }
                    </p>
                  </div>
                </div>
@@ -654,21 +619,46 @@ const PersonalOnboarding = () => {
                    <FontAwesomeIcon icon={faUserTie} className="me-3 mt-1 text-white" />
                    <div>
                      <h6 className="text-white mb-2">Message from HR</h6>
-                     <p className="text-white-50 mb-2">Welcome to CCDC! We're excited to have you join our team. Please complete all required documents and steps to finalize your employment.</p>
-                     <small className="text-white-50">Date moved to onboarding: January 15, 2025</small>
+                     <p className="text-white-50 mb-2">
+                       {onboardingData?.status_history?.find(s => s.status === 'Pending') 
+                         ? 'Thank you for your application! Our HR team is currently reviewing your submission. We will notify you of any updates or next steps.'
+                         : 'Welcome to CCDC! We\'re excited to have you join our team. Please complete all required documents and steps to finalize your employment.'
+                       }
+                     </p>
+                     <small className="text-white-50">
+                       {onboardingData?.status_history?.find(s => s.status === 'Pending') 
+                         ? `Application submitted: ${onboardingData?.date_applied ? new Date(onboardingData.date_applied).toLocaleDateString() : 'N/A'}`
+                         : 'Date moved to onboarding: January 15, 2025'
+                       }
+                     </small>
                    </div>
                  </div>
                </div>
                
                <div className="d-flex gap-3">
-                 <button className="btn btn-success btn-lg px-4">
-                   <FontAwesomeIcon icon={faEye} className="me-2" />
-                   View Requirements
-                 </button>
-                 <button className="btn btn-outline-light btn-lg px-4">
-                   <FontAwesomeIcon icon={faClipboardCheck} className="me-2" />
-                   Start Onboarding
-                 </button>
+                 {onboardingData?.status_history?.find(s => s.status === 'Pending') ? (
+                   <>
+                     <button className="btn btn-outline-light btn-lg px-4" onClick={() => setShowApplicationModal(true)}>
+                       <FontAwesomeIcon icon={faEye} className="me-2" />
+                       View Application
+                     </button>
+                     <button className="btn btn-outline-light btn-lg px-4">
+                       <FontAwesomeIcon icon={faClock} className="me-2" />
+                       Check Status
+                     </button>
+                   </>
+                 ) : (
+                   <>
+                     <button className="btn btn-success btn-lg px-4">
+                       <FontAwesomeIcon icon={faEye} className="me-2" />
+                       View Requirements
+                     </button>
+                     <button className="btn btn-outline-light btn-lg px-4">
+                       <FontAwesomeIcon icon={faClipboardCheck} className="me-2" />
+                       Start Onboarding
+                     </button>
+                   </>
+                 )}
                </div>
              </div>
              <div className="col-md-4 text-center">
@@ -774,6 +764,7 @@ const PersonalOnboarding = () => {
                  <div key={index} className={`status-step ${step.completed ? 'completed' : step.current ? 'current' : 'pending'}`}>
                    <div className="status-icon">
                      <FontAwesomeIcon icon={
+                       step.status === 'Pending' ? faClock :
                        step.status === 'Applied' ? faClock :
                        step.status === 'Shortlisted' ? faStar :
                        step.status === 'Interview' ? faUserTie :
@@ -3473,6 +3464,318 @@ const PersonalOnboarding = () => {
           </button>
         </Modal.Footer>
       </Modal>
+
+      {/* Application Details Modal */}
+      <Modal show={showApplicationModal} onHide={() => setShowApplicationModal(false)} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faEye} className="me-2 text-primary" />
+            Application Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {onboardingData && (
+            <div>
+              {/* Job Information */}
+              <div className="mb-4">
+                <h5 className="fw-bold text-primary mb-3">
+                  <FontAwesomeIcon icon={faBriefcase} className="me-2" />
+                  Position Applied For
+                </h5>
+                <div className="bg-light p-3 rounded">
+                  <div className="row">
+                    <div className="col-md-6">
+                      <p className="mb-2"><strong>Job Title:</strong></p>
+                      <p className="text-primary fw-semibold">{onboardingData.position}</p>
+                    </div>
+                    <div className="col-md-6">
+                      <p className="mb-2"><strong>Department:</strong></p>
+                      <p className="text-muted">{onboardingData.department}</p>
+                    </div>
+                  </div>
+                  <div className="row mt-2">
+                    <div className="col-md-6">
+                      <p className="mb-2"><strong>Application ID:</strong></p>
+                      <p className="text-muted">#{onboardingData.application_id}</p>
+                    </div>
+                    <div className="col-md-6">
+                      <p className="mb-2"><strong>Applied Date:</strong></p>
+                      <p className="text-muted">
+                        {onboardingData.date_applied && new Date(onboardingData.date_applied).toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Application Status */}
+              <div className="mb-4">
+                <h5 className="fw-bold text-primary mb-3">
+                  <FontAwesomeIcon icon={faChartLine} className="me-2" />
+                  Current Status
+                </h5>
+                <div className="bg-light p-3 rounded">
+                  <div className="d-flex align-items-center">
+                    <div className="me-3">
+                      <FontAwesomeIcon 
+                        icon={faClock} 
+                        className="text-warning" 
+                        style={{ fontSize: '1.5rem' }} 
+                      />
+                    </div>
+                    <div>
+                      <h6 className="mb-1">Application Under Review</h6>
+                      <p className="text-muted mb-0">Your application is currently being reviewed by our HR team.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resume Information */}
+              <div className="mb-4">
+                <h5 className="fw-bold text-primary mb-3">
+                  <FontAwesomeIcon icon={faFileAlt} className="me-2" />
+                  Submitted Documents
+                </h5>
+                <div className="bg-light p-3 rounded">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center">
+                      <FontAwesomeIcon icon={faFileAlt} className="text-primary me-3" style={{ fontSize: '1.5rem' }} />
+                      <div>
+                        <h6 className="mb-1">Resume/CV</h6>
+                        <p className="text-muted mb-0">Successfully submitted</p>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="badge bg-success">Submitted</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Application Timeline */}
+              <div className="mb-4">
+                <h5 className="fw-bold text-primary mb-3">
+                  <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                  Application Timeline
+                </h5>
+                <div className="bg-light p-3 rounded">
+                  {onboardingData.status_history && onboardingData.status_history.length > 0 ? (
+                    <div className="timeline">
+                      {onboardingData.status_history.map((step, index) => (
+                        <div key={index} className="d-flex align-items-center mb-2">
+                          <div className="me-3">
+                            <FontAwesomeIcon 
+                              icon={step.status === 'Pending' ? faClock : faCheckCircle}
+                              className={step.completed ? 'text-success' : 'text-warning'}
+                            />
+                          </div>
+                          <div className="flex-grow-1">
+                            <span className="fw-semibold">{step.status}</span>
+                            {step.date && (
+                              <span className="text-muted ms-2">
+                                - {new Date(step.date).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted mb-0">No timeline available</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Next Steps */}
+              <div className="mb-4">
+                <h5 className="fw-bold text-primary mb-3">
+                  <FontAwesomeIcon icon={faRocket} className="me-2" />
+                  What's Next?
+                </h5>
+                <div className="bg-light p-3 rounded">
+                  <div className="d-flex align-items-start">
+                    <FontAwesomeIcon icon={faInfoCircle} className="text-info me-3 mt-1" />
+                    <div>
+                      <h6 className="mb-2">Review Process</h6>
+                      <p className="mb-2">Our HR team is currently reviewing your application and qualifications.</p>
+                      <ul className="mb-0">
+                        <li>We will notify you via email of any updates</li>
+                        <li>If shortlisted, you may be invited for an interview</li>
+                        <li>You can check your application status anytime</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <button className="btn btn-secondary" onClick={() => setShowApplicationModal(false)}>
+            <FontAwesomeIcon icon={faTimes} className="me-2" />
+            Close
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowApplicationModal(false)}>
+            <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+            Understood
+          </button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Enhanced Modern Tab Styling */}
+      <style>{`
+        /* Enhanced Tab Navigation */
+        .modern-tab-container {
+          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+          border-radius: 20px;
+          padding: 1rem;
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+          border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .tab-navigation {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .modern-tab {
+          position: relative;
+          background: transparent;
+          border: 2px solid transparent;
+          border-radius: 12px;
+          padding: 0.5rem 1rem;
+          min-width: 120px;
+          height: 60px;
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 0.3rem;
+          font-weight: 500;
+          color: #6c757d;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+          cursor: pointer;
+        }
+
+        .modern-tab:hover {
+          background: rgba(74, 144, 226, 0.08);
+          border-color: rgba(74, 144, 226, 0.2);
+          color: #4a90e2;
+          transform: translateY(-3px);
+          box-shadow: 0 8px 25px rgba(74, 144, 226, 0.15);
+        }
+
+        .modern-tab.active {
+          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+          border-color: #4a90e2;
+          color: white;
+          transform: translateY(-3px);
+          box-shadow: 0 12px 30px rgba(74, 144, 226, 0.3);
+        }
+
+        .modern-tab.active:hover {
+          background: linear-gradient(135deg, #3d7bc8 0%, #2d5f9a 100%);
+          transform: translateY(-4px);
+          box-shadow: 0 16px 35px rgba(74, 144, 226, 0.4);
+        }
+
+        .tab-icon {
+          font-size: 1.2rem;
+          transition: transform 0.3s ease;
+        }
+
+        .modern-tab:hover .tab-icon {
+          transform: scale(1.1);
+        }
+
+        .tab-label {
+          font-size: 0.9rem;
+          font-weight: 600;
+          text-align: center;
+        }
+
+        .tab-indicator {
+          position: absolute;
+          bottom: -2px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 0;
+          height: 3px;
+          background: linear-gradient(90deg, #4a90e2, #357abd);
+          border-radius: 2px;
+          transition: width 0.3s ease;
+        }
+
+        .modern-tab.active .tab-indicator {
+          width: 80%;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+          .modern-tab {
+            min-width: 110px;
+            height: 55px;
+            padding: 0.4rem 0.9rem;
+          }
+          
+          .tab-label {
+            font-size: 0.8rem;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .modern-tab {
+            min-width: 100px;
+            height: 50px;
+            padding: 0.35rem 0.8rem;
+          }
+          
+          .tab-label {
+            font-size: 0.75rem;
+          }
+          
+          .tab-icon {
+            font-size: 1.1rem;
+          }
+        }
+
+        @media (max-width: 576px) {
+          .tab-navigation {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          
+          .modern-tab {
+            min-width: auto;
+            width: 100%;
+            height: 45px;
+            flex-direction: row;
+            justify-content: flex-start;
+            padding: 0.5rem 0.8rem;
+          }
+          
+          .tab-icon {
+            margin-right: 0.5rem;
+            font-size: 1rem;
+          }
+        }
+
+        /* Smooth Animations */
+        .modern-tab,
+        .tab-icon,
+        .tab-indicator {
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+      `}</style>
     </div>
   );
 };

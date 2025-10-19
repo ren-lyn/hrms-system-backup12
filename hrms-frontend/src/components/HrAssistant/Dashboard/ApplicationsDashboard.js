@@ -80,13 +80,19 @@ const ApplicationsDashboard = () => {
       
       const statusPromises = hiredApplications.map(async (app) => {
         try {
-          const response = await axios.get(`http://localhost:8000/api/onboarding-records/user/${app.user_id}`, {
+          const userId = app.applicant?.user_id || app.user_id;
+          if (!userId) {
+            console.warn('No user_id found for application:', app.id);
+            return { userId: null, data: null };
+          }
+          
+          const response = await axios.get(`http://localhost:8000/api/onboarding-records/user/${userId}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          return { userId: app.user_id, data: response.data };
+          return { userId: userId, data: response.data };
         } catch (error) {
           if (error.response?.status === 404) {
-            return { userId: app.user_id, data: null };
+            return { userId: app.applicant?.user_id || app.user_id, data: null };
           }
           throw error;
         }
@@ -210,11 +216,11 @@ const ApplicationsDashboard = () => {
           // Create onboarding record for the new hire
           await axios.post(`http://localhost:8000/api/onboarding-records`, 
             {
-              user_id: selectedApplication.user_id,
-              employee_name: selectedApplication.name,
-              employee_email: selectedApplication.email,
-              position: selectedApplication.job_title,
-              department: selectedApplication.department,
+              user_id: selectedApplication.applicant?.user_id || selectedApplication.user_id,
+              employee_name: selectedApplication.applicant?.first_name + ' ' + selectedApplication.applicant?.last_name,
+              employee_email: selectedApplication.applicant?.email,
+              position: selectedApplication.job_posting?.title,
+              department: selectedApplication.job_posting?.department,
               start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 week from now
               status: 'pending_documents'
             },
@@ -233,8 +239,12 @@ const ApplicationsDashboard = () => {
       setSelectedApplication(null);
       setNewStatus('');
       
-      // Refresh stats
+      // Refresh both stats and applications from server to ensure persistence
       fetchStats();
+      setTimeout(() => {
+        console.log('🔄 Refreshing applications from server to ensure persistence...');
+        fetchApplications();
+      }, 500);
     } catch (error) {
       console.error('API Error:', error);
       // Even if API fails, local state is already updated, so show success
@@ -262,7 +272,8 @@ const ApplicationsDashboard = () => {
       return { status: 'Not Started', progress: 0, color: 'secondary' };
     }
     
-    const onboardingData = onboardingStatuses[application.user_id];
+    const userId = application.applicant?.user_id || application.user_id;
+    const onboardingData = onboardingStatuses[userId];
     if (!onboardingData) {
       return { status: 'Not Started', progress: 0, color: 'secondary' };
     }
@@ -277,7 +288,8 @@ const ApplicationsDashboard = () => {
 
   // Get onboarding progress text
   const getOnboardingProgressText = (application) => {
-    const onboardingData = onboardingStatuses[application.user_id];
+    const userId = application.applicant?.user_id || application.user_id;
+    const onboardingData = onboardingStatuses[userId];
     if (!onboardingData || !onboardingData.documents) {
       return 'Not Started';
     }
@@ -293,15 +305,17 @@ const ApplicationsDashboard = () => {
   const handleBeginOnboarding = (application) => {
     // Navigate to onboarding dashboard with filter for this employee
     // For now, show a modal or navigate to onboarding
-    showInfo(`Setting up onboarding for ${application.name}. Redirecting to Onboarding Dashboard...`);
-    // You could implement navigation here: navigate('/dashboard/hr-assistant/onboarding?employee=' + application.user_id);
+    const employeeName = application.applicant?.first_name + ' ' + application.applicant?.last_name;
+    showInfo(`Setting up onboarding for ${employeeName}. Redirecting to Onboarding Dashboard...`);
+    // You could implement navigation here: navigate('/dashboard/hr-assistant/onboarding?employee=' + (application.applicant?.user_id || application.user_id));
   };
 
   // Check onboarding status for hired candidates
   const handleViewOnboarding = async (application) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:8000/api/onboarding-records/user/${application.user_id}`, {
+      const userId = application.applicant?.user_id || application.user_id;
+      const response = await axios.get(`http://localhost:8000/api/onboarding-records/user/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -860,15 +874,62 @@ const ApplicationsDashboard = () => {
               onChange={(e) => setNewStatus(e.target.value)}
             >
               <option value="">Choose status...</option>
-              <option value="Pending">Pending</option>
-              <option value="ShortListed">Shortlisted</option>
+              
+              {/* Show different options based on current status */}
+              {(selectedApplication?.status === 'Pending' || selectedApplication?.status === 'Applied') ? (
+                <>
+                  <option value="ShortListed">ShortListed</option>
+                  <option value="Rejected">Rejected</option>
+                </>
+              ) : selectedApplication?.status === 'ShortListed' ? (
+                <>
               <option value="Interview">Interview</option>
+                  <option value="Rejected">Rejected</option>
+                </>
+              ) : selectedApplication?.status === 'Interview' ? (
+                <>
               <option value="Offered">Offered</option>
+                  <option value="Rejected">Rejected</option>
+                </>
+              ) : selectedApplication?.status === 'Offered' ? (
+                <>
               <option value="Offered Accepted">Offered Accepted</option>
+                  <option value="Rejected">Rejected</option>
+                </>
+              ) : selectedApplication?.status === 'Offered Accepted' ? (
+                <>
               <option value="Onboarding">Onboarding</option>
               <option value="Hired">Hired</option>
-              <option value="Rejected">Rejected</option>
+                </>
+              ) : selectedApplication?.status === 'Onboarding' ? (
+                <>
+                  <option value="Hired">Hired</option>
+                </>
+              ) : (
+                /* For Rejected and Hired - no further changes allowed */
+                <option disabled>No further changes allowed for {selectedApplication?.status}</option>
+              )}
             </Form.Select>
+            
+            {/* Helper text showing next possible statuses */}
+            <Form.Text className="text-muted small mt-2">
+              {selectedApplication?.status === 'Pending' || selectedApplication?.status === 'Applied' ? 
+                'Next: ShortListed or Rejected' :
+              selectedApplication?.status === 'ShortListed' ? 
+                'Next: Interview or Rejected' :
+              selectedApplication?.status === 'Interview' ? 
+                'Next: Offered or Rejected' :
+              selectedApplication?.status === 'Offered' ? 
+                'Next: Offer Accepted or Rejected' :
+              selectedApplication?.status === 'Offered Accepted' ? 
+                'Next: Onboarding or Hired' :
+              selectedApplication?.status === 'Onboarding' ? 
+                'Next: Hired' :
+              selectedApplication?.status === 'Rejected' || selectedApplication?.status === 'Hired' ? 
+                'Final status - no changes allowed' :
+                'Select next status'
+              }
+            </Form.Text>
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>

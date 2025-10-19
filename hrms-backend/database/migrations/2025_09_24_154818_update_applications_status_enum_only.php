@@ -16,11 +16,11 @@ return new class extends Migration
             // For SQLite, we can't modify enum columns easily, so we'll skip this migration
             // The status column will remain as string type
             Schema::table('applications', function (Blueprint $table) {
-                $table->string('status')->default('Applied')->change();
+                $table->string('status')->default('Pending')->change();
             });
         } else {
             // For MySQL/other databases
-            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Pending', 'Under Review', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Pending', 'ShortListed', 'Interview', 'Offered', 'Offered Accepted', 'Onboarding', 'Hired', 'Rejected') DEFAULT 'Pending'");
         }
     }
 
@@ -36,7 +36,7 @@ return new class extends Migration
             });
         } else {
             // For MySQL/other databases
-            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Interview', 'Hired', 'Rejected') DEFAULT 'Applied'");
+            DB::statement("ALTER TABLE applications MODIFY status ENUM('Applied', 'Pending', 'ShortListed', 'Interview', 'Offered', 'Offered Accepted', 'Onboarding', 'Hired', 'Rejected') DEFAULT 'Applied'");
         }
     }
 };

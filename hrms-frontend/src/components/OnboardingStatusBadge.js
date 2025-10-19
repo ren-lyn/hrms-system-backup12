@@ -67,4 +67,3 @@ const OnboardingStatusBadge = ({ status, showIcon = true, size = 'normal' }) => 
 };
 
 export default OnboardingStatusBadge;
-

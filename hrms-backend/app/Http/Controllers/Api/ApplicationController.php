@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Application;
 use App\Models\JobPosting;
 use App\Models\Applicant;
+use App\Models\OnboardingRecord;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -103,7 +104,7 @@ class ApplicationController extends Controller
         $application = Application::create([
             'job_posting_id' => $request->job_posting_id,
             'applicant_id' => $applicant->id,
-            'status' => 'Applied',
+            'status' => 'Pending',
             'applied_at' => now(),
             'resume_path' => $resumePath,
         ]);
@@ -143,13 +144,73 @@ class ApplicationController extends Controller
     public function updateStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:Applied,ShortListed,Interview,Offer Sent,Offer Accepted,Rejected'
+            'status' => 'required|in:Pending,Applied,ShortListed,Interview,Offered,Offered Accepted,Onboarding,Hired,Rejected'
         ]);
 
         $application = Application::findOrFail($id);
+        
+        // Log the status change for debugging
+        Log::info('Updating application status', [
+            'application_id' => $id,
+            'old_status' => $application->status,
+            'new_status' => $request->status,
+            'user_id' => Auth::check() ? Auth::id() : 'unknown'
+        ]);
+        
         $application->update([
             'status' => $request->status,
             'reviewed_at' => now(),
+        ]);
+
+        // If status changed to ShortListed, automatically create onboarding record
+        if ($request->status === 'ShortListed') {
+            try {
+                // Check if onboarding record already exists
+                $existingOnboardingRecord = OnboardingRecord::where('application_id', $id)->first();
+                
+                if (!$existingOnboardingRecord) {
+                    // Load the application with related data
+                    $application->load(['jobPosting', 'applicant']);
+                    
+                    // Create onboarding record
+                    OnboardingRecord::create([
+                        'application_id' => $id,
+                        'employee_name' => $application->applicant->first_name . ' ' . $application->applicant->last_name,
+                        'employee_email' => $application->applicant->email,
+                        'position' => $application->jobPosting->position,
+                        'department' => $application->jobPosting->department,
+                        'onboarding_status' => 'pending_documents',
+                        'progress' => 0,
+                        'notes' => 'Automatically created when applicant was shortlisted'
+                    ]);
+                    
+                    Log::info('Onboarding record created automatically', [
+                        'application_id' => $id,
+                        'applicant_id' => $application->applicant_id,
+                        'employee_name' => $application->applicant->first_name . ' ' . $application->applicant->last_name,
+                        'position' => $application->jobPosting->position
+                    ]);
+                } else {
+                    Log::info('Onboarding record already exists for this application', [
+                        'application_id' => $id,
+                        'onboarding_record_id' => $existingOnboardingRecord->id
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to create onboarding record automatically', [
+                    'application_id' => $id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+
+        // Verify the update was successful
+        $updatedApplication = Application::find($id);
+        Log::info('Status update verification', [
+            'application_id' => $id,
+            'current_status' => $updatedApplication->status,
+            'updated_at' => $updatedApplication->updated_at
         ]);
 
         // Send notification to applicant about status change

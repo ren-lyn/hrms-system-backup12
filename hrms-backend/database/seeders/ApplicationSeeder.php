@@ -12,6 +12,6 @@ class ApplicationSeeder extends Seeder
      */
     public function run(): void
     {
-        \App\Models\Application::factory(10)->create();
+        // No mock data - seeders removed for clean production setup
     }
 }
