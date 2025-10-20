@@ -50,16 +50,30 @@ class Attendance extends Model
             return 0;
         }
 
-        $clockIn = Carbon::parse($this->clock_in);
-        $clockOut = Carbon::parse($this->clock_out);
+        // Use the attendance date as the base date for time calculations
+        $baseDate = $this->date ? $this->date->format('Y-m-d') : Carbon::today()->format('Y-m-d');
         
-        $totalMinutes = $clockOut->diffInMinutes($clockIn);
+        $clockIn = Carbon::parse($baseDate . ' ' . Carbon::parse($this->clock_in)->format('H:i:s'));
+        $clockOut = Carbon::parse($baseDate . ' ' . Carbon::parse($this->clock_out)->format('H:i:s'));
+        
+        // If clock out is before clock in, assume it's the next day
+        if ($clockOut->lt($clockIn)) {
+            $clockOut->addDay();
+        }
+        
+        $totalMinutes = $clockIn->diffInMinutes($clockOut);
         
         // Subtract break time if available
         if ($this->break_out && $this->break_in) {
-            $breakOut = Carbon::parse($this->break_out);
-            $breakIn = Carbon::parse($this->break_in);
-            $breakMinutes = $breakIn->diffInMinutes($breakOut);
+            $breakOut = Carbon::parse($baseDate . ' ' . Carbon::parse($this->break_out)->format('H:i:s'));
+            $breakIn = Carbon::parse($baseDate . ' ' . Carbon::parse($this->break_in)->format('H:i:s'));
+            
+            // If break in is before break out, assume it's the next day
+            if ($breakIn->lt($breakOut)) {
+                $breakIn->addDay();
+            }
+            
+            $breakMinutes = $breakOut->diffInMinutes($breakIn);
             $totalMinutes -= $breakMinutes;
         }
         
@@ -85,21 +99,50 @@ class Attendance extends Model
     }
 
     /**
-     * Determine attendance status based on time
+     * Determine attendance status based on clock in/out times
      */
-    public function determineStatus($standardClockIn = '08:00:00')
+    public function determineStatus($standardClockIn = '08:00:00', $standardClockOut = '17:00:00')
     {
-        if (!$this->clock_in) {
+        if (!$this->clock_in || !$this->clock_out) {
             return 'Absent';
         }
 
-        $clockIn = Carbon::parse($this->clock_in);
-        $standardTime = Carbon::parse($standardClockIn);
+        $clockInTime = Carbon::parse($this->clock_in);
+        $clockOutTime = Carbon::parse($this->clock_out);
+        $standardIn = Carbon::parse($standardClockIn);
+        $standardOut = Carbon::parse($standardClockOut);
+        $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
 
-        if ($clockIn->gt($standardTime)) {
+        // Check if clocked in late (after 8:00 AM)
+        $isLate = $clockInTime->gt($standardIn);
+        
+        // Check if clocked out early (before 5:00 PM)
+        $isEarlyOut = $clockOutTime->lt($standardOut);
+        
+        // Check if clocked in at 9 AM or later
+        $isTooLate = $clockInTime->gte(Carbon::parse('09:00:00'));
+        
+        // Check if clocked out at 6 PM or later (overtime)
+        $isOvertime = $clockOutTime->gte($overtimeThreshold);
+
+        // Determine status based on combinations
+        // Priority: Overtime > Late > Undertime > Present
+        
+        if ($isOvertime && !$isLate && !$isEarlyOut) {
+            // Clocked in on time (8am or earlier) and clocked out at 6pm+
+            return 'Overtime';
+        } elseif ($isTooLate) {
+            // Clocked in at 9am or later
+            return 'Undertime';
+        } elseif ($isEarlyOut) {
+            // Clocked out before 5pm
+            return 'Undertime';
+        } elseif ($isLate) {
+            // Clocked in after 8am but before 9am
             return 'Late';
+        } else {
+            // Clocked in on time and clocked out in normal range
+            return 'Present';
         }
-
-        return 'Present';
     }
 }

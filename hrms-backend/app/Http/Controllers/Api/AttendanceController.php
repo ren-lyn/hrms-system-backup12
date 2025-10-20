@@ -246,7 +246,7 @@ class AttendanceController extends Controller
         $validated = $request->validate([
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
-            'status' => 'nullable|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked)'
+            'status' => 'nullable|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked),Overtime,Undertime'
         ]);
 
         $fileName = 'attendance_report_' . ($validated['date_from'] ?? 'from') . '_to_' . ($validated['date_to'] ?? 'to') . '.csv';
@@ -498,6 +498,7 @@ class AttendanceController extends Controller
                     'imported' => $results['success'],
                     'failed' => $results['failed'],
                     'skipped' => $results['skipped'],
+                    'absent_marked' => $results['absent_marked'] ?? 0,
                     'errors' => array_slice($results['errors'], 0, 10),
                     'import_id' => $importRecord ? $importRecord->id : null,
                     'import_record' => $importRecord
@@ -547,7 +548,7 @@ class AttendanceController extends Controller
                 'clock_out' => 'nullable|date_format:H:i:s',
                 'break_out' => 'nullable|date_format:H:i:s',
                 'break_in' => 'nullable|date_format:H:i:s',
-                'status' => 'required|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked)',
+                'status' => 'required|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked),Overtime,Undertime',
                 'remarks' => 'nullable|string|max:500'
             ]);
 
@@ -579,6 +580,11 @@ class AttendanceController extends Controller
                 $attendance->total_hours = $attendance->calculateTotalHours();
                 $attendance->overtime_hours = $attendance->calculateOvertimeHours();
                 $attendance->undertime_hours = $attendance->calculateUndertimeHours();
+                
+                // Auto-determine status based on total hours if not manually set
+                if (!$request->has('status') || empty($request->status)) {
+                    $attendance->status = $attendance->determineStatus();
+                }
             }
 
             $attendance->save();
@@ -611,7 +617,7 @@ class AttendanceController extends Controller
                 'clock_out' => 'nullable|date_format:H:i:s',
                 'break_out' => 'nullable|date_format:H:i:s',
                 'break_in' => 'nullable|date_format:H:i:s',
-                'status' => 'sometimes|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked)',
+                'status' => 'sometimes|in:Present,Absent,Late,On Leave,Holiday (No Work),Holiday (Worked),Overtime,Undertime',
                 'remarks' => 'nullable|string|max:500'
             ]);
 
@@ -630,6 +636,11 @@ class AttendanceController extends Controller
                 $attendance->total_hours = $attendance->calculateTotalHours();
                 $attendance->overtime_hours = $attendance->calculateOvertimeHours();
                 $attendance->undertime_hours = $attendance->calculateUndertimeHours();
+                
+                // Auto-determine status based on total hours if not manually set
+                if (!$request->has('status') || empty($request->status)) {
+                    $attendance->status = $attendance->determineStatus();
+                }
             }
 
             $attendance->save();
@@ -681,7 +692,7 @@ class AttendanceController extends Controller
             $perPage = $request->get('per_page', 20);
             $status = $request->get('status');
 
-            $query = AttendanceImport::with('importer:id,name,email')
+            $query = AttendanceImport::with('importer:id,first_name,last_name,email')
                 ->orderBy('created_at', 'desc');
 
             if ($status) {
@@ -716,7 +727,7 @@ class AttendanceController extends Controller
     public function importDetails($id): JsonResponse
     {
         try {
-            $import = AttendanceImport::with('importer:id,name,email')
+            $import = AttendanceImport::with('importer:id,first_name,last_name,email')
                 ->findOrFail($id);
 
             return response()->json([

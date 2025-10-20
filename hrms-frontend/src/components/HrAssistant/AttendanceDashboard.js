@@ -254,7 +254,12 @@ const AttendanceDashboard = () => {
             });
             
             if (response.data.success) {
-                alert(`Import completed successfully!\n\nImported: ${response.data.data.imported}\nFailed: ${response.data.data.failed}\nSkipped: ${response.data.data.skipped}`);
+                const absentMarked = response.data.data.absent_marked || 0;
+                let message = `Import completed successfully!\n\nImported: ${response.data.data.imported}\nFailed: ${response.data.data.failed}\nSkipped: ${response.data.data.skipped}`;
+                if (absentMarked > 0) {
+                    message += `\nMarked as Absent: ${absentMarked}`;
+                }
+                alert(message);
                 fetchAttendanceData();
                 fetchAllAttendanceRecords(1); // Refresh the records table
                 setShowImportModal(false);
@@ -583,6 +588,7 @@ const AttendanceDashboard = () => {
                                 <th>Time-in</th>
                                 <th>Time-out</th>
                                 <th>Status</th>
+                                <th>Holiday Type</th>
                                 <th>Total Hours</th>
                             </tr>
                         </thead>
@@ -627,16 +633,16 @@ const AttendanceDashboard = () => {
                                         </Badge>
                                     </td>
                                     <td>
-                                        <Badge bg={
-                                            row.status === 'Present' ? 'success' :
-                                            row.status === 'Late' ? 'warning' :
-                                            row.status === 'Absent' ? 'danger' :
-                                            row.status === 'On Leave' ? 'info' :
-                                            row.status === 'Holiday (No Work)' ? 'secondary' :
-                                            row.status === 'Holiday (Worked)' ? 'primary' : 'secondary'
-                                        }>
+                                        <span className="fw-medium">
                                             {row.status || '—'}
-                                        </Badge>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {row.remarks && row.remarks !== 'Auto-marked during import' ? (
+                                            <small className="text-muted fst-italic">{row.remarks}</small>
+                                        ) : (
+                                            <small className="text-muted">--</small>
+                                        )}
                                     </td>
                                     <td>
                                         <span className="fw-medium">{row.total_hours ? `${row.total_hours}h` : '--'}</span>

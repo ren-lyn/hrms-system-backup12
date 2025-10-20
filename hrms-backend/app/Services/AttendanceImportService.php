@@ -21,7 +21,8 @@ class AttendanceImportService
         'success' => 0,
         'failed' => 0,
         'errors' => [],
-        'skipped' => 0
+        'skipped' => 0,
+        'absent_marked' => 0
     ];
 
     protected $importRecord = null;
@@ -152,6 +153,11 @@ class AttendanceImportService
 
                 // Process aggregated punches (group by employee and date)
                 $this->processAggregatedPunchData($rawPunches);
+            }
+
+            // Mark employees as absent if they have no attendance record in the imported period
+            if ($periodStart && $periodEnd) {
+                $this->markAbsentEmployees($periodStart, $periodEnd);
             }
 
             // Update import record with results
@@ -370,6 +376,7 @@ class AttendanceImportService
                     'timezone' => $punchData['timezone'] ?? null,
                     'source' => $punchData['source'] ?? null,
                     'status' => $punchData['status'] ?? null,
+                    'holiday_type' => $punchData['holiday_type'] ?? null,
                     'row_data' => $punchData
                 ];
             }
@@ -462,7 +469,7 @@ class AttendanceImportService
                 'clock_out' => $clockOut,
                 'break_out' => null,
                 'break_in' => null,
-                'remarks' => $group['verify_type'] ?? $group['source'] ?? null,
+                'remarks' => $group['holiday_type'] ?? $group['verify_type'] ?? $group['source'] ?? null,
             ];
 
             // Calculate total hours if both times are present
@@ -483,7 +490,8 @@ class AttendanceImportService
                 $clockIn,
                 $clockOut,
                 $attendanceData['total_hours'],
-                $group['status']
+                $group['status'],
+                $group['holiday_type']
             );
 
             // Create or update attendance record
@@ -506,19 +514,125 @@ class AttendanceImportService
     }
 
     /**
+     * Mark employees as absent if they have no attendance record in the imported period
+     */
+    protected function markAbsentEmployees($periodStart, $periodEnd)
+    {
+        try {
+            Log::info("Marking absent employees for period: {$periodStart} to {$periodEnd}");
+            
+            // Get all active employees (exclude applicants - role_id 5)
+            $allEmployees = EmployeeProfile::join('users', 'users.id', '=', 'employee_profiles.user_id')
+                ->where('users.role_id', '!=', 5)
+                ->select('employee_profiles.*')
+                ->get();
+            
+            Log::info("Total active employees: " . $allEmployees->count());
+            
+            // Generate all dates in the period
+            $startDate = Carbon::parse($periodStart);
+            $endDate = Carbon::parse($periodEnd);
+            $dates = [];
+            
+            for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
+                $dates[] = $date->format('Y-m-d');
+            }
+            
+            Log::info("Total dates in period: " . count($dates));
+            
+            $absentCount = 0;
+            
+            // For each employee, check each date
+            foreach ($allEmployees as $employee) {
+                foreach ($dates as $dateStr) {
+                    $date = Carbon::parse($dateStr);
+                    
+                    // Check if employee has attendance record for this date
+                    $hasAttendance = Attendance::where('employee_id', $employee->id)
+                        ->where('date', $dateStr)
+                        ->exists();
+                    
+                    if (!$hasAttendance) {
+                        // Check if it's a working day for the employee's shift
+                        $dayOfWeek = $date->dayOfWeekIso; // 1 = Monday, 7 = Sunday
+                        $shift = $employee->shift;
+                        
+                        // Only mark as absent if it's a working day
+                        if ($shift && $shift->isWorkingDay($dayOfWeek)) {
+                            // Check if it's a holiday
+                            $isHoliday = Holiday::isHolidayDate($date);
+                            
+                            // Check if employee has approved leave
+                            $hasApprovedLeave = LeaveRequest::where('employee_id', $employee->id)
+                                ->where('from', '<=', $date)
+                                ->where('to', '>=', $date)
+                                ->where('status', 'approved')
+                                ->exists();
+                            
+                            // Determine status
+                            $status = 'Absent';
+                            if ($isHoliday) {
+                                $status = 'Holiday (No Work)';
+                            } elseif ($hasApprovedLeave) {
+                                $status = 'On Leave';
+                            }
+                            
+                            // Create absent record
+                            $attendanceData = [
+                                'employee_id' => $employee->id,
+                                'employee_biometric_id' => null,
+                                'date' => $dateStr,
+                                'clock_in' => null,
+                                'clock_out' => null,
+                                'break_out' => null,
+                                'break_in' => null,
+                                'total_hours' => 0,
+                                'overtime_hours' => 0,
+                                'undertime_hours' => 0,
+                                'status' => $status,
+                                'remarks' => 'Auto-marked during import'
+                            ];
+                            
+                            $this->createOrUpdateAttendance($attendanceData);
+                            $absentCount++;
+                            
+                            Log::info("Marked employee {$employee->id} ({$employee->first_name} {$employee->last_name}) as {$status} on {$dateStr}");
+                        }
+                    }
+                }
+            }
+            
+            Log::info("Total absent records created: {$absentCount}");
+            
+            // Update import results to include absent count
+            $this->importResults['absent_marked'] = $absentCount;
+            
+        } catch (Exception $e) {
+            Log::error('Error marking absent employees: ' . $e->getMessage());
+            $this->importResults['errors'][] = "Error marking absent employees: " . $e->getMessage();
+        }
+    }
+
+    /**
      * Determine enhanced attendance status with comprehensive logic
      */
-    protected function determineEnhancedStatus($employee, $date, $clockIn, $clockOut, $totalHours, $importedStatus = null)
+    protected function determineEnhancedStatus($employee, $date, $clockIn, $clockOut, $totalHours, $importedStatus = null, $holidayType = null)
     {
         // If status is provided in the import, try to use it first
         if ($importedStatus) {
-            $normalizedStatus = $this->normalizeStatusFromFile($importedStatus);
+            $normalizedStatus = $this->normalizeStatusFromFile($importedStatus, $holidayType, $clockIn, $clockOut);
             if ($normalizedStatus) {
                 return $normalizedStatus;
             }
         }
 
-        // Check if it's a holiday
+        // Check if holiday_type column is provided in the import
+        if ($holidayType && !empty(trim($holidayType))) {
+            // If holiday_type is specified, determine status based on whether they worked
+            return $clockIn ? 'Holiday (Worked)' : 'Holiday (No Work)';
+        }
+
+        // Check if it's a holiday in the system
         if (Holiday::isHolidayDate($date)) {
             return $clockIn ? 'Holiday (Worked)' : 'Holiday (No Work)';
         }
@@ -547,34 +661,53 @@ class AttendanceImportService
             return 'Absent';
         }
 
-        // Check if late (after shift start time + grace period)
-        $shiftStart = Carbon::parse($shift->start_time);
+        // Determine status based on clock in/out times
         $clockInTime = Carbon::parse($clockIn);
-        $gracePeriod = 15; // 15 minutes grace period
+        $clockOutTime = Carbon::parse($clockOut);
+        $standardIn = Carbon::parse('08:00:00');
+        $standardOut = Carbon::parse('17:00:00');
+        $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
+
+        // Check if clocked in late (after 8:00 AM)
+        $isLate = $clockInTime->gt($standardIn);
         
-        if ($clockInTime->gt($shiftStart->addMinutes($gracePeriod))) {
-            // Check if also undertime
-            if ($totalHours < 8) {
-                return 'Late (Undertime)';
-            }
-            // Check if overtime
-            if ($totalHours > 8) {
-                return 'Late (Overtime)';
-            }
-            return 'Late';
-        }
+        // Check if clocked out early (before 5:00 PM)
+        $isEarlyOut = $clockOutTime->lt($standardOut);
+        
+        // Check if clocked in at 9 AM or later
+        $isTooLate = $clockInTime->gte(Carbon::parse('09:00:00'));
+        
+        // Check if clocked out at 6 PM or later (overtime)
+        $isOvertime = $clockOutTime->gte($overtimeThreshold);
 
-        // Check if undertime (less than 8 hours)
-        if ($totalHours < 8) {
-            return 'Undertime';
-        }
+        Log::info('Determining status based on clock times', [
+            'employee_id' => $employee->id,
+            'date' => $date->format('Y-m-d'),
+            'clock_in' => $clockIn,
+            'clock_out' => $clockOut,
+            'is_late' => $isLate,
+            'is_early_out' => $isEarlyOut,
+            'is_too_late' => $isTooLate,
+            'is_overtime' => $isOvertime
+        ]);
 
-        // Check if overtime (more than 8 hours)
-        if ($totalHours > 8) {
+        // Determine status based on combinations
+        if ($isOvertime && !$isLate && !$isEarlyOut) {
+            Log::info('Status: Overtime');
             return 'Overtime';
+        } elseif ($isTooLate) {
+            Log::info('Status: Undertime (clocked in 9am+)');
+            return 'Undertime';
+        } elseif ($isEarlyOut) {
+            Log::info('Status: Undertime (clocked out early)');
+            return 'Undertime';
+        } elseif ($isLate) {
+            Log::info('Status: Late');
+            return 'Late';
+        } else {
+            Log::info('Status: Present');
+            return 'Present';
         }
-
-        return 'Present';
     }
 
     /**
@@ -611,20 +744,37 @@ class AttendanceImportService
             return 'Absent';
         }
 
-        // Check if late (after shift start time)
-        $shiftStart = Carbon::parse($shift->start_time);
+        // Determine status based on clock in/out times
         $clockInTime = Carbon::parse($clockIn);
+        $clockOutTime = Carbon::parse($clockOut);
+        $standardIn = Carbon::parse('08:00:00');
+        $standardOut = Carbon::parse('17:00:00');
+        $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
+
+        // Check if clocked in late (after 8:00 AM)
+        $isLate = $clockInTime->gt($standardIn);
         
-        if ($clockInTime->gt($shiftStart->addMinutes(15))) { // 15 minutes grace period
+        // Check if clocked out early (before 5:00 PM)
+        $isEarlyOut = $clockOutTime->lt($standardOut);
+        
+        // Check if clocked in at 9 AM or later
+        $isTooLate = $clockInTime->gte(Carbon::parse('09:00:00'));
+        
+        // Check if clocked out at 6 PM or later (overtime)
+        $isOvertime = $clockOutTime->gte($overtimeThreshold);
+
+        // Determine status based on combinations
+        if ($isOvertime && !$isLate && !$isEarlyOut) {
+            return 'Overtime';
+        } elseif ($isTooLate) {
+            return 'Undertime';
+        } elseif ($isEarlyOut) {
+            return 'Undertime';
+        } elseif ($isLate) {
             return 'Late';
+        } else {
+            return 'Present';
         }
-
-        // Check if undertime (less than 8 hours)
-        if ($totalHours < 8) {
-            return 'Present'; // Still present but undertime
-        }
-
-        return 'Present';
     }
 
     /**
@@ -1046,8 +1196,25 @@ class AttendanceImportService
 
         $clockInTime = Carbon::parse($clockIn);
         $standardTime = Carbon::parse('08:00:00');
+        
+        $isLate = $clockInTime->gt($standardTime);
+        
+        // Check if overtime (clock out at 6 PM or later)
+        if ($clockOut) {
+            $clockOutTime = Carbon::parse($clockOut);
+            $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
+            $isOvertime = $clockOutTime->gte($overtimeThreshold);
+            
+            if ($isLate && $isOvertime) {
+                return 'Late (Overtime)';
+            }
+            
+            if ($isOvertime) {
+                return 'Overtime';
+            }
+        }
 
-        if ($clockInTime->gt($standardTime)) {
+        if ($isLate) {
             return 'Late';
         }
 
@@ -1110,7 +1277,8 @@ class AttendanceImportService
             'success' => 0,
             'failed' => 0,
             'errors' => [],
-            'skipped' => 0
+            'skipped' => 0,
+            'absent_marked' => 0
         ];
 
     }
@@ -1337,6 +1505,7 @@ class AttendanceImportService
             'time_out' => 'Time-out',
             'attendance_record' => 'Attendance Record (Legacy)',
             'status' => 'Status',
+            'holiday_type' => 'Holiday Type',
             'verify_type' => 'Verify Type (Legacy)',
             'total_hours' => 'Total Hours',
             'timezone' => 'TimeZone (Legacy)',
