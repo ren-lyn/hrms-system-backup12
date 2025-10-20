@@ -30,4 +30,3 @@ const OnboardingLoading = ({
 };
 
 export default OnboardingLoading;
-

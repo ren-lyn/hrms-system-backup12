@@ -8,6 +8,7 @@ export default function JobPortal() {
   const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null);
+  const [userName, setUserName] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showApplicationModal, setShowApplicationModal] = useState(false);
@@ -25,14 +26,27 @@ export default function JobPortal() {
   const [duplicateApplicationInfo, setDuplicateApplicationInfo] = useState(null);
   const [resumeError, setResumeError] = useState('');
   const [hasOnboardingAccess, setHasOnboardingAccess] = useState(false);
+  const [lastJobCount, setLastJobCount] = useState(0);
 
   // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    
     if (token && role) {
       setIsLoggedIn(true);
       setUserRole(role);
+      
+      // Set user name from localStorage or API
+      if (user.name) {
+        setUserName(user.name);
+      } else if (user.first_name && user.last_name) {
+        setUserName(`${user.first_name} ${user.last_name}`);
+      } else {
+        setUserName('Applicant'); // Fallback
+      }
+      
       if (role === 'Applicant') {
         fetchUserApplications();
         checkOnboardingAccess();
@@ -40,6 +54,13 @@ export default function JobPortal() {
     }
     fetchJobs();
     
+    // Set up automatic refresh every 30 seconds to get new job postings
+    const refreshInterval = setInterval(() => {
+      fetchJobs();
+    }, 30000); // 30 seconds
+
+    // Cleanup interval on component unmount
+    return () => clearInterval(refreshInterval);
   }, []);
 
   // Refresh onboarding access when applications change
@@ -98,39 +119,18 @@ export default function JobPortal() {
     try {
       setLoading(true);
       const response = await axios.get("http://localhost:8000/api/public/job-postings");
-      setJobs(response.data);
+      const newJobs = response.data;
+      
+      // Check if new jobs were added
+      if (lastJobCount > 0 && newJobs.length > lastJobCount) {
+        console.log(`New job posting detected! ${newJobs.length - lastJobCount} new job(s) added.`);
+      }
+      
+      setJobs(newJobs);
+      setLastJobCount(newJobs.length);
     } catch (error) {
       console.error('Error fetching jobs:', error);
-      // Fallback to static data if API fails
-      setJobs([
-        {
-          id: 1,
-          title: "SUPPLY CHAIN SUPERVISOR",
-          department: "FDC HOME OFFICE - CEBU - NPI",
-          description: "Manage supply chain operations and logistics",
-          requirements: "Bachelor's degree in Business or related field, 3+ years experience",
-          status: "Open",
-          created_at: "2025-04-03T15:33:00.000Z"
-        },
-        {
-          id: 2,
-          title: "CIVIL ENGINEER",
-          department: "Cabuyao Plant - Laguna",
-          description: "Design and oversee construction projects",
-          requirements: "Bachelor's degree in Civil Engineering, Licensed Engineer",
-          status: "Open",
-          created_at: "2025-03-28T10:15:00.000Z"
-        },
-        {
-          id: 3,
-          title: "ACCOUNTING STAFF",
-          department: "Cebu Office - Finance Department",
-          description: "Handle financial records and transactions",
-          requirements: "Bachelor's degree in Accounting, CPA preferred",
-          status: "Open",
-          created_at: "2025-03-25T16:50:00.000Z"
-        }
-      ]);
+      setJobs([]);
     } finally {
       setLoading(false);
     }
@@ -154,8 +154,10 @@ export default function JobPortal() {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
     localStorage.removeItem('userId');
+    localStorage.removeItem('user');
     setIsLoggedIn(false);
     setUserRole(null);
+    setUserName(null);
     setHasOnboardingAccess(false);
     // Optionally redirect to home or show a message
     window.location.reload(); // Refresh the page to reset any cached data
@@ -170,6 +172,13 @@ export default function JobPortal() {
     if (!isLoggedIn) {
       navigate("/login");
     } else if (userRole === 'Applicant') {
+      // Check if user already has an application
+      if (userApplications.length > 0) {
+        const existingApplication = userApplications[0]; // Get the first (and only) application
+        alert(`You have already applied for a job!\n\nCurrent Application:\nJob: ${existingApplication.job_title}\nPosition: ${existingApplication.position}\nDepartment: ${existingApplication.department}\nStatus: ${existingApplication.status}\n\nYou can only apply for one job at a time. Please wait for your current application to be processed.`);
+        return;
+      }
+      
       setSelectedJob(job);
       setShowApplicationModal(true);
     } else {
@@ -778,7 +787,7 @@ export default function JobPortal() {
               animation: "fadeInDown 1.2s ease-out",
             }}
           >
-            Welcome, Applicant
+            Welcome, <strong>{userName || 'Applicant'}</strong>
           </h1>
           <h3
             style={{
@@ -905,15 +914,30 @@ export default function JobPortal() {
       {/* Search Bar */}
       <section className="container my-5">
         <div className="row g-3">
-          <div className="col-md-9">
+          <div className="col-md-8">
             <input
               type="text"
               className="form-control"
               placeholder="Search keyword"
             />
           </div>
-          <div className="col-md-3 d-grid">
+          <div className="col-md-2 d-grid">
             <button className="btn btn-success">Find Job</button>
+          </div>
+          <div className="col-md-2 d-grid">
+            <button 
+              className="btn btn-outline-primary"
+              onClick={fetchJobs}
+              disabled={loading}
+              title="Refresh job listings"
+            >
+              {loading ? (
+                <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+              ) : (
+                <i className="bi bi-arrow-clockwise me-1"></i>
+              )}
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -1037,19 +1061,21 @@ export default function JobPortal() {
                     </button>
                     {job.status === 'Open' && (
                       <button 
-                        className="btn btn-primary btn-sm px-3"
+                        className={`btn btn-sm px-3 ${userApplications.length > 0 ? 'btn-secondary' : 'btn-primary'}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleApplyClick(job);
                         }}
+                        disabled={userApplications.length > 0}
                         style={{ 
                           fontSize: '0.85rem',
                           fontWeight: '600',
                           borderRadius: '6px',
                           transition: 'all 0.3s ease'
                         }}
+                        title={userApplications.length > 0 ? 'You already have an active application' : 'Apply for this job'}
                       >
-                        Apply Now
+                        {userApplications.length > 0 ? 'Already Applied' : 'Apply Now'}
                       </button>
                     )}
                   </div>
@@ -1278,15 +1304,17 @@ export default function JobPortal() {
                   {selectedJobForDetails.status === 'Open' && (
                     <button 
                       type="button" 
-                      className="btn btn-primary flex-fill px-4 py-2"
+                      className={`btn flex-fill px-4 py-2 ${userApplications.length > 0 ? 'btn-secondary' : 'btn-primary'}`}
                       style={{ borderRadius: '8px', fontWeight: '600', fontSize: '1rem' }}
                       onClick={() => {
                         setShowJobDetailsModal(false);
                         setSelectedJobForDetails(null);
                         handleApplyClick(selectedJobForDetails);
                       }}
+                      disabled={userApplications.length > 0}
+                      title={userApplications.length > 0 ? 'You already have an active application' : 'Apply for this position'}
                     >
-                      Apply for this Position
+                      {userApplications.length > 0 ? 'Already Applied' : 'Apply for this Position'}
                     </button>
                   )}
                 </div>

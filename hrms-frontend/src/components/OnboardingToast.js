@@ -89,4 +89,3 @@ const OnboardingToast = ({
 };
 
 export default OnboardingToast;
-

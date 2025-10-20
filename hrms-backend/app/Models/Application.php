@@ -20,4 +20,9 @@ class Application extends Model
     {
         return $this->belongsTo(Applicant::class);
     }
+
+    public function onboardingRecord()
+    {
+        return $this->hasOne(OnboardingRecord::class, 'application_id');
+    }
 }

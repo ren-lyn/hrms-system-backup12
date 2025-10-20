@@ -29,7 +29,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { toast } from 'react-toastify';
 
-const OnboardingDashboard = () => {
+const Onboarding = () => {
   const [onboardingRecords, setOnboardingRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -77,14 +77,14 @@ const OnboardingDashboard = () => {
     
     // Set up periodic refresh to check for new applicants
     const refreshInterval = setInterval(() => {
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Auto-refreshing onboarding records for new applicants...');
+      console.log('🔄 [HrStaff-Onboarding] Auto-refreshing onboarding records for new applicants...');
       fetchOnboardingRecords(true);
     }, 10000); // Check every 10 seconds for new records
     
     // Listen for onboarding dashboard refresh events from other components
     const handleOnboardingRefresh = (event) => {
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Received refresh event from', event.detail?.source || 'unknown');
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Event details:', event.detail);
+      console.log('🔄 [HrStaff-Onboarding] Received refresh event from', event.detail?.source || 'unknown');
+      console.log('🔄 [HrStaff-Onboarding] Event details:', event.detail);
       fetchOnboardingRecords(true);
     };
     
@@ -94,11 +94,11 @@ const OnboardingDashboard = () => {
       if (refreshTrigger) {
         try {
           const trigger = JSON.parse(refreshTrigger);
-          console.log('📱 [HrAssistant-OnboardingDashboard] Found localStorage refresh trigger:', trigger);
+          console.log('📱 [HrStaff-Onboarding] Found localStorage refresh trigger:', trigger);
           fetchOnboardingRecords(true);
           localStorage.removeItem('onboarding_dashboard_refresh'); // Clear the trigger after use
         } catch (error) {
-          console.error('[HrAssistant-OnboardingDashboard] Error parsing refresh trigger:', error);
+          console.error('[HrStaff-Onboarding] Error parsing refresh trigger:', error);
         }
       }
     };
@@ -126,8 +126,8 @@ const OnboardingDashboard = () => {
       }
       
       const token = localStorage.getItem('token');
-      console.log('🔍 [HrAssistant-OnboardingDashboard] Fetching applicants with onboarding data...');
-      console.log('🔍 [HrAssistant-OnboardingDashboard] Token exists:', !!token);
+      console.log('🔍 [HrStaff-Onboarding] Fetching applicants with onboarding data...');
+      console.log('🔍 [HrStaff-Onboarding] Token exists:', !!token);
       
       // Fetch onboarding records from the new dedicated API endpoint
       // This endpoint fetches applicants and joins with onboarding data
@@ -135,17 +135,17 @@ const OnboardingDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log('📊 [HrAssistant-OnboardingDashboard] Onboarding API Response:', response.data);
+      console.log('📊 [HrStaff-Onboarding] Onboarding API Response:', response.data);
       const onboardingRecords = Array.isArray(response.data) ? response.data : [];
-        console.log('📊 [HrAssistant-OnboardingDashboard] Total ShortListed and Interview applicants:', onboardingRecords.length);
+        console.log('📊 [HrStaff-Onboarding] Total ShortListed and Interview applicants:', onboardingRecords.length);
       
       setOnboardingRecords(onboardingRecords);
       calculateStats(onboardingRecords);
       
       if (onboardingRecords.length > 0) {
-        console.log('✅ [HrAssistant-OnboardingDashboard] Successfully loaded', onboardingRecords.length, 'applicants');
+        console.log('✅ [HrStaff-Onboarding] Successfully loaded', onboardingRecords.length, 'applicants');
         onboardingRecords.forEach((record, index) => {
-          console.log(`📄 [HrAssistant-OnboardingDashboard] Applicant ${index + 1}:`, {
+          console.log(`📄 [HrStaff-Onboarding] Applicant ${index + 1}:`, {
             id: record.id,
             name: record.employee_name,
             email: record.employee_email,
@@ -158,8 +158,8 @@ const OnboardingDashboard = () => {
           });
         });
       } else {
-        console.log('🔍 [HrAssistant-OnboardingDashboard] No applicants found');
-        console.log('📝 [HrAssistant-OnboardingDashboard] To populate this list, mark applicants in Applications Dashboard');
+        console.log('🔍 [HrStaff-Onboarding] No applicants found');
+        console.log('📝 [HrStaff-Onboarding] To populate this list, mark applicants in Applications Dashboard');
       }
       
       if (isRefresh) {
@@ -167,8 +167,8 @@ const OnboardingDashboard = () => {
       }
       
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error fetching onboarding records:', error);
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error details:', {
+      console.error('❌ [HrStaff-Onboarding] Error fetching onboarding records:', error);
+      console.error('❌ [HrStaff-Onboarding] Error details:', {
         status: error.response?.status,
         message: error.message,
         url: error.config?.url
@@ -176,13 +176,13 @@ const OnboardingDashboard = () => {
       
       // Handle specific error cases
       if (error.response?.status === 404) {
-        console.log('📝 [HrAssistant-OnboardingDashboard] Onboarding API endpoint not found');
+        console.log('📝 [HrStaff-Onboarding] Onboarding API endpoint not found');
         showError('Onboarding API endpoint not found. Please contact system administrator.');
       } else if (error.response?.status === 401) {
-        console.log('🔒 [HrAssistant-OnboardingDashboard] Authentication required');
+        console.log('🔒 [HrStaff-Onboarding] Authentication required');
         showError('Authentication required. Please log in again.');
       } else if (error.response?.status === 403) {
-        console.log('🚫 [HrAssistant-OnboardingDashboard] Access denied - check user permissions');
+        console.log('🚫 [HrStaff-Onboarding] Access denied - check user permissions');
         showError('Access denied. Please check your permissions.');
       } else {
         showError('Failed to load applicants. Please try again.');
@@ -191,7 +191,7 @@ const OnboardingDashboard = () => {
       // Set empty state on error
       setOnboardingRecords([]);
       calculateStats([]);
-      console.log('🕰️ [HrAssistant-OnboardingDashboard] Waiting for applicants to appear...');
+      console.log('🕰️ [HrStaff-Onboarding] Waiting for applicants to appear...');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -253,7 +253,7 @@ const OnboardingDashboard = () => {
   const handleStatusUpdate = async (recordId, newStatus) => {
     try {
       const token = localStorage.getItem('token');
-      console.log(`🔄 [HrAssistant-OnboardingDashboard] Updating onboarding status for application ${recordId} to: ${newStatus}`);
+      console.log(`🔄 [HrStaff-Onboarding] Updating onboarding status for application ${recordId} to: ${newStatus}`);
       
       // Update local state immediately for better UX
       setOnboardingRecords(prev => prev.map(record => 
@@ -277,7 +277,7 @@ const OnboardingDashboard = () => {
       
       if (response.status === 200) {
         showSuccess(`Onboarding status updated to: ${newStatus}`);
-        console.log(`✅ [HrAssistant-OnboardingDashboard] Onboarding status saved to database: ${newStatus}`);
+        console.log(`✅ [HrStaff-Onboarding] Onboarding status saved to database: ${newStatus}`);
         
         // Update with the actual data returned from the server
         if (response.data.data) {
@@ -288,7 +288,7 @@ const OnboardingDashboard = () => {
       }
       
     } catch (error) {
-      console.error('[HrAssistant-OnboardingDashboard] Error updating onboarding status:', error);
+      console.error('[HrStaff-Onboarding] Error updating onboarding status:', error);
       showError(`Failed to update status: ${error.response?.data?.message || error.message}`);
       
       // Revert local state on error
@@ -350,8 +350,8 @@ const OnboardingDashboard = () => {
         return;
       }
       
-      console.log('📅 [HrAssistant-OnboardingDashboard] Scheduling interview for:', selectedApplicant.employee_name);
-      console.log('📅 [HrAssistant-OnboardingDashboard] Interview details:', interviewForm);
+      console.log('📅 [HrStaff-Onboarding] Scheduling interview for:', selectedApplicant.employee_name);
+      console.log('📅 [HrStaff-Onboarding] Interview details:', interviewForm);
 
       // Create interview data
       const interviewData = {
@@ -374,7 +374,7 @@ const OnboardingDashboard = () => {
         }
       });
 
-      console.log('✅ [HrAssistant-OnboardingDashboard] Interview scheduled successfully:', response.data);
+      console.log('✅ [HrStaff-Onboarding] Interview scheduled successfully:', response.data);
 
       // Update application status to Interview
       await axios.put(`http://localhost:8000/api/applications/${selectedApplicant.application_id}/status`, {
@@ -406,7 +406,7 @@ const OnboardingDashboard = () => {
       showSuccess('Interview scheduled successfully! Applicant status updated to Interview.');
 
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error scheduling interview:', error);
+      console.error('❌ [HrStaff-Onboarding] Error scheduling interview:', error);
       
       // Handle specific authentication errors
       if (error.response?.status === 401) {
@@ -450,7 +450,7 @@ const OnboardingDashboard = () => {
         return;
       }
 
-      console.log('📄 [HrAssistant-OnboardingDashboard] Downloading resume for application:', applicationId);
+      console.log('📄 [HrStaff-Onboarding] Downloading resume for application:', applicationId);
       
       // Create a temporary link to download the file
       const downloadUrl = `http://localhost:8000/api/applications/${applicationId}/resume`;
@@ -496,10 +496,10 @@ const OnboardingDashboard = () => {
       window.URL.revokeObjectURL(url);
       
       showSuccess('Resume downloaded successfully!');
-      console.log('✅ [HrAssistant-OnboardingDashboard] Resume downloaded successfully');
+      console.log('✅ [HrStaff-Onboarding] Resume downloaded successfully');
       
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error downloading resume:', error);
+      console.error('❌ [HrStaff-Onboarding] Error downloading resume:', error);
       showError('Failed to download resume. Please try again.');
     }
   };
@@ -509,7 +509,7 @@ const OnboardingDashboard = () => {
     
     try {
       const token = localStorage.getItem('token');
-      console.log(`💾 [HrAssistant-OnboardingDashboard] Saving changes for record ${editingRecord.id}`);
+      console.log(`💾 [HrStaff-Onboarding] Saving changes for record ${editingRecord.id}`);
       
       const response = await axios.put(`http://localhost:8000/api/onboarding-records/${editingRecord.id}`, editingRecord, {
         headers: { Authorization: `Bearer ${token}` }
@@ -523,10 +523,10 @@ const OnboardingDashboard = () => {
         
         setEditingRecord(null);
         showSuccess('Onboarding record updated successfully');
-        console.log(`✅ [HrAssistant-OnboardingDashboard] Record updated successfully`);
+        console.log(`✅ [HrStaff-Onboarding] Record updated successfully`);
       }
     } catch (error) {
-      console.error('[HrAssistant-OnboardingDashboard] Error saving record:', error);
+      console.error('[HrStaff-Onboarding] Error saving record:', error);
       showError(`Failed to save changes: ${error.response?.data?.message || error.message}`);
     }
   };
@@ -543,7 +543,7 @@ const OnboardingDashboard = () => {
     );
   }
 
-  console.log('🔄 [HrAssistant-OnboardingDashboard] Component rendering, records:', onboardingRecords.length, 'loading:', loading);
+  console.log('🔄 [HrStaff-Onboarding] Component rendering, records:', onboardingRecords.length, 'loading:', loading);
   
   return (
     <Container fluid className="p-4">
@@ -664,7 +664,7 @@ const OnboardingDashboard = () => {
               variant="outline-primary"
               className="modern-refresh-btn"
               onClick={() => {
-                console.log('🔄 [HrAssistant-OnboardingDashboard] Manual refresh triggered');
+                console.log('🔄 [HrStaff-Onboarding] Manual refresh triggered');
                 fetchOnboardingRecords(true);
               }}
               disabled={refreshing}
@@ -2318,4 +2318,4 @@ const OnboardingDashboard = () => {
   );
 };
 
-export default OnboardingDashboard;
+export default Onboarding;

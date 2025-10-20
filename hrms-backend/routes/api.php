@@ -27,6 +27,9 @@ use App\Http\Controllers\Api\BenefitController;
 use App\Http\Controllers\Api\EmployeeTaxAssignmentController;
 use App\Http\Controllers\Api\EmployeeDeductionAssignmentController;
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\EmployeeLeaveLimitController;
+use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\InterviewController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -37,6 +40,19 @@ Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(functio
     Route::put('/job-postings/{id}/toggle', [JobPostingController::class, 'toggleStatus']);
     Route::get('/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
     Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
+    
+    // Onboarding routes for HR Staff and HR Assistant
+    Route::get('/onboarding-records', [OnboardingController::class, 'getOnboardingRecords']);
+    Route::get('/onboarding-records/{applicationId}', [OnboardingController::class, 'getOnboardingRecord']);
+    Route::get('/onboarding-records/user/{userId}', [OnboardingController::class, 'getOnboardingRecordByUserId']);
+    Route::put('/onboarding-records/{applicationId}', [OnboardingController::class, 'updateOnboardingRecord']);
+    
+    // Interview routes for HR Staff and HR Assistant
+    Route::get('/interviews', [InterviewController::class, 'index']);
+    Route::post('/interviews', [InterviewController::class, 'store']);
+    Route::get('/interviews/{id}', [InterviewController::class, 'show']);
+    Route::put('/interviews/{id}', [InterviewController::class, 'update']);
+    Route::delete('/interviews/{id}', [InterviewController::class, 'destroy']);
 });
 Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
 Route::get('/public/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
@@ -474,11 +490,3 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::delete('/import/{id}', [AttendanceController::class, 'deleteImport']); // Delete import record
     });
 });
-
-
-    
-    
-
-
-
-

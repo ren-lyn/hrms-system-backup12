@@ -4,6 +4,8 @@ import { Card, Button, Form, Modal, Collapse, Badge } from "react-bootstrap";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { useAdvancedModalConfirmation } from '../hooks/useModalConfirmation';
+import '../styles/ModalConfirmation.css';
 import "bootstrap-icons/font/bootstrap-icons.css";
 
 const JobPostings = () => {
@@ -37,6 +39,30 @@ const JobPostings = () => {
   // Duplicate job posting detection states
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateJobInfo, setDuplicateJobInfo] = useState(null);
+
+  // Modal confirmation hook
+  const jobModalConfirmation = useAdvancedModalConfirmation(
+    'Job Posting Form',
+    () => {
+      setShowModal(false);
+      setCurrentJob({
+        id: null,
+        title: "",
+        description: "",
+        requirements: "",
+        department: "",
+        position: "",
+        status: "Open",
+      });
+      setIsEditing(false);
+    },
+    null,
+    {
+      title: 'Confirm Close Job Form',
+      message: 'Are you sure you want to close the job posting form? Any unsaved changes will be lost.',
+      icon: '💼'
+    }
+  );
 
   // Toast notification helpers - same as EmployeeRecords
   const showError = (message) => toast.error(message);
@@ -456,7 +482,7 @@ const JobPostings = () => {
       )}
 
       {/* Modal for Add/Edit */}
-      <Modal show={showModal} onHide={closeModal} centered>
+      <Modal show={showModal} onHide={jobModalConfirmation.handleCloseRequest} centered>
         <Modal.Header
           closeButton
           style={{
@@ -552,7 +578,7 @@ const JobPostings = () => {
             <Button
               variant="outline-secondary"
               className="rounded-pill px-3"
-              onClick={closeModal}
+              onClick={jobModalConfirmation.handleCloseRequest}
             >
               Cancel
             </Button>

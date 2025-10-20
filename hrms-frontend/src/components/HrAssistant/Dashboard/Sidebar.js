@@ -43,7 +43,7 @@ const Sidebar = () => {
           <FaUsers /> <span>Employee Records</span>
         </NavLink>
         <NavLink
-          to="payroll"
+          to="/hr-assistant/payroll"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >
           <FaMoneyCheckAlt /> <span>Payroll</span>
@@ -124,4 +124,3 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
-  

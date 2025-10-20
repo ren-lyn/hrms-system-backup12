@@ -7,6 +7,36 @@ import { toast } from 'react-toastify';
 
 const JobApplications = () => {
   const navigate = useNavigate();
+  
+  // Helper function to handle authentication errors
+  const handleAuthError = (error) => {
+    if (error.response?.status === 401) {
+      console.log('[JobApplications] Authentication failed - token may be invalid or expired');
+      showError('Authentication failed. Please log in again.');
+      // Clear invalid token
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      localStorage.removeItem('userRole');
+      setIsLoggedIn(false);
+      setUserRole(null);
+      navigate('/login');
+      return true;
+    } else if (error.response?.status === 403) {
+      console.log('[JobApplications] Access denied - insufficient permissions');
+      showError('Access denied. You do not have permission to perform this action.');
+      return true;
+    } else if (error.response?.status === 404) {
+      console.log('[JobApplications] API endpoint not found');
+      showError('API endpoint not found. Please contact support.');
+      return true;
+    }
+    return false;
+  };
+
+  // Toast notification functions
+  const showSuccess = (message) => toast.success(message);
+  const showError = (message) => toast.error(message);
+  const showInfo = (message) => toast.info(message);
   const [jobs, setJobs] = useState([]);
   const [myApplications, setMyApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,27 +55,204 @@ const JobApplications = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [updatingStatus, setUpdatingStatus] = useState(null); // Track which application is being updated
   
-  // Toast helpers
-  const showSuccess = (message) => toast.success(message);
-  const showError = (message) => toast.error(message);
-  const showInfo = (message) => toast.info(message);
+  // Verify that status change was persisted in the database
+  const verifyStatusPersistence = async (applicationId, expectedStatus) => {
+    try {
+      const token = localStorage.getItem('token');
+      let endpoint = 'http://localhost:8000/api/my-applications';
+      
+      if (userRole === 'HR Staff' || userRole === 'HR Assistant') {
+        endpoint = 'http://localhost:8000/api/applications';
+      }
+      
+      const response = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const application = response.data.find(app => app.id === applicationId);
+      if (application) {
+        console.log(`🔍 [JobApplications] Status verification for app ${applicationId}: Expected=${expectedStatus}, Actual=${application.status}`);
+        if (application.status === expectedStatus) {
+          console.log(`✅ [JobApplications] Status persistence verified successfully!`);
+          return true;
+        } else {
+          console.error(`❌ [JobApplications] Status persistence failed! Expected ${expectedStatus}, got ${application.status}`);
+          showError(`Status update may not have been saved properly. Expected: ${expectedStatus}, Found: ${application.status}`);
+          return false;
+        }
+      } else {
+        console.error(`❌ [JobApplications] Application ${applicationId} not found in verification`);
+        return false;
+      }
+    } catch (error) {
+      console.error('[JobApplications] Error verifying status persistence:', error);
+      return false;
+    }
+  };
+
+  // Function to update application status
+  const updateApplicationStatus = async (applicationId, newStatus) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        showError('Authentication required');
+        return;
+      }
+
+      // Set loading state for this specific application
+      setUpdatingStatus(applicationId);
+      
+      console.log(`🔄 [JobApplications] Updating application ${applicationId} status to: ${newStatus}`);
+      console.log(`🔗 [JobApplications] API URL: http://localhost:8000/api/applications/${applicationId}/status`);
+      console.log(`📤 [JobApplications] Request payload:`, { status: newStatus });
+      console.log(`👤 [JobApplications] User role: ${userRole}`);
+      
+      // Only HR Staff and HR Assistant should be able to update status
+      if (userRole !== 'HR Staff' && userRole !== 'HR Assistant') {
+        showError('Only HR Staff and HR Assistant can update application status');
+        return;
+      }
+      
+      const response = await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, {
+        status: newStatus
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`📥 [JobApplications] Response received:`, response);
+      console.log(`📊 [JobApplications] Response status:`, response.status);
+      console.log(`📋 [JobApplications] Response data:`, response.data);
+
+      // Check if the response indicates success (backend returns message and application)
+      if (response.status === 200 && response.data && response.data.message) {
+        showSuccess(`Application status updated to: ${newStatus}`);
+        
+        // Update the local state immediately with the updated application data from server
+        if (response.data.application) {
+          setMyApplications(prev => prev.map(app => 
+            app.id === applicationId 
+              ? { ...app, ...response.data.application, status: newStatus, updated_at: new Date().toISOString() }
+              : app
+          ));
+        } else {
+          // Fallback: update with local data
+          setMyApplications(prev => prev.map(app => 
+            app.id === applicationId 
+              ? { ...app, status: newStatus, updated_at: new Date().toISOString() }
+              : app
+          ));
+        }
+        
+        // Force a re-render to ensure UI updates
+        console.log(`✅ [JobApplications] Status updated successfully in local state: ${newStatus}`);
+        
+        // If status is changed to ShortListed, notify onboarding dashboards to refresh
+        if (newStatus === 'ShortListed') {
+          console.log(`🎯 [JobApplications] Applicant marked as ShortListed, notifying onboarding dashboards`);
+          
+          // Dispatch custom event for onboarding dashboard refresh
+          window.dispatchEvent(new CustomEvent('onboardingDashboardRefresh', {
+            detail: { 
+              applicationId, 
+              status: newStatus,
+              source: 'JobApplications',
+              timestamp: new Date().toISOString()
+            }
+          }));
+          
+          // Set localStorage trigger for cross-tab communication
+          localStorage.setItem('onboarding_dashboard_refresh', JSON.stringify({
+            applicationId,
+            status: newStatus,
+            source: 'JobApplications',
+            timestamp: new Date().toISOString()
+          }));
+          
+          console.log(`🚀 [JobApplications] Onboarding dashboard refresh notifications sent`);
+        }
+        
+        console.log(`✅ Status updated successfully: ${newStatus}`);
+        console.log(`📋 Updated application data:`, response.data.application);
+        
+        // Refresh applications from server to ensure data consistency
+        setTimeout(async () => {
+          console.log('🔄 Refreshing applications list from server to verify persistence...');
+          await fetchApplications();
+          
+          // Verify the status was actually saved
+          const isPersisted = await verifyStatusPersistence(applicationId, newStatus);
+          if (!isPersisted) {
+            console.error('❌ Status persistence verification failed!');
+          }
+        }, 1000);
+        
+      } else {
+        showError('Failed to update application status');
+        console.error('[JobApplications] Unexpected response structure:', response.data);
+      }
+    } catch (error) {
+      console.error('[JobApplications] Error updating application status:', error);
+      
+      // Handle authentication errors
+      if (handleAuthError(error)) {
+        return;
+      }
+      
+      // Provide specific error messages
+      if (error.response?.data?.message) {
+        showError(`Failed to update status: ${error.response.data.message}`);
+      } else {
+        showError(`Failed to update status: ${error.message}`);
+      }
+      
+      // If it was a ShortListed status update that failed, log specifically
+      if (newStatus === 'ShortListed') {
+        console.error('⚠️ [JobApplications] Failed to mark applicant as ShortListed - onboarding dashboard will not be updated');
+      }
+    } finally {
+      // Clear loading state
+      setUpdatingStatus(null);
+    }
+  };
 
   useEffect(() => {
     checkAuthStatus();
     fetchJobs();
+  }, []);
+  
+  // Separate useEffect for fetching applications when auth state or role changes
+  useEffect(() => {
     if (isLoggedIn && (userRole === 'Applicant' || userRole === 'HR Staff' || userRole === 'HR Assistant')) {
+      console.log(`[JobApplications] Auth state changed - fetching applications for role: ${userRole}`);
       fetchApplications();
     }
   }, [isLoggedIn, userRole]);
 
   const checkAuthStatus = () => {
     const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
+    const role = localStorage.getItem('userRole') || localStorage.getItem('role');
+    
+    console.log('[JobApplications] Checking auth status:', {
+      hasToken: !!token,
+      tokenLength: token ? token.length : 0,
+      role: role,
+      userRole: localStorage.getItem('userRole'),
+      roleAlt: localStorage.getItem('role')
+    });
+    
     if (token && role) {
       setIsLoggedIn(true);
       setUserRole(role);
-      console.log('User logged in with role:', role);
+      console.log('[JobApplications] User logged in with role:', role);
+    } else {
+      console.log('[JobApplications] No authentication found');
+      setIsLoggedIn(false);
+      setUserRole(null);
     }
   };
 
@@ -53,55 +260,14 @@ const JobApplications = () => {
     try {
       setLoading(true);
       const response = await axios.get('http://localhost:8000/api/public/job-postings');
+      
       setJobs(response.data);
+      console.log('Job postings loaded:', response.data.length, 'jobs');
     } catch (error) {
       console.error('Error fetching jobs:', error);
       
-      // Mock data for demonstration
-      setJobs([
-        {
-          id: 1,
-          title: 'Senior Software Engineer',
-          department: 'IT Department',
-          position: 'Full-time',
-          description: 'We are looking for a skilled Senior Software Engineer to join our dynamic development team. You will be responsible for designing, developing, and maintaining high-quality software solutions.',
-          requirements: '• Bachelor\'s degree in Computer Science or related field\n• 5+ years of experience in software development\n• Proficiency in React, Node.js, and databases\n• Strong problem-solving skills\n• Excellent communication abilities',
-          salary_min: 80000,
-          salary_max: 120000,
-          salary_notes: 'Based on experience and qualifications',
-          status: 'Open',
-          created_at: new Date().toISOString(),
-          posted_by: 'HR Department'
-        },
-        {
-          id: 2,
-          title: 'Marketing Manager',
-          department: 'Marketing',
-          position: 'Full-time',
-          description: 'Join our marketing team as a Marketing Manager and lead our digital marketing initiatives. You will develop and execute marketing strategies to drive brand awareness and customer acquisition.',
-          requirements: '• Bachelor\'s degree in Marketing, Business, or related field\n• 3+ years of marketing experience\n• Experience with digital marketing platforms\n• Strong analytical and creative skills\n• Leadership experience preferred',
-          salary_min: 60000,
-          salary_max: 85000,
-          salary_notes: 'Competitive package with performance bonuses',
-          status: 'Open',
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          posted_by: 'HR Department'
-        },
-        {
-          id: 3,
-          title: 'HR Specialist',
-          department: 'Human Resources',
-          position: 'Full-time',
-          description: 'We are seeking an experienced HR Specialist to support our growing team. You will handle recruitment, employee relations, and HR administrative tasks.',
-          requirements: '• Bachelor\'s degree in HR, Psychology, or related field\n• 2+ years of HR experience\n• Knowledge of employment law\n• Strong interpersonal skills\n• HR certification preferred',
-          salary_min: 50000,
-          salary_max: 70000,
-          salary_notes: 'Plus comprehensive benefits package',
-          status: 'Open',
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-          posted_by: 'HR Department'
-        }
-      ]);
+      setJobs([]);
+      console.log('No job postings found');
     } finally {
       setLoading(false);
     }
@@ -110,107 +276,54 @@ const JobApplications = () => {
   const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8000/api/my-applications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMyApplications(response.data);
-    } catch (error) {
-      console.error('Error fetching applications:', error);
       
-      // Mock applications data
-      setMyApplications([
-        {
-          id: 1,
-          job_posting: {
-            title: 'Senior Software Engineer',
-            department: 'IT Department'
-          },
-          status: 'Applied',
-          applied_at: new Date(Date.now() - 86400000).toISOString(),
-          progress_percentage: 20
-        },
-        {
-          id: 2,
-          job_posting: {
-            title: 'Marketing Manager',
-            department: 'Marketing'
-          },
-          status: 'Interview',
-          applied_at: new Date(Date.now() - 259200000).toISOString(),
-          progress_percentage: 60
-        },
-        {
-          id: 3,
-          job_posting: {
-            title: 'HR Specialist',
-            department: 'Human Resources'
-          },
-          status: 'ShortListed',
-          applied_at: new Date(Date.now() - 172800000).toISOString(),
-          progress_percentage: 40
-        },
-        {
-          id: 4,
-          job_posting: {
-            title: 'Financial Analyst',
-            department: 'Finance'
-          },
-          status: 'Offered',
-          applied_at: new Date(Date.now() - 345600000).toISOString(),
-          progress_percentage: 80
-        },
-        {
-          id: 5,
-          job_posting: {
-            title: 'Sales Representative',
-            department: 'Sales'
-          },
-          status: 'Offered Accepted',
-          applied_at: new Date(Date.now() - 432000000).toISOString(),
-          progress_percentage: 90
-        },
-        {
-          id: 6,
-          job_posting: {
-            title: 'Customer Support',
-            department: 'Customer Service'
-          },
-          status: 'Onboarding',
-          applied_at: new Date(Date.now() - 518400000).toISOString(),
-          progress_percentage: 95
-        },
-        {
-          id: 7,
-          job_posting: {
-            title: 'Data Analyst',
-            department: 'IT Department'
-          },
-          status: 'Hired',
-          applied_at: new Date(Date.now() - 604800000).toISOString(),
-          progress_percentage: 100
-        },
-        {
-          id: 8,
-          job_posting: {
-            title: 'Graphic Designer',
-            department: 'Marketing'
-          },
-          status: 'Rejected',
-          applied_at: new Date(Date.now() - 691200000).toISOString(),
-          progress_percentage: 0
-        },
-        {
-          id: 9,
-          job_posting: {
-            title: 'Project Manager',
-            department: 'Operations'
-          },
-          status: 'Pending',
-          applied_at: new Date(Date.now() - 777600000).toISOString(),
-          progress_percentage: 10
+      // Check if token exists
+      if (!token) {
+        console.log('[JobApplications] No token found, skipping applications fetch');
+        setMyApplications([]);
+        return;
+      }
+      
+      // Use different endpoints based on user role
+      let endpoint = 'http://localhost:8000/api/my-applications'; // Default for applicants
+      
+      if (userRole === 'HR Staff' || userRole === 'HR Assistant') {
+        // HR Staff and HR Assistant should see all applications
+        endpoint = 'http://localhost:8000/api/applications';
+      }
+      
+      console.log(`[JobApplications] Fetching applications for role: ${userRole} from endpoint: ${endpoint}`);
+      console.log(`[JobApplications] Token exists: ${!!token}`);
+      
+      const response = await axios.get(endpoint, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
-      ]);
-      console.log('Mock applications loaded:', myApplications.length);
+      });
+      
+      console.log(`[JobApplications] Raw response data:`, response.data);
+      
+      // Log each application's status for debugging
+      if (Array.isArray(response.data)) {
+        response.data.forEach((app, index) => {
+          console.log(`[JobApplications] Application ${index + 1}: ID=${app.id}, Status=${app.status}, Updated=${app.updated_at}`);
+        });
+      }
+      
+      setMyApplications(response.data || []);
+      console.log(`[JobApplications] Applications loaded for ${userRole}:`, (response.data || []).length, 'applications');
+    } catch (error) {
+      console.error('[JobApplications] Error fetching applications:', error);
+      
+      // Handle authentication errors
+      if (handleAuthError(error)) {
+        return;
+      }
+      
+      setMyApplications([]);
+      console.log('[JobApplications] No applications found or error occurred');
     }
   };
 
@@ -289,8 +402,9 @@ const JobApplications = () => {
       setShowApplicationModal(false);
       resetApplicationForm();
       
-      // Refresh applications list
-      fetchApplications();
+      // Refresh applications list to show the new submission
+      await fetchApplications();
+      console.log('Applications refreshed after submission');
 
     } catch (error) {
       console.error('Error submitting application:', error);
@@ -312,11 +426,15 @@ const JobApplications = () => {
 
   const getStatusBadgeVariant = (status) => {
     switch (status) {
-      case 'Applied': return 'primary';
+      case 'Pending': 
+      case 'Applied': // Backward compatibility
+        return 'warning';
       case 'ShortListed': return 'info';
       case 'Interview': return 'warning';
-      case 'Offer Sent': return 'success';
-      case 'Offer Accepted': return 'success';
+      case 'Offered': return 'success';
+      case 'Offered Accepted': return 'success';
+      case 'Onboarding': return 'dark';
+      case 'Hired': return 'success';
       case 'Rejected': return 'danger';
       default: return 'secondary';
     }
@@ -324,11 +442,14 @@ const JobApplications = () => {
 
   const getStatusProgress = (status) => {
     const progressMap = {
-      'Applied': 10,
+      'Pending': 10,
+      'Applied': 10, // Backward compatibility
       'ShortListed': 25,
       'Interview': 50,
-      'Offer Sent': 75,
-      'Offer Accepted': 100,
+      'Offered': 75,
+      'Offered Accepted': 90,
+      'Onboarding': 95,
+      'Hired': 100,
       'Rejected': 0
     };
     return progressMap[status] || 0;
@@ -342,7 +463,7 @@ const JobApplications = () => {
   const getApplicationStats = () => {
     const stats = {
       total: myApplications.length,
-      pending: myApplications.filter(app => ['Applied', 'Pending'].includes(app.status)).length,
+      pending: myApplications.filter(app => app.status === 'Pending' || app.status === 'Applied').length,
       shortlisted: myApplications.filter(app => app.status === 'ShortListed').length,
       interview: myApplications.filter(app => app.status === 'Interview').length,
       offered: myApplications.filter(app => app.status === 'Offered').length,
@@ -397,16 +518,30 @@ const JobApplications = () => {
     }}>
       {/* Header */}
       <div className="mb-4">
-        <h2 className="fw-bold text-primary d-flex align-items-center mb-1">
-          <i className="bi bi-briefcase me-2"></i>
-          Career Opportunities
-        </h2>
-        <p className="text-muted">
-          {isLoggedIn && userRole === 'Applicant' 
-            ? 'Explore job opportunities and track your application progress' 
-            : 'Discover your next career opportunity with us'
-          }
-        </p>
+        <div className="d-flex justify-content-between align-items-center">
+          <div>
+            <h2 className="fw-bold text-primary d-flex align-items-center mb-1">
+              <i className="bi bi-briefcase me-2"></i>
+              Career Opportunities
+            </h2>
+            <p className="text-muted">
+              {isLoggedIn && userRole === 'Applicant' 
+                ? 'Explore job opportunities and track your application progress' 
+                : 'Discover your next career opportunity with us'
+              }
+            </p>
+          </div>
+          {isLoggedIn && (userRole === 'Applicant' || userRole === 'HR Staff' || userRole === 'HR Assistant') && (
+            <Button 
+              variant="outline-primary" 
+              size="sm"
+              onClick={fetchApplications}
+            >
+              <i className="bi bi-arrow-clockwise me-1"></i>
+              Refresh Applications
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Navigation Tabs */}
@@ -470,7 +605,7 @@ const JobApplications = () => {
                           onClick={() => {
                             const statusMap = {
                               'Total Applicants': 'all',
-                              'Pending': 'Applied',
+                              'Pending': 'Pending',
                               'Shortlisted': 'ShortListed',
                               'Interview': 'Interview',
                               'Offered': 'Offered',
@@ -666,15 +801,15 @@ const JobApplications = () => {
                         onChange={(e) => setStatusFilter(e.target.value)}
                       >
                         <option value="all">All Statuses</option>
-                        <option value="Applied">Applied</option>
-                        <option value="Pending">Pending</option>
+                        <option value="Pending">Pending Applications</option>
+                        <option value="Applied">Applied (Legacy)</option>
                         <option value="ShortListed">Shortlisted</option>
+                        <option value="Rejected">Rejected</option>
                         <option value="Interview">Interview</option>
                         <option value="Offered">Offered</option>
                         <option value="Offered Accepted">Offered Accepted</option>
                         <option value="Onboarding">Onboarding</option>
                         <option value="Hired">Hired</option>
-                        <option value="Rejected">Rejected</option>
                       </Form.Select>
                     </Form.Group>
                   </Col>
@@ -727,8 +862,18 @@ const JobApplications = () => {
                                 {application.job_posting.department}
                               </div>
                             </div>
-                            <Badge bg={getStatusBadgeVariant(application.status)}>
+                            <Badge 
+                              bg={getStatusBadgeVariant(application.status)}
+                              className={updatingStatus === application.id ? 'pulse-animation' : ''}
+                            >
                               {application.status}
+                              {updatingStatus === application.id && (
+                                <span className="ms-1">
+                                  <span className="spinner-border spinner-border-sm" role="status">
+                                    <span className="visually-hidden">Updating...</span>
+                                  </span>
+                                </span>
+                              )}
                             </Badge>
                           </Card.Header>
                           
@@ -753,6 +898,90 @@ const JobApplications = () => {
                                 Applied: {new Date(application.applied_at).toLocaleDateString()}
                               </div>
                             </div>
+
+                            {/* Status Update Dropdown for HR */}
+                            {(userRole === 'HR Staff' || userRole === 'HR Assistant') && (
+                              <div className="mb-3">
+                                <Form.Group>
+                                  <Form.Label className="small fw-bold text-muted mb-2">
+                                    <i className="bi bi-gear me-1"></i>
+                                    Update Status
+                                    {updatingStatus === application.id && (
+                                      <span className="ms-2">
+                                        <span className="spinner-border spinner-border-sm text-primary" role="status">
+                                          <span className="visually-hidden">Updating...</span>
+                                        </span>
+                                      </span>
+                                    )}
+                                  </Form.Label>
+                                  <Form.Select
+                                    value={application.status}
+                                    onChange={(e) => updateApplicationStatus(application.id, e.target.value)}
+                                    size="sm"
+                                    className="border-primary"
+                                    disabled={updatingStatus === application.id}
+                                  >
+                                    {/* Show current status */}
+                                    <option value={application.status}>{application.status}</option>
+                                    
+                                    {/* Show different options based on current status */}
+                                    {(application.status === 'Pending' || application.status === 'Applied') ? (
+                                      <>
+                                        <option value="ShortListed">ShortListed</option>
+                                        <option value="Rejected">Rejected</option>
+                                      </>
+                                    ) : application.status === 'ShortListed' ? (
+                                      <>
+                                        <option value="Interview">Interview</option>
+                                        <option value="Rejected">Rejected</option>
+                                      </>
+                                    ) : application.status === 'Interview' ? (
+                                      <>
+                                        <option value="Offered">Offered</option>
+                                        <option value="Rejected">Rejected</option>
+                                      </>
+                                    ) : application.status === 'Offered' ? (
+                                      <>
+                                        <option value="Offered Accepted">Offered Accepted</option>
+                                        <option value="Rejected">Rejected</option>
+                                      </>
+                                    ) : application.status === 'Offered Accepted' ? (
+                                      <>
+                                        <option value="Onboarding">Onboarding</option>
+                                        <option value="Hired">Hired</option>
+                                      </>
+                                    ) : application.status === 'Onboarding' ? (
+                                      <>
+                                        <option value="Hired">Hired</option>
+                                      </>
+                                    ) : (
+                                      /* For Rejected and Hired - no further changes allowed */
+                                      <option disabled>No further changes allowed</option>
+                                    )}
+                                  </Form.Select>
+                                  
+                                  {/* Helper text showing next possible statuses */}
+                                  <Form.Text className="text-muted small">
+                                    {application.status === 'Pending' || application.status === 'Applied' ? 
+                                      'Next: ShortListed or Rejected' :
+                                    application.status === 'ShortListed' ? 
+                                      'Next: Interview or Rejected' :
+                                    application.status === 'Interview' ? 
+                                      'Next: Offered or Rejected' :
+                                    application.status === 'Offered' ? 
+                                      'Next: Offer Accepted or Rejected' :
+                                    application.status === 'Offered Accepted' ? 
+                                      'Next: Onboarding or Hired' :
+                                    application.status === 'Onboarding' ? 
+                                      'Next: Hired' :
+                                    application.status === 'Rejected' || application.status === 'Hired' ? 
+                                      'Final status - no changes allowed' :
+                                      'Select next status'
+                                    }
+                                  </Form.Text>
+                                </Form.Group>
+                              </div>
+                            )}
 
                             <div className="d-flex gap-2">
                               <Button
@@ -903,6 +1132,16 @@ const JobApplications = () => {
 
         .stats-card:hover .stats-icon-wrapper {
           transform: scale(1.1);
+        }
+
+        .pulse-animation {
+          animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.7; }
+          100% { opacity: 1; }
         }
       `}</style>
     </div>

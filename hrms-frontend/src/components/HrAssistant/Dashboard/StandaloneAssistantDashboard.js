@@ -214,29 +214,14 @@ export default function StandaloneAssistantDashboard() {
   const [timeNow, setTimeNow] = useState(new Date());
   const [weather, setWeather] = useState({ temp: null, code: null, description: 'Loading weather…' });
 
-  // live clock - reduced frequency for better performance
+  // live clock
   useEffect(() => {
-    const t = setInterval(() => setTimeNow(new Date()), 30000); // Update every 30 seconds instead of every second
+    const t = setInterval(() => setTimeNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // weather by geolocation (no API key; uses Open-Meteo) - with caching
+  // weather by geolocation (no API key; uses Open-Meteo)
   useEffect(() => {
-    // Check if weather data is cached
-    const cachedWeather = localStorage.getItem('weather_data');
-    const weatherTimestamp = localStorage.getItem('weather_timestamp');
-    const now = Date.now();
-    
-    // Use cached weather if it's less than 30 minutes old
-    if (cachedWeather && weatherTimestamp && (now - parseInt(weatherTimestamp)) < 30 * 60 * 1000) {
-      try {
-        setWeather(JSON.parse(cachedWeather));
-        return;
-      } catch (e) {
-        console.warn('Failed to parse cached weather data');
-      }
-    }
-
     function mapWeatherCode(code){
       const map = {
         0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
@@ -252,11 +237,7 @@ export default function StandaloneAssistantDashboard() {
         .then(r=>r.json())
         .then(d=>{
           const w=d.current_weather; if(!w) return;
-          const weatherData = { temp: w.temperature, code: w.weathercode, description: mapWeatherCode(w.weathercode) };
-          setWeather(weatherData);
-          // Cache weather data
-          localStorage.setItem('weather_data', JSON.stringify(weatherData));
-          localStorage.setItem('weather_timestamp', now.toString());
+          setWeather({ temp: w.temperature, code: w.weathercode, description: mapWeatherCode(w.weathercode) });
         })
         .catch(()=>setWeather(w=>({...w, description:'Weather unavailable'})));
     }
