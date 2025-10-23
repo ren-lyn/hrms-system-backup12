@@ -28,7 +28,6 @@ use App\Http\Controllers\Api\EmployeeTaxAssignmentController;
 use App\Http\Controllers\Api\EmployeeDeductionAssignmentController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\EmployeeLeaveLimitController;
-use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\InterviewController;
 
 
@@ -41,21 +40,29 @@ Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(functio
     Route::get('/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
     Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
     
-    // Onboarding routes for HR Staff and HR Assistant
-    Route::get('/onboarding-records', [OnboardingController::class, 'getOnboardingRecords']);
-    Route::get('/onboarding-records/{applicationId}', [OnboardingController::class, 'getOnboardingRecord']);
-    Route::get('/onboarding-records/user/{userId}', [OnboardingController::class, 'getOnboardingRecordByUserId']);
-    Route::put('/onboarding-records/{applicationId}', [OnboardingController::class, 'updateOnboardingRecord']);
     
     // Interview routes for HR Staff and HR Assistant
-    Route::get('/interviews', [InterviewController::class, 'index']);
-    Route::post('/interviews', [InterviewController::class, 'store']);
-    Route::get('/interviews/{id}', [InterviewController::class, 'show']);
-    Route::put('/interviews/{id}', [InterviewController::class, 'update']);
-    Route::delete('/interviews/{id}', [InterviewController::class, 'destroy']);
+    Route::get('/interviews', [\App\Http\Controllers\Api\InterviewController::class, 'index']);
+    Route::post('/interviews', [\App\Http\Controllers\Api\InterviewController::class, 'store']);
+    Route::get('/interviews/{id}', [\App\Http\Controllers\Api\InterviewController::class, 'show']);
+    Route::put('/interviews/{id}', [\App\Http\Controllers\Api\InterviewController::class, 'update']);
+    Route::delete('/interviews/{id}', [\App\Http\Controllers\Api\InterviewController::class, 'destroy']);
+    
+    // User interview routes for applicants (moved outside HR middleware)
+    
+    // Test notification route (for debugging)
+    Route::post('/test-interview-notification', [\App\Http\Controllers\Api\InterviewController::class, 'testNotification']);
 });
 Route::get('/public/job-postings', [JobPostingController::class, 'getPublicJobPostings']);
 Route::get('/public/job-postings/salary-ranges', [JobPostingController::class, 'getSalaryRanges']);
+
+// Applicant interview routes (accessible to authenticated applicants)
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/interviews/user/{user_id}', [\App\Http\Controllers\Api\InterviewController::class, 'getUserInterviewsByUserId']);
+    Route::get('/user-interviews', [\App\Http\Controllers\Api\InterviewController::class, 'getUserInterviews']);
+    Route::get('/user-interviews-by-user-id', [\App\Http\Controllers\Api\InterviewController::class, 'getUserInterviewsByUserId']);
+    Route::get('/interviews', [\App\Http\Controllers\Api\InterviewController::class, 'index']); // For debugging
+});
 
 // Route::middleware(['auth:sanctum', 'role:HR Assistant'])->group(function () {
 //     Route::put('/employees/{id}', [EmployeeController::class, 'update']);
@@ -152,6 +159,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/applications/job/{jobId}', [ApplicationController::class, 'getByJobPosting']);
     Route::put('/applications/{id}/status', [ApplicationController::class, 'updateStatus']);
     Route::post('/applications/{id}/schedule-interview', [ApplicationController::class, 'scheduleInterview']);
+    Route::post('/applications/schedule-batch-interviews', [ApplicationController::class, 'scheduleBatchInterviews']);
     Route::post('/applications/{id}/send-offer', [ApplicationController::class, 'sendOffer']);
     Route::get('/applications/{id}/resume', [ApplicationController::class, 'downloadResume']);
     Route::get('/applications/stats', [ApplicationController::class, 'getStats']);
@@ -218,6 +226,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::get('/notifications/stream', [NotificationStreamController::class, 'stream']);
 
 

@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Models\Interview;
 use App\Models\Application;
 use App\Models\User;
@@ -16,7 +17,7 @@ class InterviewController extends Controller
 {
     /**
      * Store a newly created interview
-     * Simplified function focused on saving interview and triggering notifications
+     * This is called when HR schedules an interview for an applicant
      */
     public function store(Request $request): JsonResponse
     {
@@ -26,8 +27,9 @@ class InterviewController extends Controller
             // Step 1: Validate request data
             $validatedData = $request->validate([
                 'application_id' => 'required|exists:applications,id',
-                'interview_date' => 'required|date|after_or_equal:yesterday',
+                'interview_date' => 'required|date|after_or_equal:today',
                 'interview_time' => 'required|date_format:H:i',
+                'duration' => 'nullable|integer|min:15|max:480', // 15 minutes to 8 hours
                 'interview_type' => 'required|in:in-person,video,phone,online',
                 'location' => 'required|string|max:255',
                 'interviewer' => 'required|string|max:255',
@@ -58,6 +60,7 @@ class InterviewController extends Controller
                 'application_id' => $validatedData['application_id'],
                 'interview_date' => $validatedData['interview_date'],
                 'interview_time' => $validatedData['interview_time'],
+                'duration' => $validatedData['duration'] ?? 30,
                 'interview_type' => $validatedData['interview_type'],
                 'location' => $validatedData['location'],
                 'interviewer' => $validatedData['interviewer'],
@@ -65,13 +68,13 @@ class InterviewController extends Controller
                 'status' => $validatedData['status'] ?? 'scheduled'
             ]);
 
-            // Step 5: Update application status to On going Interview
+            // Step 5: Update application status to "On going Interview"
             $application->update(['status' => 'On going Interview']);
 
             // Step 6: Load interview with related data
             $interview->load('application.jobPosting', 'application.applicant');
 
-            // Step 7: Trigger notification to applicant
+            // Step 7: Send notification to applicant
             $this->sendInterviewNotification($interview, $application);
 
             Log::info('InterviewController: Interview created and notification sent', [
@@ -84,7 +87,8 @@ class InterviewController extends Controller
 
             return response()->json([
                 'message' => 'Interview scheduled successfully',
-                'interview' => $interview
+                'interview' => $interview,
+                'application' => $application
             ], 201);
             
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -249,6 +253,7 @@ class InterviewController extends Controller
                     'application_id' => $interview->application_id,
                     'interview_date' => $interview->interview_date,
                     'interview_time' => $interview->interview_time,
+                    'duration' => $interview->duration,
                     'interview_type' => $interview->interview_type,
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
@@ -346,6 +351,7 @@ class InterviewController extends Controller
                     'application_id' => $interview->application_id,
                     'interview_date' => $interview->interview_date,
                     'interview_time' => $interview->interview_time,
+                    'duration' => $interview->duration,
                     'interview_type' => $interview->interview_type,
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
@@ -434,7 +440,8 @@ class InterviewController extends Controller
             $validatedData = $request->validate([
                 'interview_date' => 'nullable|date|after_or_equal:today',
                 'interview_time' => 'nullable|date_format:H:i',
-                'interview_type' => 'nullable|in:in-person,video,phone',
+                'duration' => 'nullable|integer|min:15|max:480',
+                'interview_type' => 'nullable|in:in-person,video,phone,online',
                 'location' => 'nullable|string|max:255',
                 'interviewer' => 'nullable|string|max:255',
                 'notes' => 'nullable|string|max:1000',
@@ -480,6 +487,36 @@ class InterviewController extends Controller
     }
 
     /**
+     * Delete an interview
+     */
+    public function destroy($id): JsonResponse
+    {
+        try {
+            $interview = Interview::findOrFail($id);
+            $interview->delete();
+
+            Log::info("InterviewController: Interview deleted successfully", [
+                'interview_id' => $id
+            ]);
+
+            return response()->json([
+                'message' => 'Interview deleted successfully'
+            ], 200);
+            
+        } catch (\Exception $e) {
+            Log::error('InterviewController: Error deleting interview', [
+                'interview_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to delete interview',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Test notification system (for debugging)
      */
     public function testNotification(Request $request): JsonResponse
@@ -501,6 +538,7 @@ class InterviewController extends Controller
                 'id' => 999,
                 'interview_date' => '2024-12-25',
                 'interview_time' => '10:00:00',
+                'duration' => 30,
                 'interview_type' => 'in-person',
                 'location' => 'Test Location',
                 'interviewer' => 'Test Interviewer',
@@ -529,36 +567,6 @@ class InterviewController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to send test notification',
-                'message' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Delete an interview
-     */
-    public function destroy($id): JsonResponse
-    {
-        try {
-            $interview = Interview::findOrFail($id);
-            $interview->delete();
-
-            Log::info("InterviewController: Interview deleted successfully", [
-                'interview_id' => $id
-            ]);
-
-            return response()->json([
-                'message' => 'Interview deleted successfully'
-            ], 200);
-            
-        } catch (\Exception $e) {
-            Log::error('InterviewController: Error deleting interview', [
-                'interview_id' => $id,
-                'error' => $e->getMessage()
-            ]);
-            
-            return response()->json([
-                'error' => 'Failed to delete interview',
                 'message' => $e->getMessage()
             ], 500);
         }

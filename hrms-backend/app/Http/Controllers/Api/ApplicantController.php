@@ -17,10 +17,32 @@ class ApplicantController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name'  => 'required|string|max:255',
             'email'      => 'required|email|unique:users,email|unique:applicants,email',
-            'password'   => 'required|confirmed|min:6',
-            'phone'      => 'nullable|string|max:20',
+            'password'   => [
+                'required',
+                'confirmed',
+                'min:12',
+                'max:16',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/',
+            ],
+            'phone'      => 'required|string|size:11|regex:/^09\d{9}$/',
             'resume'     => 'nullable|string|max:1000',
+        ], [
+            'password.min' => 'Password must be at least 12 characters long.',
+            'password.max' => 'Password must not exceed 16 characters.',
+            'password.regex' => 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.',
+            'phone.required' => 'Phone number is required.',
+            'phone.size' => 'Phone number must be exactly 11 digits.',
+            'phone.regex' => 'Phone number must be a valid Philippine mobile number starting with 09.',
         ]);
+
+        // Check for password uniqueness
+        $existingPassword = User::where('password', Hash::make($request->password))->exists();
+        if ($existingPassword) {
+            return response()->json([
+                'message' => 'This password has already been used by another account. Please choose a different password.',
+                'errors' => ['password' => ['This password has already been used by another account.']]
+            ], 422);
+        }
 
         // Create the user
         $user = User::create([

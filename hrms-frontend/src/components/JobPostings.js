@@ -70,6 +70,18 @@ const JobPostings = () => {
   const showWarning = (message) => toast.warning(message);
   const showInfo = (message) => toast.info(message);
 
+  // Get current Philippines time
+  const getCurrentPhilippinesTime = () => {
+    return new Date().toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   // ✅ Common error handler - same pattern as EmployeeRecords
   const handleAxiosError = (error, defaultMessage) => {
     console.error('Axios error:', error);
@@ -248,6 +260,35 @@ const JobPostings = () => {
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
     
+    // Add Philippines timezone timestamp for new job postings
+    const now = new Date();
+    const philippinesTime = now.toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    const jobData = {
+      ...currentJob,
+      created_at: now.toISOString(), // Current time in UTC
+      ph_timezone: 'Asia/Manila',
+      ph_created_at: philippinesTime,
+      // Add additional timestamp fields for backend processing
+      timestamp_utc: now.toISOString(),
+      timestamp_ph: now.toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      })
+    };
+    
     try {
       if (isEditing) {
         await axios.put(`http://localhost:8000/api/job-postings/${currentJob.id}`, currentJob, { headers });
@@ -259,10 +300,10 @@ const JobPostings = () => {
         toast.dismiss(loadingToast);
         showSuccess(`Job posting "${currentJob.title}" updated successfully!`);
       } else {
-        const response = await axios.post("http://localhost:8000/api/job-postings", currentJob, { headers });
+        const response = await axios.post("http://localhost:8000/api/job-postings", jobData, { headers });
         setJobPosts([...jobPosts, response.data.job_posting || response.data]);
         toast.dismiss(loadingToast);
-        showSuccess(`Job posting "${currentJob.title}" added successfully!`);
+        showSuccess(`Job posting "${currentJob.title}" added successfully at ${philippinesTime}!`);
       }
       setShowModal(false);
       setCurrentJob({
@@ -336,9 +377,15 @@ const JobPostings = () => {
     >
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="fw-bold text-primary d-flex align-items-center">
-          <i className="bi bi-briefcase-fill me-2"></i> Job Postings
-        </h2>
+        <div>
+          <h2 className="fw-bold text-primary d-flex align-items-center">
+            <i className="bi bi-briefcase-fill me-2"></i> Job Postings
+          </h2>
+          <small className="text-muted">
+            <i className="bi bi-clock me-1"></i>
+            Current Philippines Time: {getCurrentPhilippinesTime()}
+          </small>
+        </div>
         <Button
           variant="primary"
           className="shadow-sm rounded-pill px-4"
@@ -453,6 +500,16 @@ const JobPostings = () => {
                             )}
                           </Card.Text>
                         )}
+                        <Card.Text className="text-secondary small">
+                          <strong>Posted:</strong> {job.ph_created_at || new Date(job.created_at).toLocaleString('en-PH', {
+                            timeZone: 'Asia/Manila',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Card.Text>
                       </div>
                     </Collapse>
 

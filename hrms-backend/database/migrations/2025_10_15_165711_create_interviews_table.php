@@ -18,7 +18,8 @@ return new class extends Migration
             // Interview details
             $table->date('interview_date');
             $table->time('interview_time');
-            $table->enum('interview_type', ['in-person', 'video', 'phone'])->default('in-person');
+            $table->integer('duration')->default(30)->comment('Interview duration in minutes');
+            $table->enum('interview_type', ['in-person', 'video', 'phone', 'online'])->default('in-person');
             $table->string('location');
             $table->string('interviewer');
             $table->text('notes')->nullable();

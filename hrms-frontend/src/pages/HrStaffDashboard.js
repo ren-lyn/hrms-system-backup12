@@ -5,9 +5,8 @@ import useUserProfile from '../hooks/useUserProfile';
 import JobPostings from "../components/JobPostings";
 import EmployeeRecords from './HrAssistant/EmployeeRecords';
 import EvaluationAdministration from '../components/EvaluationAdministration';
-import ApplicationsDashboard from "../components/HrAssistant/Dashboard/ApplicationsDashboard";
 import HrStaffProfile from '../components/HrStaff/HrStaffProfile';
-import OnboardingDashboard from "../components/HrAssistant/OnboardingDashboard";
+import OnboardingDashboard from "../components/HrStaff/Onboarding";
 import StaffCalendar from '../components/HrAssistant/StaffCalendar';
 import DisciplinaryManagement from '../components/HrAssistant/DisciplinaryManagement';
 import LeaveManagement from '../components/HrAssistant/LeaveManagement';
@@ -96,7 +95,7 @@ const HrStaffDashboard = () => {
   };
 
   const handleOpenJobApplications = (applicationId, data) => {
-    setActiveView('job-applications');
+    setActiveView('onboarding');
     // You can add additional logic to highlight specific application
   };
 
@@ -173,8 +172,8 @@ const HrStaffDashboard = () => {
         return "Dashboard";
       case "job-posting":
         return "Job Posting";
-      case "job-applications":
-        return "Job Applications";
+      case "onboarding":
+        return "Onboarding";
       case "employee-record":
         return "Employee Record";
       case "evaluation":
@@ -271,9 +270,6 @@ const HrStaffDashboard = () => {
       return <JobPostings />;
     }
 
-    if (activeView === "job-applications") {
-      return <ApplicationsDashboard />;
-    }
 
     if (activeView === "employee-record") {
       return <EmployeeRecords />;
@@ -386,10 +382,10 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("job-applications")}
-                className={`hrms-unified-nav-link ${activeView === 'job-applications' ? 'hrms-unified-active' : ''}`}
+                onClick={() => setActiveView("onboarding")}
+                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
               >
-                <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Job Applications
+                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Onboarding
               </button>
             </li>
             <li>
@@ -434,14 +430,6 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("onboarding")}
-                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Onboarding
-              </button>
-            </li>
-            <li>
-              <button
                 onClick={() => setActiveView("profile")}
                 className={`hrms-unified-nav-link ${activeView === 'profile' ? 'hrms-unified-active' : ''}`}
               >
@@ -463,7 +451,7 @@ const HrStaffDashboard = () => {
         <div className="flex-grow-1 hrms-main-content hrms-scrollable-main-content" style={{ background: "linear-gradient(to bottom right, #f0f4f8, #d9e2ec)" }}>
           {/* Header - hidden for job-posting, job-applications, and profile */}
           <div className="container-fluid py-3 px-3 px-md-5">
-            {activeView !== "job-posting" && activeView !== "job-applications" && activeView !== "calendar" && activeView !== "profile" && (
+            {activeView !== "job-posting" && activeView !== "onboarding" && activeView !== "calendar" && activeView !== "profile" && (
               <div className="d-flex justify-content-between align-items-center mb-4 bg-white rounded-4 shadow-sm p-3 flex-wrap">
                 <h4 className="fw-bold text-primary mb-2 mb-md-0">
                   {getHeaderTitle()}

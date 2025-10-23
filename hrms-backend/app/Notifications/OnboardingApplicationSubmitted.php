@@ -8,7 +8,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use App\Models\Application;
 
-class JobApplicationStatusChanged extends Notification
+class OnboardingApplicationSubmitted extends Notification
 {
     use Queueable;
 
@@ -37,20 +37,18 @@ class JobApplicationStatusChanged extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $status = $this->application->status;
-        $statusText = $status === 'Hired' ? 'hired' : ($status === 'Rejected' ? 'rejected' : strtolower($status));
-        
         return (new MailMessage)
-            ->subject('Job Application Status Update - ' . $this->application->jobPosting->title)
+            ->subject('New Application for Onboarding Review - ' . $this->application->jobPosting->title)
             ->greeting('Hello ' . $notifiable->first_name . ',')
-            ->line('Your job application status has been updated.')
+            ->line('A new job application has been submitted and is ready for onboarding review.')
             ->line('**Application Details:**')
             ->line('Position: ' . $this->application->jobPosting->title)
             ->line('Department: ' . $this->application->jobPosting->department)
-            ->line('Status: ' . $status)
-            ->line('Updated on: ' . $this->application->reviewed_at->format('M d, Y'))
-            ->action('View Application', url('/applications/' . $this->application->id))
-            ->line('Thank you for your interest in our company.');
+            ->line('Applicant: ' . $this->application->applicant->first_name . ' ' . $this->application->applicant->last_name)
+            ->line('Email: ' . $this->application->applicant->email)
+            ->line('Applied on: ' . $this->application->applied_at->format('M d, Y'))
+            ->action('Review in Onboarding', url('/hr/onboarding'))
+            ->line('Please review this application in the Onboarding system.');
     }
 
     /**
@@ -60,23 +58,23 @@ class JobApplicationStatusChanged extends Notification
      */
     public function toArray(object $notifiable): array
     {
-        $status = $this->application->status;
-        $statusText = $status === 'Hired' ? 'hired' : ($status === 'Rejected' ? 'rejected' : strtolower($status));
-        
         return [
-            'type' => 'job_application_status_changed',
+            'type' => 'onboarding_application_submitted',
             'application_id' => $this->application->id,
             'job_posting_id' => $this->application->job_posting_id,
             'applicant_id' => $this->application->applicant_id,
-            'status' => $status,
+            'applicant_name' => $this->application->applicant->first_name . ' ' . $this->application->applicant->last_name,
             'job_title' => $this->application->jobPosting->title,
             'department' => $this->application->jobPosting->department,
-            'reviewed_at' => $this->application->reviewed_at->format('Y-m-d'),
-            'title' => 'Job Application Status Updated',
-            'message' => 'Your application for ' . $this->application->jobPosting->title . ' has been ' . $statusText . '.',
-            'priority' => 'medium',
-            'action_required' => false,
+            'applied_at' => $this->application->applied_at->format('Y-m-d'),
+            'title' => 'New Application for Onboarding Review',
+            'message' => $this->application->applicant->first_name . ' ' . $this->application->applicant->last_name . ' has applied for ' . $this->application->jobPosting->title . ' and is ready for onboarding review.',
+            'priority' => 'high',
+            'action_required' => true,
             'created_at' => now(),
         ];
     }
 }
+
+
+

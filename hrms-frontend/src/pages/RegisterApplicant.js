@@ -15,9 +15,42 @@ const RegisterApplicant = () => {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [passwordValidation, setPasswordValidation] = useState({
+    length: false,
+    uppercase: false,
+    lowercase: false,
+    number: false,
+    special: false,
+    unique: true // Will be checked on submit
+  });
+
+  const validatePassword = (password) => {
+    const validation = {
+      length: password.length >= 12 && password.length <= 16,
+      uppercase: /[A-Z]/.test(password),
+      lowercase: /[a-z]/.test(password),
+      number: /\d/.test(password),
+      special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+      unique: true // Will be validated on backend
+    };
+    setPasswordValidation(validation);
+    return Object.values(validation).every(Boolean);
+  };
+
+  const handlePasswordChange = (e) => {
+    const password = e.target.value;
+    setForm({ ...form, [e.target.name]: password });
+    validatePassword(password);
+  };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    if (e.target.name === 'password') {
+      handlePasswordChange(e);
+    } else {
+      setForm({ ...form, [e.target.name]: e.target.value });
+    }
   };
 
   const handleRegister = async (e) => {
@@ -25,8 +58,45 @@ const RegisterApplicant = () => {
     setError('');
     setSuccess('');
 
+    // Check if terms and conditions are accepted
+    if (!termsAccepted) {
+      setError('Please accept the Terms and Conditions to continue.');
+      return;
+    }
+
+    // Validate phone number
+    if (!form.phone || form.phone.length !== 11 || !/^09\d{9}$/.test(form.phone)) {
+      setError('Please enter a valid 11-digit Philippine mobile number starting with 09.');
+      return;
+    }
+
+    // Validate password requirements
+    if (!validatePassword(form.password)) {
+      setError('Password does not meet the required criteria. Please check the requirements below.');
+      return;
+    }
+
+    // Check password confirmation
+    if (form.password !== form.password_confirmation) {
+      setError('Password and confirmation do not match.');
+      return;
+    }
+
     try {
-      await axios.post('http://localhost:8000/api/register', form);
+      const response = await axios.post('http://localhost:8000/api/register', form);
+      
+      // Store user data in localStorage for immediate access
+      const userData = {
+        first_name: form.first_name,
+        last_name: form.last_name,
+        name: `${form.first_name} ${form.last_name}`.trim(),
+        email: form.email,
+        phone: form.phone
+      };
+      
+      localStorage.setItem('user', JSON.stringify(userData));
+      console.log('User data stored in localStorage:', userData);
+      
       setSuccess('Registration successful! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
@@ -268,9 +338,117 @@ const RegisterApplicant = () => {
           color: #1e40af;
         }
 
-        .required-indicator {
+        .password-toggle {
+          position: absolute;
+          right: 20px;
+          color: #9ca3af;
+          font-size: 18px;
+          cursor: pointer;
+          z-index: 2;
+          transition: color 0.2s;
+        }
+        .password-toggle:hover {
+          color: #3b82f6;
+        }
+
+        .terms-checkbox-wrapper {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 20px;
+          padding: 15px;
+          background: #f8fafc;
+          border-radius: 10px;
+          border: 1px solid #e2e8f0;
+        }
+
+        .terms-checkbox {
+          margin-top: 2px;
+          width: 18px;
+          height: 18px;
+          accent-color: #3b82f6;
+          cursor: pointer;
+        }
+
+        .terms-label {
+          color: #475569;
+          font-size: 0.9rem;
+          line-height: 1.5;
+          cursor: pointer;
+          flex: 1;
+        }
+
+        .terms-label a {
+          color: #3b82f6;
+          text-decoration: none;
+          font-weight: 600;
+        }
+
+        .terms-label a:hover {
+          text-decoration: underline;
+        }
+
+        .password-requirements {
+          margin-top: 10px;
+          padding: 15px;
+          background: #f8fafc;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+        }
+
+        .password-requirements.full-width {
+          margin-top: 15px;
+          grid-column: 1 / -1;
+        }
+
+        .password-requirement {
+          display: flex;
+          align-items: center;
+          margin-bottom: 8px;
+          font-size: 0.9rem;
+        }
+
+        .password-requirement:last-child {
+          margin-bottom: 0;
+        }
+
+        .requirement-icon {
+          margin-right: 8px;
+          font-size: 0.8rem;
+          width: 16px;
+          text-align: center;
+        }
+
+        .requirement-met {
+          color: #10b981;
+        }
+
+        .requirement-not-met {
+          color: #6b7280;
+        }
+
+        .password-strength {
+          margin-top: 10px;
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+
+        .strength-weak {
           color: #ef4444;
-          margin-left: 3px;
+        }
+
+        .strength-medium {
+          color: #f59e0b;
+        }
+
+        .strength-strong {
+          color: #10b981;
+        }
+
+        .password-reminder {
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid #e2e8f0;
         }
 
         @media (max-width: 768px) {
@@ -447,18 +625,26 @@ const RegisterApplicant = () => {
 
                 <div className="form-group">
                   <label className="form-label">
-                    Phone Number
+                    Phone Number <span className="required-indicator">*</span>
                   </label>
                   <div className="input-wrapper">
                     <i className="bi bi-telephone input-icon"></i>
                     <input
-                      type="text"
+                      type="tel"
                       className="form-input"
                       name="phone"
-                      placeholder="Enter your phone number (optional)"
+                      placeholder="Enter your 11-digit phone number (e.g., 09123456789)"
                       value={form.phone}
                       onChange={handleChange}
+                      maxLength="11"
+                      pattern="[0-9]{11}"
+                      required
                     />
+                  </div>
+                  <div className="form-text">
+                    <small className="text-muted">
+                      Philippine mobile number format: 09XXXXXXXXX (11 digits)
+                    </small>
                   </div>
                 </div>
               </div>
@@ -484,10 +670,10 @@ const RegisterApplicant = () => {
                     <div className="input-wrapper">
                       <i className="bi bi-lock input-icon"></i>
                       <input
-                        type="password"
+                        type={showPasswords ? "text" : "password"}
                         className="form-input"
                         name="password"
-                        placeholder="Create a secure password"
+                        placeholder="Create a secure password (12-16 characters)"
                         value={form.password}
                         onChange={handleChange}
                         required
@@ -502,7 +688,7 @@ const RegisterApplicant = () => {
                     <div className="input-wrapper">
                       <i className="bi bi-shield-lock input-icon"></i>
                       <input
-                        type="password"
+                        type={showPasswords ? "text" : "password"}
                         className="form-input"
                         name="password_confirmation"
                         placeholder="Confirm your password"
@@ -510,45 +696,69 @@ const RegisterApplicant = () => {
                         onChange={handleChange}
                         required
                       />
+                      <i 
+                        className={`bi ${showPasswords ? 'bi-eye-slash' : 'bi-eye'} password-toggle`}
+                        onClick={() => setShowPasswords(!showPasswords)}
+                      ></i>
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Terms and Submit */}
-              <div style={{
-                background: '#f8fafc',
-                padding: '20px',
-                borderRadius: '12px',
-                border: '1px solid #e2e8f0',
-                marginBottom: '20px'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                  marginBottom: '15px'
-                }}>
-                  <i className="bi bi-info-circle" style={{
-                    color: '#3b82f6',
-                    fontSize: '1.2rem',
-                    marginTop: '2px'
-                  }}></i>
-                  <div>
-                    <p style={{
-                      margin: 0,
-                      fontSize: '0.9rem',
-                      color: '#475569',
-                      lineHeight: '1.5'
-                    }}>
-                      By creating an account, you agree to our Terms of Service and Privacy Policy. 
-                      Your information will be used solely for recruitment and application purposes.
-                    </p>
+                
+                {/* Password Requirements - Full Width */}
+                {form.password && (
+                  <div className="password-requirements full-width">
+                    {/* Password Strength Indicator */}
+                    <div className="password-strength">
+                      {form.password.length > 0 && (
+                        <>
+                          Password Strength: {
+                            Object.values(passwordValidation).filter(Boolean).length < 3 ? (
+                              <span className="strength-weak">Weak</span>
+                            ) : Object.values(passwordValidation).filter(Boolean).length < 5 ? (
+                              <span className="strength-medium">Medium</span>
+                            ) : (
+                              <span className="strength-strong">Strong</span>
+                            )
+                          }
+                        </>
+                      )}
+                    </div>
+                    
+                    {/* Password Requirements Reminder */}
+                    <div className="password-reminder">
+                      <small className="text-muted">
+                        Must be 12-16 characters with uppercase, lowercase, numbers, and special characters.
+                      </small>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              <button type="submit" className="register-button">
+              {/* Terms and Conditions */}
+              <div className="terms-checkbox-wrapper">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  className="terms-checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                />
+                <label htmlFor="terms" className="terms-label">
+                  I agree to the <a href="#" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="#" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. 
+                  I understand that my information will be used solely for recruitment and application purposes.
+                </label>
+              </div>
+
+
+              <button 
+                type="submit" 
+                className="register-button"
+                disabled={!termsAccepted}
+                style={{
+                  opacity: termsAccepted ? 1 : 0.6,
+                  cursor: termsAccepted ? 'pointer' : 'not-allowed'
+                }}
+              >
                 Create Account
               </button>
             </form>

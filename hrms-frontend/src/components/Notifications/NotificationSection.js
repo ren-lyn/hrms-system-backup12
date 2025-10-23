@@ -3,7 +3,7 @@ import { fetchNotifications, getNotificationAction, getNotificationIcon } from '
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/free-solid-svg-icons';
 
-const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation, onOpenDisciplinary, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
+const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation, onOpenDisciplinary, onOpenCalendar, onOpenJobPostings }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -74,11 +74,6 @@ const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation,
         case 'OPEN_CALENDAR':
           if (onOpenCalendar) {
             onOpenCalendar(notificationAction.id, notificationAction.data);
-          }
-          break;
-        case 'OPEN_JOB_APPLICATIONS':
-          if (onOpenJobApplications) {
-            onOpenJobApplications(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_JOB_POSTINGS':

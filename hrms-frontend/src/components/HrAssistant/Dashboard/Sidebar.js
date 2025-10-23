@@ -91,12 +91,6 @@ const Sidebar = () => {
           <FaBriefcase /> <span>Job Postings</span>
         </NavLink>
         <NavLink
-          to="applications"
-          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
-        >
-          <FaClipboardList /> <span>Job Applications</span>
-        </NavLink>
-        <NavLink
           to="onboarding"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >

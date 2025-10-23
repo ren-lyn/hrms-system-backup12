@@ -1,533 +1,422 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Card, Button, Badge, Table, Alert, Modal, Form, Container, Row, Col } from 'react-bootstrap';
+import { Container, Row, Col, Button, Badge, Table, Card } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
-  faUserPlus, 
-  faFileAlt, 
-  faCheckCircle, 
+  faUsers, 
   faClock, 
-  faExclamationTriangle,
-  faEye,
+  faCheckCircle, 
   faCalendarAlt,
-  faUsers,
-  faChartLine,
-  faRocket,
-  faDollarSign,
-  faShieldAlt,
+  faFileAlt,
+  faUserPlus,
   faUserTie,
+  faTimesCircle,
   faInfoCircle,
+  faEye,
   faEdit,
-  faRefresh,
-  faSave,
-  faBuilding,
   faEllipsisV,
-  faUser,
-  faBriefcase,
-  faCog,
-  faDownload
+  faDownload,
+  faPhone,
+  faEnvelope,
+  faMapMarkerAlt,
+  faTimes
 } from '@fortawesome/free-solid-svg-icons';
-import { toast } from 'react-toastify';
+import axios from 'axios';
 
 const OnboardingDashboard = () => {
-  const [onboardingRecords, setOnboardingRecords] = useState([]);
+  const [activeTab, setActiveTab] = useState('Overview');
+  const [applicants, setApplicants] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [editingRecord, setEditingRecord] = useState(null);
-  const [filter, setFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    inProgress: 0,
-    completed: 0
-  });
   const [activeDropdown, setActiveDropdown] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedRecordForStatus, setSelectedRecordForStatus] = useState(null);
   const [showInterviewModal, setShowInterviewModal] = useState(false);
-  const [selectedApplicant, setSelectedApplicant] = useState(null);
-  const [interviewForm, setInterviewForm] = useState({
-    interviewDate: '',
-    interviewTime: '',
-    interviewType: 'in-person',
+  const [selectedApplicantForInterview, setSelectedApplicantForInterview] = useState(null);
+  const [interviewData, setInterviewData] = useState({
+    interview_date: '',
+    interview_time: '',
+    duration: '30',
+    interview_type: 'On-site',
+    location: '',
+    interviewer: '',
+    notes: ''
+  });
+  
+  // Batch interview functionality
+  const [showBatchInterviewModal, setShowBatchInterviewModal] = useState(false);
+  const [selectedApplicants, setSelectedApplicants] = useState([]);
+  const [batchInterviewData, setBatchInterviewData] = useState({
+    interview_date: '',
+    interview_time: '',
+    duration: '30',
+    interview_type: 'On-site',
     location: '',
     interviewer: '',
     notes: ''
   });
 
-  // Toast helpers
-  const showSuccess = (message) => toast.success(message);
-  const showError = (message) => toast.error(message);
-  const showInfo = (message) => toast.info(message);
-
-  // Dropdown handlers
-  const toggleDropdown = (recordId) => {
-    setActiveDropdown(activeDropdown === recordId ? null : recordId);
-  };
-
-  const closeDropdown = () => {
-    setActiveDropdown(null);
-  };
-
-  useEffect(() => {
-    fetchOnboardingRecords();
-    
-    // Set up periodic refresh to check for new applicants
-    const refreshInterval = setInterval(() => {
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Auto-refreshing onboarding records for new applicants...');
-      fetchOnboardingRecords(true);
-    }, 10000); // Check every 10 seconds for new records
-    
-    // Listen for onboarding dashboard refresh events from other components
-    const handleOnboardingRefresh = (event) => {
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Received refresh event from', event.detail?.source || 'unknown');
-      console.log('🔄 [HrAssistant-OnboardingDashboard] Event details:', event.detail);
-      fetchOnboardingRecords(true);
-    };
-    
-    // Check for localStorage refresh trigger (for cross-tab communication)
-    const checkRefreshTrigger = () => {
-      const refreshTrigger = localStorage.getItem('onboarding_dashboard_refresh');
-      if (refreshTrigger) {
-        try {
-          const trigger = JSON.parse(refreshTrigger);
-          console.log('📱 [HrAssistant-OnboardingDashboard] Found localStorage refresh trigger:', trigger);
-          fetchOnboardingRecords(true);
-          localStorage.removeItem('onboarding_dashboard_refresh'); // Clear the trigger after use
-        } catch (error) {
-          console.error('[HrAssistant-OnboardingDashboard] Error parsing refresh trigger:', error);
-        }
-      }
-    };
-    
-    // Add event listeners
-    window.addEventListener('onboardingDashboardRefresh', handleOnboardingRefresh);
-    window.addEventListener('focus', checkRefreshTrigger); // Check when user switches back to this tab
-    
-    // Initial check for refresh trigger on mount
-    checkRefreshTrigger();
-    
-    return () => {
-      clearInterval(refreshInterval);
-      window.removeEventListener('onboardingDashboardRefresh', handleOnboardingRefresh);
-      window.removeEventListener('focus', checkRefreshTrigger);
-    };
-  }, []);
-
-  const fetchOnboardingRecords = async (isRefresh = false) => {
+  // Fetch applicants from JobPortal applications
+  const fetchApplicants = async () => {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      
+      setLoading(true);
       const token = localStorage.getItem('token');
-      console.log('🔍 [HrAssistant-OnboardingDashboard] Fetching applicants with onboarding data...');
-      console.log('🔍 [HrAssistant-OnboardingDashboard] Token exists:', !!token);
+      console.log('🔍 [OnboardingDashboard] Fetching applicants with token:', token ? 'Present' : 'Missing');
       
-      // Fetch onboarding records from the new dedicated API endpoint
-      // This endpoint fetches applicants and joins with onboarding data
-      const response = await axios.get('http://localhost:8000/api/onboarding-records', {
+      const response = await axios.get('http://localhost:8000/api/applications', {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log('📊 [HrAssistant-OnboardingDashboard] Onboarding API Response:', response.data);
-      const onboardingRecords = Array.isArray(response.data) ? response.data : [];
-        console.log('📊 [HrAssistant-OnboardingDashboard] Total ShortListed and Interview applicants:', onboardingRecords.length);
+      console.log('📊 [OnboardingDashboard] API Response:', response.data);
+      console.log('📊 [OnboardingDashboard] Applications count:', response.data.length);
       
-      setOnboardingRecords(onboardingRecords);
-      calculateStats(onboardingRecords);
+      // Handle both array and object responses
+      const applications = Array.isArray(response.data) ? response.data : (response.data.data || []);
       
-      if (onboardingRecords.length > 0) {
-        console.log('✅ [HrAssistant-OnboardingDashboard] Successfully loaded', onboardingRecords.length, 'applicants');
-        onboardingRecords.forEach((record, index) => {
-          console.log(`📄 [HrAssistant-OnboardingDashboard] Applicant ${index + 1}:`, {
-            id: record.id,
-            name: record.employee_name,
-            email: record.employee_email,
-            position: record.position,
-            department: record.department,
-            status: record.status,
-            start_date: record.start_date,
-            application_id: record.application_id,
-            application_status: record.application_status
-          });
-        });
-      } else {
-        console.log('🔍 [HrAssistant-OnboardingDashboard] No applicants found');
-        console.log('📝 [HrAssistant-OnboardingDashboard] To populate this list, mark applicants in Applications Dashboard');
+      // Debug: Log first application structure
+      if (applications.length > 0) {
+        console.log('🔍 [OnboardingDashboard] First application structure:', applications[0]);
+        console.log('🔍 [OnboardingDashboard] Applicant data:', applications[0].applicant);
+        console.log('🔍 [OnboardingDashboard] Job posting data:', applications[0].jobPosting);
       }
       
-      if (isRefresh) {
-        showSuccess('Data refreshed successfully!');
-      }
+      setApplicants(applications);
       
+      console.log('✅ [OnboardingDashboard] Applications loaded:', applications.length);
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error fetching onboarding records:', error);
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error details:', {
-        status: error.response?.status,
-        message: error.message,
-        url: error.config?.url
-      });
-      
-      // Handle specific error cases
-      if (error.response?.status === 404) {
-        console.log('📝 [HrAssistant-OnboardingDashboard] Onboarding API endpoint not found');
-        showError('Onboarding API endpoint not found. Please contact system administrator.');
-      } else if (error.response?.status === 401) {
-        console.log('🔒 [HrAssistant-OnboardingDashboard] Authentication required');
-        showError('Authentication required. Please log in again.');
-      } else if (error.response?.status === 403) {
-        console.log('🚫 [HrAssistant-OnboardingDashboard] Access denied - check user permissions');
-        showError('Access denied. Please check your permissions.');
-      } else {
-        showError('Failed to load applicants. Please try again.');
-      }
-      
-      // Set empty state on error
-      setOnboardingRecords([]);
-      calculateStats([]);
-      console.log('🕰️ [HrAssistant-OnboardingDashboard] Waiting for applicants to appear...');
+      console.error('❌ [OnboardingDashboard] Error fetching applicants:', error);
+      console.error('❌ [OnboardingDashboard] Error details:', error.response?.data);
+      setApplicants([]);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  const calculateStats = (records) => {
-    const stats = {
-      total: records.length,
-      pending: records.filter(r => r.status === 'pending_documents').length,
-      inProgress: records.filter(r => r.status === 'documents_approved' || r.status === 'orientation_scheduled').length,
-      completed: records.filter(r => r.status === 'completed').length
-    };
-    setStats(stats);
+  useEffect(() => {
+    fetchApplicants();
+  }, []);
+
+  // Refresh data when tab changes
+  useEffect(() => {
+    console.log('🔄 [OnboardingDashboard] Tab changed to:', activeTab);
+    const filtered = getFilteredApplicants();
+    console.log('🔄 [OnboardingDashboard] Filtered applicants for', activeTab, ':', filtered.length);
+  }, [activeTab, applicants]);
+
+  // Filter applicants based on active tab
+  const getFilteredApplicants = () => {
+    if (activeTab === 'Overview') {
+      return applicants;
+    }
+    
+    console.log('🔍 [OnboardingDashboard] Filtering applicants for tab:', activeTab);
+    console.log('🔍 [OnboardingDashboard] Total applicants before filtering:', applicants.length);
+    
+    const filtered = applicants.filter(applicant => {
+      const status = applicant.status;
+      console.log('🔍 [OnboardingDashboard] Checking applicant status:', status, 'for tab:', activeTab);
+      
+      switch (activeTab) {
+        case 'Pending':
+          return status === 'Pending';
+        case 'Shortlisted':
+          return status === 'ShortListed' || status === 'Shortlisted';
+        case 'Interview':
+          return status === 'On going Interview' || status === 'Interview';
+        case 'Offered':
+          return status === 'Offered';
+        case 'Accepted Offer':
+          return status === 'Accepted';
+        case 'Onboarding':
+          return status === 'Onboarding';
+        case 'Hired':
+          return status === 'Hired';
+        case 'Rejected':
+          return status === 'Rejected';
+        default:
+          return true;
+      }
+    });
+    
+    console.log('🔍 [OnboardingDashboard] Filtered applicants count:', filtered.length);
+    return filtered;
   };
 
-  const getApplicationStatusBadge = (status) => {
+  // Calculate statistics
+  const calculateStats = () => {
+    const stats = {
+      total: applicants.length,
+      pending: applicants.filter(a => a.status === 'Pending').length,
+      shortlisted: applicants.filter(a => a.status === 'ShortListed').length,
+      interview: applicants.filter(a => a.status === 'On going Interview').length,
+      offered: applicants.filter(a => a.status === 'Offered').length,
+      accepted: applicants.filter(a => a.status === 'Accepted').length,
+      onboarding: applicants.filter(a => a.status === 'Onboarding').length,
+      hired: applicants.filter(a => a.status === 'Hired').length,
+      rejected: applicants.filter(a => a.status === 'Rejected').length
+    };
+    return stats;
+  };
+
+  const stats = calculateStats();
+
+  // Get status badge
+  const getStatusBadge = (status) => {
     const statusConfig = {
-      'Pending': { color: 'secondary', icon: faClock, text: 'Pending' },
-      'Applied': { color: 'info', icon: faFileAlt, text: 'Applied' },
-      'ShortListed': { color: 'primary', icon: faUser, text: 'ShortListed' },
-      'Interview': { color: 'warning', icon: faCalendarAlt, text: 'Interview' },
-      'On Interview': { color: 'info', icon: faCalendarAlt, text: 'On Interview' },
-      'Offered': { color: 'success', icon: faCheckCircle, text: 'Offered' },
-      'Offered Accepted': { color: 'success', icon: faCheckCircle, text: 'Offered Accepted' },
-      'Onboarding': { color: 'info', icon: faRocket, text: 'Onboarding' },
-      'Hired': { color: 'success', icon: faUserTie, text: 'Hired' },
-      'Rejected': { color: 'danger', icon: faExclamationTriangle, text: 'Rejected' }
+      'Pending': { color: 'warning', icon: faClock, text: 'Pending', customClass: 'status-pending' },
+      'ShortListed': { color: 'info', icon: faCheckCircle, text: 'Shortlisted', customClass: 'status-shortlisted' },
+      'On going Interview': { color: 'primary', icon: faCalendarAlt, text: 'Interview', customClass: 'status-interview' },
+      'Offered': { color: 'primary', icon: faFileAlt, text: 'Offered', customClass: 'status-offered' },
+      'Accepted': { color: 'success', icon: faUserPlus, text: 'Accepted', customClass: 'status-accepted' },
+      'Onboarding': { color: 'info', icon: faUserTie, text: 'Onboarding', customClass: 'status-onboarding' },
+      'Hired': { color: 'success', icon: faCheckCircle, text: 'Hired', customClass: 'status-hired' },
+      'Rejected': { color: 'danger', icon: faTimesCircle, text: 'Rejected', customClass: 'status-rejected' }
     };
     
     const config = statusConfig[status] || statusConfig['Pending'];
     
     return (
-      <Badge bg={config.color} className="d-flex align-items-center gap-1">
+      <Badge bg={config.color} className={`d-flex align-items-center gap-1 status-badge ${config.customClass}`}>
         <FontAwesomeIcon icon={config.icon} size="sm" />
         {config.text}
       </Badge>
     );
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      'pending_documents': { color: 'warning', icon: faClock, text: 'Pending Documents' },
-      'documents_approved': { color: 'primary', icon: faCheckCircle, text: 'Documents Approved' },
-      'orientation_scheduled': { color: 'info', icon: faCalendarAlt, text: 'Orientation Scheduled' },
-      'completed': { color: 'success', icon: faCheckCircle, text: 'Completed' }
-    };
-    
-    const config = statusConfig[status] || statusConfig['pending_documents'];
-    
-    return (
-      <Badge bg={config.color} className="d-flex align-items-center gap-1">
-        <FontAwesomeIcon icon={config.icon} size="sm" />
-        {config.text}
-      </Badge>
-    );
+  // Handle dropdown toggle
+  const toggleDropdown = (recordId) => {
+    setActiveDropdown(activeDropdown === recordId ? null : recordId);
   };
 
-  const handleStatusUpdate = async (recordId, newStatus) => {
-    try {
-      const token = localStorage.getItem('token');
-      console.log(`🔄 [HrAssistant-OnboardingDashboard] Updating onboarding status for application ${recordId} to: ${newStatus}`);
-      
-      // Update local state immediately for better UX
-      setOnboardingRecords(prev => prev.map(record => 
-        record.id === recordId 
-          ? { ...record, status: newStatus, updated_at: new Date().toISOString() }
-          : record
-      ));
-      
-      // Recalculate stats with updated records
-      const updatedRecords = onboardingRecords.map(record => 
-        record.id === recordId ? { ...record, status: newStatus } : record
-      );
-      calculateStats(updatedRecords);
-      
-      // Send update to backend API
-      const response = await axios.put(`http://localhost:8000/api/onboarding-records/${recordId}`, {
-        status: newStatus
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (response.status === 200) {
-        showSuccess(`Onboarding status updated to: ${newStatus}`);
-        console.log(`✅ [HrAssistant-OnboardingDashboard] Onboarding status saved to database: ${newStatus}`);
-        
-        // Update with the actual data returned from the server
-        if (response.data.data) {
-          setOnboardingRecords(prev => prev.map(record => 
-            record.id === recordId ? { ...record, ...response.data.data } : record
-          ));
-        }
-      }
-      
-    } catch (error) {
-      console.error('[HrAssistant-OnboardingDashboard] Error updating onboarding status:', error);
-      showError(`Failed to update status: ${error.response?.data?.message || error.message}`);
-      
-      // Revert local state on error
-      fetchOnboardingRecords(true);
-    }
-  };
-
-
-  const filteredRecords = onboardingRecords.filter(record => {
-    const matchesOnboardingFilter = filter === 'all' || record.status === filter;
-    const matchesStatusFilter = statusFilter === 'all' || record.application_status === statusFilter;
-    const matchesSearch = !searchTerm || 
-      record.employee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.employee_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.department?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesOnboardingFilter && matchesStatusFilter && matchesSearch;
-  });
-
+  // Handle view details
   const handleViewDetails = (record) => {
     setSelectedRecord(record);
     setShowModal(true);
+    setActiveDropdown(null);
   };
 
-  const handleEdit = (record) => {
-    setEditingRecord({ ...record });
+  // Handle status change
+  const handleChangeStatus = (record) => {
+    if (record.status !== 'Pending') {
+      alert('Status can only be changed from Pending to ShortListed or Rejected');
+      setActiveDropdown(null);
+      return;
+    }
+    setSelectedRecordForStatus(record);
+    setShowStatusModal(true);
+    setActiveDropdown(null);
   };
 
-  const handleSetInterview = (record) => {
-    setSelectedApplicant(record);
-    setShowInterviewModal(true);
-    // Pre-fill form with default values
-    setInterviewForm({
-      interviewDate: '',
-      interviewTime: '',
-      interviewType: 'in-person',
-      location: 'Office Conference Room',
-      interviewer: '',
-      notes: `Interview for ${record.position} position`
-    });
-  };
-
-  const handleInterviewFormChange = (field, value) => {
-    setInterviewForm(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleSubmitInterview = async () => {
+  // Handle status update
+  const handleStatusUpdate = async (targetStatus) => {
     try {
-      const token = localStorage.getItem('token');
-      
-      // Check if token exists
-      if (!token) {
-        showError('Authentication required. Please log in again.');
-        window.location.href = '/login';
-        return;
-      }
-      
-      console.log('📅 [HrAssistant-OnboardingDashboard] Scheduling interview for:', selectedApplicant.employee_name);
-      console.log('📅 [HrAssistant-OnboardingDashboard] Interview details:', interviewForm);
-
-      // Create interview data
-      const interviewData = {
-        application_id: selectedApplicant.application_id,
-        interview_date: interviewForm.interviewDate,
-        interview_time: interviewForm.interviewTime,
-        interview_type: interviewForm.interviewType,
-        location: interviewForm.location,
-        interviewer: interviewForm.interviewer,
-        notes: interviewForm.notes,
-        status: 'scheduled'
-      };
-
-      // Send to backend
-      const response = await axios.post('http://localhost:8000/api/interviews', interviewData, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+      const applicantToUpdate = selectedRecord || selectedRecordForStatus;
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicantToUpdate.id}/status`,
+        { status: targetStatus },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          }
         }
-      });
-
-      console.log('✅ [HrAssistant-OnboardingDashboard] Interview scheduled successfully:', response.data);
-
-      // Update application status to Interview
-      await axios.put(`http://localhost:8000/api/applications/${selectedApplicant.application_id}/status`, {
-        status: 'Interview'
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-
-      // Close modal and refresh data
-      setShowInterviewModal(false);
-      setSelectedApplicant(null);
-      setInterviewForm({
-        interviewDate: '',
-        interviewTime: '',
-        interviewType: 'in-person',
-        location: '',
-        interviewer: '',
-        notes: ''
-      });
-
-      // Refresh onboarding records
-      await fetchOnboardingRecords(true);
-
-      // Show success message
-      showSuccess('Interview scheduled successfully! Applicant status updated to Interview.');
-
+      );
+      
+      const applicantName = applicantToUpdate.applicant 
+        ? `${applicantToUpdate.applicant.first_name} ${applicantToUpdate.applicant.last_name}` 
+        : 'Applicant';
+      
+      alert(`Status updated to ${targetStatus} for ${applicantName}`);
+      await fetchApplicants();
+      setShowModal(false);
+      setSelectedRecord(null);
+      setShowStatusModal(false);
+      setSelectedRecordForStatus(null);
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error scheduling interview:', error);
-      
-      // Handle specific authentication errors
-      if (error.response?.status === 401) {
-        showError('Authentication failed. Please log in again.');
-        localStorage.removeItem('token');
-        localStorage.removeItem('role');
-        localStorage.removeItem('userRole');
-        window.location.href = '/login';
-        return;
-      } else if (error.response?.status === 403) {
-        showError('Access denied. You do not have permission to schedule interviews.');
-        return;
-      } else if (error.response?.status === 404) {
-        showError('API endpoint not found. Please contact support.');
-        return;
-      }
-      
-      showError('Failed to schedule interview. Please try again.');
+      console.error('Error updating status:', error);
+      alert('Failed to update status. Please try again.');
     }
   };
 
-  const handleCancelInterview = () => {
-    setShowInterviewModal(false);
-    setSelectedApplicant(null);
-    setInterviewForm({
-      interviewDate: '',
-      interviewTime: '',
-      interviewType: 'in-person',
+  // Handle resume download
+  const handleDownloadResume = (applicant) => {
+    // Check multiple possible resume locations
+    const resumeUrl = applicant.resume_path || applicant.applicant?.resume || applicant.resume;
+    
+    console.log('🔍 [Download Resume] Checking resume URL:', resumeUrl);
+    console.log('🔍 [Download Resume] Full applicant data:', applicant);
+    
+    if (resumeUrl) {
+      // Construct full URL if needed
+      const fullUrl = resumeUrl.startsWith('http') 
+        ? resumeUrl 
+        : `http://localhost:8000/storage/${resumeUrl}`;
+      
+      console.log('✅ [Download Resume] Downloading from URL:', fullUrl);
+      
+      // Create a temporary link to download the file
+      const link = document.createElement('a');
+      link.href = fullUrl;
+      link.download = `Resume_${applicant.applicant?.first_name || 'Applicant'}_${applicant.applicant?.last_name || 'Resume'}.pdf`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      console.error('❌ [Download Resume] No resume URL found');
+      alert('Resume not available for this applicant.');
+    }
+  };
+
+  // Handle schedule interview
+  const handleScheduleInterview = (applicant) => {
+    setSelectedApplicantForInterview(applicant);
+    setInterviewData({
+      interview_date: '',
+      interview_time: '',
+      duration: '30',
+      interview_type: 'On-site',
       location: '',
       interviewer: '',
       notes: ''
     });
+    setShowInterviewModal(true);
   };
 
-  const handleDownloadResume = async (applicationId, employeeName) => {
+  // Handle send interview invite
+  const handleSendInterviewInvite = async () => {
     try {
+      // Validate required fields
+      if (!interviewData.interview_date || !interviewData.interview_time || !interviewData.location || !interviewData.interviewer) {
+        alert('Please fill in all required fields: Date, Time, Location, and Interviewer');
+        return;
+      }
+
       const token = localStorage.getItem('token');
-      
-      if (!token) {
-        showError('Authentication required. Please log in again.');
-        return;
-      }
-
-      console.log('📄 [HrAssistant-OnboardingDashboard] Downloading resume for application:', applicationId);
-      
-      // Create a temporary link to download the file
-      const downloadUrl = `http://localhost:8000/api/applications/${applicationId}/resume`;
-      
-      // Create a temporary anchor element to trigger download
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.style.display = 'none';
-      
-      // Add authorization header by creating a fetch request first
-      const response = await fetch(downloadUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/pdf'
+      const response = await axios.post(
+        `http://localhost:8000/api/applications/${selectedApplicantForInterview.id}/schedule-interview`,
+        {
+          interview_date: interviewData.interview_date,
+          interview_time: interviewData.interview_time,
+          duration: parseInt(interviewData.duration),
+          interview_type: interviewData.interview_type,
+          location: interviewData.location,
+          interviewer: interviewData.interviewer,
+          notes: interviewData.notes
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          }
         }
-      });
+      );
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          showError('Resume file not found.');
-        } else if (response.status === 401) {
-          showError('Authentication failed. Please log in again.');
-        } else {
-          showError('Failed to download resume. Please try again.');
-        }
-        return;
-      }
-
-      // Get the blob data
-      const blob = await response.blob();
-      
-      // Create object URL and trigger download
-      const url = window.URL.createObjectURL(blob);
-      link.href = url;
-      link.download = `resume_${employeeName.replace(/\s+/g, '_')}.pdf`;
-      
-      // Append to body, click, and remove
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up the object URL
-      window.URL.revokeObjectURL(url);
-      
-      showSuccess('Resume downloaded successfully!');
-      console.log('✅ [HrAssistant-OnboardingDashboard] Resume downloaded successfully');
-      
+      alert('Interview invitation sent successfully!');
+      setShowInterviewModal(false);
+      setSelectedApplicantForInterview(null);
+      await fetchApplicants();
     } catch (error) {
-      console.error('❌ [HrAssistant-OnboardingDashboard] Error downloading resume:', error);
-      showError('Failed to download resume. Please try again.');
+      console.error('Error scheduling interview:', error);
+      alert('Failed to schedule interview. Please try again.');
     }
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingRecord) return;
-    
-    try {
-      const token = localStorage.getItem('token');
-      console.log(`💾 [HrAssistant-OnboardingDashboard] Saving changes for record ${editingRecord.id}`);
-      
-      const response = await axios.put(`http://localhost:8000/api/onboarding-records/${editingRecord.id}`, editingRecord, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (response.status === 200) {
-        // Update local state
-        setOnboardingRecords(prev => prev.map(record => 
-          record.id === editingRecord.id ? editingRecord : record
-        ));
-        
-        setEditingRecord(null);
-        showSuccess('Onboarding record updated successfully');
-        console.log(`✅ [HrAssistant-OnboardingDashboard] Record updated successfully`);
+  // Handle batch interview selection
+  const handleBatchInterviewSelection = (applicant) => {
+    setSelectedApplicants(prev => {
+      const isSelected = prev.some(selected => selected.id === applicant.id);
+      if (isSelected) {
+        return prev.filter(selected => selected.id !== applicant.id);
+      } else {
+        return [...prev, applicant];
       }
+    });
+  };
+
+  // Handle batch interview modal
+  const handleBatchInterviewModal = () => {
+    if (selectedApplicants.length === 0) {
+      alert('Please select at least one applicant for batch interview scheduling.');
+      return;
+    }
+    setShowBatchInterviewModal(true);
+  };
+
+  // Handle send batch interview invites
+  const handleSendBatchInterviewInvites = async () => {
+    try {
+      // Validate required fields
+      if (!batchInterviewData.interview_date || !batchInterviewData.interview_time || !batchInterviewData.location || !batchInterviewData.interviewer) {
+        alert('Please fill in all required fields: Date, Time, Location, and Interviewer');
+        return;
+      }
+
+      const token = localStorage.getItem('token');
+      const applicationIds = selectedApplicants.map(applicant => applicant.id);
+      
+      const response = await axios.post(
+        'http://localhost:8000/api/applications/schedule-batch-interviews',
+        {
+          application_ids: applicationIds,
+          interview_date: batchInterviewData.interview_date,
+          interview_time: batchInterviewData.interview_time,
+          duration: parseInt(batchInterviewData.duration),
+          interview_type: batchInterviewData.interview_type,
+          location: batchInterviewData.location,
+          interviewer: batchInterviewData.interviewer,
+          notes: batchInterviewData.notes
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          }
+        }
+      );
+
+      const { successful_count, failed_count, successful_interviews, failed_interviews } = response.data;
+      
+      let message = `Batch interview scheduling completed!\n\n`;
+      message += `✅ Successful: ${successful_count} interviews scheduled\n`;
+      if (failed_count > 0) {
+        message += `❌ Failed: ${failed_count} interviews\n\n`;
+        message += `Failed applicants:\n`;
+        failed_interviews.forEach(failed => {
+          const applicant = selectedApplicants.find(app => app.id === failed.application_id);
+          message += `• ${applicant ? applicant.first_name + ' ' + applicant.last_name : 'Unknown'}: ${failed.error}\n`;
+        });
+      }
+
+      alert(message);
+      setShowBatchInterviewModal(false);
+      setSelectedApplicants([]);
+      await fetchApplicants();
     } catch (error) {
-      console.error('[HrAssistant-OnboardingDashboard] Error saving record:', error);
-      showError(`Failed to save changes: ${error.response?.data?.message || error.message}`);
+      console.error('Error scheduling batch interviews:', error);
+      alert('Failed to schedule batch interviews. Please try again.');
+    }
+  };
+
+  // Handle resume view
+  const handleViewResume = (applicant) => {
+    // Check multiple possible resume locations
+    const resumeUrl = applicant.resume_path || applicant.applicant?.resume || applicant.resume;
+    
+    console.log('🔍 [View Resume] Checking resume URL:', resumeUrl);
+    console.log('🔍 [View Resume] Full applicant data:', applicant);
+    
+    if (resumeUrl) {
+      // Construct full URL if needed
+      const fullUrl = resumeUrl.startsWith('http') 
+        ? resumeUrl 
+        : `http://localhost:8000/storage/${resumeUrl}`;
+      
+      console.log('✅ [View Resume] Opening URL:', fullUrl);
+      window.open(fullUrl, '_blank');
+    } else {
+      console.error('❌ [View Resume] No resume URL found');
+      alert('Resume not available for this applicant.');
     }
   };
 
@@ -543,1777 +432,1332 @@ const OnboardingDashboard = () => {
     );
   }
 
-  console.log('🔄 [HrAssistant-OnboardingDashboard] Component rendering, records:', onboardingRecords.length, 'loading:', loading);
-  
+  const filteredApplicants = getFilteredApplicants();
+
   return (
     <Container fluid className="p-4">
-
-      {/* Enhanced Tab Navigation */}
+      {/* Professional Navigation Bar */}
       <Row className="mb-4">
         <Col>
-          <div className="modern-tab-container">
-            <div className="tab-navigation">
-              <Button
-                className={`modern-tab ${activeTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('overview')}
-              >
-                <FontAwesomeIcon icon={faUsers} className="tab-icon" />
-                <span className="tab-label">Overview</span>
-                <div className="tab-indicator"></div>
-              </Button>
-              <Button
-                className={`modern-tab ${activeTab === 'orientation' ? 'active' : ''}`}
-                onClick={() => setActiveTab('orientation')}
-              >
-                <FontAwesomeIcon icon={faCalendarAlt} className="tab-icon" />
-                <span className="tab-label">Orientation</span>
-                <div className="tab-indicator"></div>
-              </Button>
-              <Button
-                className={`modern-tab ${activeTab === 'starting-date' ? 'active' : ''}`}
-                onClick={() => setActiveTab('starting-date')}
-              >
-                <FontAwesomeIcon icon={faClock} className="tab-icon" />
-                <span className="tab-label">Start Date</span>
-                <div className="tab-indicator"></div>
-              </Button>
-              <Button
-                className={`modern-tab ${activeTab === 'salary-setup' ? 'active' : ''}`}
-                onClick={() => setActiveTab('salary-setup')}
-              >
-                <FontAwesomeIcon icon={faDollarSign} className="tab-icon" />
-                <span className="tab-label">Salary Setup</span>
-                <div className="tab-indicator"></div>
-              </Button>
-              <Button
-                className={`modern-tab ${activeTab === 'benefits' ? 'active' : ''}`}
-                onClick={() => setActiveTab('benefits')}
-              >
-                <FontAwesomeIcon icon={faShieldAlt} className="tab-icon" />
-                <span className="tab-label">Benefits</span>
-                <div className="tab-indicator"></div>
-              </Button>
-              <Button
-                className={`modern-tab ${activeTab === 'employee-profile' ? 'active' : ''}`}
-                onClick={() => setActiveTab('employee-profile')}
-              >
-                <FontAwesomeIcon icon={faUserTie} className="tab-icon" />
-                <span className="tab-label">Profile</span>
-                <div className="tab-indicator"></div>
-              </Button>
-            </div>
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <h4 className="mb-0">Onboarding Management</h4>
+            <Button 
+              variant="outline-primary" 
+              size="sm" 
+              onClick={fetchApplicants}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh Data'}
+            </Button>
           </div>
-        </Col>
-      </Row>
 
-      {/* Tab Content */}
-      {activeTab === 'overview' && (
-        <>
-          {/* Stats Cards */}
-          <Row className="mb-4">
-        <Col md={3}>
-          <Card className="border-0 shadow-sm h-100" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-            <Card.Body className="text-white text-center">
-              <FontAwesomeIcon icon={faUsers} size="2x" className="mb-2" />
-              <h3 className="fw-bold mb-1">{stats.total}</h3>
-              <small className="opacity-75">Total Shortlisted</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={3}>
-          <Card className="border-0 shadow-sm h-100" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-            <Card.Body className="text-white text-center">
-              <FontAwesomeIcon icon={faClock} size="2x" className="mb-2" />
-              <h3 className="fw-bold mb-1">{stats.pending}</h3>
-              <small className="opacity-75">Pending Documents</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={3}>
-          <Card className="border-0 shadow-sm h-100" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
-            <Card.Body className="text-white text-center">
-              <FontAwesomeIcon icon={faChartLine} size="2x" className="mb-2" />
-              <h3 className="fw-bold mb-1">{stats.inProgress}</h3>
-              <small className="opacity-75">In Progress</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={3}>
-          <Card className="border-0 shadow-sm h-100" style={{ background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' }}>
-            <Card.Body className="text-white text-center">
-              <FontAwesomeIcon icon={faCheckCircle} size="2x" className="mb-2" />
-              <h3 className="fw-bold mb-1">{stats.completed}</h3>
-              <small className="opacity-75">Completed</small>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+          {/* Batch Actions Bar */}
+          {selectedApplicants.length > 0 && (
+            <div className="alert alert-info d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <FontAwesomeIcon icon={faUsers} className="me-2" />
+                <strong>{selectedApplicants.length}</strong> applicant(s) selected
+              </div>
+              <div className="d-flex gap-2">
+                <Button 
+                  variant="success" 
+                  size="sm"
+                  onClick={handleBatchInterviewModal}
+                >
+                  <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                  Schedule Batch Interview
+                </Button>
+                <Button 
+                  variant="outline-secondary" 
+                  size="sm"
+                  onClick={() => setSelectedApplicants([])}
+                >
+                  <FontAwesomeIcon icon={faTimes} className="me-2" />
+                  Clear Selection
+                </Button>
+              </div>
+            </div>
+          )}
 
-      {/* Search and Filter Controls */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <div className="input-group">
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search by name, email, position, or department..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          <div className="professional-navbar">
             <Button
-              variant="outline-primary"
-              className="modern-refresh-btn"
-              onClick={() => {
-                console.log('🔄 [HrAssistant-OnboardingDashboard] Manual refresh triggered');
-                fetchOnboardingRecords(true);
-              }}
-              disabled={refreshing}
+              className={`nav-tab ${activeTab === 'Overview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Overview')}
             >
-              <FontAwesomeIcon 
-                icon={faRefresh} 
-                spin={refreshing}
-                className={refreshing ? 'text-primary' : ''}
-              />
+              Overview
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Pending' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Pending')}
+            >
+              Pending
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Shortlisted' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Shortlisted')}
+            >
+              Shortlisted
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Interview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Interview')}
+            >
+              Interview
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Offered' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Offered')}
+            >
+              Offered
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Accepted Offer' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Accepted Offer')}
+            >
+              Accepted Offer
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Onboarding' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Onboarding')}
+            >
+              Onboarding
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Hired' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Hired')}
+            >
+              Hired
+            </Button>
+            <Button
+              className={`nav-tab ${activeTab === 'Rejected' ? 'active' : ''}`}
+              onClick={() => setActiveTab('Rejected')}
+            >
+              Rejected
             </Button>
           </div>
-        </Col>
-        <Col md={3}>
-          <select 
-            className="form-select" 
-            value={statusFilter} 
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Application Status</option>
-            <option value="ShortListed">ShortListed</option>
-            <option value="Interview">Interview</option>
-            <option value="On Interview">On Interview</option>
-            <option value="Offered">Offered</option>
-            <option value="Offered Accepted">Offered Accepted</option>
-            <option value="Onboarding">Onboarding</option>
-            <option value="Hired">Hired</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-        </Col>
-        <Col md={3}>
-          <select 
-            className="form-select" 
-            value={filter} 
-            onChange={(e) => setFilter(e.target.value)}
-          >
-            <option value="all">All Onboarding Status</option>
-            <option value="pending_documents">Pending Documents</option>
-            <option value="documents_approved">Documents Approved</option>
-            <option value="orientation_scheduled">Orientation Scheduled</option>
-            <option value="completed">Completed</option>
-          </select>
         </Col>
       </Row>
 
-      {/* Empty State Alert */}
-      {stats.total === 0 && (
-        <Alert variant="info" className="mb-4">
-          <div className="d-flex align-items-center">
-            <FontAwesomeIcon icon={faInfoCircle} className="me-3" size="lg" />
-            <div>
-              <h6 className="mb-1">No Applicants in Onboarding Yet</h6>
-              <p className="mb-0">
-                Applicants will automatically appear here when they are marked as <strong>"ShortListed"</strong> or <strong>"Interview"</strong> in the Applications Dashboard.
-                <br />
-                <strong>How it works:</strong> Applications Dashboard → Update Status → Select "ShortListed" or "Interview" → Applicant appears here automatically!
-              </p>
+      {/* Content Section */}
+      <Row className="mt-3">
+        <Col>
+          <div className="content-section">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <h4 className="fw-bold text-dark mb-0">
+                  {activeTab === 'Overview' ? 'All Applications' : `${activeTab} Applications`}
+                  <Badge bg="secondary" className="ms-2">{filteredApplicants.length}</Badge>
+                </h4>
+                {activeTab === 'Overview' && (
+                  <small className="text-muted">
+                    <FontAwesomeIcon icon={faInfoCircle} className="me-1" />
+                    Summary view - Click on specific status tabs to view details
+                  </small>
+                )}
+              </div>
             </div>
-          </div>
-        </Alert>
-      )}
 
-      {/* Modern Onboarding Records Table */}
-      <Card className="border-0 shadow-lg modern-onboarding-card">
-        <Card.Header className="modern-onboarding-header">
-          <div className="d-flex justify-content-between align-items-center">
-            <h5 className="mb-0 fw-bold text-white">
-              <FontAwesomeIcon icon={faUsers} className="me-2 text-white" />
-              Onboarding Applicants
-            </h5>
-            <Badge bg="light" text="dark" className="px-3 py-2">
-              {filteredRecords.length} Total
-            </Badge>
-          </div>
-        </Card.Header>
-        <Card.Body className="p-0">
-          <div className="table-responsive" style={{ overflow: 'visible' }}>
-            <Table hover className="modern-onboarding-table mb-0">
-              <thead className="modern-onboarding-thead">
-                <tr>
-                  <th className="modern-onboarding-th">
-                    <FontAwesomeIcon icon={faUser} className="me-2" />
-                    Employee
-                  </th>
-                  <th className="modern-onboarding-th">
-                    <FontAwesomeIcon icon={faBriefcase} className="me-2" />
-                    Position
-                  </th>
-                  <th className="modern-onboarding-th">
-                    <FontAwesomeIcon icon={faBuilding} className="me-2" />
-                    Department
-                  </th>
-                  <th className="modern-onboarding-th">
-                    <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
-                    Start Date
-                  </th>
-                  <th className="modern-onboarding-th text-center">
-                    <FontAwesomeIcon icon={faUserTie} className="me-2" />
-                    Application Status
-                  </th>
-                  <th className="modern-onboarding-th text-center">
-                    <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
-                    Onboarding Status
-                  </th>
-                  <th className="modern-onboarding-th text-center">
-                    <FontAwesomeIcon icon={faCog} className="me-2" />
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="text-center py-5">
-                      <div className="d-flex flex-column align-items-center">
-                        <FontAwesomeIcon icon={faUsers} size="3x" className="text-muted mb-3" />
-                        <h5 className="text-muted mb-2">No Applicants Found</h5>
-                        <p className="text-muted mb-3">
-                          {filter === 'all' && statusFilter === 'all' && !searchTerm
-                            ? 'No shortlisted or interview applicants in onboarding yet. When applicants are marked as "ShortListed" or "Interview" in the Applications Dashboard, they will automatically appear here.'
-                            : 'No records match your current search criteria.'
-                          }
-                        </p>
-                        {filter === 'all' && statusFilter === 'all' && !searchTerm && (
-                          <div className="alert alert-light border border-primary text-center" style={{ maxWidth: '500px' }}>
-                            <h6 className="text-primary mb-2">
-                              <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
-                              How to Add Applicants
-                            </h6>
-                            <small className="text-muted d-block">
-                              1. Go to <strong>Applications Dashboard</strong><br />
-                              2. Find any application<br />
-                              3. Click <FontAwesomeIcon icon={faEdit} /> <strong>"Update Status"</strong><br />
-                              4. Select <strong>"ShortListed"</strong> or <strong>"Interview"</strong><br />
-                              5. Applicant appears here automatically!
-                            </small>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRecords.map((record, index) => (
-                    <tr key={record.id} className={`modern-onboarding-row ${index % 2 === 0 ? 'even-row' : 'odd-row'}`}>
-                      <td className="modern-onboarding-td">
-                        <div className="employee-info-compact">
-                          <div className="employee-avatar-compact">
-                            <FontAwesomeIcon icon={faUser} className="avatar-icon-compact" />
-                          </div>
-                          <div className="employee-details-compact">
-                            <h6 className="employee-name-compact mb-1">{record.employee_name}</h6>
-                            <p className="employee-email-compact mb-0">{record.employee_email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="modern-onboarding-td">
-                        <div className="position-info-compact">
-                          <FontAwesomeIcon icon={faBriefcase} className="me-2 text-primary" />
-                          <span className="fw-medium">{record.position}</span>
-                        </div>
-                      </td>
-                      <td className="modern-onboarding-td">
-                        <div className="department-info-compact">
-                          <FontAwesomeIcon icon={faBuilding} className="me-2 text-info" />
-                          <span>{record.department}</span>
-                        </div>
-                      </td>
-                      <td className="modern-onboarding-td">
-                        <div className="date-info-compact">
-                          <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-success" />
-                          <span className="fw-medium">{new Date(record.start_date).toLocaleDateString()}</span>
-                        </div>
-                      </td>
-                      <td className="modern-onboarding-td text-center">
-                        {getApplicationStatusBadge(record.application_status)}
-                      </td>
-                      <td className="modern-onboarding-td text-center">
-                        <select
-                          className="form-select form-select-sm modern-status-select"
-                          value={record.status}
-                          onChange={(e) => handleStatusUpdate(record.id, e.target.value)}
-                        >
-                          <option value="pending_documents">📄 Pending Documents</option>
-                          <option value="documents_approved">✅ Documents Approved</option>
-                          <option value="orientation_scheduled">📅 Orientation Scheduled</option>
-                          <option value="completed">🎉 Completed</option>
-                        </select>
-                      </td>
-                      <td className="modern-onboarding-td text-center">
-                        <div className="actions-dropdown-container">
-                          <Button
-                            variant="outline-secondary"
-                            size="sm"
-                            className={`dropdown-toggle-btn ${activeDropdown === record.id ? 'active' : ''}`}
-                            onClick={() => toggleDropdown(record.id)}
-                            onBlur={() => setTimeout(closeDropdown, 150)}
-                            title="Actions menu"
-                          >
-                            <FontAwesomeIcon icon={faEllipsisV} />
-                          </Button>
-                          {activeDropdown === record.id && (
-                            <div className="actions-dropdown-menu">
-                              <button
-                                className="dropdown-item"
-                                onClick={() => {
-                                  handleViewDetails(record);
-                                  closeDropdown();
-                                }}
-                              >
-                                <FontAwesomeIcon icon={faEye} className="me-2" />
-                                View Details
-                              </button>
-                              <button
-                                className="dropdown-item"
-                                onClick={() => {
-                                  handleSetInterview(record);
-                                  closeDropdown();
-                                }}
-                              >
-                                <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
-                                Set Interview
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
+            {filteredApplicants.length === 0 ? (
+              <div className="text-center py-5">
+                <FontAwesomeIcon icon={faUsers} size="3x" className="text-muted mb-3" />
+                <h5 className="text-muted mb-2">No Applications Found</h5>
+                <p className="text-muted mb-3">
+                  {activeTab === 'Overview' 
+                    ? 'No applications available at the moment.'
+                    : `No ${activeTab.toLowerCase()} applications found.`
+                  }
+                </p>
+              </div>
+            ) : (
+              <div className="modern-table-container">
+                <Table className="modern-onboarding-table">
+                  <thead>
+                    <tr>
+                      {activeTab !== 'Overview' && (
+                        <th className="text-center" style={{ width: '50px' }}>
+                          <input 
+                            type="checkbox" 
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedApplicants(filteredApplicants);
+                              } else {
+                                setSelectedApplicants([]);
+                              }
+                            }}
+                            checked={selectedApplicants.length === filteredApplicants.length && filteredApplicants.length > 0}
+                          />
+                        </th>
+                      )}
+                      <th className="text-start">Applicant</th>
+                      <th className="text-start">Position</th>
+                      <th className="text-start">Department</th>
+                      <th className="text-center">Applied Date</th>
+                      <th className="text-end">Status</th>
+                      {activeTab !== 'Overview' && <th className="text-center">Actions</th>}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </Table>
+                  </thead>
+                  <tbody>
+                    {filteredApplicants.map((applicant) => (
+                      <tr key={applicant.id}>
+                        {activeTab !== 'Overview' && (
+                          <td className="text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedApplicants.some(selected => selected.id === applicant.id)}
+                              onChange={() => handleBatchInterviewSelection(applicant)}
+                            />
+                          </td>
+                        )}
+                        <td className="align-left">
+                          <div className="applicant-cell">
+                            <div className="avatar me-3">
+                              {applicant.applicant?.first_name ? applicant.applicant.first_name.charAt(0).toUpperCase() : 'A'}
+                            </div>
+                            <div className="applicant-info">
+                              <div className="applicant-name">
+                                {applicant.applicant ? `${applicant.applicant.first_name || ''} ${applicant.applicant.last_name || ''}`.trim() : 'N/A'}
+                              </div>
+                              <div className="applicant-email">
+                                {applicant.applicant?.email || 'N/A'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="align-left" title={applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'}>
+                          <div className="position-text">{applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'}</div>
+                        </td>
+                        <td className="align-left" title={applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}>
+                          <div className="department-text">{applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}</div>
+                        </td>
+                        <td className="align-center">
+                          <div className="date-container">
+                            <div className="date-text">
+                              {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
+                            </div>
+                            <div className="time-text">
+                              {applicant.applied_at ? new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="align-right">
+                          <div className="status-container">
+                            {getStatusBadge(applicant.status)}
+                          </div>
+                        </td>
+                        {activeTab === 'Pending' && (
+                          <td className="text-center">
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              onClick={() => handleViewDetails(applicant)}
+                              className="view-details-btn"
+                            >
+                              View Details
+                            </Button>
+                          </td>
+                        )}
+                        {activeTab === 'Shortlisted' && (
+                          <td className="text-center">
+                            <Button
+                              variant="success"
+                              size="sm"
+                              onClick={() => handleScheduleInterview(applicant)}
+                              className="schedule-interview-btn"
+                            >
+                              Schedule Interview
+                            </Button>
+                          </td>
+                        )}
+                        {activeTab !== 'Overview' && activeTab !== 'Pending' && activeTab !== 'Shortlisted' && (
+                          <td className="text-center">
+                            <div className="position-relative d-flex justify-content-center align-items-center">
+                              <Button
+                                variant="outline-secondary"
+                                size="sm"
+                                onClick={() => toggleDropdown(applicant.id)}
+                                className="dropdown-toggle-btn"
+                              >
+                                <FontAwesomeIcon icon={faEllipsisV} />
+                              </Button>
+                              {activeDropdown === applicant.id && (
+                                <div className="dropdown-menu show">
+                                  <button
+                                    className="dropdown-item"
+                                    onClick={() => handleViewDetails(applicant)}
+                                  >
+                                    <FontAwesomeIcon icon={faEye} className="me-2" />
+                                    View Details
+                                  </button>
+                                  <button
+                                    className="dropdown-item"
+                                    onClick={() => handleChangeStatus(applicant)}
+                                  >
+                                    <FontAwesomeIcon icon={faEdit} className="me-2" />
+                                    Change Status
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
           </div>
-        </Card.Body>
-      </Card>
+        </Col>
+      </Row>
 
-      {/* Detail Modal */}
+      {/* Applicant Details Modal */}
       {showModal && selectedRecord && (
-        <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <FontAwesomeIcon icon={faUserPlus} className="me-2" />
-              Onboarding Details - {selectedRecord.employee_name}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Row>
-              <Col md={6}>
-                <h6>Employee Information</h6>
-                <p><strong>Name:</strong> {selectedRecord.employee_name}</p>
-                <p><strong>Email:</strong> {selectedRecord.employee_email}</p>
-                <p><strong>Position:</strong> {selectedRecord.position}</p>
-                <p><strong>Department:</strong> {selectedRecord.department}</p>
-                <p><strong>Start Date:</strong> {new Date(selectedRecord.start_date).toLocaleDateString()}</p>
-                {selectedRecord.application_id && (
-                  <p><strong>Application ID:</strong> {selectedRecord.application_id}</p>
-                )}
-                <div className="mt-3">
-                  <h6>Documents</h6>
-                  {selectedRecord.resume_path ? (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content applicant-details-modal">
+              <div className="modal-header border-0 pb-0">
+                <h5 className="modal-title fw-bold">Applicant Details</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                <div className="applicant-details-content">
+                  {/* Applicant Info */}
+                  <div className="detail-section mb-4">
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="avatar-large me-3">
+                        {selectedRecord.applicant?.first_name ? selectedRecord.applicant.first_name.charAt(0).toUpperCase() : 'A'}
+                      </div>
+                      <div>
+                        <h4 className="mb-1 fw-bold">
+                          {selectedRecord.applicant ? `${selectedRecord.applicant.first_name || ''} ${selectedRecord.applicant.last_name || ''}`.trim() : 'N/A'}
+                        </h4>
+                        <p className="text-muted mb-0">
+                          <FontAwesomeIcon icon={faEnvelope} className="me-2" />
+                          {selectedRecord.applicant?.email || 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Application Details */}
+                  <div className="detail-section mb-4">
+                    <h6 className="section-title mb-3">Application Details</h6>
+                    <div className="row">
+                      <div className="col-md-6 mb-2">
+                        <div className="info-item">
+                          <span className="label">Position:</span>
+                          <span className="value fw-semibold">{selectedRecord.jobPosting?.position || selectedRecord.job_posting?.position || 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6 mb-2">
+                        <div className="info-item">
+                          <span className="label">Department:</span>
+                          <span className="value fw-semibold">{selectedRecord.jobPosting?.department || selectedRecord.job_posting?.department || 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6 mb-2">
+                        <div className="info-item">
+                          <span className="label">Applied Date:</span>
+                          <span className="value">{selectedRecord.applied_at ? new Date(selectedRecord.applied_at).toLocaleDateString() : 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div className="col-md-6 mb-2">
+                        <div className="info-item">
+                          <span className="label">Status:</span>
+                          <span className="value">{getStatusBadge(selectedRecord.status)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resume Section */}
+                  <div className="detail-section mb-4">
+                    <h6 className="section-title mb-3">Resume</h6>
                     <Button
-                      variant="outline-primary"
+                      variant="primary"
                       size="sm"
-                      onClick={() => handleDownloadResume(selectedRecord.application_id, selectedRecord.employee_name)}
-                      className="d-flex align-items-center gap-2"
+                      onClick={() => handleViewResume(selectedRecord)}
+                      className="view-resume-btn"
                     >
-                      <FontAwesomeIcon icon={faDownload} />
-                      Download Resume
+                      <FontAwesomeIcon icon={faEye} className="me-2" />
+                      View Resume
                     </Button>
-                  ) : (
-                    <p className="text-muted mb-0">
-                      <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
-                      No resume available
-                    </p>
-                  )}
+                  </div>
                 </div>
-              </Col>
-              <Col md={6}>
-                <h6>Status Information</h6>
-                <div className="mb-3">
-                  <h6>Application Status</h6>
-                  {getApplicationStatusBadge(selectedRecord.application_status)}
-                </div>
-                <div className="mb-3">
-                  <h6>Onboarding Status</h6>
-                  {getStatusBadge(selectedRecord.status)}
-                </div>
-                <div className="mt-3">
-                  <h6>Timestamps</h6>
-                  <p><small><strong>Created:</strong> {new Date(selectedRecord.created_at).toLocaleString()}</small></p>
-                  <p><small><strong>Updated:</strong> {new Date(selectedRecord.updated_at).toLocaleString()}</small></p>
-                </div>
-              </Col>
-            </Row>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
-              Close
-            </Button>
-          </Modal.Footer>
-        </Modal>
-      )}
-
-      {/* Edit Modal */}
-      {editingRecord && (
-        <Modal show={!!editingRecord} onHide={() => setEditingRecord(null)} size="lg">
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <FontAwesomeIcon icon={faEdit} className="me-2" />
-              Edit Onboarding Record - {editingRecord.employee_name}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Employee Name</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={editingRecord.employee_name || ''}
-                    onChange={(e) => setEditingRecord(prev => ({...prev, employee_name: e.target.value}))}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Email</Form.Label>
-                  <Form.Control
-                    type="email"
-                    value={editingRecord.employee_email || ''}
-                    onChange={(e) => setEditingRecord(prev => ({...prev, employee_email: e.target.value}))}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Position</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={editingRecord.position || ''}
-                    onChange={(e) => setEditingRecord(prev => ({...prev, position: e.target.value}))}
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Department</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={editingRecord.department || ''}
-                    onChange={(e) => setEditingRecord(prev => ({...prev, department: e.target.value}))}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Start Date</Form.Label>
-                  <Form.Control
-                    type="date"
-                    value={editingRecord.start_date || ''}
-                    onChange={(e) => setEditingRecord(prev => ({...prev, start_date: e.target.value}))}
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setEditingRecord(null)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSaveEdit}>
-              <FontAwesomeIcon icon={faSave} className="me-2" />
-              Save Changes
-            </Button>
-          </Modal.Footer>
-        </Modal>
-      )}
-        </>
-      )}
-
-      {/* Interview Scheduling Modal */}
-      {showInterviewModal && selectedApplicant && (
-        <Modal show={showInterviewModal} onHide={handleCancelInterview} size="lg">
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
-              Set Interview - {selectedApplicant.employee_name}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <div className="row">
-              <div className="col-md-6">
-                <h6>Applicant Information</h6>
-                <p><strong>Name:</strong> {selectedApplicant.employee_name}</p>
-                <p><strong>Email:</strong> {selectedApplicant.employee_email}</p>
-                <p><strong>Position:</strong> {selectedApplicant.position}</p>
-                <p><strong>Department:</strong> {selectedApplicant.department}</p>
               </div>
-              <div className="col-md-6">
-                <h6>Interview Details</h6>
-                <Form>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Interview Date *</Form.Label>
-                    <Form.Control
-                      type="date"
-                      value={interviewForm.interviewDate}
-                      onChange={(e) => handleInterviewFormChange('interviewDate', e.target.value)}
-                      required
-                    />
-                  </Form.Group>
-                  
-                  <Form.Group className="mb-3">
-                    <Form.Label>Interview Time *</Form.Label>
-                    <Form.Control
-                      type="time"
-                      value={interviewForm.interviewTime}
-                      onChange={(e) => handleInterviewFormChange('interviewTime', e.target.value)}
-                      required
-                    />
-                  </Form.Group>
-                  
-                  <Form.Group className="mb-3">
-                    <Form.Label>Interview Type *</Form.Label>
-                    <Form.Select
-                      value={interviewForm.interviewType}
-                      onChange={(e) => handleInterviewFormChange('interviewType', e.target.value)}
+              
+              {/* Action Buttons - Only show for Pending status */}
+              {selectedRecord.status === 'Pending' && (
+                <div className="modal-footer border-0 pt-0 px-4 pb-4">
+                  <div className="d-flex gap-3 w-100">
+                    <Button
+                      variant="success"
+                      className="flex-fill action-btn"
+                      onClick={() => handleStatusUpdate('ShortListed')}
                     >
-                      <option value="in-person">In-Person</option>
-                      <option value="video">Video Call</option>
-                      <option value="phone">Phone Call</option>
-                    </Form.Select>
-                  </Form.Group>
-                  
-                  <Form.Group className="mb-3">
-                    <Form.Label>Location/Meeting Link *</Form.Label>
-                    <Form.Control
-                      type="text"
-                      placeholder={interviewForm.interviewType === 'video' ? 'Zoom/Teams link' : 'Office location'}
-                      value={interviewForm.location}
-                      onChange={(e) => handleInterviewFormChange('location', e.target.value)}
+                      <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                      Move to Shortlisted
+                    </Button>
+                    <Button
+                      variant="danger"
+                      className="flex-fill action-btn"
+                      onClick={() => handleStatusUpdate('Rejected')}
+                    >
+                      <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interview Schedule Modal */}
+      {showInterviewModal && selectedApplicantForInterview && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header border-0">
+                <h5 className="modal-title fw-bold">Schedule Interview</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setShowInterviewModal(false);
+                    setSelectedApplicantForInterview(null);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                {/* Applicant Info */}
+                <div className="mb-4 p-3 bg-light rounded">
+                  <h6 className="fw-bold mb-2">Applicant Information</h6>
+                  <div className="d-flex align-items-center">
+                    <div className="avatar me-3">
+                      {selectedApplicantForInterview.applicant?.first_name ? selectedApplicantForInterview.applicant.first_name.charAt(0).toUpperCase() : 'A'}
+                    </div>
+                    <div>
+                      <div className="fw-semibold">
+                        {selectedApplicantForInterview.applicant ? `${selectedApplicantForInterview.applicant.first_name || ''} ${selectedApplicantForInterview.applicant.last_name || ''}`.trim() : 'N/A'}
+                      </div>
+                      <div className="text-muted small">
+                        {selectedApplicantForInterview.applicant?.email || 'N/A'}
+                      </div>
+                      <div className="text-muted small">
+                        Position: {selectedApplicantForInterview.jobPosting?.position || selectedApplicantForInterview.job_posting?.position || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Interview Details Form */}
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Interview Date <span className="text-danger">*</span></label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={interviewData.interview_date}
+                      onChange={(e) => setInterviewData({...interviewData, interview_date: e.target.value})}
+                      min={new Date().toISOString().split('T')[0]}
                       required
                     />
-                  </Form.Group>
-                  
-                  <Form.Group className="mb-3">
-                    <Form.Label>Interviewer *</Form.Label>
-                    <Form.Control
-                      type="text"
-                      placeholder="Interviewer name"
-                      value={interviewForm.interviewer}
-                      onChange={(e) => handleInterviewFormChange('interviewer', e.target.value)}
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Interview Time <span className="text-danger">*</span></label>
+                    <input
+                      type="time"
+                      className="form-control"
+                      value={interviewData.interview_time}
+                      onChange={(e) => setInterviewData({...interviewData, interview_time: e.target.value})}
                       required
                     />
-                  </Form.Group>
-                  
-                  <Form.Group className="mb-3">
-                    <Form.Label>Notes</Form.Label>
-                    <Form.Control
-                      as="textarea"
-                      rows={3}
-                      placeholder="Additional notes or instructions"
-                      value={interviewForm.notes}
-                      onChange={(e) => handleInterviewFormChange('notes', e.target.value)}
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Duration (minutes) <span className="text-danger">*</span></label>
+                    <select
+                      className="form-select"
+                      value={interviewData.duration}
+                      onChange={(e) => setInterviewData({...interviewData, duration: e.target.value})}
+                    >
+                      <option value="10">10 minutes</option>
+                      <option value="20">20 minutes</option>
+                      <option value="30">30 minutes</option>
+                      <option value="40">40 minutes</option>
+                      <option value="50">50 minutes</option>
+                    </select>
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label fw-semibold">Interview Type</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={interviewData.interview_type}
+                      disabled
+                      style={{ backgroundColor: '#e9ecef' }}
                     />
-                  </Form.Group>
-                </Form>
-              </div>
-            </div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button 
-              className="btn-professional btn-cancel"
-              variant="secondary" 
-              onClick={handleCancelInterview}
-            >
-              <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
-              <span className="btn-text">Cancel</span>
-            </Button>
-            <Button 
-              className="btn-professional btn-schedule"
-              variant="primary" 
-              onClick={handleSubmitInterview}
-              disabled={!interviewForm.interviewDate || !interviewForm.interviewTime || !interviewForm.location || !interviewForm.interviewer}
-            >
-              <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
-              <span className="btn-text">Submit Interview</span>
-            </Button>
-          </Modal.Footer>
-        </Modal>
-      )}
+                  </div>
+                  <div className="col-12">
+                    <label className="form-label fw-semibold">Location <span className="text-danger">*</span></label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={interviewData.location}
+                      onChange={(e) => setInterviewData({...interviewData, location: e.target.value})}
+                      placeholder="Enter interview location"
+                      required
+                    />
+                  </div>
+                  <div className="col-12">
+                    <label className="form-label fw-semibold">Interviewer <span className="text-danger">*</span></label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={interviewData.interviewer}
+                      onChange={(e) => setInterviewData({...interviewData, interviewer: e.target.value})}
+                      placeholder="Enter interviewer name"
+                      required
+                    />
+                  </div>
+                  <div className="col-12">
+                    <label className="form-label fw-semibold">Notes / What to Bring</label>
+                    <textarea
+                      className="form-control"
+                      rows="4"
+                      value={interviewData.notes}
+                      onChange={(e) => setInterviewData({...interviewData, notes: e.target.value})}
+                      placeholder="Add any additional notes or requirements (e.g., documents to bring, dress code, etc.)"
+                    ></textarea>
+                  </div>
 
-      {/* Enhanced Tab Contents */}
-      {activeTab === 'orientation' && (
-        <div className="modern-content-card">
-          <div className="content-header">
-            <div className="header-icon">
-              <FontAwesomeIcon icon={faCalendarAlt} />
-            </div>
-            <div className="header-content">
-              <h3 className="content-title">Orientation Scheduling</h3>
-              <p className="content-subtitle">Plan and manage orientation sessions for new employees</p>
-            </div>
-          </div>
-          <div className="content-body">
-            <div className="feature-grid">
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faCalendarAlt} className="feature-icon" />
-                <h6>Session Planning</h6>
-                <p>Schedule orientation sessions with proper timing and resources</p>
+                  {/* View Resume Button */}
+                  <div className="col-12">
+                    <div className="border-top pt-3">
+                      <label className="form-label fw-semibold">Applicant Resume</label>
+                      <div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleViewResume(selectedApplicantForInterview)}
+                          className="view-resume-btn"
+                        >
+                          <FontAwesomeIcon icon={faEye} className="me-2" />
+                          View Resume
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faUsers} className="feature-icon" />
-                <h6>Group Management</h6>
-                <p>Organize employees into orientation groups based on roles</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faFileAlt} className="feature-icon" />
-                <h6>Material Distribution</h6>
-                <p>Distribute welcome packets and orientation materials</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'starting-date' && (
-        <div className="modern-content-card">
-          <div className="content-header">
-            <div className="header-icon">
-              <FontAwesomeIcon icon={faClock} />
-            </div>
-            <div className="header-content">
-              <h3 className="content-title">Starting Date Management</h3>
-              <p className="content-subtitle">Coordinate employee start dates and onboarding timeline</p>
-            </div>
-          </div>
-          <div className="content-body">
-            <div className="feature-grid">
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faCalendarAlt} className="feature-icon" />
-                <h6>Date Coordination</h6>
-                <p>Schedule optimal start dates based on business needs</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faChartLine} className="feature-icon" />
-                <h6>Timeline Tracking</h6>
-                <p>Monitor onboarding progress and milestone completion</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faCheckCircle} className="feature-icon" />
-                <h6>Readiness Checklist</h6>
-                <p>Ensure all prerequisites are met before start date</p>
+              <div className="modal-footer border-0 px-4 pb-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowInterviewModal(false);
+                    setSelectedApplicantForInterview(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="success"
+                  onClick={handleSendInterviewInvite}
+                  className="px-4"
+                >
+                  <i className="bi bi-send me-2"></i>
+                  Send Invite
+                </Button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'salary-setup' && (
-        <div className="modern-content-card">
-          <div className="content-header">
-            <div className="header-icon">
-              <FontAwesomeIcon icon={faDollarSign} />
-            </div>
-            <div className="header-content">
-              <h3 className="content-title">Salary Setup</h3>
-              <p className="content-subtitle">Configure compensation packages and payroll integration</p>
-            </div>
-          </div>
-          <div className="content-body">
-            <div className="feature-grid">
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faDollarSign} className="feature-icon" />
-                <h6>Compensation Planning</h6>
-                <p>Set up salary structures and benefit packages</p>
+      {/* Status Change Modal */}
+      {showStatusModal && (
+        <div className="modal show d-block" tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Change Application Status</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowStatusModal(false)}
+                ></button>
               </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faFileAlt} className="feature-icon" />
-                <h6>Contract Management</h6>
-                <p>Generate employment contracts and agreements</p>
+              <div className="modal-body">
+                {selectedRecordForStatus && (
+                  <div>
+                    <p className="mb-3">
+                      <strong>Applicant:</strong> {selectedRecordForStatus.applicant_name}<br />
+                      <strong>Position:</strong> {selectedRecordForStatus.position}<br />
+                      <strong>Current Status:</strong> {selectedRecordForStatus.status}
+                    </p>
+                    <p className="text-muted mb-4">
+                      Select the new status for this application:
+                    </p>
+                    <div className="d-grid gap-2">
+                      <Button
+                        variant="success"
+                        size="lg"
+                        onClick={() => handleStatusUpdate('ShortListed')}
+                        className="d-flex align-items-center justify-content-center"
+                      >
+                        <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                        Move to Shortlisted
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="lg"
+                        onClick={() => handleStatusUpdate('Rejected')}
+                        className="d-flex align-items-center justify-content-center"
+                      >
+                        <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
+                        Move to Rejected
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faChartLine} className="feature-icon" />
-                <h6>Payroll Integration</h6>
-                <p>Connect with payroll systems for seamless processing</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'benefits' && (
-        <div className="modern-content-card">
-          <div className="content-header">
-            <div className="header-icon">
-              <FontAwesomeIcon icon={faShieldAlt} />
-            </div>
-            <div className="header-content">
-              <h3 className="content-title">Benefits Enrollment</h3>
-              <p className="content-subtitle">Manage employee benefits and insurance enrollment</p>
-            </div>
-          </div>
-          <div className="content-body">
-            <div className="feature-grid">
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faShieldAlt} className="feature-icon" />
-                <h6>Insurance Setup</h6>
-                <p>Enroll employees in health, dental, and life insurance</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faUsers} className="feature-icon" />
-                <h6>Dependent Management</h6>
-                <p>Add and manage dependent information for coverage</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faFileAlt} className="feature-icon" />
-                <h6>Documentation</h6>
-                <p>Process enrollment forms and required documentation</p>
+              <div className="modal-footer">
+                <Button variant="secondary" onClick={() => setShowStatusModal(false)}>
+                  Cancel
+                </Button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'employee-profile' && (
-        <div className="modern-content-card">
-          <div className="content-header">
-            <div className="header-icon">
-              <FontAwesomeIcon icon={faUserTie} />
-            </div>
-            <div className="header-content">
-              <h3 className="content-title">Employee Profile Creation</h3>
-              <p className="content-subtitle">Create and manage comprehensive employee profiles</p>
-            </div>
-          </div>
-          <div className="content-body">
-            <div className="feature-grid">
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faUserTie} className="feature-icon" />
-                <h6>Profile Setup</h6>
-                <p>Create detailed employee profiles with personal information</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faBriefcase} className="feature-icon" />
-                <h6>Role Assignment</h6>
-                <p>Assign roles, permissions, and access levels</p>
-              </div>
-              <div className="feature-item">
-                <FontAwesomeIcon icon={faCog} className="feature-icon" />
-                <h6>System Integration</h6>
-                <p>Integrate with HR systems and create user accounts</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Modern Styling */}
-      <style>{`
-        /* Enhanced Breadcrumb Styling */
-        .modern-breadcrumb {
-          background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-          border-radius: 12px;
-          padding: 0.75rem 1.5rem;
-          margin-bottom: 1.5rem;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-
-        .modern-breadcrumb .breadcrumb-item {
-          color: #6c757d;
-          font-weight: 500;
-        }
-
-        .modern-breadcrumb .breadcrumb-item.active {
-          color: #495057;
-          font-weight: 600;
-        }
-
-        /* Enhanced Title Styling */
-        .modern-title {
-          color: #2c3e50;
-          font-weight: 700;
-          font-size: 2.25rem;
-          margin-bottom: 0.5rem;
-          letter-spacing: -0.025em;
-        }
-
-        .modern-title svg {
-          color: #6c757d;
-          font-size: 2rem;
-        }
-
-        .modern-subtitle {
-          color: #6c757d;
-          font-size: 1.1rem;
-          font-weight: 400;
-          line-height: 1.5;
-          margin-bottom: 1rem;
-        }
-
-        /* Summary Stats Styling */
-        .summary-stats {
-          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-          border-radius: 16px;
-          padding: 1.5rem;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-          border: 1px solid rgba(0, 0, 0, 0.05);
-        }
-
-        .summary-item {
+      <style jsx>{`
+        .professional-navbar {
           display: flex;
-          align-items: center;
-          padding: 0.75rem 1rem;
-          background: rgba(255, 255, 255, 0.7);
-          border-radius: 12px;
-          border: 1px solid rgba(0, 0, 0, 0.05);
-          font-size: 0.95rem;
-          color: #495057;
-          transition: all 0.3s ease;
-        }
-
-        .summary-item:hover {
-          background: rgba(255, 255, 255, 0.9);
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .summary-item svg {
-          color: #4a90e2;
-          font-size: 1.1rem;
-        }
-
-        .summary-item .fw-semibold {
-          color: #2c3e50;
-          font-weight: 600;
-        }
-
-        /* Enhanced Tab Navigation */
-        .modern-tab-container {
-          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-          border-radius: 20px;
-          padding: 1rem;
-          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-          border: 1px solid rgba(0, 0, 0, 0.05);
-        }
-
-        .tab-navigation {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
+          gap: 0.4rem;
           justify-content: center;
-        }
-
-        .modern-tab {
-          position: relative;
+          align-items: center;
           background: transparent;
-          border: 2px solid transparent;
-          border-radius: 16px;
-          padding: 1rem 1.5rem;
-          min-width: 140px;
-          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.5rem;
-          font-weight: 500;
-          color: #6c757d;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-
-        .modern-tab:hover {
-          background: rgba(74, 144, 226, 0.08);
-          border-color: rgba(74, 144, 226, 0.2);
-          color: #4a90e2;
-          transform: translateY(-3px);
-          box-shadow: 0 8px 25px rgba(74, 144, 226, 0.15);
-        }
-
-        .modern-tab.active {
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          border-color: #4a90e2;
-          color: white;
-          transform: translateY(-3px);
-          box-shadow: 0 12px 30px rgba(74, 144, 226, 0.3);
-        }
-
-        .modern-tab.active:hover {
-          background: linear-gradient(135deg, #3d7bc8 0%, #2d5f9a 100%);
-          transform: translateY(-4px);
-          box-shadow: 0 16px 35px rgba(74, 144, 226, 0.4);
-        }
-
-        .tab-icon {
-          font-size: 1.5rem;
-          transition: transform 0.3s ease;
-        }
-
-        .modern-tab:hover .tab-icon {
-          transform: scale(1.1);
-        }
-
-        .tab-label {
-          font-size: 0.9rem;
-          font-weight: 600;
-          text-align: center;
-        }
-
-        .tab-indicator {
-          position: absolute;
-          bottom: -2px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 0;
-          height: 3px;
-          background: linear-gradient(90deg, #4a90e2, #357abd);
-          border-radius: 2px;
-          transition: width 0.3s ease;
-        }
-
-        .modern-tab.active .tab-indicator {
-          width: 80%;
-        }
-
-        /* Enhanced Content Cards */
-        .modern-content-card {
-          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-          border-radius: 24px;
-          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
-          border: 1px solid rgba(0, 0, 0, 0.05);
-          overflow: hidden;
-          transition: all 0.3s ease;
-        }
-
-        .modern-content-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
-        }
-
-        .content-header {
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          padding: 2rem;
-          display: flex;
-          align-items: center;
-          gap: 1.5rem;
-        }
-
-        .header-icon {
-          width: 80px;
-          height: 80px;
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.3);
-        }
-
-        .header-icon svg {
-          color: white;
-          font-size: 2rem;
-        }
-
-        .content-title {
-          color: white;
-          font-size: 1.75rem;
-          font-weight: 700;
-          margin-bottom: 0.5rem;
-        }
-
-        .content-subtitle {
-          color: rgba(255, 255, 255, 0.9);
-          font-size: 1rem;
-          margin: 0;
-          line-height: 1.5;
-        }
-
-        .content-body {
-          padding: 2.5rem;
-        }
-
-        .feature-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-          gap: 2rem;
-        }
-
-        .feature-item {
-          text-align: center;
-          padding: 2rem 1.5rem;
-          background: rgba(255, 255, 255, 0.7);
-          border-radius: 20px;
-          border: 1px solid rgba(0, 0, 0, 0.05);
-          transition: all 0.3s ease;
-        }
-
-        .feature-item:hover {
-          background: rgba(255, 255, 255, 0.9);
-          transform: translateY(-5px);
-          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
-        }
-
-        .feature-icon {
-          color: #4a90e2;
-          font-size: 2.5rem;
-          margin-bottom: 1rem;
-        }
-
-        .feature-item h6 {
-          color: #2c3e50;
-          font-weight: 600;
-          font-size: 1.1rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .feature-item p {
-          color: #6c757d;
-          font-size: 0.95rem;
-          line-height: 1.5;
-          margin: 0;
-        }
-
-        /* Enhanced Form Controls */
-        .modern-select {
-          border-radius: 12px;
-          border: 2px solid #e9ecef;
-          padding: 0.75rem 1rem;
-          font-size: 0.9rem;
-          transition: all 0.3s ease;
-          background: white;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-
-        .modern-select:focus {
-          border-color: #4a90e2;
-          box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
-          outline: none;
-        }
-
-        .modern-refresh-btn {
-          border-radius: 12px;
-          padding: 0.75rem 1.5rem;
-          font-weight: 500;
-          border: 2px solid #4a90e2;
-          color: #4a90e2;
-          background: white;
-          transition: all 0.3s ease;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-
-        .modern-refresh-btn:hover {
-          background: #4a90e2;
-          color: white;
-          transform: translateY(-2px);
-          box-shadow: 0 8px 25px rgba(74, 144, 226, 0.3);
-        }
-
-        /* Modern Card Styling */
-        .modern-onboarding-card {
-          border-radius: 20px;
-          overflow: visible;
-          background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
-          margin-bottom: 2rem;
-          border: 1px solid rgba(0, 0, 0, 0.05);
-          position: relative;
-          z-index: 1;
-        }
-
-        .modern-onboarding-header {
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          color: white;
-          border: none;
-          padding: 1.25rem 1.5rem;
-        }
-
-        .modern-onboarding-header h5 {
-          color: white;
-          font-weight: 600;
-          margin: 0;
-        }
-
-        .modern-onboarding-header .badge {
-          background: rgba(255, 255, 255, 0.2);
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          color: white;
-          font-weight: 500;
-        }
-
-        /* Modern Table Styling */
-        .modern-onboarding-table {
           border-radius: 0;
-          margin-bottom: 0;
-        }
-
-        .modern-onboarding-thead {
-          background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        }
-
-        .modern-onboarding-th {
+          padding: 0;
+          box-shadow: none;
           border: none;
+          overflow-x: auto;
+          overflow-y: hidden;
+          min-height: auto;
+        }
+
+        .nav-tab {
+          display: flex;
+          align-items: center;
+          padding: 0.55rem 0.75rem;
+          border: 2px solid #e9ecef;
+          background: white;
+          color: #495057;
+          border-radius: 8px;
           font-weight: 600;
-          color: #495057;
-          padding: 1rem 0.75rem;
           font-size: 0.8rem;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          vertical-align: middle;
-        }
-
-        .modern-onboarding-th svg {
-          color: #4a90e2;
-          font-size: 0.75rem;
-        }
-
-        /* Alternating Row Colors */
-        .modern-onboarding-row {
           transition: all 0.3s ease;
-          border-bottom: 1px solid #f1f3f4;
-          position: relative;
-          z-index: 1;
-        }
-
-        .modern-onboarding-row.even-row {
-          background-color: #ffffff;
-        }
-
-        .modern-onboarding-row.odd-row {
-          background-color: #f8f9fa;
-        }
-
-        .modern-onboarding-row:hover {
-          background: linear-gradient(135deg, rgba(74, 144, 226, 0.05) 0%, rgba(53, 122, 189, 0.05) 100%);
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          z-index: 2;
-        }
-
-        .modern-onboarding-td {
-          padding: 0.75rem 0.75rem;
-          border: none;
-          vertical-align: middle;
-          color: #2c3e50;
-        }
-
-        /* Actions column specific styling */
-        .modern-onboarding-td:last-child {
-          position: relative;
-          z-index: 10;
-        }
-
-        .modern-onboarding-row:hover .modern-onboarding-td:last-child {
-          z-index: 1000;
-        }
-
-        /* Compact Employee Info */
-        .employee-info-compact {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .employee-avatar-compact {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          display: flex;
-          align-items: center;
+          text-decoration: none;
+          flex: 0 0 auto;
           justify-content: center;
-          box-shadow: 0 2px 6px rgba(74, 144, 226, 0.3);
-          flex-shrink: 0;
-        }
-
-        .avatar-icon-compact {
-          color: white;
-          font-size: 0.8rem;
-        }
-
-        .employee-details-compact {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .employee-name-compact {
-          font-weight: 600;
-          color: #2c3e50;
-          font-size: 0.85rem;
-          margin-bottom: 0.125rem;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+          min-width: 85px;
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .employee-email-compact {
-          color: #6c757d;
-          font-size: 0.7rem;
-          margin: 0;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        /* Compact Info Columns */
-        .position-info-compact,
-        .department-info-compact,
-        .date-info-compact {
-          display: flex;
-          align-items: center;
-          font-size: 0.8rem;
-        }
-
-        .position-info-compact svg,
-        .department-info-compact svg,
-        .date-info-compact svg {
-          font-size: 0.7rem;
-        }
-
-        /* Modern Status Select */
-        .modern-status-select {
-          border-radius: 6px;
-          border: 2px solid #e9ecef;
-          transition: all 0.3s ease;
-          font-size: 0.75rem;
-          padding: 0.375rem 0.5rem;
-          background: white;
-          min-width: 140px;
-          color: #495057;
-        }
-
-        .modern-status-select:focus {
-          border-color: #4a90e2;
-          box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
-          outline: none;
-        }
-
-        .modern-status-select:hover {
-          border-color: #4a90e2;
-        }
-
-        /* Compact Progress Container */
-        .progress-container-compact {
-          width: 100%;
-        }
-
-        .progress-wrapper-compact {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .modern-progress-compact {
-          flex: 1;
-          height: 8px;
-          border-radius: 8px;
-          background-color: #e9ecef;
-          overflow: hidden;
-          box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        .modern-progress-bar-compact {
-          background: linear-gradient(90deg, #4a90e2 0%, #357abd 100%);
-          transition: width 0.6s ease;
-          border-radius: 8px;
           position: relative;
         }
 
-        .modern-progress-bar-compact::after {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
-          animation: shimmer-compact 2s infinite;
-        }
-
-        @keyframes shimmer-compact {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-
-        .progress-input-group-compact {
-          display: flex;
-          align-items: center;
-          gap: 0.125rem;
-        }
-
-        .modern-input-compact {
-          width: 45px;
-          border-radius: 4px;
-          border: 2px solid #e9ecef;
-          transition: all 0.3s ease;
-          text-align: center;
-          font-weight: 500;
-          font-size: 0.7rem;
-          padding: 0.25rem 0.125rem;
-          color: #495057;
-          background: white;
-        }
-
-        .modern-input-compact:focus {
-          border-color: #4a90e2;
-          box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
-          outline: none;
-        }
-
-        .progress-percent-compact {
-          font-size: 0.7rem;
-          color: #6c757d;
-          font-weight: 500;
-        }
-
-        /* Actions Dropdown */
-        .actions-dropdown-container {
-          position: relative;
-          display: inline-block;
-          z-index: 100;
-        }
-
-        .dropdown-toggle-btn {
-          border-radius: 6px;
-          border: 2px solid #e9ecef;
-          background: white;
-          color: #6c757d;
-          padding: 0.375rem 0.5rem;
-          transition: all 0.3s ease;
-          width: 32px;
-          height: 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          z-index: 101;
-        }
-
-        .dropdown-toggle-btn:hover {
-          border-color: #4a90e2;
-          color: #4a90e2;
-          background: rgba(74, 144, 226, 0.05);
-        }
-
-        .dropdown-toggle-btn:focus {
-          border-color: #4a90e2;
-          box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
-          outline: none;
-        }
-
-        .dropdown-toggle-btn.active {
-          border-color: #4a90e2;
-          color: #4a90e2;
-          background: rgba(74, 144, 226, 0.1);
-        }
-
-        .actions-dropdown-menu {
-          position: absolute;
-          top: calc(100% + 4px);
-          right: 0;
-          background: white;
-          border: 1px solid #e9ecef;
-          border-radius: 8px;
-          box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-          z-index: 9999;
-          min-width: 180px;
-          padding: 0.5rem 0;
-          margin: 0;
-          opacity: 1;
-          transform: translateY(0);
-          transition: all 0.2s ease-in-out;
-          pointer-events: auto;
-        }
-
-        .actions-dropdown-menu::before {
-          content: '';
-          position: absolute;
-          top: -6px;
-          right: 12px;
-          width: 0;
-          height: 0;
-          border-left: 6px solid transparent;
-          border-right: 6px solid transparent;
-          border-bottom: 6px solid #e9ecef;
-        }
-
-        .actions-dropdown-menu::after {
-          content: '';
-          position: absolute;
-          top: -5px;
-          right: 12px;
-          width: 0;
-          height: 0;
-          border-left: 5px solid transparent;
-          border-right: 5px solid transparent;
-          border-bottom: 5px solid white;
-        }
-
-        .dropdown-item {
-          display: flex;
-          align-items: center;
-          width: 100%;
-          padding: 0.75rem 1rem;
-          border: none;
-          background: none;
-          color: #495057;
-          font-size: 0.85rem;
-          font-weight: 500;
-          transition: all 0.2s ease;
-          text-align: left;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .dropdown-item:hover {
-          background: rgba(74, 144, 226, 0.1);
-          color: #4a90e2;
-          transform: translateX(2px);
-        }
-
-        .dropdown-item:active {
-          background: rgba(74, 144, 226, 0.15);
-          transform: translateX(0);
-        }
-
-        .dropdown-item svg {
-          font-size: 0.8rem;
-          margin-right: 0.75rem;
-          width: 16px;
-          text-align: center;
-        }
-
-        /* Modal Button Styling */
-        .btn-professional {
-          border-radius: 8px;
-          font-weight: 500;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          border: 2px solid transparent;
-          padding: 0.5rem 1rem;
-          font-size: 0.8rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 120px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .btn-professional:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn-professional:active {
-          transform: translateY(0);
-        }
-
-        .btn-professional .btn-text {
-          transition: all 0.3s ease;
-        }
-
-        .btn-professional svg {
-          transition: transform 0.3s ease;
-        }
-
-        .btn-professional:hover svg {
-          transform: scale(1.1);
-        }
-
-        .btn-cancel {
-          background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        .nav-tab:hover {
+          background: #e9ecef;
           border-color: #6c757d;
-          color: white;
-          box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
-        }
-
-        .btn-cancel:hover {
-          background: linear-gradient(135deg, #5a6268 0%, #343a40 100%);
-          color: white;
-          box-shadow: 0 8px 25px rgba(108, 117, 125, 0.4);
-        }
-
-        .btn-schedule {
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          border-color: #4a90e2;
-          color: white;
-          box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
-        }
-
-        .btn-schedule:hover {
-          background: linear-gradient(135deg, #3d7bc8 0%, #2d5f9a 100%);
-          color: white;
-          box-shadow: 0 8px 25px rgba(74, 144, 226, 0.4);
-        }
-
-        .btn-schedule:disabled {
-          background: #e9ecef;
-          border-color: #dee2e6;
-          color: #6c757d;
-          box-shadow: none;
-          transform: none;
-        }
-
-        .btn-schedule:disabled:hover {
-          background: #e9ecef;
-          border-color: #dee2e6;
-          color: #6c757d;
-          box-shadow: none;
-          transform: none;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 1200px) {
-          .modern-onboarding-th,
-          .modern-onboarding-td {
-            padding: 0.5rem 0.375rem;
-          }
-          
-          .employee-info-compact {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.25rem;
-          }
-          
-          .employee-avatar-compact {
-            width: 28px;
-            height: 28px;
-          }
-          
-          .progress-wrapper-compact {
-            flex-direction: column;
-            gap: 0.25rem;
-            align-items: stretch;
-          }
-          
-          .modern-progress-compact {
-            height: 6px;
-          }
-        }
-
-        @media (max-width: 768px) {
-          .modern-onboarding-header {
-            padding: 1rem;
-          }
-          
-          .modern-onboarding-th,
-          .modern-onboarding-td {
-            padding: 0.375rem 0.25rem;
-            font-size: 0.75rem;
-          }
-          
-          .employee-name-compact {
-            font-size: 0.8rem;
-          }
-          
-          .employee-email-compact {
-            font-size: 0.65rem;
-          }
-          
-          .modern-status-select {
-            font-size: 0.7rem;
-            min-width: 120px;
-          }
-          
-          .modern-input-compact {
-            width: 40px;
-            font-size: 0.65rem;
-          }
-        }
-
-        /* Empty State Styling */
-        .empty-state {
-          padding: 2rem;
-          text-align: center;
-          color: #6c757d;
-        }
-
-        .empty-state svg {
-          font-size: 2.5rem;
-          color: #dee2e6;
-          margin-bottom: 1rem;
-        }
-
-        .empty-state h5 {
           color: #495057;
-          font-weight: 500;
-        }
-
-        /* Enhanced Hover Effects */
-        .modern-onboarding-row {
-          cursor: pointer;
-        }
-
-        .modern-onboarding-row:hover .employee-avatar-compact {
-          transform: scale(1.1);
-          box-shadow: 0 4px 12px rgba(74, 144, 226, 0.4);
-        }
-
-        .modern-onboarding-row:hover .modern-progress-bar-compact {
-          box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
-        }
-
-        /* Tab Button Styling */
-        .btn-tab {
-          position: relative;
-          border-radius: 8px;
-          font-weight: 500;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          border: 2px solid transparent;
-          padding: 0.5rem 1rem;
-          min-width: 100px;
-          font-size: 0.875rem;
-        }
-
-        .btn-tab:hover {
-          transform: translateY(-1px);
+          transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
-        .btn-tab.active {
-          background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
-          border-color: #4a90e2;
+        .nav-tab.active {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-color: #667eea;
           color: white;
-          box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+          box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
 
-        .btn-tab.active:hover {
-          background: linear-gradient(135deg, #3d7bc8 0%, #2d5f9a 100%);
-          transform: translateY(-2px);
-          box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4);
-          color: white;
+        .nav-tab.active .badge {
+          background: rgba(255, 255, 255, 0.2) !important;
+          color: white !important;
         }
 
-        .btn-tab:not(.active) {
+        .nav-tab .badge {
+          margin-left: 0.5rem;
+          font-size: 0.75rem;
+          padding: 0.25rem 0.5rem;
+          border-radius: 12px;
+          font-weight: 600;
+          min-width: 20px;
+          text-align: center;
+        }
+
+        .content-section {
           background: transparent;
-          border-color: #dee2e6;
-          color: #6c757d;
+          border-radius: 0;
+          padding: 0;
+          box-shadow: none;
+          border: none;
         }
 
-        .btn-tab:not(.active):hover {
-          background: rgba(74, 144, 226, 0.1);
-          border-color: #4a90e2;
-          color: #4a90e2;
+        .modern-table-container {
+          background: #ffffff;
+          border-radius: 16px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+          overflow: hidden;
+          border: 1px solid #e8e8e8;
+          max-height: calc(100vh - 250px);
+          overflow-y: auto;
+          overflow-x: hidden;
+          width: 100%;
+          margin: 0;
         }
-
-        /* Tab Button Icon Animation */
-        .btn-tab svg {
-          transition: transform 0.3s ease;
-        }
-
-        .btn-tab:hover svg {
-          transform: scale(1.1);
-        }
-
-        .btn-tab.active svg {
-          color: white;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 1200px) {
-          .modern-tab {
-            min-width: 120px;
-            padding: 0.8rem 1.2rem;
-          }
-          
-          .tab-label {
+        
+        /* Responsive design - Simplified */
+        @media (max-width: 768px) {
+          .modern-onboarding-table th,
+          .modern-onboarding-table td {
+            padding: 0.5rem 0.25rem;
             font-size: 0.85rem;
           }
-          
-          .feature-grid {
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1.5rem;
+        }
+
+        .modern-onboarding-table {
+          margin: 0;
+          width: 100%;
+          table-layout: fixed;
+          max-width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+        
+        /* Column Widths - Responsive and balanced */
+        .modern-onboarding-table th:nth-child(1),
+        .modern-onboarding-table td:nth-child(1) { width: 28%; }
+        .modern-onboarding-table th:nth-child(2),
+        .modern-onboarding-table td:nth-child(2) { width: 12%; }
+        .modern-onboarding-table th:nth-child(3),
+        .modern-onboarding-table td:nth-child(3) { width: 14%; }
+        .modern-onboarding-table th:nth-child(4),
+        .modern-onboarding-table td:nth-child(4) { width: 13%; }
+        .modern-onboarding-table th:nth-child(5),
+        .modern-onboarding-table td:nth-child(5) { width: 11%; }
+        .modern-onboarding-table th:nth-child(6),
+        .modern-onboarding-table td:nth-child(6) { width: 22%; }
+
+        .modern-onboarding-table thead th {
+          background: #fafbfc;
+          color: #6c757d;
+          font-weight: 600;
+          padding: 0.875rem 0.75rem;
+          border-bottom: 2px solid #e0e0e0;
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .modern-onboarding-table tbody td {
+          padding: 0.875rem 0.75rem;
+          vertical-align: middle;
+          border-bottom: 1px solid #f0f0f0;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          font-size: 0.85rem;
+          background: #ffffff;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* Alternating row colors */
+        .modern-onboarding-table tbody tr:nth-child(even) {
+          background-color: #fafbfc;
+        }
+
+        .modern-onboarding-table tbody tr:nth-child(even) td {
+          background-color: #fafbfc;
+        }
+        
+        /* Text Alignment */
+        .align-left {
+          text-align: left;
+        }
+
+        .align-center {
+          text-align: center;
+        }
+
+        .align-right {
+          text-align: right;
+        }
+
+        /* Applicant Cell */
+        .applicant-cell {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .applicant-info {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .applicant-name {
+          font-weight: 600;
+          color: #2c3e50;
+          font-size: 0.85rem;
+          line-height: 1.3;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .applicant-email {
+          color: #9ca3af;
+          font-size: 0.8rem;
+          line-height: 1.3;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        /* Position and Department */
+        .position-text {
+          font-weight: 500;
+          color: #495057;
+          font-size: 0.85rem;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
+
+        .department-text {
+          font-weight: 500;
+          color: #495057;
+          font-size: 0.85rem;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
+
+        .modern-onboarding-table tbody tr {
+          transition: all 0.15s ease;
+        }
+
+        .modern-onboarding-table tbody tr:hover {
+          background-color: #f5f7fa !important;
+          transform: scale(1.001);
+        }
+
+        .modern-onboarding-table tbody tr:hover td {
+          background-color: #f5f7fa !important;
+        }
+
+        .avatar {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 0.875rem;
+          flex-shrink: 0;
+        }
+
+        .date-container {
+          display: flex;
+          flex-direction: column;
+          gap: 0.2rem;
+          align-items: center;
+        }
+
+        .date-text {
+          font-size: 0.875rem;
+          color: #495057;
+          font-weight: 500;
+          line-height: 1.3;
+        }
+
+        .time-text {
+          font-size: 0.75rem;
+          color: #9ca3af;
+          line-height: 1.3;
+        }
+
+        .status-container {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+        }
+
+        .dropdown-toggle-btn {
+          border: 1px solid #e9ecef;
+          background: #f8f9fa;
+          color: #6c757d;
+          border-radius: 8px;
+          padding: 0.5rem 0.75rem;
+          transition: all 0.2s ease;
+        }
+
+        .dropdown-toggle-btn:hover {
+          background: #e9ecef;
+          border-color: #6c757d;
+          color: #495057;
+        }
+
+        .dropdown-menu {
+          background: white;
+          border: 1px solid #e9ecef;
+          border-radius: 12px;
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+          padding: 0.5rem 0;
+          min-width: 180px;
+          z-index: 9999;
+          position: absolute;
+          top: calc(100% + 4px);
+          right: 0;
+        }
+
+        .dropdown-item {
+          padding: 0.75rem 1.25rem;
+          font-size: 0.9rem;
+          font-weight: 500;
+          gap: 0.75rem;
+          transition: all 0.2s ease;
+        }
+
+        .dropdown-item:hover {
+          background-color: #f8f9fa;
+          padding-left: 1.5rem;
+        }
+
+        .position-relative {
+          position: relative;
+        }
+
+        .status-badge {
+          font-size: 0.75rem;
+          padding: 0.375rem 0.75rem;
+          border-radius: 6px;
+          font-weight: 600;
+          border: none;
+          display: inline-flex !important;
+          align-items: center;
+          gap: 0.375rem;
+          white-space: nowrap;
+        }
+
+        .status-pending {
+          background-color: #fff3cd !important;
+          color: #856404 !important;
+        }
+
+        .status-shortlisted {
+          background-color: #cfe2ff !important;
+          color: #084298 !important;
+        }
+
+        .status-interview {
+          background-color: #cfe2ff !important;
+          color: #084298 !important;
+        }
+
+        .status-offered {
+          background-color: #cfe2ff !important;
+          color: #084298 !important;
+        }
+
+        .status-accepted {
+          background-color: #d1e7dd !important;
+          color: #0f5132 !important;
+        }
+
+        .status-onboarding {
+          background-color: #cfe2ff !important;
+          color: #084298 !important;
+        }
+
+        .status-hired {
+          background-color: #d1e7dd !important;
+          color: #0f5132 !important;
+        }
+
+        .status-rejected {
+          background-color: #f8d7da !important;
+          color: #842029 !important;
+        }
+
+        /* View Details Button */
+        .view-details-btn {
+          background-color: #ffffff !important;
+          border: 1.5px solid #d1d5db !important;
+          color: #4b5563 !important;
+          font-size: 0.8125rem;
+          padding: 0.65rem 1.5rem;
+          border-radius: 6px;
+          font-weight: 500;
+          transition: all 0.2s ease;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          white-space: nowrap;
+          line-height: 1.4;
+          min-width: 110px;
+        }
+
+        .view-details-btn:hover {
+          background-color: #f9fafb !important;
+          border-color: #9ca3af !important;
+          color: #374151 !important;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .view-details-btn:active {
+          background-color: #f3f4f6 !important;
+          transform: translateY(0);
+        }
+
+        /* Schedule Interview Button */
+        .schedule-interview-btn {
+          background-color: #28a745 !important;
+          border-color: #28a745 !important;
+          color: white !important;
+          font-size: 0.85rem;
+          padding: 0.75rem 1.75rem;
+          border-radius: 6px;
+          font-weight: 500;
+          transition: all 0.2s ease;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+          white-space: nowrap;
+          line-height: 1.4;
+          min-width: 170px;
+        }
+
+        .schedule-interview-btn:hover {
+          background-color: #218838 !important;
+          border-color: #1e7e34 !important;
+          box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+        }
+
+        .schedule-interview-btn:active {
+          background-color: #1e7e34 !important;
+          transform: translateY(0);
+        }
+
+        /* Applicant Details Modal */
+        .applicant-details-modal .modal-content {
+          border-radius: 12px;
+          border: none;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+        }
+
+        .applicant-details-content {
+          font-size: 0.9rem;
+        }
+
+        .avatar-large {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+          font-size: 1.5rem;
+        }
+
+        .section-title {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #495057;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border-bottom: 2px solid #e9ecef;
+          padding-bottom: 0.5rem;
+        }
+
+        .info-item {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.4rem 0;
+        }
+
+        .info-item .label {
+          font-weight: 500;
+          color: #6c757d;
+          min-width: 80px;
+        }
+
+        .info-item .value {
+          color: #495057;
+        }
+
+        .view-resume-btn {
+          border-radius: 6px;
+          font-weight: 500;
+          padding: 0.5rem 1.25rem;
+          transition: all 0.2s ease;
+          background-color: #4a90e2 !important;
+          border-color: #4a90e2 !important;
+        }
+
+        .view-resume-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 2px 6px rgba(74, 144, 226, 0.3);
+          background-color: #3a7bc8 !important;
+          border-color: #3a7bc8 !important;
+        }
+
+        .download-resume-btn {
+          border-radius: 6px;
+          font-weight: 500;
+          padding: 0.5rem 1.25rem;
+          transition: all 0.2s ease;
+        }
+
+        .download-resume-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 2px 6px rgba(74, 144, 226, 0.2);
+        }
+
+        .action-btn {
+          font-weight: 600;
+          padding: 0.75rem 1.5rem;
+          border-radius: 8px;
+          font-size: 0.95rem;
+          transition: all 0.2s ease;
+          border: none;
+        }
+
+        .action-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .detail-section {
+          padding: 0.5rem 0;
+        }
+
+        @media (max-width: 1200px) {
+          .professional-navbar {
+            gap: 0.3rem;
+            padding: 1rem;
+          }
+
+          .nav-tab {
+            min-width: 100px;
+            padding: 0.5rem 0.8rem;
+            font-size: 0.8rem;
           }
         }
 
         @media (max-width: 768px) {
-          .modern-title {
-            font-size: 1.75rem;
-          }
-          
-          .modern-tab {
-            min-width: 100px;
-            padding: 0.6rem 1rem;
-          }
-          
-          .tab-label {
-            font-size: 0.8rem;
-          }
-          
-          .tab-icon {
-            font-size: 1.2rem;
-          }
-          
-          .summary-stats {
+          .professional-navbar {
+            flex-direction: column;
+            gap: 0.5rem;
             padding: 1rem;
           }
-          
-          .summary-item {
-            padding: 0.5rem 0.75rem;
+
+          .nav-tab {
+            width: 100%;
+            min-width: auto;
+            padding: 0.6rem 1rem;
             font-size: 0.85rem;
-          }
-          
-          .feature-grid {
-            grid-template-columns: 1fr;
-            gap: 1rem;
-          }
-          
-          .feature-item {
-            padding: 1.5rem 1rem;
-          }
-          
-          .content-header {
-            padding: 1.5rem;
-            flex-direction: column;
-            text-align: center;
-            gap: 1rem;
-          }
-          
-          .header-icon {
-            width: 60px;
-            height: 60px;
-          }
-          
-          .content-body {
-            padding: 1.5rem;
+            justify-content: space-between;
           }
         }
 
         @media (max-width: 576px) {
-          .tab-navigation {
-            flex-direction: column;
-            align-items: stretch;
+          .nav-tab {
+            font-size: 0.8rem;
+            padding: 0.5rem 0.8rem;
           }
-          
-          .modern-tab {
-            min-width: auto;
-            width: 100%;
-          }
-          
-          .summary-item {
-            flex-direction: column;
-            text-align: center;
-            gap: 0.5rem;
-          }
-        }
 
-        /* Smooth Animations */
-        * {
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .modern-onboarding-row,
-        .employee-avatar-compact,
-        .modern-progress-bar-compact,
-        .dropdown-toggle-btn {
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          .nav-tab .badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.4rem;
+          }
         }
       `}</style>
+
+      {/* Batch Interview Modal */}
+      {showBatchInterviewModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header border-0">
+                <h5 className="modal-title fw-bold">
+                  <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                  Schedule Batch Interview
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setShowBatchInterviewModal(false);
+                    setBatchInterviewData({
+                      interview_date: '',
+                      interview_time: '',
+                      duration: '30',
+                      interview_type: 'On-site',
+                      location: '',
+                      interviewer: '',
+                      notes: ''
+                    });
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                <div className="alert alert-info mb-4">
+                  <FontAwesomeIcon icon={faUsers} className="me-2" />
+                  <strong>Selected Applicants ({selectedApplicants.length}):</strong>
+                  <ul className="mb-0 mt-2">
+                    {selectedApplicants.map(applicant => (
+                      <li key={applicant.id}>
+                        {applicant.applicant?.first_name} {applicant.applicant?.last_name} - {applicant.job_posting?.title}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold">Interview Date *</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={batchInterviewData.interview_date}
+                      onChange={(e) => setBatchInterviewData({...batchInterviewData, interview_date: e.target.value})}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold">Interview Time *</label>
+                    <input
+                      type="time"
+                      className="form-control"
+                      value={batchInterviewData.interview_time}
+                      onChange={(e) => setBatchInterviewData({...batchInterviewData, interview_time: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold">Duration (minutes)</label>
+                    <select
+                      className="form-select"
+                      value={batchInterviewData.duration}
+                      onChange={(e) => setBatchInterviewData({...batchInterviewData, duration: e.target.value})}
+                    >
+                      <option value="30">30 minutes</option>
+                      <option value="45">45 minutes</option>
+                      <option value="60">60 minutes</option>
+                      <option value="90">90 minutes</option>
+                      <option value="120">120 minutes</option>
+                    </select>
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label fw-semibold">Interview Type *</label>
+                    <select
+                      className="form-select"
+                      value={batchInterviewData.interview_type}
+                      onChange={(e) => setBatchInterviewData({...batchInterviewData, interview_type: e.target.value})}
+                    >
+                      <option value="On-site">On-site</option>
+                      <option value="in-person">In-person</option>
+                      <option value="video">Video Call</option>
+                      <option value="phone">Phone Call</option>
+                      <option value="online">Online</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Location *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Enter interview location"
+                    value={batchInterviewData.location}
+                    onChange={(e) => setBatchInterviewData({...batchInterviewData, location: e.target.value})}
+                  />
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Interviewer *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Enter interviewer name"
+                    value={batchInterviewData.interviewer}
+                    onChange={(e) => setBatchInterviewData({...batchInterviewData, interviewer: e.target.value})}
+                  />
+                </div>
+
+                <div className="mb-3">
+                  <label className="form-label fw-semibold">Notes</label>
+                  <textarea
+                    className="form-control"
+                    rows="3"
+                    placeholder="Enter any additional notes or instructions"
+                    value={batchInterviewData.notes}
+                    onChange={(e) => setBatchInterviewData({...batchInterviewData, notes: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer border-0">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowBatchInterviewModal(false);
+                    setBatchInterviewData({
+                      interview_date: '',
+                      interview_time: '',
+                      duration: '30',
+                      interview_type: 'On-site',
+                      location: '',
+                      interviewer: '',
+                      notes: ''
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="success"
+                  onClick={handleSendBatchInterviewInvites}
+                  className="px-4"
+                >
+                  <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                  Send Batch Invites
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Container>
   );
 };

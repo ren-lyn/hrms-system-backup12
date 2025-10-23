@@ -278,6 +278,20 @@ export default function JobPortal() {
       const formData = new FormData();
       formData.append('job_posting_id', selectedJob.id);
       formData.append('resume', resumeFile);
+      
+      // Add job details to the application for better tracking
+      formData.append('job_title', selectedJob.title);
+      formData.append('department', selectedJob.department);
+      formData.append('position', selectedJob.position);
+      formData.append('applied_at_ph', new Date().toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }));
 
       const token = localStorage.getItem('token');
       const response = await axios.post('http://localhost:8000/api/applications', formData, {
@@ -296,6 +310,43 @@ export default function JobPortal() {
       if (userRole === 'Applicant') {
         fetchUserApplications();
       }
+      
+      // Store application data in localStorage for immediate access
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const applicationData = {
+        id: response.data.id || response.data.application?.id,
+        job_title: selectedJob.title,
+        department: selectedJob.department,
+        position: selectedJob.position,
+        applicant_name: user.name || (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}`.trim() : 'N/A'),
+        applicant_email: user.email || 'N/A',
+        applied_at: new Date().toISOString(),
+        applied_at_ph: new Date().toLocaleString('en-PH', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }),
+        applied_date_ph: new Date().toLocaleDateString('en-PH', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        }),
+        applied_time_ph: new Date().toLocaleTimeString('en-PH', {
+          timeZone: 'Asia/Manila',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }),
+        status: 'Pending'
+      };
+      
+      // Store in localStorage for immediate access in PersonalOnboarding
+      localStorage.setItem('latestApplication', JSON.stringify(applicationData));
     } catch (error) {
       // Only log detailed error info in development
       if (process.env.NODE_ENV === 'development') {
@@ -350,12 +401,25 @@ export default function JobPortal() {
     }
   };
 
-  // Format date for display
+  // Format date for display with Philippines timezone
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    return date.toLocaleDateString('en-PH', {
+      timeZone: 'Asia/Manila',
       year: 'numeric',
       month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Get current Philippines time for reference
+  const getCurrentPhilippinesTime = () => {
+    return new Date().toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -822,24 +886,6 @@ export default function JobPortal() {
             Review the job details below and take the first step towards
             building your career with us.
           </p>
-          <button
-            onClick={scrollToJobs}
-            style={{
-              padding: "clamp(0.7rem, 2vw, 0.9rem) clamp(1.5rem, 4vw, 2rem)",
-              fontSize: "clamp(1rem, 2.5vw, 1.1rem)",
-              fontWeight: "600",
-              backgroundColor: "#007bff",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              transition: "background-color 0.3s ease",
-            }}
-            onMouseOver={(e) => (e.target.style.backgroundColor = "#0056b3")}
-            onMouseOut={(e) => (e.target.style.backgroundColor = "#007bff")}
-          >
-            Job Details
-          </button>
         </div>
 
         <style>
@@ -901,54 +947,16 @@ export default function JobPortal() {
               Be a part of a company that invests in your growth and
               development.
             </p>
-          <button 
-            className="btn btn-light text-dark fw-bold px-4 py-2 mt-2"
-            onClick={scrollToJobs}
-          >
-            Apply Now
-          </button>
           </div>
         </div>
       </section>
 
-      {/* Search Bar */}
-      <section className="container my-5">
-        <div className="row g-3">
-          <div className="col-md-8">
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search keyword"
-            />
-          </div>
-          <div className="col-md-2 d-grid">
-            <button className="btn btn-success">Find Job</button>
-          </div>
-          <div className="col-md-2 d-grid">
-            <button 
-              className="btn btn-outline-primary"
-              onClick={fetchJobs}
-              disabled={loading}
-              title="Refresh job listings"
-            >
-              {loading ? (
-                <span className="spinner-border spinner-border-sm me-1" role="status"></span>
-              ) : (
-                <i className="bi bi-arrow-clockwise me-1"></i>
-              )}
-              Refresh
-            </button>
-          </div>
-        </div>
-
-      </section>
 
       {/* Job Listing */}
       <section className="bg-light py-5">
         <div className="container">
           <div className="d-flex justify-content-between align-items-center mb-4">
             <h3 className="fw-bold">Job Listings</h3>
-            <button className="btn btn-outline-success">Browse More Jobs</button>
           </div>
 
           {loading ? (
@@ -1041,7 +1049,7 @@ export default function JobPortal() {
                 {/* Footer Section */}
                 <div className="d-flex justify-content-between align-items-center p-4 pt-3 bg-light bg-opacity-50">
                   <small className="text-muted">
-                    <strong>Posted:</strong> {formatDate(job.created_at)}
+                    <strong>Posted:</strong> {job.ph_created_at || formatDate(job.created_at)}
                   </small>
                   <div className="d-flex gap-2">
                     <button 
@@ -1228,8 +1236,8 @@ export default function JobPortal() {
                           <div className="fw-semibold">{selectedJobForDetails.department}</div>
                         </div>
                         <div className="col-md-3 mb-3 mb-md-0">
-                          <div className="text-muted small mb-1">Employment Type</div>
-                          <div className="fw-semibold">Full-time</div>
+                          <div className="text-muted small mb-1">Position</div>
+                          <div className="fw-semibold">{selectedJobForDetails.position || 'N/A'}</div>
                         </div>
                         <div className="col-md-3 mb-3 mb-md-0">
                           <div className="text-muted small mb-1">Salary Range</div>
@@ -1247,8 +1255,10 @@ export default function JobPortal() {
                           )}
                         </div>
                         <div className="col-md-3">
-                          <div className="text-muted small mb-1">Posted Date</div>
-                          <div className="fw-semibold">{formatDate(selectedJobForDetails.created_at)}</div>
+                          <div className="text-muted small mb-1">Posted Date (PH Time)</div>
+                          <div className="fw-semibold">
+                            {selectedJobForDetails.ph_created_at || formatDate(selectedJobForDetails.created_at)}
+                          </div>
                         </div>
                       </div>
                     </div>

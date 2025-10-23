@@ -55,6 +55,17 @@ class NotificationController extends Controller
 
         return response()->json(['success' => true]);
     }
+
+    public function destroy($id)
+    {
+        $user = Auth::user();
+        if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
+
+        $notification = $user->notifications()->where('id', $id)->firstOrFail();
+        $notification->delete();
+
+        return response()->json(['success' => true, 'message' => 'Notification deleted successfully']);
+    }
     
     private function generateNotificationTitle($notification)
     {

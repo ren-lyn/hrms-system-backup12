@@ -28,6 +28,25 @@ class ApplicationController extends Controller
             ->latest()
             ->get();
 
+        // Debug logging
+        Log::info('Applications API called', [
+            'count' => $applications->count(),
+            'first_application' => $applications->first() ? [
+                'id' => $applications->first()->id,
+                'status' => $applications->first()->status,
+                'applicant' => $applications->first()->applicant ? [
+                    'first_name' => $applications->first()->applicant->first_name,
+                    'last_name' => $applications->first()->applicant->last_name,
+                    'email' => $applications->first()->applicant->email
+                ] : null,
+                'job_posting' => $applications->first()->jobPosting ? [
+                    'title' => $applications->first()->jobPosting->title,
+                    'department' => $applications->first()->jobPosting->department,
+                    'position' => $applications->first()->jobPosting->position
+                ] : null
+            ] : null
+        ]);
+
         return response()->json($applications);
     }
 
@@ -118,10 +137,10 @@ class ApplicationController extends Controller
             })->get();
 
             foreach ($hrStaff as $hr) {
-                $hr->notify(new \App\Notifications\JobApplicationSubmitted($application));
+                $hr->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
             }
 
-            Log::info('Job application submission notifications sent', [
+            Log::info('Onboarding application submission notifications sent', [
                 'application_id' => $application->id,
                 'applicant_id' => $applicant->id,
                 'job_posting_id' => $request->job_posting_id,
@@ -218,10 +237,10 @@ class ApplicationController extends Controller
             $application->load(['jobPosting', 'applicant']);
             
             if ($application->applicant && $application->applicant->user) {
-                $application->applicant->user->notify(new \App\Notifications\JobApplicationStatusChanged($application));
+                $application->applicant->user->notify(new \App\Notifications\OnboardingStatusChanged($application));
             }
 
-            Log::info('Job application status change notification sent', [
+            Log::info('Onboarding status change notification sent', [
                 'application_id' => $application->id,
                 'applicant_id' => $application->applicant_id,
                 'new_status' => $request->status
@@ -259,28 +278,195 @@ class ApplicationController extends Controller
     // Schedule interview for application
     public function scheduleInterview(Request $request, $id)
     {
-        $request->validate([
-            'date' => 'required|date|after:now',
-            'time' => 'required',
-            'type' => 'required|string',
-            'location' => 'nullable|string',
-            'notes' => 'nullable|string'
-        ]);
+        try {
+            $request->validate([
+                'interview_date' => 'required|date|after_or_equal:yesterday',
+                'interview_time' => 'required',
+                'duration' => 'nullable|integer',
+                'interview_type' => 'required|string',
+                'location' => 'required|string',
+                'interviewer' => 'required|string',
+                'notes' => 'nullable|string'
+            ]);
 
-        $application = Application::findOrFail($id);
-        
-        // Update application status to Interview if not already
-        if ($application->status !== 'Interview') {
-            $application->update(['status' => 'Interview']);
+            $application = Application::findOrFail($id);
+            
+            // Update application status to On going Interview
+            if ($application->status !== 'On going Interview') {
+                $application->update(['status' => 'On going Interview']);
+            }
+
+            // Create interview record
+            $interview = \App\Models\Interview::create([
+                'application_id' => $id,
+                'interview_date' => $request->interview_date,
+                'interview_time' => $request->interview_time,
+                'duration' => $request->duration ?? 30,
+                'interview_type' => $request->interview_type,
+                'location' => $request->location,
+                'interviewer' => $request->interviewer,
+                'notes' => $request->notes ?? '',
+                'status' => 'scheduled'
+            ]);
+
+            // Load interview with application data
+            $interview->load('application.jobPosting', 'application.applicant');
+
+            // Send notification to applicant
+            try {
+                $application->load(['jobPosting', 'applicant']);
+                
+                if ($application->applicant && $application->applicant->user) {
+                    $application->applicant->user->notify(new \App\Notifications\InterviewScheduled($interview, $application));
+                }
+                
+                Log::info('Interview scheduled notification sent', [
+                    'application_id' => $application->id,
+                    'interview_id' => $interview->id,
+                    'applicant_id' => $application->applicant_id
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send interview scheduled notification', [
+                    'application_id' => $application->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Interview scheduled successfully.',
+                'interview' => $interview,
+                'application' => $application->load(['jobPosting', 'applicant'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error scheduling interview', [
+                'application_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to schedule interview',
+                'message' => $e->getMessage()
+            ], 500);
         }
+    }
 
-        // Here you would typically save interview details to a separate interviews table
-        // For now, we'll just return success
+    // Schedule batch interviews for multiple applications
+    public function scheduleBatchInterviews(Request $request)
+    {
+        try {
+            $request->validate([
+                'application_ids' => 'required|array|min:1',
+                'application_ids.*' => 'required|integer|exists:applications,id',
+                'interview_date' => 'required|date|after_or_equal:yesterday',
+                'interview_time' => 'required',
+                'duration' => 'nullable|integer',
+                'interview_type' => 'required|string',
+                'location' => 'required|string',
+                'interviewer' => 'required|string',
+                'notes' => 'nullable|string'
+            ]);
 
-        return response()->json([
-            'message' => 'Interview scheduled successfully.',
-            'application' => $application->load(['jobPosting', 'applicant'])
-        ]);
+            $applicationIds = $request->application_ids;
+            $interviewData = $request->only([
+                'interview_date', 'interview_time', 'duration', 
+                'interview_type', 'location', 'interviewer', 'notes'
+            ]);
+
+            $successfulInterviews = [];
+            $failedInterviews = [];
+
+            DB::beginTransaction();
+
+            foreach ($applicationIds as $applicationId) {
+                try {
+                    $application = Application::findOrFail($applicationId);
+                    
+                    // Update application status to On going Interview
+                    if ($application->status !== 'On going Interview') {
+                        $application->update(['status' => 'On going Interview']);
+                    }
+
+                    // Create interview record
+                    $interview = \App\Models\Interview::create([
+                        'application_id' => $applicationId,
+                        'interview_date' => $interviewData['interview_date'],
+                        'interview_time' => $interviewData['interview_time'],
+                        'duration' => $interviewData['duration'] ?? 30,
+                        'interview_type' => $interviewData['interview_type'],
+                        'location' => $interviewData['location'],
+                        'interviewer' => $interviewData['interviewer'],
+                        'notes' => $interviewData['notes'] ?? '',
+                        'status' => 'scheduled'
+                    ]);
+
+                    // Load interview with application data
+                    $interview->load('application.jobPosting', 'application.applicant');
+
+                    // Send notification to applicant
+                    try {
+                        $application->load(['jobPosting', 'applicant']);
+                        
+                        if ($application->applicant && $application->applicant->user) {
+                            $application->applicant->user->notify(new \App\Notifications\InterviewScheduled($interview, $application));
+                        }
+                        
+                        Log::info('Batch interview scheduled notification sent', [
+                            'application_id' => $application->id,
+                            'interview_id' => $interview->id,
+                            'applicant_id' => $application->applicant_id
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send batch interview scheduled notification', [
+                            'application_id' => $application->id,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+
+                    $successfulInterviews[] = [
+                        'application_id' => $applicationId,
+                        'interview_id' => $interview->id,
+                        'applicant_name' => $application->applicant ? 
+                            $application->applicant->first_name . ' ' . $application->applicant->last_name : 'Unknown',
+                        'job_title' => $application->jobPosting ? $application->jobPosting->title : 'Unknown'
+                    ];
+
+                } catch (\Exception $e) {
+                    $failedInterviews[] = [
+                        'application_id' => $applicationId,
+                        'error' => $e->getMessage()
+                    ];
+                    
+                    Log::error('Failed to schedule interview for application', [
+                        'application_id' => $applicationId,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Batch interview scheduling completed.',
+                'successful_count' => count($successfulInterviews),
+                'failed_count' => count($failedInterviews),
+                'successful_interviews' => $successfulInterviews,
+                'failed_interviews' => $failedInterviews
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error in batch interview scheduling', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to schedule batch interviews',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     // Send job offer to applicant

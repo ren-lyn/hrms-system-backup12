@@ -23,18 +23,16 @@ const CashAdvanceManagement = lazy(() => import('./components/HrAssistant/CashAd
 const LeaveApplicationForm = lazy(() => import('./components/Employee/LeaveApplicationForm'));
 const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
 const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/DisciplinaryManagement'));
-const JobApplications = lazy(() => import('./components/JobApplications'));
 const AttendanceDashboard = lazy(() => import('./components/HrAssistant/AttendanceDashboard'));
 const EnhancedPayrollDashboard = lazy(() => import('./components/HrAssistant/EnhancedPayrollDashboard'));
 const EmployeeEvaluationList = lazy(() => import('./pages/HrAssistant/Evaluations/EmployeeEvaluationList'));
 const EvaluationForm = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationForm'));
 const EvaluationAdministration = lazy(() => import('./components/EvaluationAdministration'));
 const JobPostings = lazy(() => import('./components/JobPostings'));
-const ApplicationsDashboard = lazy(() => import('./components/HrAssistant/Dashboard/ApplicationsDashboard'));
 const StandaloneAssistantDashboard = lazy(() => import('./components/HrAssistant/Dashboard/StandaloneAssistantDashboard'));
 const HrAssistantProfile = lazy(() => import('./components/HrAssistant/HrAssistantProfile'));
-const OnboardingDashboard = lazy(() => import('./components/HrAssistant/OnboardingDashboard'));
 const PersonalOnboarding = lazy(() => import('./components/PersonalOnboarding'));
+const OnboardingDashboard = lazy(() => import('./components/HrAssistant/OnboardingDashboard'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 
 // Loading component
@@ -66,7 +64,6 @@ function App() {
         <Routes>
         {/* Public Routes */}
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
-        <Route path="/jobs" element={<JobApplications />} /> {/* Professional Job Applications */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
@@ -92,7 +89,6 @@ function App() {
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
           <Route path="job-postings" element={<JobPostings />} />
-          <Route path="applications" element={<ApplicationsDashboard />} />
           <Route path="onboarding" element={<OnboardingDashboard />} />
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
           <Route path="profile" element={<HrAssistantProfile />} />

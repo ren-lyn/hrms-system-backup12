@@ -14,6 +14,7 @@ class Interview extends Model
         'application_id',
         'interview_date',
         'interview_time',
+        'duration',
         'interview_type',
         'location',
         'interviewer',
