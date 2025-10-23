@@ -34,6 +34,8 @@ const HrAssistantProfile = lazy(() => import('./components/HrAssistant/HrAssista
 const PersonalOnboarding = lazy(() => import('./components/PersonalOnboarding'));
 const OnboardingDashboard = lazy(() => import('./components/HrAssistant/OnboardingDashboard'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
+const ReportGeneration = lazy(() => import('./components/HrAssistant/ReportGeneration/ReportGeneration'));
+const PredictiveTurnoverAnalytics = lazy(() => import('./components/HrAssistant/PredictiveTurnoverAnalytics/PredictiveTurnoverAnalytics'));
 
 // Loading component
 const LoadingSpinner = () => (
@@ -94,6 +96,9 @@ function App() {
           <Route path="profile" element={<HrAssistantProfile />} />
           <Route path="attendance" element={<AttendanceDashboard />} /> 
           <Route path="payroll" element={<EnhancedPayrollDashboard />} />
+          <Route path="report-generation" element={<ReportGeneration />} />
+          <Route path="predictive-turnover-analytics" element={<PredictiveTurnoverAnalytics />} />
+
 
         </Route>
 

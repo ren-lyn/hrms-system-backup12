@@ -24,7 +24,8 @@ import {
   FaTimesCircle,
   FaExclamationTriangle,
   FaCalendarAlt,
-  FaClipboardList
+  FaClipboardList,
+  FaEdit
 } from 'react-icons/fa';
 import { format } from 'date-fns';
 import axios from '../../axios';
@@ -36,6 +37,59 @@ const AttendanceDashboard = () => {
         const now = new Date();
         const start = new Date(now.getFullYear(), now.getMonth(), 1);
         const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return {
+            start: start.toISOString().split('T')[0],
+            end: end.toISOString().split('T')[0]
+        };
+    };
+
+    // Date range preset functions
+    const getDateRangePreset = (preset) => {
+        const now = new Date();
+        let start, end;
+
+        switch (preset) {
+            case 'today':
+                start = end = now;
+                break;
+            case 'yesterday':
+                start = end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                break;
+            case 'this_week':
+                const dayOfWeek = now.getDay(); // 0 = Sunday
+                const monday = new Date(now);
+                monday.setDate(now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Adjust to Monday
+                start = monday;
+                end = now;
+                break;
+            case 'last_week':
+                const lastWeekEnd = new Date(now);
+                lastWeekEnd.setDate(now.getDate() - now.getDay()); // Last Sunday
+                const lastWeekStart = new Date(lastWeekEnd);
+                lastWeekStart.setDate(lastWeekEnd.getDate() - 6); // Last Monday
+                start = lastWeekStart;
+                end = lastWeekEnd;
+                break;
+            case 'this_month':
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                break;
+            case 'last_month':
+                start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                end = new Date(now.getFullYear(), now.getMonth(), 0);
+                break;
+            case 'last_7_days':
+                start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+                end = now;
+                break;
+            case 'last_30_days':
+                start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+                end = now;
+                break;
+            default:
+                return null;
+        }
+
         return {
             start: start.toISOString().split('T')[0],
             end: end.toISOString().split('T')[0]
@@ -71,10 +125,26 @@ const AttendanceDashboard = () => {
     const [importHistory, setImportHistory] = useState([]);
     const [importHistoryLoading, setImportHistoryLoading] = useState(false);
     
+    // Edit modal state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingRecord, setEditingRecord] = useState(null);
+    const [editFormData, setEditFormData] = useState({
+        time_in: '',
+        time_out: '',
+        status: '',
+        remarks: ''
+    });
+    const [isSaving, setIsSaving] = useState(false);
+    
     // Filter states
     const defaultDates = getCurrentMonthDates();
     const [dateFrom, setDateFrom] = useState(defaultDates.start);
     const [dateTo, setDateTo] = useState(defaultDates.end);
+    
+    // Temporary date states for user input (not applied yet)
+    const [tempDateFrom, setTempDateFrom] = useState(defaultDates.start);
+    const [tempDateTo, setTempDateTo] = useState(defaultDates.end);
+    
     const [searchInput, setSearchInput] = useState(''); // User's input
     const [statusFilter, setStatusFilter] = useState('all');
     
@@ -87,6 +157,57 @@ const AttendanceDashboard = () => {
     const [allPage, setAllPage] = useState(1);
     const [allPerPage, setAllPerPage] = useState(100);
     const [allLoading, setAllLoading] = useState(false);
+
+    // Apply date preset (for quick select buttons)
+    const applyDatePreset = (preset) => {
+        const range = getDateRangePreset(preset);
+        if (range) {
+            // For quick presets, apply immediately
+            setDateFrom(range.start);
+            setDateTo(range.end);
+            setTempDateFrom(range.start);
+            setTempDateTo(range.end);
+        }
+    };
+
+    // Apply manually selected date range
+    const applyDateRange = () => {
+        setDateFrom(tempDateFrom);
+        setDateTo(tempDateTo);
+    };
+
+    // Check if dates have changed
+    const datesChanged = tempDateFrom !== dateFrom || tempDateTo !== dateTo;
+
+    // Handle Enter key press on date inputs
+    const handleDateKeyPress = (e) => {
+        if (e.key === 'Enter' && datesChanged) {
+            applyDateRange();
+        }
+    };
+
+    // Get human-readable date range text
+    const getDateRangeText = () => {
+        if (!dateFrom || !dateTo) return '';
+        
+        const from = new Date(dateFrom);
+        const to = new Date(dateTo);
+        
+        // Check if it's today
+        const today = new Date();
+        if (dateFrom === dateTo && 
+            from.toDateString() === today.toDateString()) {
+            return 'Today';
+        }
+        
+        // Check if same date but not today
+        if (dateFrom === dateTo) {
+            return format(from, 'MMM dd, yyyy');
+        }
+        
+        // Different dates - always use the full date range with month abbreviations
+        return `${format(from, 'MMM dd, yyyy')} - ${format(to, 'MMM dd, yyyy')}`;
+    };
 
     // Fetch data when filters change
     useEffect(() => {
@@ -124,6 +245,51 @@ const AttendanceDashboard = () => {
             setLoading(false);
         }
     }, [dateFrom, dateTo, debouncedSearch, statusFilter]);
+
+    // Handle edit button click
+    const handleEditClick = (record) => {
+        setEditingRecord(record);
+        setEditFormData({
+            time_in: record.time_in || '',
+            time_out: record.time_out || '',
+            status: record.status || '',
+            remarks: record.remarks || ''
+        });
+        setShowEditModal(true);
+    };
+
+    // Handle form input changes
+    const handleEditFormChange = (e) => {
+        const { name, value } = e.target;
+        setEditFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
+    // Save edited record
+    const handleSaveEdit = async () => {
+        if (!editingRecord) return;
+        
+        setIsSaving(true);
+        try {
+            const response = await axios.put(`/attendance/${editingRecord.id}`, editFormData);
+            if (response.data.success) {
+                // Refresh the records
+                fetchAllAttendanceRecords(allPage);
+                setShowEditModal(false);
+                // Show success message
+                alert('Attendance record updated successfully');
+            } else {
+                throw new Error(response.data.message || 'Failed to update record');
+            }
+        } catch (error) {
+            console.error('Error updating attendance record:', error);
+            alert(error.response?.data?.message || 'Failed to update attendance record');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const fetchAllAttendanceRecords = useCallback(async (page = 1) => {
         setAllLoading(true);
@@ -167,6 +333,8 @@ const AttendanceDashboard = () => {
         const dates = getCurrentMonthDates();
         setDateFrom(dates.start);
         setDateTo(dates.end);
+        setTempDateFrom(dates.start);
+        setTempDateTo(dates.end);
         setSearchInput('');
         setStatusFilter('all');
     }, []);
@@ -247,7 +415,16 @@ const AttendanceDashboard = () => {
             formData.append('file', selectedFile);
             formData.append('period_start', detectedPeriod.period_start);
             formData.append('period_end', detectedPeriod.period_end);
-            formData.append('import_type', 'weekly');
+            
+            // Calculate the number of days between start and end dates
+            const startDate = new Date(detectedPeriod.period_start);
+            const endDate = new Date(detectedPeriod.period_end);
+            const timeDiff = endDate - startDate;
+            const dayDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+            
+            // If the date range is more than 14 days, consider it a monthly import
+            const importType = dayDiff > 14 ? 'monthly' : 'weekly';
+            formData.append('import_type', importType);
             
             const response = await axios.post('/attendance/import', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
@@ -294,9 +471,12 @@ const AttendanceDashboard = () => {
                 // Backend now returns items array directly in data field
                 const items = response.data.data || [];
                 setImportHistory(items);
+            } else {
+                throw new Error(response.data?.message || 'Failed to load import history');
             }
         } catch (error) {
-            console.error('Failed to fetch import history:', error);
+            console.error('Error fetching import history:', error);
+            // You might want to show an error message to the user here
         } finally {
             setImportHistoryLoading(false);
         }
@@ -396,6 +576,38 @@ const AttendanceDashboard = () => {
                 <Col xl={2} lg={4} md={6} className="mb-3">
                     <Card className="text-center" style={{ minHeight: '150px' }}>
                         <Card.Body className="d-flex flex-column justify-content-center">
+                            <div className="display-6 fw-bold text-info mb-1">
+                                {attendanceData.statistics?.overtime_count || 0}
+                            </div>
+                            <div className="text-muted small">Overtime</div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col xl={2} lg={4} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '150px' }}>
+                        <Card.Body className="d-flex flex-column justify-content-center">
+                            <div className="display-6 fw-bold text-primary mb-1">
+                                {attendanceData.statistics?.undertime_count || 0}
+                            </div>
+                            <div className="text-muted small">Undertime</div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col xl={2} lg={4} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '150px' }}>
+                        <Card.Body className="d-flex flex-column justify-content-center">
+                            <div className="display-6 fw-bold text-primary mb-1">
+                                {attendanceData.statistics?.on_leave_count || 0}
+                            </div>
+                            <div className="text-muted small">On Leave</div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
+            <Row className="mb-4">
+                <Col xl={3} lg={6} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '120px' }}>
+                        <Card.Body className="d-flex flex-column justify-content-center">
                             <div className="display-6 fw-bold text-success mb-1">
                                 {attendanceData.statistics?.attendance_rate || 0}%
                             </div>
@@ -403,8 +615,8 @@ const AttendanceDashboard = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col xl={2} lg={4} md={6} className="mb-3">
-                    <Card className="text-center" style={{ minHeight: '150px' }}>
+                <Col xl={3} lg={6} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '120px' }}>
                         <Card.Body className="d-flex flex-column justify-content-center">
                             <div className="display-6 fw-bold text-danger mb-1">
                                 {attendanceData.statistics?.absent_count || 0}
@@ -413,13 +625,23 @@ const AttendanceDashboard = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col xl={2} lg={4} md={6} className="mb-3">
-                    <Card className="text-center" style={{ minHeight: '150px' }}>
+                <Col xl={3} lg={6} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '120px' }}>
                         <Card.Body className="d-flex flex-column justify-content-center">
                             <div className="display-6 fw-bold text-info mb-1">
                                 {new Date().toLocaleDateString('en-US', { month: 'short' })}
                             </div>
                             <div className="text-muted small">This Month</div>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col xl={3} lg={6} md={6} className="mb-3">
+                    <Card className="text-center" style={{ minHeight: '120px' }}>
+                        <Card.Body className="d-flex flex-column justify-content-center">
+                            <div className="display-6 fw-bold text-secondary mb-1">
+                                {attendanceData.statistics?.total_records || 0}
+                            </div>
+                            <div className="text-muted small">Total Records</div>
                         </Card.Body>
                     </Card>
                 </Col>
@@ -430,9 +652,90 @@ const AttendanceDashboard = () => {
                 <Col lg={12}>
                     <Card>
                         <Card.Body>
+                            {/* Current Date Range Display */}
+                            <div className="mb-2 d-flex align-items-center">
+                                <FaCalendarAlt className="text-primary me-2" />
+                                <span className="fw-bold text-primary">{getDateRangeText()}</span>
+                            </div>
+
+                            {/* Quick Date Range Presets */}
+                            <Row className="mb-3">
+                                <Col>
+                                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                                        <span className="small fw-bold text-muted me-2">Quick Select:</span>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('today')}
+                                            className="px-3"
+                                        >
+                                            Today
+                                        </Button>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('yesterday')}
+                                            className="px-3"
+                                        >
+                                            Yesterday
+                                        </Button>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('this_week')}
+                                            className="px-3"
+                                        >
+                                            This Week
+                                        </Button>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('last_week')}
+                                            className="px-3"
+                                        >
+                                            Last Week
+                                        </Button>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('this_month')}
+                                            className="px-3"
+                                        >
+                                            This Month
+                                        </Button>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('last_month')}
+                                            className="px-3"
+                                        >
+                                            Last Month
+                                        </Button>
+                                        <Button 
+                                            variant="outline-secondary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('last_7_days')}
+                                            className="px-3"
+                                        >
+                                            Last 7 Days
+                                        </Button>
+                                        <Button 
+                                            variant="outline-secondary" 
+                                            size="sm"
+                                            onClick={() => applyDatePreset('last_30_days')}
+                                            className="px-3"
+                                        >
+                                            Last 30 Days
+                                        </Button>
+                                    </div>
+                                </Col>
+                            </Row>
+
+                            <hr className="my-3" />
+
                             <Row className="g-3">
                                 {/* Date Range */}
-                                <Col md={3}>
+                                <Col md={2}>
                                     <Form.Group>
                                         <Form.Label className="small fw-bold mb-1">
                                             <FaCalendarAlt className="me-1" size={12} />
@@ -441,12 +744,13 @@ const AttendanceDashboard = () => {
                                         <Form.Control
                                             type="date"
                                             size="sm"
-                                            value={dateFrom}
-                                            onChange={(e) => setDateFrom(e.target.value)}
+                                            value={tempDateFrom}
+                                            onChange={(e) => setTempDateFrom(e.target.value)}
+                                            onKeyPress={handleDateKeyPress}
                                         />
                                     </Form.Group>
                                 </Col>
-                                <Col md={3}>
+                                <Col md={2}>
                                     <Form.Group>
                                         <Form.Label className="small fw-bold mb-1">
                                             <FaCalendarAlt className="me-1" size={12} />
@@ -455,14 +759,29 @@ const AttendanceDashboard = () => {
                                         <Form.Control
                                             type="date"
                                             size="sm"
-                                            value={dateTo}
-                                            onChange={(e) => setDateTo(e.target.value)}
+                                            value={tempDateTo}
+                                            onChange={(e) => setTempDateTo(e.target.value)}
+                                            onKeyPress={handleDateKeyPress}
                                         />
                                     </Form.Group>
                                 </Col>
                                 
+                                {/* Apply Button */}
+                                <Col md={1} className="d-flex align-items-end">
+                                    <Button 
+                                        variant={datesChanged ? "primary" : "outline-secondary"}
+                                        size="sm"
+                                        onClick={applyDateRange}
+                                        disabled={!datesChanged}
+                                        className="w-100"
+                                        title="Apply date range"
+                                    >
+                                        Apply
+                                    </Button>
+                                </Col>
+                                
                                 {/* Search */}
-                                <Col md={3}>
+                                <Col md={4}>
                                     <Form.Group>
                                         <Form.Label className="small fw-bold mb-1">
                                             <FaSearch className="me-1" size={12} />
@@ -492,6 +811,8 @@ const AttendanceDashboard = () => {
                                             <option value="Absent">Absent</option>
                                             <option value="Late">Late</option>
                                             <option value="On Leave">On Leave</option>
+                                            <option value="Undertime">Undertime</option>
+                                            <option value="Overtime">Overtime</option>
                                             <option value="Holiday (No Work)">Holiday (No Work)</option>
                                             <option value="Holiday (Worked)">Holiday (Worked)</option>
                                         </Form.Select>
@@ -590,6 +911,7 @@ const AttendanceDashboard = () => {
                                 <th>Status</th>
                                 <th>Holiday Type</th>
                                 <th>Total Hours</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -646,6 +968,16 @@ const AttendanceDashboard = () => {
                                     </td>
                                     <td>
                                         <span className="fw-medium">{row.total_hours ? `${row.total_hours}h` : '--'}</span>
+                                    </td>
+                                    <td>
+                                        <Button 
+                                            variant="outline-primary" 
+                                            size="sm" 
+                                            onClick={() => handleEditClick(row)}
+                                            title="Edit record"
+                                        >
+                                            <FaEdit size={14} />
+                                        </Button>
                                     </td>
                                 </tr>
                             ))}
@@ -855,6 +1187,97 @@ const AttendanceDashboard = () => {
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowImportHistoryModal(false)}>
                         Close
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Edit Attendance Modal */}
+            <Modal show={showEditModal} onHide={() => setShowEditModal(false)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title>Edit Attendance Record</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {editingRecord && (
+                        <Form>
+                            <Form.Group className="mb-3">
+                                <Form.Label>Employee</Form.Label>
+                                <Form.Control 
+                                    type="text" 
+                                    value={`${editingRecord.employee?.first_name || ''} ${editingRecord.employee?.last_name || ''}`}
+                                    disabled 
+                                />
+                            </Form.Group>
+                            <Form.Group className="mb-3">
+                                <Form.Label>Date</Form.Label>
+                                <Form.Control 
+                                    type="text" 
+                                    value={format(new Date(editingRecord.date), 'MMM dd, yyyy (EEEE)')}
+                                    disabled 
+                                />
+                            </Form.Group>
+                            <Row>
+                                <Col md={6}>
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>Time In</Form.Label>
+                                        <Form.Control
+                                            type="time"
+                                            name="time_in"
+                                            value={editFormData.time_in || ''}
+                                            onChange={handleEditFormChange}
+                                            required
+                                        />
+                                    </Form.Group>
+                                </Col>
+                                <Col md={6}>
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>Time Out</Form.Label>
+                                        <Form.Control
+                                            type="time"
+                                            name="time_out"
+                                            value={editFormData.time_out || ''}
+                                            onChange={handleEditFormChange}
+                                        />
+                                    </Form.Group>
+                                </Col>
+                            </Row>
+                            <Form.Group className="mb-3">
+                                <Form.Label>Status</Form.Label>
+                                <Form.Select
+                                    name="status"
+                                    value={editFormData.status}
+                                    onChange={handleEditFormChange}
+                                >
+                                    <option value="">Select Status</option>
+                                    <option value="Present">Present</option>
+                                    <option value="Absent">Absent</option>
+                                    <option value="Late">Late</option>
+                                    <option value="On Leave">On Leave</option>
+                                    <option value="Undertime">Undertime</option>
+                                    <option value="Overtime">Overtime</option>
+                                    <option value="Holiday (No Work)">Holiday (No Work)</option>
+                                    <option value="Holiday (Worked)">Holiday (Worked)</option>
+                                </Form.Select>
+                            </Form.Group>
+                            <Form.Group className="mb-3">
+                                <Form.Label>Remarks</Form.Label>
+                                <Form.Control
+                                    as="textarea"
+                                    rows={3}
+                                    name="remarks"
+                                    value={editFormData.remarks}
+                                    onChange={handleEditFormChange}
+                                    placeholder="Enter any additional remarks"
+                                />
+                            </Form.Group>
+                        </Form>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowEditModal(false)} disabled={isSaving}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" onClick={handleSaveEdit} disabled={isSaving}>
+                        {isSaving ? 'Saving...' : 'Save Changes'}
                     </Button>
                 </Modal.Footer>
             </Modal>

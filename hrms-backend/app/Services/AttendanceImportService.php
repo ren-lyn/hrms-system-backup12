@@ -540,6 +540,17 @@ class AttendanceImportService
             
             Log::info("Total dates in period: " . count($dates));
             
+            // Check if this is the first import by checking if there are any attendance records
+            $hasExistingRecords = Attendance::exists();
+            
+            // If this is the first import, don't mark anyone as absent
+            if (!$hasExistingRecords) {
+                Log::info("First import detected. Skipping absent marking for initial import.");
+                $this->importResults['absent_marked'] = 0;
+                $this->importResults['skipped'] += count($allEmployees) * count($dates);
+                return;
+            }
+            
             $absentCount = 0;
             
             // For each employee, check each date

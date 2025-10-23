@@ -8,6 +8,9 @@ use App\Models\EmployeeProfile;
 use App\Models\AttendanceImport;
 use App\Services\AttendanceImportService;
 use App\Models\User;
+use DateTime;
+use DatePeriod;
+use DateInterval;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +43,7 @@ class AttendanceController extends Controller
 
             // Employee-centric view to include employees with no records in the range
             $employeesQuery = EmployeeProfile::query()
-                ->select('employee_profiles.id', 'employee_profiles.first_name', 'employee_profiles.last_name', 'employee_profiles.position', 'employee_profiles.department')
+                ->select('employee_profiles.id', 'employee_profiles.employee_id', 'employee_profiles.first_name', 'employee_profiles.last_name', 'employee_profiles.position', 'employee_profiles.department')
                 ->join('users', 'users.id', '=', 'employee_profiles.user_id')
                 ->where('users.role_id', '!=', 5); // Exclude Applicants
 
@@ -91,6 +94,7 @@ class AttendanceController extends Controller
                     $recentAttendanceItems[] = [
                         'employee' => [
                             'id' => $emp->id,
+                            'employee_id' => $emp->employee_id,
                             'first_name' => $emp->first_name,
                             'last_name' => $emp->last_name,
                             'position' => $emp->position,
@@ -138,6 +142,7 @@ class AttendanceController extends Controller
                         $recentAttendanceItems[] = [
                             'employee' => [
                                 'id' => $emp->id,
+                                'employee_id' => $emp->employee_id,
                                 'first_name' => $emp->first_name,
                                 'last_name' => $emp->last_name,
                                 'position' => $emp->position,
@@ -162,25 +167,117 @@ class AttendanceController extends Controller
             $profilesJoinCount = EmployeeProfile::join('users', 'users.id', '=', 'employee_profiles.user_id')
                 ->where('users.role_id', '!=', 5)
                 ->count();
-            $baseQueryForStats = Attendance::whereBetween('date', [$dateFrom, $dateTo])
-                ->whereDate('date', '>=', '2000-01-01');
-            if ($search) {
-                $baseQueryForStats->whereHas('employee', function($q) use ($search) {
-                    $q->where('first_name', 'LIKE', "%{$search}%")
-                      ->orWhere('last_name', 'LIKE', "%{$search}%")
-                      ->orWhere('position', 'LIKE', "%{$search}%")
-                      ->orWhere('department', 'LIKE', "%{$search}%");
-                });
+            // Get all active employees (excluding those with role_id = 5)
+            $activeEmployees = User::where('role_id', '!=', 5)
+                ->whereHas('employeeProfile')
+                ->with('employeeProfile')
+                ->get();
+
+            $totalEmployees = $activeEmployees->count();
+            $totalWorkDays = 0;
+            $presentCount = 0;
+            $absentCount = 0;
+            $lateCount = 0;
+            $onLeaveCount = 0;
+            $holidayNoWorkCount = 0;
+            $undertimeCount = 0;
+            $overtimeCount = 0;
+
+            // Get attendance records for all employees in the date range
+            $attendanceRecords = Attendance::whereBetween('date', [$dateFrom, $dateTo])
+                ->whereDate('date', '>=', '2000-01-01')
+                ->get();
+
+            // Group attendance by employee and date
+            $attendanceByEmployeeAndDate = [];
+            foreach ($attendanceRecords as $record) {
+                $attendanceByEmployeeAndDate[$record->employee_id][$record->date->format('Y-m-d')] = $record;
             }
-            if ($status && $status !== 'all') {
-                $baseQueryForStats->where('status', $status);
+
+            // Loop through each day in the date range
+            $currentDate = new DateTime($dateFrom);
+            $endDate = new DateTime($dateTo);
+            $dateRange = new DatePeriod($currentDate, new DateInterval('P1D'), $endDate->modify('+1 day'));
+
+            $dates = [];
+            foreach ($dateRange as $date) {
+                $dates[] = $date->format('Y-m-d');
             }
-            $totalRecords = (clone $baseQueryForStats)->count();
-            $presentCount = (clone $baseQueryForStats)->whereIn('status', ['Present','Late','Holiday (Worked)'])->count();
-            $absentCount = (clone $baseQueryForStats)->where('status', 'Absent')->count();
-            $lateCount = (clone $baseQueryForStats)->where('status', 'Late')->count();
-            $onLeaveCount = (clone $baseQueryForStats)->where('status', 'On Leave')->count();
-            $holidayNoWorkCount = (clone $baseQueryForStats)->where('status', 'Holiday (No Work)')->count();
+
+            // For recent attendance items, take the latest record for each employee
+            $recentAttendanceItems = [];
+            foreach ($activeEmployees as $employee) {
+                $latestRecord = null;
+                $employeeId = $employee->id;
+                
+                // Find the latest attendance record for this employee in the date range
+                if (isset($attendanceByEmployeeAndDate[$employeeId])) {
+                    $employeeRecords = $attendanceByEmployeeAndDate[$employeeId];
+                    krsort($employeeRecords); // Sort by date descending
+                    $latestRecord = reset($employeeRecords);
+                }
+
+                if ($latestRecord) {
+                    $recentAttendanceItems[] = [
+                        'employee' => [
+                            'id' => $employeeId,
+                            'employee_id' => $employee->employee_id,
+                            'first_name' => $employee->first_name,
+                            'last_name' => $employee->last_name,
+                            'position' => $employee->position,
+                            'department' => $employee->department,
+                        ],
+                        'date' => $latestRecord->date?->toDateString(),
+                        'clock_in' => $latestRecord->clock_in?->format('H:i:s'),
+                        'clock_out' => $latestRecord->clock_out?->format('H:i:s'),
+                        'total_hours' => (float) ($latestRecord->total_hours ?? 0),
+                        'status' => $latestRecord->status,
+                        'remarks' => $latestRecord->remarks ?? null,
+                    ];
+                }
+            }
+
+            // Sort recent attendance by date descending and take first 10
+            usort($recentAttendanceItems, function($a, $b) {
+                return strtotime($b['date']) - strtotime($a['date']);
+            });
+            $recentAttendanceItems = array_slice($recentAttendanceItems, 0, 10);
+
+            // Count attendance statuses - only count actual records, don't assume absences
+            foreach ($attendanceRecords as $record) {
+                switch ($record->status) {
+                    case 'Present':
+                        $presentCount++;
+                        break;
+                    case 'Late':
+                        $lateCount++;
+                        $presentCount++; // Late is also considered present
+                        break;
+                    case 'Undertime':
+                        $undertimeCount++;
+                        $presentCount++; // Undertime is also considered present
+                        break;
+                    case 'Overtime':
+                        $overtimeCount++;
+                        $presentCount++; // Overtime is also considered present
+                        break;
+                    case 'On Leave':
+                        $onLeaveCount++;
+                        break;
+                    case 'Holiday (No Work)':
+                        $holidayNoWorkCount++;
+                        break;
+                    case 'Holiday (Worked)':
+                        $presentCount++;
+                        break;
+                    case 'Absent':
+                        $absentCount++;
+                        break;
+                }
+            }
+
+
+            $totalRecords = $presentCount + $absentCount + $onLeaveCount + $holidayNoWorkCount;
 
             // Get daily attendance summary for chart (without search/status filters)
             $dailySummary = Attendance::selectRaw('date, status, COUNT(*) as count')
@@ -196,13 +293,19 @@ class AttendanceController extends Controller
                 'data' => [
                     'statistics' => [
                         'total_employees' => $totalEmployees,
+                        'total_work_days' => $totalWorkDays,
                         'total_records' => $totalRecords,
                         'present_count' => $presentCount,
                         'absent_count' => $absentCount,
                         'late_count' => $lateCount,
                         'on_leave_count' => $onLeaveCount,
+                        'undertime_count' => $undertimeCount,
+                        'overtime_count' => $overtimeCount,
                         'holiday_no_work_count' => $holidayNoWorkCount,
-                        'attendance_rate' => $totalRecords > 0 ? round(($presentCount + $lateCount) / $totalRecords * 100, 1) : 0
+                        'attendance_rate' => $totalRecords > 0 ? round(($presentCount / $totalRecords) * 100, 1) : 0,
+                        'overtime' => $overtimeCount,
+                        'undertime' => $undertimeCount,
+                        'on_leave' => $onLeaveCount
                     ],
                     'recent_attendance' => $recentAttendanceItems,
                     'pagination' => [
@@ -262,7 +365,7 @@ class AttendanceController extends Controller
             ]);
 
             $query = Attendance::with(['employee' => function($q) {
-                $q->select('id', 'first_name', 'last_name', 'position', 'department');
+                $q->select('id', 'employee_id', 'first_name', 'last_name', 'position', 'department');
             }])
             ->whereBetween('date', [$validated['date_from'], $validated['date_to']])
             ->orderBy('date')
@@ -278,7 +381,7 @@ class AttendanceController extends Controller
                     $employeeName = trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''));
 
                     fputcsv($handle, [
-                        $employee->id ?? '',
+                        $employee->employee_id ?? $employee->id ?? '',
                         $employeeName,
                         $employee->department ?? '',
                         $employee->position ?? '',
@@ -314,7 +417,7 @@ class AttendanceController extends Controller
     {
         try {
             $query = Attendance::with(['employee' => function($q) {
-                $q->select('id', 'first_name', 'last_name', 'position', 'department');
+                $q->select('id', 'employee_id', 'first_name', 'last_name', 'position', 'department');
             }]);
 
             // Apply filters
@@ -464,11 +567,20 @@ class AttendanceController extends Controller
                 ], 500);
             }
 
+            // Calculate the number of days between start and end dates
+            $startDate = new \DateTime($request->period_start);
+            $endDate = new \DateTime($request->period_end);
+            $interval = $startDate->diff($endDate);
+            $dayDiff = $interval->days + 1; // +1 to include both start and end dates
+            
+            // If the date range is more than 14 days, consider it a monthly import
+            $importType = $dayDiff > 14 ? 'monthly' : 'weekly';
+            
             // Import data using the service with options
             $results = $this->importService->importFromExcel($fullPath, [
                 'period_start' => $request->period_start,
                 'period_end' => $request->period_end,
-                'import_type' => $request->import_type ?? 'weekly',
+                'import_type' => $importType, // Use the calculated import type
                 'filename' => $file->getClientOriginalName(),
                 'user_id' => Auth::id()
             ]);

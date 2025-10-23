@@ -6,7 +6,7 @@ import useUserProfile from '../../../hooks/useUserProfile';
 import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
-  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt
+  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt, FaFileAlt, FaChartBar
 } from "react-icons/fa";
 
 
@@ -43,7 +43,7 @@ const Sidebar = () => {
           <FaUsers /> <span>Employee Records</span>
         </NavLink>
         <NavLink
-          to="/hr-assistant/payroll"
+          to="payroll"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >
           <FaMoneyCheckAlt /> <span>Payroll</span>
@@ -97,10 +97,17 @@ const Sidebar = () => {
           <FaUserPlus /> <span>Onboarding</span>
         </NavLink>
         <NavLink
-          to="/hr-assistant/reports"
+          
+          to="report-generation"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
         >
-          <FaChartLine /> <span>Report Generation</span>
+          <FaFileAlt /> <span>Report Generation</span>
+        </NavLink>
+        <NavLink
+          to="predictive-turnover-analytics"
+          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
+        >
+          <FaChartBar /> <span>Predictive Turnover Analytics</span>
         </NavLink>
         <button onClick={handleLogout} className="hrms-unified-nav-link hrms-unified-logout">
           <FaSignOutAlt /> <span>Logout</span>
