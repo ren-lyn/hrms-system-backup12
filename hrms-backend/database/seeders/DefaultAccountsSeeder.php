@@ -62,16 +62,16 @@ class DefaultAccountsSeeder extends Seeder
         $employee = User::firstOrCreate(
             ['email' => 'employee@company.com'],
             [
-                'first_name' => 'Emily',
-                'last_name' => 'Reyes',
+                'first_name' => 'Donna Mae',
+                'last_name' => 'Cabuyao',
                 'password' => Hash::make('password123'),
                 'role_id' => $roles['Employee'] ?? 4,
             ]
         );
         $employee->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1004',
-            'first_name' => 'Emily',
-            'last_name' => 'Reyes',
+            'first_name' => 'Donna Mae',
+            'last_name' => 'Cabuyao',
             'email' => 'employee@company.com',
             'position' => 'Staff',
             'department' => 'Operations',

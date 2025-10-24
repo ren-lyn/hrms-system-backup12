@@ -20,6 +20,7 @@ const HeaderBar = () => {
   if (pathname.includes('employee-records')) pageTitle = 'Employee Records';
   else if (pathname.includes('payroll')) pageTitle = 'Payroll';
   else if (pathname.includes('attendance')) pageTitle = 'Attendance';
+  else if (pathname.includes('leave/tracker')) pageTitle = 'Leave Tracker';
   else if (pathname.includes('leave')) pageTitle = 'Leave Management';
   else if (pathname.includes('my-calendar')) pageTitle = 'My Calendar';
   else if (pathname.includes('cash-advances')) pageTitle = 'Cash Advance';

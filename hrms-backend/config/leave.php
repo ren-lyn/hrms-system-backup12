@@ -13,12 +13,39 @@ return [
     
     'entitlements' => [
         'Vacation Leave' => 5,
-        'Sick Leave' => 5,
-        'Emergency Leave' => 5,
+        'Sick Leave' => 8,
+        'Emergency Leave' => 8,
         'Personal Leave' => 5,
         'Bereavement Leave' => 5,
         'Maternity Leave' => 105,
         'Paternity Leave' => 7,
+        'Leave for Victims of Violence Against Women and Their Children (VAWC)' => 10,
+        "Women's Special Leave" => 60,
+        'Parental Leave' => 7,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | With Pay Days Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Defines the maximum number of "With Pay" days for each leave type.
+    | When an employee requests more days than the with_pay limit,
+    | the excess days are automatically marked as "Without Pay".
+    |
+    */
+    
+    'with_pay_days' => [
+        'Sick Leave' => 8,
+        'Emergency Leave' => 8,
+        'Vacation Leave' => 5,
+        'Maternity Leave' => 105,
+        'Paternity Leave' => 7,
+        'Leave for Victims of Violence Against Women and Their Children (VAWC)' => 10,
+        "Women's Special Leave" => 60,
+        'Parental Leave' => 7,
+        'Personal Leave' => 5,
+        'Bereavement Leave' => 5,
     ],
 
     /*

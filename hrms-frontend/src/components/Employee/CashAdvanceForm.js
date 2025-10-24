@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Form, Button, Alert } from 'react-bootstrap';
 import { ArrowLeft, Calendar, User, Building2, DollarSign } from 'lucide-react';
 import axios from '../../axios';
+import ConfirmationModal from '../common/ConfirmationModal';
+import ValidationErrorModal from '../common/ValidationErrorModal';
 import './CashAdvanceForm.css';
 
 const CashAdvanceForm = () => {
@@ -17,6 +19,9 @@ const CashAdvanceForm = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
 
   useEffect(() => {
     fetchEmployeeData();
@@ -89,22 +94,66 @@ const CashAdvanceForm = () => {
   };
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    // Apply 5-digit limit for amountCA and remCA fields
+    if (field === 'amountCA' || field === 'remCA') {
+      // Remove any non-digit characters and limit to 5 digits
+      const numericValue = value.replace(/\D/g, '');
+      if (numericValue.length > 5) {
+        return; // Don't update if more than 5 digits
+      }
+      setFormData(prev => ({
+        ...prev,
+        [field]: numericValue
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+  };
+
+  const validateForm = () => {
+    // Check required fields
+    if (!formData.amountCA || !formData.reason) {
+      setValidationMessage('Please fill in all required fields.');
+      setShowValidationModal(true);
+      return false;
+    }
+
+    // Check amount validation
+    const amount = parseFloat(formData.amountCA);
+    if (isNaN(amount) || amount <= 0) {
+      setValidationMessage('Please enter a valid amount greater than 0.');
+      setShowValidationModal(true);
+      return false;
+    }
+
+    if (amount > 999999.99) {
+      setValidationMessage('The amount must not be greater than 999,999.99.');
+      setShowValidationModal(true);
+      return false;
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.amountCA || !formData.reason) {
-      showAlert('Please fill in all required fields.', 'warning');
+    // Validate form first
+    if (!validateForm()) {
       return;
     }
 
+    // Show confirmation modal instead of submitting directly
+    setShowConfirmationModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
     try {
       setSubmitting(true);
+      setShowConfirmationModal(false);
       
       const submitData = {
         reason: formData.reason,
@@ -129,11 +178,27 @@ const CashAdvanceForm = () => {
       
     } catch (error) {
       console.error('Error submitting cash advance request:', error);
-      const errorMessage = error.response?.data?.message || 'Error submitting request. Please try again.';
-      showAlert(errorMessage, 'danger');
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || 'Error submitting request. Please try again.';
+      
+      // Check if it's a new hire validation error
+      if (errorMessage.includes('must be employed for at least 6 months')) {
+        setValidationMessage(errorMessage);
+        setShowValidationModal(true);
+      } else {
+        showAlert(errorMessage, 'danger');
+      }
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancelSubmit = () => {
+    setShowConfirmationModal(false);
+  };
+
+  const handleCloseValidationModal = () => {
+    setShowValidationModal(false);
+    setValidationMessage('');
   };
 
   const handleCancel = () => {
@@ -166,6 +231,26 @@ const CashAdvanceForm = () => {
         </Alert>
       )}
 
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        show={showConfirmationModal}
+        title="Do you want to submit this?"
+        message="Do you really want to submit this cash advance request? This action cannot be undone."
+        confirmText="Submit"
+        cancelText="Cancel"
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelSubmit}
+        confirmButtonColor="#28a745"
+        cancelButtonColor="#6c757d"
+      />
+
+      {/* Validation Error Modal */}
+      <ValidationErrorModal
+        show={showValidationModal}
+        message={validationMessage}
+        onClose={handleCloseValidationModal}
+      />
+
       <Form onSubmit={handleSubmit} className="responsive-form-container" style={{ maxWidth: '100%', margin: '0 auto' }}>
         {/* Basic Information Card */}
         <div className="responsive-card" style={{ marginBottom: '20px' }}>
@@ -188,13 +273,12 @@ const CashAdvanceForm = () => {
                   <Form.Label className="field-label text-responsive-md">Amount C.A. : *</Form.Label>
                   <div className="underline-input">
                     <Form.Control
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="text"
                       value={formData.amountCA}
                       onChange={(e) => handleInputChange('amountCA', e.target.value)}
                       className="underlined-input responsive-form-control"
                       placeholder="Enter amount"
+                      maxLength="5"
                       required
                     />
                   </div>
@@ -221,7 +305,8 @@ const CashAdvanceForm = () => {
                       value={formData.remCA}
                       onChange={(e) => handleInputChange('remCA', e.target.value)}
                       className="underlined-input responsive-form-control"
-                      placeholder="Remarks (optional)"
+                      placeholder="Enter amount"
+                      maxLength="5"
                     />
                   </div>
                 </div>

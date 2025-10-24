@@ -17,6 +17,27 @@ use Illuminate\Support\Facades\Log;
 class CashAdvanceController extends Controller
 {
     /**
+     * Check if employee is a new hire (less than 6 months from hire date)
+     */
+    private function isNewHire($employeeId)
+    {
+        $user = User::with('employeeProfile')->find($employeeId);
+        if (!$user || !$user->employeeProfile) {
+            return false; // If no profile, assume not a new hire
+        }
+        
+        $hireDate = $user->employeeProfile->hire_date;
+        if (!$hireDate) {
+            return false; // If no hire date, assume not a new hire
+        }
+        
+        $hireDate = Carbon::parse($hireDate);
+        $sixMonthsAgo = Carbon::now()->subMonths(6);
+        
+        return $hireDate->gt($sixMonthsAgo);
+    }
+
+    /**
      * Submit a new cash advance request
      */
     public function store(Request $request)
@@ -32,6 +53,13 @@ class CashAdvanceController extends Controller
         // For testing without authentication, use first user if no auth
         if (!$user) {
             $user = \App\Models\User::first();
+        }
+        
+        // Check if employee is a new hire (less than 6 months from hire date)
+        if ($this->isNewHire($user->id)) {
+            return response()->json([
+                'error' => 'You must be employed for at least 6 months before requesting a cash advance.'
+            ], 422);
         }
         
         // Get employee profile for department info

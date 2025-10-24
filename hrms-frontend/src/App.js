@@ -19,6 +19,7 @@ const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 const HrAssistantLayout = lazy(() => import('./pages/HrAssistant/HrAssistantLayout'));
 const EmployeeRecords = lazy(() => import('./pages/HrAssistant/EmployeeRecords'));
 const LeaveManagement = lazy(() => import('./components/HrAssistant/LeaveManagement'));
+const LeaveTracker = lazy(() => import('./components/HrAssistant/LeaveTracker'));
 const CashAdvanceManagement = lazy(() => import('./components/HrAssistant/CashAdvanceManagement'));
 const LeaveApplicationForm = lazy(() => import('./components/Employee/LeaveApplicationForm'));
 const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
@@ -85,6 +86,7 @@ function App() {
           <Route index element={<StandaloneAssistantDashboard />} />
           <Route path="employee-records" element={<EmployeeRecords />} />
           <Route path="leave" element={<LeaveManagement />} />
+          <Route path="leave/tracker" element={<LeaveTracker />} />
           <Route path="my-calendar" element={<MyCalendar />} />
           <Route path="cash-advances" element={<CashAdvanceManagement />} />
           <Route path="evaluation" element={<EmployeeEvaluationList />} />

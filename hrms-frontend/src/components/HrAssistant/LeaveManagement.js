@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert, Nav, Tab } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, Check, X, FileText, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Search, Calendar, Download, Eye, Check, X, FileText, Clock } from 'lucide-react';
 import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
 import jsPDF from 'jspdf';
 import axios from '../../axios';
@@ -274,8 +274,7 @@ const LeaveManagement = () => {
       pdf.text(`Generated on: ${reportDate}`, margin, yPosition);
       yPosition += 5;
       
-      const tabLabel = activeTab === 'pending' ? 'Pending Requests' : 
-                      activeTab === 'approved' ? 'Approved Requests' : 'Rejected Requests';
+      const tabLabel = 'Pending Requests';
       pdf.text(`Filter: ${tabLabel}`, margin, yPosition);
       yPosition += 5;
       
@@ -693,15 +692,8 @@ const LeaveManagement = () => {
                          request.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          request.department?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Filter by tab status
-    let matchesTab = false;
-    if (activeTab === 'pending') {
-      matchesTab = request.status === 'manager_approved' || request.status === 'manager_rejected';
-    } else if (activeTab === 'approved') {
-      matchesTab = request.status === 'approved';
-    } else if (activeTab === 'rejected') {
-      matchesTab = request.status === 'rejected';
-    }
+    // Filter by tab status - only pending requests
+    const matchesTab = request.status === 'manager_approved' || request.status === 'manager_rejected';
     
     // Filter by period
     let matchesPeriod = true;
@@ -771,14 +763,10 @@ const LeaveManagement = () => {
             <Card.Body>
               <div className="d-flex align-items-center mb-3">
                 <div className="stats-icon me-3">
-                  {activeTab === 'pending' ? <Clock size={20} /> : 
-                   activeTab === 'approved' ? <CheckCircle size={20} /> : 
-                   <XCircle size={20} />}
+                  <Clock size={20} />
                 </div>
                 <h6 className="mb-0">
-                  {activeTab === 'pending' ? 'Pending Requests' : 
-                   activeTab === 'approved' ? 'Approved Requests' : 
-                   'Rejected Requests'}
+                  Pending Requests
                 </h6>
               </div>
               <Row className="text-center">
@@ -786,11 +774,7 @@ const LeaveManagement = () => {
                   <div className="stat-item">
                     <div className="stat-label">Total</div>
                     <div className="stat-value">
-                      {activeTab === 'pending' ? 
-                        leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length :
-                        activeTab === 'approved' ? 
-                        leaveRequests.filter(r => r.status === 'approved').length :
-                        leaveRequests.filter(r => r.status === 'rejected').length}
+                      {leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length}
                     </div>
                   </div>
                 </Col>
@@ -803,9 +787,7 @@ const LeaveManagement = () => {
                         const currentYear = new Date().getFullYear();
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at);
-                          const matchesTab = activeTab === 'pending' ? 
-                            (r.status === 'manager_approved' || r.status === 'manager_rejected') :
-                            activeTab === 'approved' ? r.status === 'approved' : r.status === 'rejected';
+                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
                           return matchesTab && requestDate.getMonth() === currentMonth && requestDate.getFullYear() === currentYear;
                         }).length;
                       })()}
@@ -822,9 +804,7 @@ const LeaveManagement = () => {
                         const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at);
-                          const matchesTab = activeTab === 'pending' ? 
-                            (r.status === 'manager_approved' || r.status === 'manager_rejected') :
-                            activeTab === 'approved' ? r.status === 'approved' : r.status === 'rejected';
+                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
                           return matchesTab && requestDate >= startOfWeek && requestDate <= endOfWeek;
                         }).length;
                       })()}
@@ -839,9 +819,7 @@ const LeaveManagement = () => {
                         const today = new Date().toDateString();
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at).toDateString();
-                          const matchesTab = activeTab === 'pending' ? 
-                            (r.status === 'manager_approved' || r.status === 'manager_rejected') :
-                            activeTab === 'approved' ? r.status === 'approved' : r.status === 'rejected';
+                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
                           return matchesTab && requestDate === today;
                         }).length;
                       })()}
@@ -856,17 +834,12 @@ const LeaveManagement = () => {
           <Card className="stats-card">
             <Card.Body>
               <h6 className="mb-3">
-                {activeTab === 'pending' ? 'Pending by Leave Type' : 
-                 activeTab === 'approved' ? 'Approved by Leave Type' : 
-                 'Rejected by Leave Type'}
+                Pending by Leave Type
               </h6>
               <div className="leave-types" style={{ maxHeight: '200px', overflowY: 'auto' }}>
                 {(() => {
                   const filteredRequests = leaveRequests.filter(r => {
-                    if (activeTab === 'pending') return r.status === 'manager_approved' || r.status === 'manager_rejected';
-                    if (activeTab === 'approved') return r.status === 'approved';
-                    if (activeTab === 'rejected') return r.status === 'rejected';
-                    return false;
+                    return r.status === 'manager_approved' || r.status === 'manager_rejected';
                   });
                   
                   const typeCounts = {};
@@ -887,13 +860,11 @@ const LeaveManagement = () => {
                             style={{
                               width: `${total > 0 ? (count / total) * 100 : 0}%`,
                               height: '100%',
-                              backgroundColor: activeTab === 'pending' ? '#ffc107' : 
-                                            activeTab === 'approved' ? '#198754' : '#dc3545'
+                              backgroundColor: '#ffc107'
                             }}
                           ></div>
                         </div>
-                        <Badge bg={activeTab === 'pending' ? 'warning' : 
-                                   activeTab === 'approved' ? 'success' : 'danger'}>
+                        <Badge bg="warning">
                           {count}
                         </Badge>
                       </div>
@@ -997,24 +968,6 @@ const LeaveManagement = () => {
                   </Badge>
                 </Nav.Link>
               </Nav.Item>
-              <Nav.Item>
-                <Nav.Link eventKey="approved" className="d-flex align-items-center">
-                  <CheckCircle size={16} className="me-2" />
-                  Approved Requests
-                  <Badge bg="success" className="ms-2">
-                    {leaveRequests.filter(r => r.status === 'approved').length}
-                  </Badge>
-                </Nav.Link>
-              </Nav.Item>
-              <Nav.Item>
-                <Nav.Link eventKey="rejected" className="d-flex align-items-center">
-                  <XCircle size={16} className="me-2" />
-                  Rejected Requests
-                  <Badge bg="danger" className="ms-2">
-                    {leaveRequests.filter(r => r.status === 'rejected').length}
-                  </Badge>
-                </Nav.Link>
-              </Nav.Item>
             </Nav>
             
             <Tab.Content>
@@ -1074,24 +1027,19 @@ const LeaveManagement = () => {
                         </td>
                         <td>
                           <div className="terms-section">
-                            <div className="mb-1">
-                              <Badge 
-                                bg={request.terms === 'with PAY' ? 'success' : 
-                                    request.terms === 'without PAY' ? 'warning' :
-                                    'secondary'}
-                              >
-                                {request.terms || 'TBD by HR'}
-                              </Badge>
+                            <div style={{ fontSize: '13px', color: '#212529', marginBottom: '4px' }}>
+                              <strong>
+                                {request.terms === 'with PAY' ? 'with PAY' : 
+                                 request.terms === 'without PAY' ? 'without PAY' : 
+                                 'TBD by HR'}
+                              </strong>
                             </div>
-                            {request.status === 'manager_approved' && (
-                              <Button
-                                variant="outline-primary"
-                                size="sm"
-                                onClick={() => handleEditTerms(request)}
-                                style={{ fontSize: '10px', padding: '2px 6px' }}
-                              >
-                                Set Terms
-                              </Button>
+                            {request.leave_category && (
+                              <div style={{ fontSize: '13px', color: '#6c757d' }}>
+                                <strong>
+                                  {request.leave_category === 'Service Incentive Leave (SIL)' ? 'SIL' : 'Emergency Leave'}
+                                </strong>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -1159,218 +1107,6 @@ const LeaveManagement = () => {
                   </div>
                 )}
               </Tab.Pane>
-              
-              <Tab.Pane eventKey="approved">
-                <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
-                  {loading && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1000
-                    }}>
-                      <div className="spinner-border text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                    </div>
-                  )}
-                  <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
-                    <thead>
-                    <tr>
-                      <th>👤 Employee Name</th>
-                      <th>Department</th>
-                      <th>Type of Leave</th>
-                      <th>Terms</th>
-                      <th>Start Date</th>
-                      <th>End Date</th>
-                      <th>Days</th>
-                      <th>Reason</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map((request) => (
-                      <tr key={request.id}>
-                        <td>
-                          <div className="employee-info">
-                            <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
-                            {request.company && <div className="company-text">{request.company}</div>}
-                          </div>
-                        </td>
-                        <td>
-                          <span className="department-text">{request.department || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="leave-type-info">
-                            <div>{request.type}</div>
-                            {request.leave_category && (
-                              <small className="text-muted">({request.leave_category})</small>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="terms-section">
-                            <Badge 
-                              bg={request.terms === 'with PAY' ? 'success' : 
-                                  request.terms === 'without PAY' ? 'warning' :
-                                  'secondary'}
-                            >
-                              {request.terms || 'TBD by HR'}
-                            </Badge>
-                          </div>
-                        </td>
-                        <td>{formatDate(request.from)}</td>
-                        <td>{formatDate(request.to)}</td>
-                        <td>
-                          <span className="days-count">{request.total_days || '-'}</span>
-                        </td>
-                        <td>
-                          <span className="reason-text">
-                            {request.reason || 'No reason provided'}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="action-buttons d-flex align-items-center gap-1">
-                            <Button
-                              variant="outline-info"
-                              size="sm"
-                              onClick={() => handleViewLeave(request)}
-                              disabled={loadingLeaveDetails}
-                              title="View leave form details"
-                            >
-                              <Eye size={14} />
-                            </Button>
-                            <div className="ms-2">
-                              {getStatusBadge(request.status)}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  </Table>
-                </div>
-                
-                {filteredRequests.length === 0 && (
-                  <div className="text-center p-4">
-                    <CheckCircle size={48} className="text-success mb-3" />
-                    <p className="text-muted">No approved leave requests found.</p>
-                    <small className="text-muted">Approved leave requests will appear here.</small>
-                  </div>
-                )}
-              </Tab.Pane>
-              
-              <Tab.Pane eventKey="rejected">
-                <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
-                  {loading && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1000
-                    }}>
-                      <div className="spinner-border text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                    </div>
-                  )}
-                  <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
-                    <thead>
-                    <tr>
-                      <th>👤 Employee Name</th>
-                      <th>Department</th>
-                      <th>Type of Leave</th>
-                      <th>Terms</th>
-                      <th>Start Date</th>
-                      <th>End Date</th>
-                      <th>Days</th>
-                      <th>Reason</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map((request) => (
-                      <tr key={request.id}>
-                        <td>
-                          <div className="employee-info">
-                            <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
-                            {request.company && <div className="company-text">{request.company}</div>}
-                          </div>
-                        </td>
-                        <td>
-                          <span className="department-text">{request.department || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="leave-type-info">
-                            <div>{request.type}</div>
-                            {request.leave_category && (
-                              <small className="text-muted">({request.leave_category})</small>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="terms-section">
-                            <Badge 
-                              bg={request.terms === 'with PAY' ? 'success' : 
-                                  request.terms === 'without PAY' ? 'warning' :
-                                  'secondary'}
-                            >
-                              {request.terms || 'TBD by HR'}
-                            </Badge>
-                          </div>
-                        </td>
-                        <td>{formatDate(request.from)}</td>
-                        <td>{formatDate(request.to)}</td>
-                        <td>
-                          <span className="days-count">{request.total_days || '-'}</span>
-                        </td>
-                        <td>
-                          <span className="reason-text">
-                            {request.reason || 'No reason provided'}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="action-buttons d-flex align-items-center gap-1">
-                            <Button
-                              variant="outline-info"
-                              size="sm"
-                              onClick={() => handleViewLeave(request)}
-                              disabled={loadingLeaveDetails}
-                              title="View leave form details"
-                            >
-                              <Eye size={14} />
-                            </Button>
-                            <div className="ms-2">
-                              {getStatusBadge(request.status)}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  </Table>
-                </div>
-                
-                {filteredRequests.length === 0 && (
-                  <div className="text-center p-4">
-                    <XCircle size={48} className="text-danger mb-3" />
-                    <p className="text-muted">No rejected leave requests found.</p>
-                    <small className="text-muted">Rejected leave requests will appear here.</small>
-                  </div>
-                )}
-              </Tab.Pane>
             </Tab.Content>
           </Tab.Container>
         </Card.Body>
@@ -1417,53 +1153,80 @@ const LeaveManagement = () => {
         </Modal.Footer>
       </Modal>
 
-      {/* Terms and Category Modal */}
+      {/* Leave Category Information Modal */}
       <Modal show={showTermsModal} onHide={() => setShowTermsModal(false)}>
         <Modal.Header closeButton>
-          <Modal.Title>Set Pay Terms & Leave Category</Modal.Title>
+          <Modal.Title>Leave Category Information</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {editingLeave && (
-            <div className="mb-3">
-              <strong>Employee:</strong> {getEmployeeName(editingLeave.employee, editingLeave.employee_name)}<br />
-              <strong>Leave Type:</strong> {editingLeave.type}<br />
-              <strong>Duration:</strong> {formatDate(editingLeave.from)} - {formatDate(editingLeave.to)}
+            <div>
+              <div className="mb-3">
+                <strong>Employee:</strong> {getEmployeeName(editingLeave.employee, editingLeave.employee_name)}<br />
+                <strong>Leave Type:</strong> {editingLeave.type}<br />
+                <strong>Duration:</strong> {formatDate(editingLeave.from)} - {formatDate(editingLeave.to)}
+              </div>
+
+              <Alert variant="info">
+                <h6 className="alert-heading">
+                  <i className="fas fa-info-circle me-2"></i>
+                  Automatic Category Assignment
+                </h6>
+                <p className="mb-2">
+                  The leave category is <strong>automatically determined</strong> based on the leave type:
+                </p>
+                <ul className="mb-0">
+                  <li><strong>SIL (Service Incentive Leave):</strong> Sick Leave & Emergency Leave</li>
+                  <li><strong>Emergency Leave (EL):</strong> All other leave types (Vacation, Maternity, Paternity, etc.)</li>
+                </ul>
+              </Alert>
+
+              <div style={{
+                background: '#e7f5ff',
+                border: '2px solid #1971c2',
+                borderRadius: '8px',
+                padding: '15px',
+                marginTop: '15px'
+              }}>
+                <h6 style={{ color: '#1971c2', marginBottom: '10px' }}>
+                  <i className="fas fa-tag me-2"></i>
+                  Assigned Category for this Leave
+                </h6>
+                <div style={{
+                  background: 'white',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  border: '1px solid #dee2e6'
+                }}>
+                  <strong>Category:</strong>
+                  <span style={{
+                    marginLeft: '10px',
+                    padding: '6px 14px',
+                    borderRadius: '4px',
+                    backgroundColor: editingLeave.leave_category === 'Service Incentive Leave (SIL)' ? '#d4edda' : '#fff3cd',
+                    color: editingLeave.leave_category === 'Service Incentive Leave (SIL)' ? '#155724' : '#856404',
+                    fontWeight: '600',
+                    fontSize: '14px'
+                  }}>
+                    {editingLeave.leave_category || 'Not yet assigned'}
+                  </span>
+                </div>
+              </div>
+
+              <Alert variant="secondary" className="mt-3 mb-0">
+                <small>
+                  <strong>Tenure-Based Payment Rules:</strong><br/>
+                  • &lt; 6 months: All leaves WITHOUT PAY<br/>
+                  • 6-12 months: SIL gets 3 days WITH PAY<br/>
+                  • 1+ year: SIL gets 8 days WITH PAY; Other leaves WITH PAY based on type
+                </small>
+              </Alert>
             </div>
           )}
-          <Form.Group className="mb-3">
-            <Form.Label>Pay Terms *</Form.Label>
-            <Form.Select
-              value={editTerms}
-              onChange={(e) => setEditTerms(e.target.value)}
-              required
-            >
-              <option value="">Select pay terms...</option>
-              <option value="with PAY">With PAY</option>
-              <option value="without PAY">Without PAY</option>
-            </Form.Select>
-          </Form.Group>
-          <Form.Group className="mb-3">
-            <Form.Label>Leave Category</Form.Label>
-            <Form.Select
-              value={editCategory}
-              onChange={(e) => setEditCategory(e.target.value)}
-            >
-              <option value="">Select category </option>
-              <option value="Service Incentive Leave (SIL)">Service Incentive Leave (SIL)</option>
-              <option value="Emergency Leave (EL)">Emergency Leave (EL)</option>
-            </Form.Select>
-          </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowTermsModal(false)}>
-            Cancel
-          </Button>
-          <Button 
-            variant="primary" 
-            onClick={saveTermsAndCategory}
-            disabled={!editTerms}
-          >
-            Save Changes
+          <Button variant="primary" onClick={() => setShowTermsModal(false)}>
+            Close
           </Button>
         </Modal.Footer>
       </Modal>
@@ -1535,22 +1298,20 @@ const LeaveManagement = () => {
                     <div className="mb-3">
                       <strong>Leave Type:</strong>
                       <div className="mt-1">
-                        <Badge bg="info" className="me-2">{selectedLeaveForView.type}</Badge>
+                        <span style={{ fontSize: '14px' }}>{selectedLeaveForView.type}</span>
                         {selectedLeaveForView.leave_category && (
-                          <Badge bg="secondary">({selectedLeaveForView.leave_category})</Badge>
+                          <span style={{ fontSize: '13px', color: '#6c757d', marginLeft: '8px' }}>
+                            ({selectedLeaveForView.leave_category})
+                          </span>
                         )}
                       </div>
                     </div>
                     <div className="mb-3">
                       <strong>Pay Terms:</strong>
                       <div className="mt-1">
-                        <Badge 
-                          bg={selectedLeaveForView.terms === 'with PAY' ? 'success' : 
-                              selectedLeaveForView.terms === 'without PAY' ? 'warning' :
-                              'secondary'}
-                        >
+                        <span style={{ fontSize: '14px' }}>
                           {selectedLeaveForView.terms || 'To be determined by HR'}
-                        </Badge>
+                        </span>
                       </div>
                     </div>
                   </Col>
@@ -1572,15 +1333,15 @@ const LeaveManagement = () => {
                           <div className="mb-2">
                             <strong>Total Days:</strong>
                           </div>
-                          <Badge bg="primary" style={{ fontSize: '16px', padding: '8px 12px' }}>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
                             {selectedLeaveForView.total_days || 0} {(selectedLeaveForView.total_days || 0) === 1 ? 'Day' : 'Days'}
-                          </Badge>
+                          </div>
                         </Col>
                         <Col md={6}>
                           <div className="mb-2">
                             <strong>Total Hours:</strong>
                           </div>
-                          <Badge bg="info" style={{ fontSize: '16px', padding: '8px 12px' }}>
+                          <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
                             {(() => {
                               // If total_days is 0 or null, calculate from date range
                               if (!selectedLeaveForView.total_days && selectedLeaveForView.from && selectedLeaveForView.to) {
@@ -1592,7 +1353,7 @@ const LeaveManagement = () => {
                               }
                               return selectedLeaveForView.total_days * 8 || 0;
                             })()} Hours
-                          </Badge>
+                          </div>
                         </Col>
                       </Row>
                     </div>

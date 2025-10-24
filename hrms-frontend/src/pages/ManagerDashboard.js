@@ -9,7 +9,10 @@ import {
   Bell as BellIcon,
   LogOut,
   FileText,
-  CalendarCheck
+  CalendarCheck,
+  Eye,
+  BarChart2,
+  CheckCircle
 } from 'lucide-react';
 import useUserProfile from '../hooks/useUserProfile';
 import useEmployeeCount from '../hooks/useEmployeeCount';
@@ -26,6 +29,7 @@ const ManagerDashboard = () => {
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
+  const [leaveMenuOpen, setLeaveMenuOpen] = useState(false);
   const { userProfile, loading } = useUserProfile();
   const { total: employeeTotal, loading: employeeCountLoading, error: employeeCountError } = useEmployeeCount();
 
@@ -77,12 +81,20 @@ const ManagerDashboard = () => {
       handleLogout();
       return;
     }
+    if (view === 'leave-request') {
+      setLeaveMenuOpen(!leaveMenuOpen);
+      return;
+    }
     setActiveView(view);
+    if (isMobile) {
+      closeSidebar();
+    }
   };
 
   // Notification handlers
   const handleOpenLeave = (leaveId, data) => {
-    setActiveView('leave-request');
+    setLeaveMenuOpen(true);
+    setActiveView('leave-overview');
     // You can add additional logic to highlight specific leave request
   };
 
@@ -108,8 +120,12 @@ const ManagerDashboard = () => {
 
   const renderContent = () => {
     switch (activeView) {
-      case 'leave-request':
-        return <ManagerLeaveManagement />;
+      case 'leave-overview':
+        return <ManagerLeaveManagement viewType="overview" />;
+      case 'leave-status':
+        return <ManagerLeaveManagement viewType="status" />;
+      case 'leave-tracker':
+        return <ManagerLeaveManagement viewType="tracker" />;
       case 'calendar':
         return <ManagerCalendar />;
       case 'evaluations':
@@ -244,14 +260,85 @@ const ManagerDashboard = () => {
           <div>
             <h2 className="hrms-unified-logo">CCDC</h2>
             {links.map((link, idx) => (
-              <button
-                key={idx}
-                className={`hrms-unified-nav-link ${activeView === link.view ? 'hrms-unified-active' : ''}`}
-                onClick={() => handleNavigation(link.view, link.label)}
-              >
-                {link.icon}
-                <span>{link.label}</span>
-              </button>
+              <div key={idx}>
+                <button
+                  className={`hrms-unified-nav-link ${
+                    (link.view === 'leave-request' && (activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker')) ||
+                    activeView === link.view ? 'hrms-unified-active' : ''
+                  }`}
+                    onClick={() => handleNavigation(link.view, link.label)}
+                >
+                  {link.icon}
+                  <span>{link.label}</span>
+                  {link.view === 'leave-request' && (
+                    <span style={{ 
+                      marginLeft: 'auto', 
+                      transition: 'transform 0.3s ease',
+                      transform: leaveMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                    }}>
+                      ▼
+                    </span>
+                  )}
+                </button>
+                
+                {/* Dropdown Menu for Leave Request */}
+                {link.view === 'leave-request' && leaveMenuOpen && (
+                  <div style={{
+                    paddingLeft: '40px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderLeft: '3px solid rgba(255, 255, 255, 0.2)',
+                    marginLeft: '20px',
+                    marginTop: '4px',
+                    marginBottom: '4px'
+                  }}>
+                    <button
+                      className={`hrms-unified-nav-link ${activeView === 'leave-overview' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('leave-overview');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <Eye size={16} />
+                      <span>Leave Overview</span>
+                    </button>
+                    <button
+                      className={`hrms-unified-nav-link ${activeView === 'leave-status' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('leave-status');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <CheckCircle size={16} />
+                      <span>Leave Status</span>
+                    </button>
+                    <button
+                      className={`hrms-unified-nav-link ${activeView === 'leave-tracker' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('leave-tracker');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <BarChart2 size={16} />
+                      <span>Leave Tracker</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
           <div className="hrms-unified-profile" onClick={() => setActiveView('profile')} style={{ cursor: 'pointer' }} title="Go to Profile">
@@ -264,8 +351,8 @@ const ManagerDashboard = () => {
         </div>
 
         {/* Main Content */}
-        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-          {activeView !== 'leave-request' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
+        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+          {activeView !== 'leave-request' && activeView !== 'leave-overview' && activeView !== 'leave-status' && activeView !== 'leave-tracker' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
             <>
               {/* Header */}
               <div style={styles.header}>

@@ -6,20 +6,48 @@ import {
   getEventTypeColor,
   getEventTypeIcon,
   getInvitationStatusColor,
-  getInvitationStatusText
+  getInvitationStatusText,
+  clearAllCalendarCaches
 } from '../../api/calendar';
+import ValidationModal from '../common/ValidationModal';
+import useValidationModal from '../../hooks/useValidationModal';
 import './StaffCalendar.css';
 
 const StaffCalendar = () => {
+  const { modalState, showSuccess, showError, showWarning, hideModal } = useValidationModal();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     loadData();
+  }, [currentDate]);
+
+  // Auto-refresh mechanism for real-time updates
+  useEffect(() => {
+    // Refresh data when window gains focus (user returns to tab)
+    const handleFocus = () => {
+      console.log('Window focused - checking for calendar updates...');
+      loadData(false);
+    };
+
+    // Periodic refresh every 30 seconds to catch real-time updates
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refresh - checking for calendar updates...');
+      loadData(false);
+    }, 30000); // 30 seconds
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(refreshInterval);
+    };
   }, [currentDate]);
 
   const loadData = async (showLoadingIndicator = true) => {
@@ -66,6 +94,7 @@ const StaffCalendar = () => {
 
       const events = response.data || [];
       setEvents(events);
+      setLastUpdated(new Date());
       
       // Cache the data
       localStorage.setItem(cacheKey, JSON.stringify(events));
@@ -85,8 +114,15 @@ const StaffCalendar = () => {
   };
 
   const showAlert = (message, type) => {
-    setAlert({ show: true, message, type });
-    setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
+    if (type === 'success') {
+      showSuccess(message);
+    } else if (type === 'danger') {
+      showError(message);
+    } else if (type === 'info') {
+      showWarning(message);
+    } else {
+      showSuccess(message);
+    }
   };
 
   // Calendar helper functions
@@ -223,12 +259,15 @@ const StaffCalendar = () => {
 
   return (
     <Container fluid className="staff-calendar">
-      {alert.show && (
-        <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
-          {alert.message}
-        </Alert>
-      )}
-      
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       {/* Calendar Header */}
       <div className="calendar-header">
         <div className="calendar-navigation">
@@ -240,10 +279,18 @@ const StaffCalendar = () => {
             <ChevronRight size={16} />
           </Button>
         </div>
-        <div className="calendar-actions">
-          <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2">
-            Today
-          </Button>
+        <div className="d-flex flex-column align-items-end">
+          {lastUpdated && (
+            <small className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+              <Clock size={12} className="me-1" />
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </small>
+          )}
+          <div className="calendar-actions">
+            <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2">
+              Today
+            </Button>
+          </div>
         </div>
       </div>
       
@@ -263,116 +310,130 @@ const StaffCalendar = () => {
       </div>
 
       {/* Event Details Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>
-            <div className="d-flex align-items-center">
-              <span className="me-2">{getEventTypeIcon(selectedEvent?.event_type)}</span>
-              {selectedEvent?.title}
-            </div>
+      <Modal 
+        show={showModal} 
+        onHide={() => setShowModal(false)} 
+        size="sm"
+        backdrop="static"
+        keyboard={false}
+        centered
+        style={{ zIndex: 9999 }}
+      >
+        <Modal.Header closeButton style={{ padding: '0.75rem 1rem' }}>
+          <Modal.Title style={{ fontSize: '1.1rem' }}>
+            <span className="me-2">{getEventTypeIcon(selectedEvent?.event_type)}</span>
+            {selectedEvent?.title}
           </Modal.Title>
         </Modal.Header>
         
-        <Modal.Body>
+        <Modal.Body style={{ padding: '1rem' }}>
           {selectedEvent && (
             <div>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <h6 className="text-muted mb-1">Event Type</h6>
-                  <Badge 
-                    style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }}
-                    className="mb-2"
-                  >
-                    {selectedEvent.event_type}
-                  </Badge>
-                </Col>
-                <Col md={6}>
-                  <h6 className="text-muted mb-1">Status</h6>
-                  <Badge bg={selectedEvent.status === 'active' ? 'success' : 'secondary'}>
-                    {selectedEvent.status}
-                  </Badge>
-                </Col>
-              </Row>
+              <div className="mb-2">
+                <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }} className="mb-2">
+                  {selectedEvent.event_type}
+                </Badge>
+                <Badge bg={selectedEvent.status === 'active' ? 'success' : 'secondary'} className="ms-2">
+                  {selectedEvent.status}
+                </Badge>
+              </div>
               
+              <div className="mb-2">
+                <small className="text-muted">
+                  <strong>Start:</strong> {formatDateTime(selectedEvent.start_datetime)}
+                </small>
+              </div>
+              
+              <div className="mb-2">
+                <small className="text-muted">
+                  <strong>End:</strong> {formatDateTime(selectedEvent.end_datetime)}
+                </small>
+              </div>
+
+              <div className="mb-2">
+                <small className="text-muted">
+                  <strong>Created by:</strong> {selectedEvent.created_by}
+                </small>
+              </div>
+
               {selectedEvent.description && (
-                <Row className="mb-3">
-                  <Col>
-                    <h6 className="text-muted mb-1">Description</h6>
-                    <p>{selectedEvent.description}</p>
-                  </Col>
-                </Row>
+                <div className="mb-2">
+                  <small className="text-muted">
+                    <strong>Description:</strong> {selectedEvent.description}
+                  </small>
+                </div>
               )}
-              
-              <Row className="mb-3">
-                <Col md={6}>
-                  <h6 className="text-muted mb-1">
-                    <Clock size={16} className="me-1" />
-                    Start Time
-                  </h6>
-                  <p className="mb-0">{formatDateTime(selectedEvent.start_datetime)}</p>
-                </Col>
-                <Col md={6}>
-                  <h6 className="text-muted mb-1">
-                    <Clock size={16} className="me-1" />
-                    End Time
-                  </h6>
-                  <p className="mb-0">{formatDateTime(selectedEvent.end_datetime)}</p>
-                </Col>
-              </Row>
-              
+
               {selectedEvent.location && (
-                <Row className="mb-3">
-                  <Col>
-                    <h6 className="text-muted mb-1">Location</h6>
-                    <p className="mb-0">{selectedEvent.location}</p>
-                  </Col>
-                </Row>
+                <div className="mb-2">
+                  <small className="text-muted">
+                    <strong>Location:</strong> {selectedEvent.location}
+                  </small>
+                </div>
               )}
-              
+
               {/* Show invitation response buttons if user has pending invitation */}
               {selectedEvent.user_invitation_status === 'pending' && (
-                <Row className="mb-3">
-                  <Col>
-                    <h6 className="text-muted mb-2">Your Response</h6>
-                    <div className="d-flex gap-2">
-                      <Button 
-                        variant="success" 
-                        size="sm"
-                        onClick={() => handleRespondToInvitation(selectedEvent.id, 'accepted')}
-                      >
-                        <Check size={16} className="me-1" />
-                        Accept
-                      </Button>
-                      <Button 
-                        variant="danger" 
-                        size="sm"
-                        onClick={() => handleRespondToInvitation(selectedEvent.id, 'declined')}
-                      >
-                        <X size={16} className="me-1" />
-                        Decline
-                      </Button>
-                    </div>
-                  </Col>
-                </Row>
+                <div className="mb-2">
+                  <small className="text-muted mb-2 d-block">Your Response:</small>
+                  <div className="d-flex gap-2">
+                    <Button 
+                      variant="success" 
+                      size="sm"
+                      onClick={() => handleRespondToInvitation(selectedEvent.id, 'accepted')}
+                    >
+                      <Check size={16} className="me-1" />
+                      Accept
+                    </Button>
+                    <Button 
+                      variant="danger" 
+                      size="sm"
+                      onClick={() => handleRespondToInvitation(selectedEvent.id, 'declined')}
+                    >
+                      <X size={16} className="me-1" />
+                      Decline
+                    </Button>
+                  </div>
+                </div>
               )}
-              
-              <hr />
-              
-              <Row>
-                <Col>
-                  <small className="text-muted">
-                    Created by: {selectedEvent.created_by}<br />
-                    Created at: {formatDateTime(selectedEvent.created_at)}
-                  </small>
-                </Col>
-              </Row>
             </div>
           )}
         </Modal.Body>
         
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
+        <Modal.Footer style={{ padding: '0.75rem 1rem' }}>
+          <Button variant="secondary" size="sm" onClick={() => setShowModal(false)}>
             Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Validation Error Modal */}
+      <Modal 
+        show={showValidationModal} 
+        onHide={() => setShowValidationModal(false)} 
+        size="sm"
+        backdrop="static"
+        keyboard={false}
+        centered
+        style={{ zIndex: 10000 }}
+      >
+        <Modal.Header closeButton style={{ backgroundColor: '#dc3545', color: 'white' }}>
+          <Modal.Title>
+            <i className="fas fa-exclamation-triangle me-2"></i>
+            Validation Error
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center">
+            <i className="fas fa-exclamation-circle text-danger" style={{ fontSize: '3rem', marginBottom: '1rem' }}></i>
+            <p className="mb-0" style={{ whiteSpace: 'pre-line' }}>
+              {validationMessage}
+            </p>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="danger" onClick={() => setShowValidationModal(false)}>
+            OK
           </Button>
         </Modal.Footer>
       </Modal>

@@ -6,10 +6,13 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAdvancedModalConfirmation } from '../hooks/useModalConfirmation';
 import '../styles/ModalConfirmation.css';
+import ValidationModal from './common/ValidationModal';
+import useValidationModal from '../hooks/useValidationModal';
 import "bootstrap-icons/font/bootstrap-icons.css";
 
 const JobPostings = () => {
   const [jobPosts, setJobPosts] = useState([]);
+  const { modalState, showSuccess, showError, showWarning, showInfo, hideModal } = useValidationModal();
   const [showModal, setShowModal] = useState(false);
   const [currentJob, setCurrentJob] = useState({
     id: null,
@@ -64,11 +67,7 @@ const JobPostings = () => {
     }
   );
 
-  // Toast notification helpers - same as EmployeeRecords
-  const showError = (message) => toast.error(message);
-  const showSuccess = (message) => toast.success(message);
-  const showWarning = (message) => toast.warning(message);
-  const showInfo = (message) => toast.info(message);
+
 
   // Get current Philippines time
   const getCurrentPhilippinesTime = () => {
@@ -375,6 +374,16 @@ const JobPostings = () => {
         background: "linear-gradient(135deg, #f8f9fc 0%, #e8ecf5 100%)",
       }}
     >
+
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, Card, Alert, Modal } from 'react-bootstrap';
 import { ArrowLeft, Calendar } from 'lucide-react';
-import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, checkLeaveEligibility, getLeaveTypes } from '../../api/leave';
+import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, checkLeaveEligibility, getLeaveTypes, getLeaveSummary } from '../../api/leave';
 import { checkLeaveSubmissionAvailability } from '../../api/calendar';
 import axios from '../../axios';
 import { fileToBase64 } from '../../utils/signatureUtils';
@@ -30,6 +30,10 @@ const LeaveApplicationForm = ({ onBack }) => {
   const [leaveEntitlements, setLeaveEntitlements] = useState({});
   const [dateValidation, setDateValidation] = useState({ valid: true, message: '' });
   const [hrAvailability, setHrAvailability] = useState({ available: true, message: '', endTime: null });
+  const [leaveSummary, setLeaveSummary] = useState(null);
+  const [loadingLeaveSummary, setLoadingLeaveSummary] = useState(true);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentBreakdown, setPaymentBreakdown] = useState(null);
 
   // Auto-fill user info and check eligibility on component mount
   useEffect(() => {
@@ -37,7 +41,33 @@ const LeaveApplicationForm = ({ onBack }) => {
     checkEligibilityStatus();
     fetchLeaveTypesData();
     checkHrAvailability();
+    fetchLeaveSummaryData();
   }, []);
+
+  const fetchLeaveSummaryData = async () => {
+    try {
+      setLoadingLeaveSummary(true);
+      const response = await getLeaveSummary();
+      const data = response.data;
+      
+      setLeaveSummary(data);
+      console.log('Leave summary loaded:', data);
+    } catch (error) {
+      console.error('Error fetching leave summary:', error);
+      // Set default values if API fails
+      setLeaveSummary({
+        leave_instances: { total_allowed: 3, used: 0, remaining: 3 },
+        payment_status: {
+          next_leave_will_be: 'with PAY (up to 7 days)',
+          message: 'Your first leave of the year will be paid (up to 7 days).',
+          can_file_leave: true
+        },
+        rules: {}
+      });
+    } finally {
+      setLoadingLeaveSummary(false);
+    }
+  };
 
   const fetchEmployeeProfile = async () => {
     console.log('Fetching employee profile...');
@@ -142,12 +172,15 @@ const LeaveApplicationForm = ({ onBack }) => {
       // Set default leave types if API fails
       const defaultTypes = [
         { type: 'Vacation Leave', entitled_days: 5 },
-        { type: 'Sick Leave', entitled_days: 5 },
-        { type: 'Emergency Leave', entitled_days: 5 },
+        { type: 'Sick Leave', entitled_days: 8 },
+        { type: 'Emergency Leave', entitled_days: 8 },
         { type: 'Personal Leave', entitled_days: 5 },
         { type: 'Bereavement Leave', entitled_days: 5 },
         { type: 'Maternity Leave', entitled_days: 105 },
-        { type: 'Paternity Leave', entitled_days: 7 }
+        { type: 'Paternity Leave', entitled_days: 7 },
+        { type: 'Leave for Victims of Violence Against Women and Their Children (VAWC)', entitled_days: 10 },
+        { type: "Women's Special Leave", entitled_days: 60 },
+        { type: 'Parental Leave', entitled_days: 7 }
       ];
       setLeaveTypes(defaultTypes);
       
@@ -247,6 +280,33 @@ const LeaveApplicationForm = ({ onBack }) => {
     const currentLeaveType = leaveType || formData.leaveType;
     const maxDays = leaveEntitlements[currentLeaveType];
     
+    // Special handling for these leave types: allow exceeding limit with paid/unpaid split
+    const specialLeaveTypes = [
+      'Sick Leave',
+      'Emergency Leave',
+      'Vacation Leave',
+      'Maternity Leave',
+      'Paternity Leave',
+      'Leave for Victims of Violence Against Women and Their Children (VAWC)',
+      "Women's Special Leave",
+      'Parental Leave'
+    ];
+    
+    if (specialLeaveTypes.includes(currentLeaveType) && maxDays && days > maxDays) {
+      const paidDays = maxDays;
+      const unpaidDays = days - maxDays;
+      return {
+        days: days > 0 ? days : 0,
+        hours: hours > 0 ? hours : 0,
+        valid: true,
+        warning: true,
+        message: `For ${currentLeaveType}: First ${paidDays} days will be paid, remaining ${unpaidDays} days will be unpaid. You can still submit this request.`,
+        paidDays: paidDays,
+        unpaidDays: unpaidDays
+      };
+    }
+    
+    // For other leave types, maintain strict limit
     if (maxDays && days > maxDays) {
       return {
         days: days > 0 ? days : 0,
@@ -280,12 +340,17 @@ const LeaveApplicationForm = ({ onBack }) => {
       
       setDateValidation({
         valid: result.valid,
-        message: result.message
+        message: result.message,
+        warning: result.warning || false,
+        paidDays: result.paidDays,
+        unpaidDays: result.unpaidDays
       });
       
-      // Show alert if invalid
+      // Show alert if invalid or warning
       if (!result.valid && result.message) {
         showAlert(result.message, 'warning');
+      } else if (result.warning && result.message) {
+        showAlert(result.message, 'info');
       }
     }
   };
@@ -302,12 +367,17 @@ const LeaveApplicationForm = ({ onBack }) => {
     
     setDateValidation({
       valid: result.valid,
-      message: result.message
+      message: result.message,
+      warning: result.warning || false,
+      paidDays: result.paidDays,
+      unpaidDays: result.unpaidDays
     });
     
-    // Show alert if invalid
+    // Show alert if invalid or warning
     if (!result.valid && result.message) {
       showAlert(result.message, 'warning');
+    } else if (result.warning && result.message) {
+      showAlert(result.message, 'info');
     }
   };
 
@@ -343,6 +413,176 @@ const LeaveApplicationForm = ({ onBack }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Basic validation first
+    if (!formData.dateRange || !formData.signatureFile) {
+      showAlert('Please fill in all required fields including signature', 'danger');
+      return;
+    }
+    
+    // Check for active leave
+    if (leaveSummary && leaveSummary.active_leave?.exists) {
+      showAlert(leaveSummary.payment_status?.restriction_message || 'You have an active leave. Please wait until it ends.', 'danger');
+      return;
+    }
+    
+    // Calculate and show payment breakdown modal
+    await calculateAndShowPaymentBreakdown();
+  };
+
+  const formatTenureDisplay = (tenure) => {
+    // Ensure tenure is always displayed as a whole number (no decimals)
+    if (!tenure) return 'Unknown';
+    
+    // If display is already formatted, check if it contains decimals
+    if (tenure.display) {
+      // If display contains a decimal, reformat it
+      if (tenure.display.includes('.') || !isNaN(parseFloat(tenure.display))) {
+        const months = parseFloat(tenure.display) || tenure.months || 0;
+        const monthsRounded = Math.round(months);
+        const years = Math.floor(monthsRounded / 12);
+        const remainingMonths = monthsRounded % 12;
+        
+        if (monthsRounded === 0) {
+          return 'Less than 1 month';
+        } else if (years > 0) {
+          return years + (years > 1 ? ' years' : ' year') + 
+                 (remainingMonths > 0 ? ' and ' + remainingMonths + (remainingMonths > 1 ? ' months' : ' month') : '');
+        } else {
+          return monthsRounded + (monthsRounded > 1 ? ' months' : ' month');
+        }
+      }
+      return tenure.display;
+    }
+    
+    // Fallback: format from months value
+    const months = tenure.months || 0;
+    const monthsRounded = Math.round(months);
+    const years = Math.floor(monthsRounded / 12);
+    const remainingMonths = monthsRounded % 12;
+    
+    if (monthsRounded === 0) {
+      return 'Less than 1 month';
+    } else if (years > 0) {
+      return years + (years > 1 ? ' years' : ' year') + 
+             (remainingMonths > 0 ? ' and ' + remainingMonths + (remainingMonths > 1 ? ' months' : ' month') : '');
+    } else {
+      return monthsRounded + (monthsRounded > 1 ? ' months' : ' month');
+    }
+  };
+
+  const calculateAndShowPaymentBreakdown = async () => {
+    try {
+      // Get the tenure-based leave balance
+      if (!leaveSummary || !leaveSummary.tenure) {
+        // If no summary, proceed with submission
+        await handleActualSubmit();
+        return;
+      }
+      
+      const tenure = leaveSummary.tenure;
+      const tenureDisplay = formatTenureDisplay(tenure);
+      const requestedDays = formData.totalDays;
+      // SIL only applies to Sick/Emergency Leave for employees with 1+ year tenure
+      const isSIL = (formData.leaveType === 'Sick Leave' || formData.leaveType === 'Emergency Leave') && 
+                    (tenure.months >= 12);
+      
+      let maxWithPayDays = 0;
+      let usedWithPayDays = 0;
+      let remainingWithPayDays = 0;
+      
+      if (isSIL) {
+        // For SIL (Sick Leave and Emergency Leave)
+        maxWithPayDays = leaveSummary.sil_balance.max_with_pay_days;
+        usedWithPayDays = leaveSummary.sil_balance.used_with_pay_days;
+        remainingWithPayDays = leaveSummary.sil_balance.remaining_with_pay_days;
+      } else {
+        // For other leave types
+        if (leaveSummary.other_leaves_paid) {
+          // 1 year or more: other leaves are paid based on config
+          const withPayDaysConfig = {
+            'Vacation Leave': 5,
+            'Maternity Leave': 105,
+            'Paternity Leave': 7,
+            'Personal Leave': 5,
+            'Bereavement Leave': 5,
+            'Leave for Victims of Violence Against Women and Their Children (VAWC) – 10 days': 10,
+            "Women's Special Leave – 60 days": 60,
+            'Parental Leave': 7
+          };
+          maxWithPayDays = withPayDaysConfig[formData.leaveType] || requestedDays;
+          // Calculate used days for this specific leave type
+          const thisYearLeaves = leaveSummary.leaves_this_year || [];
+          usedWithPayDays = thisYearLeaves
+            .filter(leave => leave.type === formData.leaveType && leave.terms === 'with PAY' && leave.status === 'approved')
+            .reduce((sum, leave) => sum + (leave.total_days || 0), 0);
+          remainingWithPayDays = Math.max(0, maxWithPayDays - usedWithPayDays);
+        } else {
+          // Less than 1 year: other leaves are unpaid
+          maxWithPayDays = 0;
+          usedWithPayDays = 0;
+          remainingWithPayDays = 0;
+        }
+      }
+      
+      // Calculate breakdown
+      let breakdown = {
+        leaveType: formData.leaveType,
+        requestedDays: requestedDays,
+        maxWithPayDays: maxWithPayDays,
+        usedWithPayDays: usedWithPayDays,
+        remainingWithPayDays: remainingWithPayDays,
+        withPayDays: 0,
+        withoutPayDays: 0,
+        isSplit: false,
+        message: '',
+        tenure: tenureDisplay,
+        isSIL: isSIL
+      };
+      
+      if (maxWithPayDays === 0) {
+        // No paid days available
+        breakdown.withPayDays = 0;
+        breakdown.withoutPayDays = requestedDays;
+        breakdown.message = `Based on your tenure (${tenureDisplay}), all ${requestedDays} days will be WITHOUT PAY.`;
+      } else if (remainingWithPayDays >= requestedDays) {
+        // All days with pay
+        breakdown.withPayDays = requestedDays;
+        breakdown.withoutPayDays = 0;
+        breakdown.message = `All ${requestedDays} days will be WITH PAY.`;
+      } else if (remainingWithPayDays > 0) {
+        // Split payment
+        breakdown.withPayDays = remainingWithPayDays;
+        breakdown.withoutPayDays = requestedDays - remainingWithPayDays;
+        breakdown.isSplit = true;
+        breakdown.message = `Only ${remainingWithPayDays} days are with pay. The remaining ${breakdown.withoutPayDays} days will be without pay.`;
+      } else {
+        // All days without pay
+        breakdown.withPayDays = 0;
+        breakdown.withoutPayDays = requestedDays;
+        breakdown.message = `All ${requestedDays} days will be WITHOUT PAY. You have already used all ${maxWithPayDays} paid days for ${isSIL ? 'SIL' : formData.leaveType} this year.`;
+      }
+      
+      setPaymentBreakdown(breakdown);
+      setShowPaymentModal(true);
+      
+    } catch (error) {
+      console.error('Error calculating payment breakdown:', error);
+      await handleActualSubmit();
+    }
+  };
+
+  const handlePaymentConfirm = async () => {
+    setShowPaymentModal(false);
+    await handleActualSubmit();
+  };
+  
+  const handlePaymentCancel = () => {
+    setShowPaymentModal(false);
+    setPaymentBreakdown(null);
+  };
+
+  const handleActualSubmit = async () => {
     setLoading(true);
 
     try {
@@ -444,58 +684,12 @@ const LeaveApplicationForm = ({ onBack }) => {
         </Alert>
       )}
 
-      {/* Leave Request Limits Information */}
-      {!eligibilityCheck.loading && eligibilityCheck.restrictions && (
-        <Card className="mb-4" style={{ backgroundColor: eligibilityCheck.eligible ? '#f8f9fa' : '#fff3cd' }}>
-          <Card.Body>
-            <h6 className="mb-3" style={{ color: '#495057' }}>📋 Leave Request Status</h6>
-            <Row>
-              <Col md={6}>
-                <div className="mb-2">
-                  <strong>Monthly Limit:</strong> {eligibilityCheck.restrictions.monthly_limit.used}/{eligibilityCheck.restrictions.monthly_limit.limit} requests used in {eligibilityCheck.restrictions.monthly_limit.month}
-                </div>
-                {eligibilityCheck.restrictions.monthly_limit.remaining === 0 && (
-                  <small className="text-warning">⚠️ Monthly limit reached</small>
-                )}
-              </Col>
-              <Col md={6}>
-                {eligibilityCheck.restrictions.waiting_period ? (
-                  <div className="mb-2">
-                    <strong>Last Leave:</strong> Ended on {eligibilityCheck.restrictions.waiting_period.last_leave_end_date}
-                    <br />
-                    {eligibilityCheck.restrictions.waiting_period.waiting_period_active ? (
-                      <small className="text-warning">
-                        ⏳ Can apply again from {eligibilityCheck.restrictions.waiting_period.can_apply_from} 
-                        ({eligibilityCheck.restrictions.waiting_period.days_remaining} days remaining)
-                      </small>
-                    ) : (
-                      <small className="text-success">✅ Waiting period completed</small>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mb-2">
-                    <strong>Waiting Period:</strong> <span className="text-success">✅ No restrictions</span>
-                  </div>
-                )}
-              </Col>
-            </Row>
-            {!eligibilityCheck.eligible && (
-              <Alert variant="warning" className="mt-3 mb-0">
-                <small>{eligibilityCheck.message}</small>
-              </Alert>
-            )}
-            <div className="text-end mt-2">
-              <Button 
-                variant="outline-primary" 
-                size="sm" 
-                onClick={checkEligibilityStatus}
-                disabled={eligibilityCheck.loading}
-              >
-                {eligibilityCheck.loading ? 'Checking...' : 'Refresh Status'}
-              </Button>
-            </div>
-          </Card.Body>
-        </Card>
+      {/* Active Leave Warning (if exists) */}
+      {leaveSummary && leaveSummary.active_leave?.exists && (
+        <Alert variant="warning" className="mb-3">
+          <strong>⚠️ Active Leave:</strong> You have an active {leaveSummary.active_leave.type} until {new Date(leaveSummary.active_leave.to).toLocaleDateString()}. 
+          You can file your next leave on {new Date(leaveSummary.active_leave.can_file_from).toLocaleDateString()}.
+        </Alert>
       )}
 
       <Card className="form-card">
@@ -570,12 +764,15 @@ const LeaveApplicationForm = ({ onBack }) => {
                     ) : (
                       <>
                         <option value="Vacation Leave">Vacation Leave (5 days)</option>
-                        <option value="Sick Leave">Sick Leave (5 days)</option>
-                        <option value="Emergency Leave">Emergency Leave (5 days)</option>
+                        <option value="Sick Leave">Sick Leave (8 days)</option>
+                        <option value="Emergency Leave">Emergency Leave (8 days)</option>
                         <option value="Personal Leave">Personal Leave (5 days)</option>
                         <option value="Bereavement Leave">Bereavement Leave (5 days)</option>
                         <option value="Maternity Leave">Maternity Leave (105 days)</option>
                         <option value="Paternity Leave">Paternity Leave (7 days)</option>
+                        <option value="Leave for Victims of Violence Against Women and Their Children (VAWC)">VAWC Leave (10 days)</option>
+                        <option value="Women's Special Leave">Women's Special Leave (60 days)</option>
+                        <option value="Parental Leave">Parental Leave (7 days)</option>
                       </>
                     )}
                   </Form.Select>
@@ -715,9 +912,13 @@ const LeaveApplicationForm = ({ onBack }) => {
                 <Button 
                   variant="success" 
                   type="submit" 
-                  disabled={loading || !formData.signatureFile || !eligibilityCheck.eligible || !dateValidation.valid}
+                  disabled={loading || !formData.signatureFile || !eligibilityCheck.eligible || !dateValidation.valid || (leaveSummary && !leaveSummary.payment_status?.can_file_leave)}
+                  title={leaveSummary && !leaveSummary.payment_status?.can_file_leave ? 
+                    leaveSummary.payment_status?.restriction_message : 
+                    'Submit your leave request'}
                 >
                   {loading ? 'Submitting...' : 
+                   (leaveSummary && !leaveSummary.payment_status?.can_file_leave) ? 'Cannot Submit - Active Leave' :
                    !eligibilityCheck.eligible ? 'Cannot Submit - Check Requirements Above' : 
                    !dateValidation.valid ? 'Cannot Submit - Invalid Date Range' :
                    'Submit Leave Request'}
@@ -727,6 +928,129 @@ const LeaveApplicationForm = ({ onBack }) => {
           </Form>
         </Card.Body>
       </Card>
+
+      {/* Payment Validation Modal */}
+      <Modal show={showPaymentModal} onHide={handlePaymentCancel} centered size="lg">
+        <Modal.Header closeButton style={{ background: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
+          <Modal.Title style={{ color: '#1971c2', fontWeight: '600' }}>
+            💰 Leave Payment Information
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {paymentBreakdown && (
+            <div>
+              {/* Leave Details */}
+              <div style={{
+                background: '#e7f5ff',
+                padding: '15px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: '1px solid #1971c2'
+              }}>
+                <h6 style={{ color: '#1971c2', marginBottom: '12px', fontWeight: '600' }}>
+                  📋 Your Leave Request
+                </h6>
+                <p style={{ margin: '5px 0' }}><strong>Leave Type:</strong> {paymentBreakdown.leaveType}</p>
+                <p style={{ margin: '5px 0' }}><strong>Requested Days:</strong> {paymentBreakdown.requestedDays} days</p>
+                <p style={{ margin: '5px 0' }}><strong>Date Range:</strong> {formData.dateRange}</p>
+              </div>
+
+              {/* Payment Breakdown */}
+              <div style={{
+                background: paymentBreakdown.isSplit ? '#fff3cd' : (paymentBreakdown.withoutPayDays > 0 ? '#f8d7da' : '#d4edda'),
+                padding: '20px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: `2px solid ${paymentBreakdown.isSplit ? '#ffc107' : (paymentBreakdown.withoutPayDays > 0 ? '#dc3545' : '#28a745')}`
+              }}>
+                <h5 style={{ 
+                  color: paymentBreakdown.isSplit ? '#856404' : (paymentBreakdown.withoutPayDays > 0 ? '#721c24' : '#155724'),
+                  marginBottom: '15px',
+                  fontWeight: '600'
+                }}>
+                  💵 Payment Breakdown
+                </h5>
+                
+                {paymentBreakdown.withPayDays > 0 && (
+                  <div style={{
+                    background: 'white',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    marginBottom: '10px',
+                    border: '2px solid #28a745'
+                  }}>
+                    <p style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#28a745' }}>
+                      ✅ {paymentBreakdown.withPayDays} days WITH PAY
+                    </p>
+                  </div>
+                )}
+                
+                {paymentBreakdown.withoutPayDays > 0 && (
+                  <div style={{
+                    background: 'white',
+                    padding: '12px',
+                    borderRadius: '6px',
+                    border: '2px solid #dc3545'
+                  }}>
+                    <p style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#dc3545' }}>
+                      ⚠️ {paymentBreakdown.withoutPayDays} days WITHOUT PAY
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Explanation */}
+              <div style={{
+                background: '#f8f9fa',
+                padding: '15px',
+                borderRadius: '8px',
+                marginBottom: '15px',
+                border: '1px solid #dee2e6'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6' }}>
+                  <strong>ℹ️ Explanation:</strong><br/>
+                  {paymentBreakdown.message}
+                </p>
+                <p style={{ margin: '10px 0 0 0', fontSize: '13px', color: '#6c757d' }}>
+                  <strong>Your Tenure:</strong> {paymentBreakdown.tenure}<br/>
+                  {paymentBreakdown.isSIL ? (
+                    <span>
+                      <strong>Category:</strong> SIL (Sick & Emergency Leave Combined)<br/>
+                      Used <strong>{paymentBreakdown.usedWithPayDays} of {paymentBreakdown.maxWithPayDays}</strong> paid SIL days this year.
+                    </span>
+                  ) : (
+                    <span>
+                      <strong>Category:</strong> Emergency Leave<br/>
+                      Used <strong>{paymentBreakdown.usedWithPayDays} of {paymentBreakdown.maxWithPayDays}</strong> paid days for {paymentBreakdown.leaveType} this year.
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Confirmation Question */}
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '15px',
+                background: '#fff',
+                borderRadius: '8px',
+                border: '2px solid #1971c2'
+              }}>
+                <p style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#1971c2' }}>
+                  Do you want to proceed with this leave request?
+                </p>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer style={{ background: '#f8f9fa' }}>
+          <Button variant="secondary" onClick={handlePaymentCancel} size="lg">
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handlePaymentConfirm} size="lg">
+            Yes, Submit Leave Request
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

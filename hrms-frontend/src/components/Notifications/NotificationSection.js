@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { fetchNotifications, getNotificationAction, getNotificationIcon } from '../../api/notifications';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/free-solid-svg-icons';
+import { getRelativeTime } from '../../utils/timeUtils';
+
 
 const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation, onOpenDisciplinary, onOpenCalendar, onOpenJobPostings }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [, setTimeUpdate] = useState(0); // Force re-render for time updates
 
   const loadNotifications = async () => {
     try {
@@ -39,8 +42,16 @@ const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation,
     
     // Refresh notifications every 10 seconds
     const interval = setInterval(loadNotifications, 10000);
+
+    // Update relative times every minute
+    const timeUpdateInterval = setInterval(() => {
+      setTimeUpdate(prev => prev + 1);
+    }, 60000); // Update every 60 seconds
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearInterval(timeUpdateInterval);
+    };
   }, []);
 
   const handleNotificationClick = (notification) => {
@@ -144,7 +155,7 @@ const NotificationSection = ({ onOpenLeave, onOpenCashAdvance, onOpenEvaluation,
                       {notification.message}
                     </div>
                     <div className="text-muted" style={{ fontSize: '0.7rem' }}>
-                      {new Date(notification.created_at).toLocaleDateString()}
+                      {getRelativeTime(notification.created_at)}
                     </div>
                   </div>
                 </div>

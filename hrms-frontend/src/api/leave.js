@@ -36,6 +36,11 @@ export const getEmployeeProfile = () => API.get('/employee/profile-data');
 export const getEmployeeProfileTest = (userId = 6) => API.get(`/employee-profile-test/${userId}`);
 export const getMyLeaveRequests = () => API.get('/leave-requests/my-requests');
 export const getMyLeaveBalance = () => API.get('/leave-requests/my-balance');
+export const getLeaveSummary = () => API.get('/leave-requests/my-summary', {
+  params: {
+    _t: new Date().getTime() // Cache buster
+  }
+});
 export const checkLeaveEligibility = () => API.get('/leave-requests/check-eligibility');
 export const getLeaveTypes = () => API.get('/leave-types');
 export const downloadLeavePdf = (id) => {
@@ -79,6 +84,32 @@ export const approveLeaveRequestAsManager = (id, remarks) => API.put(`/leave-req
 export const rejectLeaveRequestAsManager = (id, remarks) => API.put(`/leave-requests/${id}/manager-reject`, { remarks });
 export const getManagerPendingRequests = () => API.get('/leave-requests/manager-pending');
 export const getHRPendingRequests = () => API.get('/leave-requests/hr-pending');
+
+// Leave Tracker APIs
+export const fetchEmployeeLeaveTracker = (month, year) => API.get(`/leave-tracker?month=${month}&year=${year}`);
+export const exportLeaveTrackerData = (month, year, data) => {
+  // Create Excel export functionality
+  const XLSX = require('xlsx');
+  
+  const worksheet = XLSX.utils.json_to_sheet(data.map(emp => ({
+    'Employee Name': emp.name,
+    'Department': emp.department,
+    'Position': emp.position,
+    'Total Leave Days': emp.totalLeaveDays,
+    'Paid Leave Days': emp.paidLeaveDays,
+    'Unpaid Leave Days': emp.unpaidLeaveDays,
+    'Remaining Paid Leave': emp.remainingPaidLeave,
+    'Remaining Unpaid Leave': emp.remainingUnpaidLeave,
+    'Email': emp.email
+  })));
+  
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Leave Tracker');
+  
+  XLSX.writeFile(workbook, `leave-tracker-${month}-${year}.xlsx`);
+  
+  return Promise.resolve();
+};
 
 // Legacy APIs (keeping for backward compatibility)
 export const fetchLeaves = () => API.get('/leave-requests');

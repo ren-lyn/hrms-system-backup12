@@ -4,10 +4,13 @@ import { Card, Button, Form, Modal, Collapse, Badge, Row, Col, Alert } from "rea
 import { motion, AnimatePresence } from "framer-motion";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import ValidationModal from './common/ValidationModal';
+import useValidationModal from '../hooks/useValidationModal';
 import "bootstrap-icons/font/bootstrap-icons.css";
 import './EvaluationAdministration.css';
 
 const EvaluationAdministration = () => {
+  const { modalState, showSuccess, showError, showWarning, showInfo, hideModal } = useValidationModal();
   const [evaluationForms, setEvaluationForms] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [currentForm, setCurrentForm] = useState({
@@ -44,11 +47,6 @@ const EvaluationAdministration = () => {
     "Trustworthy and Reliable"
   ];
 
-  // Toast notification helpers
-  const showError = (message) => toast.error(message);
-  const showSuccess = (message) => toast.success(message);
-  const showWarning = (message) => toast.warning(message);
-  const showInfo = (message) => toast.info(message);
 
   // Common error handler
   const handleAxiosError = (error, defaultMessage) => {
@@ -374,6 +372,15 @@ const EvaluationAdministration = () => {
         background: "linear-gradient(135deg, #f8f9fc 0%, #e8ecf5 100%)",
       }}
     >
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h2 className="fw-bold text-primary d-flex align-items-center mb-2 mb-md-0">

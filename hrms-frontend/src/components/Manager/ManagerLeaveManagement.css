@@ -325,3 +325,265 @@
   border-color: #007bff;
   color: white;
 }
+
+/* ========================================
+   CUSTOM SIDEBAR STYLING
+   ======================================== */
+.custom-leave-sidebar {
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  z-index: 1045;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 #f1f5f9;
+}
+
+.custom-leave-sidebar.show {
+  visibility: visible !important;
+}
+
+.custom-leave-sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-leave-sidebar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.custom-leave-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+.custom-leave-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.nav-tabs {
+  border-bottom: 1px solid #e9ecef;
+  background: white;
+  padding: 0 24px;
+  padding-top: 16px;
+}
+
+.nav-tabs .nav-item {
+  margin-bottom: -1px;
+}
+
+.nav-tabs .nav-link {
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: #6c757d;
+  font-weight: 500;
+  padding: 12px 20px;
+  transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover {
+  border-bottom-color: #dee2e6;
+  color: #495057;
+}
+
+.nav-tabs .nav-link.active {
+  color: #0d6efd;
+  background: transparent;
+  border-bottom-color: #0d6efd;
+}
+
+/* Sidebar Content Area */
+.sidebar-content {
+  padding: 24px;
+  overflow-y: auto;
+  height: calc(100vh - 140px);
+}
+
+/* Leave Status Section Styling */
+.leave-status-card {
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.leave-status-card .card-header {
+  padding: 16px 20px;
+  font-weight: 600;
+  border-bottom: 1px solid;
+}
+
+.leave-status-card .card-body {
+  padding: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.leave-status-table {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.leave-status-table thead {
+  background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.leave-status-table thead th {
+  padding: 12px;
+  font-weight: 600;
+  color: #475569;
+  border-bottom: 2px solid #e1e8ed;
+  font-size: 0.8125rem;
+}
+
+.leave-status-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.15s ease;
+}
+
+.leave-status-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.leave-status-table tbody td {
+  padding: 12px;
+  vertical-align: middle;
+}
+
+/* Scrollbar Styling for Sidebar */
+.leave-status-card .card-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leave-status-card .card-body::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.leave-status-card .card-body::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+.leave-status-card .card-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Empty State Styling in Sidebar */
+.sidebar-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.sidebar-empty-state svg {
+  opacity: 0.3;
+  margin-bottom: 16px;
+}
+
+.sidebar-empty-state p {
+  color: #64748b;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+/* Responsive Sidebar */
+@media (max-width: 992px) {
+  .custom-leave-sidebar {
+    width: 85% !important;
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .custom-leave-sidebar {
+    width: 100% !important;
+  }
+  
+  .nav-tabs {
+    padding: 0 16px;
+    padding-top: 12px;
+  }
+  
+  .nav-tabs .nav-link {
+    padding: 10px 12px;
+    font-size: 0.875rem;
+  }
+  
+  .sidebar-content {
+    padding: 16px;
+  }
+}
+
+/* Leave Insights Button */
+.btn-outline-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-outline-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+}
+
+/* Leave Status Tabs Styling */
+.tab-link-approved.active {
+  color: #10b981 !important;
+  border-bottom-color: #10b981 !important;
+  background-color: transparent !important;
+}
+
+.tab-link-approved:hover {
+  color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.05) !important;
+}
+
+.tab-link-rejected.active {
+  color: #ef4444 !important;
+  border-bottom-color: #ef4444 !important;
+  background-color: transparent !important;
+}
+
+.tab-link-rejected:hover {
+  color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.05) !important;
+}
+
+/* Table Styling for Leave Status */
+.table-hover tbody tr:hover {
+  background-color: #f8f9fa !important;
+}
+
+/* Tab Content Display Fix */
+.tab-content {
+  position: relative;
+  width: 100%;
+}
+
+.tab-pane {
+  display: none;
+}
+
+.tab-pane.active {
+  display: block !important;
+}
+
+/* Scrollbar Styling for Whole Page */
+body::-webkit-scrollbar {
+  width: 10px;
+}
+
+body::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+body::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 5px;
+}
+
+body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

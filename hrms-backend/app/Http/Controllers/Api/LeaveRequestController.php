@@ -178,7 +178,7 @@ class LeaveRequestController extends Controller
             'name' => 'nullable|string|max:255',
             'company' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:255',
-            'type' => 'required|string|in:Vacation Leave,Sick Leave,Emergency Leave,Maternity Leave,Paternity Leave,Personal Leave,Bereavement Leave',
+            'type' => 'required|string|in:Vacation Leave,Sick Leave,Emergency Leave,Maternity Leave,Paternity Leave,Personal Leave,Bereavement Leave,Leave for Victims of Violence Against Women and Their Children (VAWC),Women\'s Special Leave,Parental Leave',
             'from' => 'required|date',
             'to' => 'required|date|after_or_equal:from',
             'total_days' => 'nullable|integer|min:1',
@@ -204,6 +204,14 @@ class LeaveRequestController extends Controller
         $toDate = Carbon::parse($validated['to']);
         $totalDays = $validated['total_days'] ?? $fromDate->diffInDays($toDate) + 1;
 
+        // Check if employee has an active leave (not yet ended)
+        $activeLeavCheck = LeaveRequest::checkActiveLeave($user->id);
+        if ($activeLeavCheck['has_active_leave']) {
+            return response()->json([
+                'error' => $activeLeavCheck['message']
+            ], 422);
+        }
+
         // Check if HR Assistant is currently in a meeting
         $hrMeeting = HrCalendarEvent::hasActiveBlockingEvent();
         if ($hrMeeting['blocked']) {
@@ -213,9 +221,30 @@ class LeaveRequestController extends Controller
         }
 
         // Validate leave request limits including balance check
-        $validationError = $this->validateLeaveRequestLimits($user->id, $validated['type'], $totalDays);
-        if ($validationError) {
-            return response()->json(['error' => $validationError], 422);
+        $validationResult = $this->validateLeaveRequestLimits($user->id, $validated['type'], $totalDays);
+        if ($validationResult) {
+            // If it's a warning (array with warning key), we allow the request but return the warning
+            if (is_array($validationResult) && isset($validationResult['warning'])) {
+                // Continue with the request creation but include the warning in response
+                $warningMessage = $validationResult;
+            } else {
+                // If it's a string error, return it as before
+                return response()->json(['error' => $validationResult], 422);
+            }
+        }
+
+        // Calculate automatic payment terms based on leave type and usage
+        $paymentTerms = LeaveRequest::calculateAutomaticPaymentTerms($user->id, $validated['type'], $totalDays);
+        
+        // Add payment terms message to warning if it exists
+        if (!isset($warningMessage)) {
+            $warningMessage = [
+                'warning' => true,
+                'message' => $paymentTerms['message'],
+                'with_pay_days' => $paymentTerms['with_pay_days'],
+                'without_pay_days' => $paymentTerms['without_pay_days'],
+                'is_split' => $paymentTerms['is_split'] ?? false
+            ];
         }
 
         // Get employee profile for auto-population
@@ -229,8 +258,11 @@ class LeaveRequestController extends Controller
             ($profile ? ($profile->first_name . ' ' . $profile->last_name) : ($user->first_name . ' ' . $user->last_name));
         $leaveRequest->department = $validated['department'] ?? ($profile->department ?? 'Not Set');
         $leaveRequest->type = $validated['type'];
-        $leaveRequest->terms = 'TBD by HR'; // Will be determined by HR during approval
-        $leaveRequest->leave_category = 'TBD by HR'; // Will be determined by HR during approval
+        // AUTOMATIC: Set payment terms and category based on employee tenure
+        $leaveRequest->terms = $paymentTerms['terms'];
+        $leaveRequest->leave_category = $paymentTerms['leave_category'];
+        $leaveRequest->with_pay_days = $paymentTerms['with_pay_days'];
+        $leaveRequest->without_pay_days = $paymentTerms['without_pay_days'];
         $leaveRequest->from = $validated['from'];
         $leaveRequest->to = $validated['to'];
         $leaveRequest->total_days = $totalDays;
@@ -307,7 +339,8 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request submitted successfully',
-            'data' => $leaveRequest->load('employee')
+            'data' => $leaveRequest->load('employee'),
+            'warning' => $warningMessage ?? null
         ], 201);
     }
 
@@ -595,6 +628,7 @@ class LeaveRequestController extends Controller
 
     /**
      * Check if the requested days exceed the maximum allowed for a single request of this leave type
+     * Special handling for specified leave types: allow exceeding max days but differentiate paid/unpaid
      */
     private function checkLeaveTypeLimit($leaveType, $requestedDays)
     {
@@ -605,36 +639,93 @@ class LeaveRequestController extends Controller
             return "Invalid leave type: {$leaveType}";
         }
         
-        if ($requestedDays > $maxAllowedDays) {
-            return "You can only file up to {$maxAllowedDays} days for {$leaveType}.";
+        // Special handling for these leave types: allow exceeding limit with paid/unpaid split
+        $specialLeaveTypes = [
+            'Sick Leave',
+            'Emergency Leave',
+            'Vacation Leave',
+            'Maternity Leave',
+            'Paternity Leave',
+            'Leave for Victims of Violence Against Women and Their Children (VAWC)',
+            "Women's Special Leave",
+            'Parental Leave'
+        ];
+        
+        if (in_array($leaveType, $specialLeaveTypes)) {
+            if ($requestedDays > $maxAllowedDays) {
+                $paidDays = $maxAllowedDays;
+                $unpaidDays = $requestedDays - $maxAllowedDays;
+                return [
+                    'warning' => true,
+                    'message' => "For {$leaveType}: First {$paidDays} days will be paid, remaining {$unpaidDays} days will be unpaid. You can still submit this request.",
+                    'paid_days' => $paidDays,
+                    'unpaid_days' => $unpaidDays,
+                    'total_days' => $requestedDays
+                ];
+            }
+        } else {
+            // For other leave types, maintain the original strict limit
+            if ($requestedDays > $maxAllowedDays) {
+                return "You can only file up to {$maxAllowedDays} days for {$leaveType}.";
+            }
         }
         
         return null; // No limit violation
     }
 
     /**
+     * Check if employee is a new hire (less than 1 year from hire date)
+     */
+    private function isNewHire($employeeId)
+    {
+        $user = User::with('employeeProfile')->find($employeeId);
+        if (!$user || !$user->employeeProfile) {
+            return false; // If no profile, assume not a new hire
+        }
+        
+        $hireDate = $user->employeeProfile->hire_date;
+        if (!$hireDate) {
+            return false; // If no hire date, assume not a new hire
+        }
+        
+        $hireDate = Carbon::parse($hireDate);
+        $oneYearAgo = Carbon::now()->subMonths(12);
+        
+        return $hireDate->gt($oneYearAgo);
+    }
+
+    /**
      * Validate leave request limits for an employee
      * Rules:
-     * 1. Maximum 3 leave requests per month
-     * 2. Must wait 7 days after the end date of previous leave before filing another
-     * 3. Check if requested days exceed maximum days allowed for the leave type (per-request limit)
-     * 4. Check leave balance for the requested leave type (annual balance)
+     * 1. Check if employee is a new hire (less than 1 year) - NEW HIRE VALIDATION
+     * 2. Maximum 3 leave requests per year
+     * 3. Must wait 7 days after the end date of previous leave before filing another
+     * 4. Check if requested days exceed maximum days allowed for the leave type (per-request limit)
+     * 5. Check leave balance for the requested leave type (annual balance)
      */
     private function validateLeaveRequestLimits($employeeId, $leaveType = null, $requestedDays = 0)
     {
-        $currentMonth = Carbon::now()->format('Y-m');
+        $currentYear = Carbon::now()->year;
         $today = Carbon::now();
         
-        // Rule 1: Check monthly limit (3 requests per month)
-        $monthlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
-            ->whereRaw('DATE_FORMAT(created_at, "%Y-%m") = ?', [$currentMonth])
-            ->count();
-            
-        if ($monthlyRequestCount >= 3) {
-            return 'You have reached the monthly limit of 3 leave requests. Please wait until next month to submit another request.';
+        // Rule 1: New hires (<1 year) are allowed but with an unpaid warning
+        if ($this->isNewHire($employeeId)) {
+            return [
+                'warning' => true,
+                'message' => 'As a new employee (employed less than one year), this leave will be without pay. You can still submit this request.'
+            ];
         }
         
-        // Rule 2: Check 7-day waiting period after last leave end date
+        // Rule 2: Check yearly limit (3 requests per year)
+        $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
+            ->whereYear('created_at', $currentYear)
+            ->count();
+            
+        if ($yearlyRequestCount >= 3) {
+            return 'You have reached the yearly limit of 3 leave requests. Please wait until next year to submit another request.';
+        }
+        
+        // Rule 3: Check 7-day waiting period after last leave end date
         $lastLeave = LeaveRequest::where('employee_id', $employeeId)
             ->whereIn('status', ['pending', 'manager_approved', 'approved']) // Only consider non-rejected leaves
             ->orderBy('to', 'desc')
@@ -651,15 +742,21 @@ class LeaveRequestController extends Controller
             }
         }
         
-        // Rule 3: Check if requested days exceed the maximum allowed for the leave type (check first)
+        // Rule 4: Check if requested days exceed the maximum allowed for the leave type (check first)
         if ($leaveType && $requestedDays > 0) {
-            $leaveTypeLimitError = $this->checkLeaveTypeLimit($leaveType, $requestedDays);
-            if ($leaveTypeLimitError) {
-                return $leaveTypeLimitError;
+            $leaveTypeLimitResult = $this->checkLeaveTypeLimit($leaveType, $requestedDays);
+            if ($leaveTypeLimitResult) {
+                // If it's a warning (array with warning key), we allow the request but return the warning
+                if (is_array($leaveTypeLimitResult) && isset($leaveTypeLimitResult['warning'])) {
+                    return $leaveTypeLimitResult; // Return the warning object
+                } else {
+                    // If it's a string error, return it as before
+                    return $leaveTypeLimitResult;
+                }
             }
         }
         
-        // Rule 4: Check leave balance if leave type and requested days are provided
+        // Rule 5: Check leave balance if leave type and requested days are provided
         if ($leaveType && $requestedDays > 0) {
             $balanceError = $this->checkLeaveBalance($employeeId, $leaveType, $requestedDays);
             if ($balanceError) {
@@ -712,6 +809,15 @@ class LeaveRequestController extends Controller
         $validationError = $this->validateLeaveRequestLimits($user->id);
         
         if ($validationError) {
+            // If it's a warning (e.g., new hire unpaid), still eligible
+            if (is_array($validationError) && isset($validationError['warning'])) {
+                return response()->json([
+                    'eligible' => true,
+                    'message' => $validationError['message'],
+                    'restrictions' => $this->getLeaveRestrictionDetails($user->id)
+                ]);
+            }
+            
             return response()->json([
                 'eligible' => false,
                 'message' => $validationError,
@@ -731,12 +837,12 @@ class LeaveRequestController extends Controller
      */
     private function getLeaveRestrictionDetails($employeeId)
     {
-        $currentMonth = Carbon::now()->format('Y-m');
+        $currentYear = Carbon::now()->year;
         $today = Carbon::now();
         
-        // Monthly usage
-        $monthlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
-            ->whereRaw('DATE_FORMAT(created_at, "%Y-%m") = ?', [$currentMonth])
+        // Yearly usage
+        $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
+            ->whereYear('created_at', $currentYear)
             ->count();
             
         // Last leave information
@@ -765,11 +871,11 @@ class LeaveRequestController extends Controller
         }
         
         return [
-            'monthly_limit' => [
+            'yearly_limit' => [
                 'limit' => 3,
-                'used' => $monthlyRequestCount,
-                'remaining' => 3 - $monthlyRequestCount,
-                'month' => Carbon::now()->format('F Y')
+                'used' => $yearlyRequestCount,
+                'remaining' => max(0, 3 - $yearlyRequestCount),
+                'year' => $currentYear
             ],
             'waiting_period' => $waitingPeriodInfo
         ];
@@ -798,5 +904,233 @@ class LeaveRequestController extends Controller
         $filename = 'leave-application-' . $leaveRequest->id . '.pdf';
         
         return $pdf->download($filename);
+    }
+
+    /**
+     * Get employee's leave summary with tenure-based payment status
+     */
+    public function getLeaveSummary()
+    {
+        $user = Auth::user();
+        if (!$user) {
+            // Fallback for testing
+            $user = \App\Models\User::find(1);
+            if (!$user) {
+                return response()->json(['error' => 'User not found'], 400);
+            }
+        }
+
+        $currentYear = now()->year;
+        
+        // Calculate employee tenure
+        $tenureInMonths = LeaveRequest::calculateEmployeeTenure($user->id);
+        $tenureYears = floor($tenureInMonths / 12);
+        $remainingMonths = $tenureInMonths % 12;
+        
+        // Determine tenure bracket
+        $tenureBracket = '';
+        $silDays = 0;
+        $otherLeavesPaid = false;
+        
+        if ($tenureInMonths < 6) {
+            $tenureBracket = 'Less than 6 months';
+            $silDays = 0;
+            $otherLeavesPaid = false;
+        } elseif ($tenureInMonths >= 6 && $tenureInMonths < 12) {
+            $tenureBracket = '6 months to 1 year';
+            $silDays = 3;
+            $otherLeavesPaid = false;
+        } else {
+            $tenureBracket = '1 year or more';
+            $silDays = 8;
+            $otherLeavesPaid = true;
+        }
+        
+        // Calculate used SIL days (Sick Leave + Emergency Leave combined)
+        $usedSILDays = LeaveRequest::where('employee_id', $user->id)
+            ->whereIn('type', ['Sick Leave', 'Emergency Leave'])
+            ->whereYear('from', $currentYear)
+            ->whereIn('status', ['approved'])
+            ->where('terms', 'with PAY')
+            ->sum('total_days');
+        
+        $remainingSILDays = max(0, $silDays - $usedSILDays);
+        
+        // Check for active leave
+        $activeLeavCheck = LeaveRequest::checkActiveLeave($user->id);
+        
+        // Get all leaves for current year
+        $allLeaves = LeaveRequest::where('employee_id', $user->id)
+            ->whereYear('from', $currentYear)
+            ->orderBy('from', 'desc')
+            ->get()
+            ->map(function ($leave) {
+                return [
+                    'id' => $leave->id,
+                    'type' => $leave->type,
+                    'from' => $leave->from->format('Y-m-d'),
+                    'to' => $leave->to->format('Y-m-d'),
+                    'total_days' => $leave->total_days,
+                    'terms' => $leave->terms,
+                    'leave_category' => $leave->leave_category,
+                    'status' => $leave->status,
+                    'date_filed' => $leave->date_filed ? $leave->date_filed->format('Y-m-d') : null,
+                ];
+            });
+        
+        // Calculate leave instances (yearly limit tracking)
+        $yearlyRequestCount = LeaveRequest::where('employee_id', $user->id)
+            ->whereYear('created_at', $currentYear)
+            ->count();
+        
+        $remainingRequests = max(0, 3 - $yearlyRequestCount);
+        
+        // Determine next available filing date
+        $nextAvailableDate = null;
+        $lastLeave = LeaveRequest::where('employee_id', $user->id)
+            ->whereIn('status', ['pending', 'manager_approved', 'approved'])
+            ->orderBy('to', 'desc')
+            ->first();
+            
+        if ($lastLeave) {
+            $lastLeaveEndDate = Carbon::parse($lastLeave->to);
+            $waitUntilDate = $lastLeaveEndDate->copy()->addDays(8); // 7 full waiting days + 1
+            $today = Carbon::now()->startOfDay();
+            
+            // Only set next available date if still in waiting period
+            if ($today->lt($waitUntilDate->startOfDay())) {
+                $nextAvailableDate = $waitUntilDate->format('F j, Y');
+            }
+        }
+        
+        // If all 3 leaves used, next available is next year
+        if ($yearlyRequestCount >= 3 && !$nextAvailableDate) {
+            $nextYear = Carbon::create($currentYear + 1, 1, 1);
+            $nextAvailableDate = $nextYear->format('F j, Y');
+        }
+        
+        return response()->json([
+            'year' => $currentYear,
+            'leave_instances' => [
+                'total_allowed' => 3,
+                'used' => $yearlyRequestCount,
+                'remaining' => $remainingRequests,
+                'next_available_date' => $nextAvailableDate
+            ],
+            'tenure' => [
+                'months' => $tenureInMonths,
+                'years' => $tenureYears,
+                'remaining_months' => $remainingMonths,
+                'bracket' => $tenureBracket,
+                'display' => $tenureYears > 0 
+                    ? "{$tenureYears} year" . ($tenureYears > 1 ? 's' : '') . ($remainingMonths > 0 ? " and {$remainingMonths} month" . ($remainingMonths > 1 ? 's' : '') : '')
+                    : "{$tenureInMonths} month" . ($tenureInMonths > 1 ? 's' : '')
+            ],
+            'sil_balance' => [
+                'max_with_pay_days' => $silDays,
+                'used_with_pay_days' => $usedSILDays,
+                'remaining_with_pay_days' => $remainingSILDays,
+                'percentage_used' => $silDays > 0 ? round(($usedSILDays / $silDays) * 100, 1) : 0
+            ],
+            'other_leaves_paid' => $otherLeavesPaid,
+            'payment_status' => [
+                'message' => 'Payment status is automatically determined based on your tenure and leave category.',
+                'can_file_leave' => !$activeLeavCheck['has_active_leave'],
+                'restriction_message' => $activeLeavCheck['message']
+            ],
+            'active_leave' => $activeLeavCheck['has_active_leave'] ? [
+                'exists' => true,
+                'leave_id' => $activeLeavCheck['leave']->id,
+                'type' => $activeLeavCheck['leave']->type,
+                'from' => $activeLeavCheck['leave']->from->format('Y-m-d'),
+                'to' => $activeLeavCheck['leave']->to->format('Y-m-d'),
+                'status' => $activeLeavCheck['leave']->status,
+                'can_file_from' => Carbon::parse($activeLeavCheck['leave']->to)->addDay()->format('Y-m-d')
+            ] : [
+                'exists' => false
+            ],
+            'leaves_this_year' => $allLeaves,
+            'rules' => [
+                '1' => 'Payment is based on your length of service (tenure)',
+                '2' => 'Less than 6 months: All leave types are WITHOUT PAY',
+                '3' => '6 months to 1 year: SIL (Sick & Emergency Leave) gets 3 days WITH PAY',
+                '4' => '1 year or more: SIL gets 8 days WITH PAY (3 + 5 additional days)',
+                '5' => '1 year or more: Other leave types are WITH PAY based on their configured days',
+                '6' => 'SIL = Sick Leave and Emergency Leave (combined)',
+                '7' => 'All leave counters reset at the start of each calendar year',
+                '8' => 'You cannot file another leave until your current leave end date has passed'
+            ]
+        ]);
+    }
+
+    /**
+     * Get Leave Tracker data for HR Assistant
+     */
+    public function getLeaveTrackerData(Request $request)
+    {
+        $month = $request->get('month', Carbon::now()->month);
+        $year = $request->get('year', Carbon::now()->year);
+        
+        // Get all employees with their profiles
+        $employees = User::with(['employeeProfile'])
+            ->whereHas('employeeProfile')
+            ->get();
+        
+        $leaveTrackerData = [];
+        
+        foreach ($employees as $employee) {
+            $profile = $employee->employeeProfile;
+            
+            // Get ALL approved leave requests for the entire year (not just the selected month)
+            $leaveRequests = LeaveRequest::where('employee_id', $employee->id)
+                ->whereYear('from', $year)
+                ->whereIn('status', ['approved', 'manager_approved'])
+                ->orderBy('from', 'asc')
+                ->get();
+            
+            // Calculate leave statistics using the split days fields
+            $totalLeaveDays = $leaveRequests->sum('total_days');
+            $paidLeaveDays = $leaveRequests->sum('with_pay_days');
+            $unpaidLeaveDays = $leaveRequests->sum('without_pay_days');
+            
+            // Get leave periods for display (all leave instances for the year)
+            $leavePeriods = $leaveRequests->map(function ($request) {
+                return [
+                    'leaveType' => $request->type,
+                    'startDate' => $request->from,
+                    'endDate' => $request->to,
+                    'days' => $request->total_days,
+                    'terms' => $request->terms,
+                    'leave_category' => $request->leave_category ?? 'Not Set'
+                ];
+            })->toArray();
+            
+            $leaveTrackerData[] = [
+                'id' => $employee->id,
+                'name' => $profile->first_name . ' ' . $profile->last_name,
+                'email' => $profile->email ?? $employee->email,
+                'department' => $profile->department ?? 'Not Set',
+                'position' => $profile->position ?? 'Not Set',
+                'totalLeaveDays' => $totalLeaveDays,
+                'paidLeaveDays' => $paidLeaveDays,
+                'unpaidLeaveDays' => $unpaidLeaveDays,
+                'leavePeriods' => $leavePeriods
+            ];
+        }
+        
+        return response()->json([
+            'data' => $leaveTrackerData,
+            'month' => $month,
+            'year' => $year,
+            'summary' => [
+                'totalEmployees' => count($leaveTrackerData),
+                'employeesWithLeave' => count(array_filter($leaveTrackerData, function($emp) {
+                    return $emp['totalLeaveDays'] > 0;
+                })),
+                'totalLeaveDays' => array_sum(array_column($leaveTrackerData, 'totalLeaveDays')),
+                'totalPaidDays' => array_sum(array_column($leaveTrackerData, 'paidLeaveDays')),
+                'totalUnpaidDays' => array_sum(array_column($leaveTrackerData, 'unpaidLeaveDays'))
+            ]
+        ]);
     }
 }

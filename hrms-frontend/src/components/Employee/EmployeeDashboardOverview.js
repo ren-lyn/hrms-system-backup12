@@ -27,6 +27,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import axios from '../../axios';
 import { toast } from 'react-toastify';
+import { getRelativeTime } from '../../utils/timeUtils';
 
 const EmployeeDashboardOverview = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
@@ -41,9 +42,17 @@ const EmployeeDashboardOverview = ({ onNavigate }) => {
     disciplinaryStats: {},
     cashAdvanceRequests: []
   });
+  const [, setTimeUpdate] = useState(0); // Force re-render for time updates
 
   useEffect(() => {
     loadDashboardData();
+    
+    // Update relative times every minute
+    const timeUpdateInterval = setInterval(() => {
+      setTimeUpdate(prev => prev + 1);
+    }, 60000); // Update every 60 seconds
+    
+    return () => clearInterval(timeUpdateInterval);
   }, []);
 
   const loadDashboardData = async () => {
@@ -113,6 +122,16 @@ const EmployeeDashboardOverview = ({ onNavigate }) => {
       case 'rejected': return faTimesCircle;
       case 'manager_approved': return faCheckCircle;
       default: return faInfoCircle;
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'approved': return 'Approved';
+      case 'pending': return 'Pending';
+      case 'rejected': return 'Rejected';
+      case 'manager_approved': return 'Manager approved';
+      default: return status?.replace('_', ' ') || 'Unknown';
     }
   };
 
@@ -246,7 +265,7 @@ const EmployeeDashboardOverview = ({ onNavigate }) => {
                           <h6 className="mb-1">{notification.title}</h6>
                           <p className="mb-1 text-muted small">{notification.message}</p>
                           <small className="text-muted">
-                            {new Date(notification.created_at).toLocaleDateString()}
+                            {getRelativeTime(notification.created_at)}
                           </small>
                         </div>
                         {!notification.read_at && (
@@ -301,7 +320,7 @@ const EmployeeDashboardOverview = ({ onNavigate }) => {
                         <div className="text-end">
                           <Badge bg={getStatusColor(request.status)} className="mb-1">
                             <FontAwesomeIcon icon={getStatusIcon(request.status)} className="me-1" />
-                            {request.status.replace('_', ' ')}
+                            {getStatusText(request.status)}
                           </Badge>
                           <div>
                             <Button 

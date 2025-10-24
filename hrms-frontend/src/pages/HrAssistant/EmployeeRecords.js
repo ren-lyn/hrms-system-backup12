@@ -8,9 +8,12 @@ import 'jspdf-autotable';
 import Papa from 'papaparse';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import ValidationModal from '../../components/common/ValidationModal';
+import useValidationModal from '../../hooks/useValidationModal';
 import './EmployeeRecords.css'; // Import custom styles
 
 const EmployeeRecords = () => {
+  const { modalState, showSuccess, showError, showWarning, showInfo, hideModal } = useValidationModal();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -114,10 +117,6 @@ const EmployeeRecords = () => {
     termination_date: '', termination_reason: '', termination_remarks: '',
   });
 
-  const showError = (message) => toast.error(message);
-  const showSuccess = (message) => toast.success(message);
-  const showWarning = (message) => toast.warning(message);
-  const showInfo = (message) => toast.info(message);
 
   // Function to validate if current token is valid
   const validateToken = async () => {
@@ -1130,6 +1129,15 @@ const EmployeeRecords = () => {
 
   return (
     <div>
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       <div className="employee-records-header">
         <div className="employee-records-controls d-flex gap-2 flex-wrap">
           <input

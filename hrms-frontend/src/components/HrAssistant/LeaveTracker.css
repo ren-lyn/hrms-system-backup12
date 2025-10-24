@@ -1,0 +1,530 @@
+/* ========================================
+   PROFESSIONAL HRMS LEAVE TRACKER DESIGN
+   Clean, Minimalist, Enterprise-Grade UI
+   ======================================== */
+
+.leave-tracker {
+  padding: 0;
+  min-height: 100vh;
+  background-color: #f5f7fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+}
+
+/* ========================================
+   HEADER SECTION
+   ======================================== */
+.page-header {
+  background: #ffffff;
+  border-bottom: 1px solid #e1e8ed;
+  padding: 32px 40px;
+  margin-bottom: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #1a202c;
+  letter-spacing: -0.5px;
+  text-shadow: none;
+}
+
+.page-subtitle {
+  font-size: 0.9375rem;
+  color: #64748b;
+  margin-bottom: 0;
+  font-weight: 400;
+  opacity: 1;
+}
+
+/* ========================================
+   STATS CARDS - CLEAN & MINIMAL
+   ======================================== */
+.stats-card {
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+  background: #ffffff;
+  margin-bottom: 24px;
+  cursor: pointer;
+  position: relative;
+}
+
+.stats-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.12);
+  border-color: #3b82f6;
+}
+
+.stats-card:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.stats-card .card-body {
+  padding: 20px 24px;
+}
+
+.stats-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b82f6;
+  box-shadow: none;
+}
+
+.stat-value {
+  font-size: 1.875rem;
+  font-weight: 600;
+  color: #1a202c;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* ========================================
+   FORM CONTROLS - PROFESSIONAL
+   ======================================== */
+.form-control, .form-select {
+  border-radius: 6px;
+  border: 1px solid #e1e8ed;
+  padding: 10px 14px;
+  font-size: 0.9375rem;
+  transition: all 0.15s ease;
+  background-color: #ffffff;
+  color: #1a202c;
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background-color: #ffffff;
+}
+
+.form-control::placeholder {
+  color: #94a3b8;
+}
+
+.form-label {
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+}
+
+/* ========================================
+   BUTTONS - MINIMAL & MODERN
+   ======================================== */
+.btn {
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  border: none;
+  font-size: 0.9375rem;
+  letter-spacing: 0;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+}
+
+.btn-success {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.btn-success:hover {
+  background: #059669;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.btn-info {
+  background: #0ea5e9;
+  color: #ffffff;
+}
+
+.btn-info:hover {
+  background: #0284c7;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
+}
+
+/* ========================================
+   TABLE STYLING - ENTERPRISE CLEAN
+   ======================================== */
+.leave-tracker-table {
+  margin-bottom: 0;
+  font-size: 0.9375rem;
+  color: #1a202c;
+}
+
+.leave-tracker-table thead th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 2px solid #e1e8ed;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  text-transform: none;
+}
+
+.leave-tracker-table thead th:first-child {
+  text-align: left;
+}
+
+.leave-tracker-table tbody td {
+  padding: 16px;
+  vertical-align: middle;
+  border-color: #f1f5f9;
+  background: #ffffff;
+}
+
+.leave-tracker-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.leave-tracker-table tbody tr:hover {
+  background-color: #f8fafc;
+  transform: none;
+  transition: background-color 0.15s ease;
+}
+
+.leave-tracker-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+/* ========================================
+   EMPLOYEE INFO
+   ======================================== */
+.employee-info strong {
+  color: #1a202c;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.employee-info .small {
+  color: #64748b;
+  font-size: 0.8125rem;
+  margin-top: 2px;
+}
+
+.department-text, .position-text {
+  color: #475569;
+  font-weight: 400;
+  font-size: 0.9375rem;
+}
+
+/* ========================================
+   LEAVE PERIODS
+   ======================================== */
+.leave-periods {
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.leave-period-item {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.leave-period-item:last-child {
+  margin-bottom: 0;
+}
+
+.leave-period-item span {
+  color: #1a202c;
+  font-weight: 500;
+}
+
+.leave-period-item small {
+  color: #64748b;
+  font-size: 0.8125rem;
+}
+
+/* ========================================
+   BADGES
+   ======================================== */
+.badge {
+  font-size: 0.8125rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+/* ========================================
+   CARD STYLING
+   ======================================== */
+.card {
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.card-header {
+  background: #ffffff;
+  color: #1a202c;
+  border-bottom: 1px solid #e1e8ed;
+  padding: 20px 24px;
+}
+
+.card-header h5 {
+  margin-bottom: 0;
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: #1a202c;
+}
+
+.card-body {
+  padding: 0;
+}
+
+/* ========================================
+   ALERT STYLING
+   ======================================== */
+.alert {
+  border-radius: 6px;
+  border: 1px solid;
+  font-weight: 400;
+  font-size: 0.9375rem;
+}
+
+.alert-danger {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.alert-success {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+/* ========================================
+   LOADING SPINNER
+   ======================================== */
+.spinner-border {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #3b82f6;
+  border-width: 3px;
+}
+
+/* ========================================
+   STATUS INDICATORS
+   ======================================== */
+.text-success {
+  color: #10b981 !important;
+}
+
+.text-warning {
+  color: #f59e0b !important;
+}
+
+.text-danger {
+  color: #ef4444 !important;
+}
+
+/* ========================================
+   UTILITY CLASSES
+   ======================================== */
+.d-flex {
+  display: flex;
+}
+
+.align-items-center {
+  align-items: center;
+}
+
+.justify-content-center {
+  justify-content: center;
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+@media (max-width: 768px) {
+  .page-header {
+    padding: 24px 20px;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+  
+  .page-subtitle {
+    font-size: 0.875rem;
+  }
+  
+  .stats-card {
+    margin-bottom: 16px;
+  }
+  
+  .stat-value {
+    font-size: 1.5rem;
+  }
+  
+  .leave-tracker-table {
+    font-size: 0.875rem;
+  }
+  
+  .leave-tracker-table thead th,
+  .leave-tracker-table tbody td {
+    padding: 12px 10px;
+  }
+  
+  .btn {
+    padding: 8px 16px;
+    font-size: 0.875rem;
+  }
+  
+  .form-control, .form-select {
+    padding: 9px 12px;
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .page-header {
+    padding: 20px 16px;
+  }
+  
+  .page-title {
+    font-size: 1.375rem;
+  }
+  
+  .stats-icon {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .stat-value {
+    font-size: 1.375rem;
+  }
+  
+  .stat-label {
+    font-size: 0.8125rem;
+  }
+  
+  .leave-tracker-table {
+    font-size: 0.8125rem;
+  }
+  
+  .leave-periods {
+    max-width: 160px;
+  }
+}
+
+/* ========================================
+   SCROLLBAR STYLING
+   ======================================== */
+.table-responsive::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ========================================
+   EMPTY STATE STYLING
+   ======================================== */
+.text-center.p-4 {
+  background: #ffffff;
+  border-radius: 8px;
+  margin: 24px;
+  border: 1px dashed #e1e8ed;
+}
+
+.text-center.p-4 .text-muted {
+  color: #64748b !important;
+  font-weight: 400;
+}
+
+/* ========================================
+   FOCUS STATES (ACCESSIBILITY)
+   ======================================== */
+.form-control:focus,
+.form-select:focus,
+.btn:focus {
+  outline: none;
+}
+
+/* ========================================
+   REMOVE ANIMATIONS (PROFESSIONAL)
+   ======================================== */
+.leave-tracker-table tbody tr {
+  animation: none;
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+@media print {
+  .page-header {
+    background: #ffffff !important;
+    border-bottom: 2px solid #1a202c;
+    -webkit-print-color-adjust: exact;
+    color-adjust: exact;
+  }
+  
+  .page-title {
+    color: #1a202c !important;
+  }
+  
+  .stats-card {
+    box-shadow: none !important;
+    border: 1px solid #e1e8ed !important;
+    page-break-inside: avoid;
+  }
+  
+  .btn {
+    display: none !important;
+  }
+  
+  .leave-tracker-table {
+    page-break-inside: avoid;
+  }
+}

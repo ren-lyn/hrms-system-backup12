@@ -1,18 +1,21 @@
 // src/components/HrAssistant/Dashboard/Sidebar.js
 import axios from "axios";
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import useUserProfile from '../../../hooks/useUserProfile';
 import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
-  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt, FaFileAlt, FaChartBar
+  FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
+  FaEye, FaChartBar, FaCog
+
 } from "react-icons/fa";
 
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const { userProfile, loading } = useUserProfile();
+  const [isLeaveDropdownOpen, setIsLeaveDropdownOpen] = useState(false);
 
   const handleLogout = () => {
     // Remove token
@@ -21,6 +24,10 @@ const Sidebar = () => {
     delete axios.defaults.headers.common['Authorization'];
     // Redirect to login
     navigate('/');
+  };
+
+  const toggleLeaveDropdown = () => {
+    setIsLeaveDropdownOpen(!isLeaveDropdownOpen);
   };
 
   return (
@@ -54,12 +61,40 @@ const Sidebar = () => {
         >
           <FaCalendarCheck /> <span>Attendance</span>
         </NavLink>
-        <NavLink
-          to="leave"
-          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
-        >
-          <FaPlaneDeparture /> <span>Leave Management</span>
-        </NavLink>
+        {/* Leave Management Dropdown */}
+        <div className="hrms-dropdown-container">
+          <button
+            className="hrms-unified-nav-link hrms-dropdown-toggle"
+            onClick={toggleLeaveDropdown}
+          >
+            <FaPlaneDeparture /> 
+            <span>Leave Management</span>
+          </button>
+          
+          <div className={`hrms-dropdown-menu ${isLeaveDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+            <NavLink
+              to="leave"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsLeaveDropdownOpen(false)}
+            >
+              <FaEye /> <span>Leave Overview</span>
+            </NavLink>
+            <NavLink
+              to="leave/tracker"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsLeaveDropdownOpen(false)}
+            >
+              <FaChartBar /> <span>Leave Tracker</span>
+            </NavLink>
+            <NavLink
+              to="leave/settings"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsLeaveDropdownOpen(false)}
+            >
+              <FaCog /> <span>Leave Settings</span>
+            </NavLink>
+          </div>
+        </div>
         <NavLink
           to="my-calendar"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}

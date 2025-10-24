@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { fetchNotifications, markNotificationRead, getNotificationAction, getNotificationIcon } from '../../api/notifications';
+import { getRelativeTime } from '../../utils/timeUtils';
 
 const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
   const [open, setOpen] = useState(false);
@@ -9,6 +10,7 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
   const ref = useRef(null);
   const buttonRef = useRef(null);
   const [anchor, setAnchor] = useState({ top: 0, left: 0 });
+  const [, setTimeUpdate] = useState(0); // Force re-render for time updates
 
   const load = async () => {
     try {
@@ -41,8 +43,18 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+
+    // Update relative times every minute
+    const timeUpdateInterval = setInterval(() => {
+      setTimeUpdate(prev => prev + 1);
+    }, 60000); // Update every 60 seconds
+
+    return () => {
+      document.removeEventListener('click', handler);
+      clearInterval(timeUpdateInterval);
+    };
   }, []);
+
 
   const handleClickItem = async (n) => {
     try {
@@ -185,7 +197,7 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
                         {n.message || 'No message content'}
                       </div>
                       <div className="small text-muted" style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-                        {new Date(n.created_at).toLocaleString()}
+                        {getRelativeTime(n.created_at)}
                       </div>
                     </div>
                     <div style={{ fontSize: '1.1rem', marginLeft: '8px' }}>{getNotificationIcon(n.type)}</div>

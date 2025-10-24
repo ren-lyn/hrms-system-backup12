@@ -8,6 +8,10 @@ import 'react-toastify/dist/ReactToastify.css';
 import EvaluationResult from '../components/Manager/EvaluationResult';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import Bell from '../components/Notifications/Bell';
+import EvaluationAnalyticsSection from '../components/Employee/EvaluationAnalyticsSection';
+import DisciplinaryNoticesSection from '../components/Employee/DisciplinaryNoticesSection';
+import LeaveTrackerSection from '../components/Employee/LeaveTrackerSection';
+import '../components/Employee/MonitoringDashboard.css';
 import {
   faTachometerAlt,
   faUser,
@@ -23,7 +27,6 @@ import {
   faExclamationTriangle,
   faPlane
 } from '@fortawesome/free-solid-svg-icons';
-import NotificationSection from '../components/Notifications/NotificationSection';
 
 // Lazy load components for better performance
 const EmbeddedLeaveForm = React.lazy(() => import('../components/Employee/EmbeddedLeaveForm'));
@@ -266,38 +269,103 @@ const EmployeeDashboard = () => {
     switch (activeView) {
       case 'dashboard':
         return (
-          <div className="responsive-dashboard-grid">
-            <div className="responsive-card">
-              <div className="responsive-card-body">
-                <NotificationSection 
-                  onOpenLeave={(leaveId) => { setSelectedLeaveId(leaveId); setActiveView('leave-request'); }}
-                  onOpenCashAdvance={(cashAdvanceId) => { setSelectedCashAdvanceId(cashAdvanceId); setActiveView('cash-advance'); }}
-                  onOpenEvaluation={(evaluationId, notificationData) => { 
-                    setSelectedEvaluationId(evaluationId);
-                    setEvaluationNotificationData(notificationData);
-                    setActiveView('evaluation-summary'); 
-                  }}
-                   onOpenDisciplinary={() => { setActiveView('disciplinary-notice'); }}
-                   onOpenCalendar={(eventId, notificationData) => {
-                     setCalendarNotificationData(notificationData);
-                     setActiveView('my-calendar');
-                   }}
-                 />
+          <div className="responsive-dashboard-grid monitoring-dashboard">
+            {/* Top Row - Evaluation Analytics and Calendar */}
+            <div className="dashboard-top-row">
+              {/* Evaluation Analytics Section */}
+              <div className="responsive-card monitoring-card">
+                <div className="responsive-card-body">
+                  <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
+                    <h6 className="text-secondary m-0 text-responsive-md">
+                      <FontAwesomeIcon icon={faChartBar} className="me-2 text-success" /> Evaluation Analytics
+                    </h6>
+                    <Button 
+                      variant="outline-primary" 
+                      size="sm" 
+                      className="responsive-btn"
+                      onClick={() => setActiveView('evaluation-summary')}
+                    >
+                      View All
+                    </Button>
+                  </div>
+                  <EvaluationAnalyticsSection />
+                </div>
+              </div>
+
+              {/* Calendar Section */}
+              <div className="responsive-card calendar-section">
+                <div className="responsive-card-body">
+                  <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
+                    <h6 className="text-secondary m-0 text-responsive-md">
+                      <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" /> Calendar
+                    </h6>
+                    <span className="small text-muted text-responsive-sm">
+                      <FontAwesomeIcon icon={faClock} className="me-1" />
+                      {timeNow.toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="responsive-calendar">
+                    <Calendar onChange={setCalendarDate} value={calendarDate} className="w-100 border-0" />
+                    <div className="calendar-header-info">
+                      <div className="calendar-date-info">
+                        {calendarDate.toLocaleDateString('en-US', { 
+                          month: 'numeric', 
+                          day: 'numeric', 
+                          year: 'numeric' 
+                        })}
+                      </div>
+                      <div className="calendar-weather-info">
+                        {new Date().toLocaleTimeString('en-US', { 
+                          hour: 'numeric', 
+                          minute: '2-digit',
+                          hour12: true 
+                        })} • 27.2°C Overcast
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="responsive-card">
-              <div className="responsive-card-body">
-                <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
-                  <h6 className="text-secondary m-0 text-responsive-md">
-                    <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" /> Calendar
-                  </h6>
-                  <span className="small text-muted text-responsive-sm">
-                    <FontAwesomeIcon icon={faClock} className="me-1" />
-                    {timeNow.toLocaleTimeString()}
-                  </span>
+
+            {/* Bottom Row - Disciplinary Notices and Leave Tracker */}
+            <div className="dashboard-bottom-row">
+              {/* Disciplinary Notices Section */}
+              <div className="responsive-card monitoring-card">
+                <div className="responsive-card-body">
+                  <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
+                    <h6 className="text-secondary m-0 text-responsive-md">
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="me-2 text-warning" /> Disciplinary Notices
+                    </h6>
+                    <Button 
+                      variant="outline-primary" 
+                      size="sm" 
+                      className="responsive-btn"
+                      onClick={() => setActiveView('disciplinary-notice')}
+                    >
+                      View All
+                    </Button>
+                  </div>
+                  <DisciplinaryNoticesSection />
                 </div>
-                <div className="responsive-calendar">
-                  <Calendar onChange={setCalendarDate} value={calendarDate} className="w-100 border-0" />
+              </div>
+
+              {/* Leave Tracker Section */}
+              <div className="responsive-card monitoring-card">
+                <div className="responsive-card-body">
+                  <div className="d-flex justify-content-between align-items-center mb-3 responsive-header">
+                    <h6 className="text-secondary m-0 text-responsive-md">
+                      <FontAwesomeIcon icon={faPlane} className="me-2 text-info" /> Leave Tracker
+                    </h6>
+                    <Button 
+                      variant="outline-primary" 
+                      size="sm" 
+                      className="responsive-btn"
+                      onClick={() => setActiveView('leave-request')}
+                    >
+                      Request Leave
+                    </Button>
+                  </div>
+                  <LeaveTrackerSection />
                 </div>
               </div>
             </div>

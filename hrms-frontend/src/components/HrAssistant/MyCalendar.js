@@ -9,11 +9,16 @@ import {
   getEventTypeColor,
   getEventTypeIcon,
   getInvitationStatusColor,
-  getInvitationStatusText
+  getInvitationStatusText,
+  clearAllCalendarCaches
 } from '../../api/calendar';
+import ValidationModal from '../common/ValidationModal';
+import ConfirmationModal from '../common/ConfirmationModal';
+import useValidationModal from '../../hooks/useValidationModal';
 import './MyCalendar.css';
 
 const MyCalendar = () => {
+  const { modalState, showSuccess, showError, showWarning, hideModal } = useValidationModal();
   const [events, setEvents] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [filteredEmployees, setFilteredEmployees] = useState([]);
@@ -24,7 +29,6 @@ const MyCalendar = () => {
   const [modalType, setModalType] = useState('create'); // 'create', 'edit', 'view'
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [currentDate, setCurrentDate] = useState(new Date());
   
   const [formData, setFormData] = useState({
@@ -39,6 +43,13 @@ const MyCalendar = () => {
     invited_employees: []
   });
 
+  const [formErrors, setFormErrors] = useState({});
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [confirmationData, setConfirmationData] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
   const eventTypes = [
     { value: 'meeting', label: 'Meeting', color: '#007bff' },
     { value: 'training', label: 'Training', color: '#28a745' },
@@ -50,6 +61,28 @@ const MyCalendar = () => {
 
   useEffect(() => {
     loadData();
+  }, [currentDate]);
+
+  // Auto-refresh mechanism for real-time updates
+  useEffect(() => {
+    // Refresh data when window gains focus (user returns to tab)
+    const handleFocus = () => {
+      console.log('Window focused - checking for calendar updates...');
+      loadData(false);
+    };
+
+    // Periodic refresh every 30 seconds to catch real-time updates
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refresh - checking for calendar updates...');
+      loadData(false);
+    }, 30000); // 30 seconds
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(refreshInterval);
+    };
   }, [currentDate]);
 
   const loadData = async (showLoadingIndicator = true) => {
@@ -71,6 +104,7 @@ const MyCalendar = () => {
       setEvents(eventsResponse.data || []);
       setEmployees(employeesResponse.data || []);
       setFilteredEmployees(employeesResponse.data || []);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Error loading calendar data:', error);
       if (showLoadingIndicator) {
@@ -84,8 +118,58 @@ const MyCalendar = () => {
   };
 
   const showAlert = (message, type) => {
-    setAlert({ show: true, message, type });
-    setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
+    if (type === 'success') {
+      showSuccess(message);
+    } else if (type === 'danger') {
+      showError(message);
+    } else if (type === 'info') {
+      showWarning(message);
+    } else {
+      showSuccess(message);
+    }
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!formData.title.trim()) {
+      errors.title = 'Event title is required';
+    }
+    
+    if (!formData.event_type) {
+      errors.event_type = 'Event type is required';
+    }
+    
+    if (!formData.date && !selectedDate) {
+      errors.date = 'Event date is required';
+    }
+    
+    if (!formData.start_time) {
+      errors.start_time = 'Start time is required';
+    }
+    
+    if (!formData.end_time) {
+      errors.end_time = 'End time is required';
+    }
+    
+    if (formData.start_time && formData.end_time) {
+      const startTime = new Date(`2000-01-01T${formData.start_time}`);
+      const endTime = new Date(`2000-01-01T${formData.end_time}`);
+      if (endTime <= startTime) {
+        errors.end_time = 'End time must be after start time';
+      }
+    }
+
+    // If there are validation errors, show them in a modal
+    if (Object.keys(errors).length > 0) {
+      const errorMessages = Object.values(errors).join('\n');
+      setValidationMessage(errorMessages);
+      setShowValidationModal(true);
+      return false;
+    }
+
+    setFormErrors({});
+    return true;
   };
 
   // Calendar helper functions
@@ -140,6 +224,9 @@ const MyCalendar = () => {
       date: dateValue,
       invited_employees: []
     });
+    setFormErrors({});
+    setShowValidationModal(false);
+    setValidationMessage('');
     setEmployeeSearchTerm('');
     setPositionFilter('all');
     setFilteredEmployees(employees);
@@ -218,6 +305,10 @@ const MyCalendar = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (!validateForm()) {
+      return;
+    }
+    
     try {
       // Combine date and time for datetime fields - ensure local date is used
       let eventDate;
@@ -267,8 +358,58 @@ const MyCalendar = () => {
     } catch (error) {
       console.error('Error saving event:', error);
       const errorMessage = error.response?.data?.message || 'Error saving event. Please try again.';
-      showAlert(errorMessage, 'danger');
+      
+      // Handle server-side validation errors
+      if (error.response?.data?.errors) {
+        const errorMessages = Object.values(error.response.data.errors).join('\n');
+        setValidationMessage(errorMessages);
+        setShowValidationModal(true);
+      } else {
+        // For general errors, show modal
+        showAlert(errorMessage, 'danger');
+      }
     }
+  };
+
+  const handleCancelEvent = async (eventId) => {
+    const event = events.find(e => e.id === eventId);
+    const employeeCount = event?.invited_employees?.length || 0;
+    
+    setConfirmationData({
+      eventId,
+      title: "Cancel Event",
+      message: `Are you sure you want to cancel this event? This action cannot be undone${employeeCount > 0 ? ` and ${employeeCount} employee(s) will be notified` : ''}.`,
+      onConfirm: async () => {
+        try {
+          setLoading(true);
+          const response = await hrCalendarApi.cancelEvent(eventId);
+          
+          // Clear all calendar caches to ensure real-time updates across all user roles
+          clearAllCalendarCaches();
+          
+          // Close modals first
+          setShowModal(false);
+          setShowConfirmationModal(false);
+          
+          // Reload data
+          await loadData(false);
+          
+          // Show success modal after everything is updated
+          showSuccess(
+            employeeCount > 0 
+              ? `Cancellation successful! ${employeeCount} employee(s) have been notified and all calendars have been updated.`
+              : 'Cancellation successful! The event has been cancelled and all calendars have been updated.'
+          );
+        } catch (error) {
+          console.error('Error cancelling event:', error);
+          const errorMessage = error.response?.data?.message || 'Failed to cancel event. Please try again.';
+          showError(errorMessage);
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+    setShowConfirmationModal(true);
   };
 
   const handleDeleteEvent = async (eventId) => {
@@ -280,19 +421,6 @@ const MyCalendar = () => {
       } catch (error) {
         console.error('Error deleting event:', error);
         showAlert('Error deleting event. Please try again.', 'danger');
-      }
-    }
-  };
-
-  const handleCancelEvent = async (eventId) => {
-    if (window.confirm('Are you sure you want to cancel this event?')) {
-      try {
-        await hrCalendarApi.cancelEvent(eventId);
-        showAlert('Event cancelled successfully!', 'info');
-        loadData();
-      } catch (error) {
-        console.error('Error cancelling event:', error);
-        showAlert('Error cancelling event. Please try again.', 'danger');
       }
     }
   };
@@ -454,13 +582,16 @@ const MyCalendar = () => {
             {dayEvents.slice(0, 3).map((event, index) => (
               <div
                 key={event.id}
-                className={`event-item event-${event.event_type}`}
-                style={{ backgroundColor: getEventTypeColor(event.event_type) }}
+                className={`event-item event-${event.event_type} ${event.status === 'cancelled' ? 'event-cancelled' : ''}`}
+                style={{ 
+                  backgroundColor: event.status === 'cancelled' ? '#6c757d' : getEventTypeColor(event.event_type),
+                  opacity: event.status === 'cancelled' ? 0.6 : 1
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleViewEvent(event);
                 }}
-                title={`${event.title} - ${event.start_time_formatted}`}
+                title={`${event.title} - ${event.start_time_formatted}${event.status === 'cancelled' ? ' (Cancelled)' : ''}`}
               >
                 <span className="event-time">
                   {event.start_time_formatted}
@@ -496,12 +627,15 @@ const MyCalendar = () => {
 
   return (
     <Container fluid className="my-calendar">
-      {alert.show && (
-        <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
-          {alert.message}
-        </Alert>
-      )}
-      
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       {/* Calendar Header */}
       <div className="calendar-header">
         <div className="calendar-navigation">
@@ -513,13 +647,21 @@ const MyCalendar = () => {
             <ChevronRight size={16} />
           </Button>
         </div>
-        <div className="calendar-actions">
-          <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2">
-            Today
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => handleCreateEvent()}>
-            <Plus size={16} className="me-1" /> New Event
-          </Button>
+        <div className="d-flex flex-column align-items-end">
+          {lastUpdated && (
+            <small className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+              <Clock size={12} className="me-1" />
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </small>
+          )}
+          <div className="calendar-actions">
+            <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2">
+              Today
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => handleCreateEvent()}>
+              <Plus size={16} className="me-1" /> New Event
+            </Button>
+          </div>
         </div>
       </div>
       
@@ -538,15 +680,16 @@ const MyCalendar = () => {
         </div>
       </div>
 
-      {alert.show && (
-        <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
-          {alert.message}
-        </Alert>
-      )}
-
-
       {/* Event Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
+      <Modal 
+        show={showModal} 
+        onHide={() => setShowModal(false)} 
+        size="lg"
+        backdrop="static"
+        keyboard={false}
+        className="event-details-side-panel"
+        style={{ zIndex: 9999 }}
+      >
         <Modal.Header closeButton>
           <Modal.Title>
             {modalType === 'create' && `Create Event - ${selectedDate ? selectedDate.toLocaleDateString() : ''}`}
@@ -555,78 +698,130 @@ const MyCalendar = () => {
           </Modal.Title>
         </Modal.Header>
         
-        <Modal.Body>
+        <Modal.Body className="event-details-modal">
           {modalType === 'view' && selectedEvent ? (
-            // View Mode
-            <div>
-              <Row>
-                <Col md={6}>
-                  <h5 style={{ color: getEventTypeColor(selectedEvent.event_type) }}>
+            // View Mode - Wireframe Layout
+            <div className="event-details-wireframe">
+              {/* Top Section - Wide Rectangle */}
+              <div className="event-top-section">
+                <div className="event-header-wireframe">
+                  <h4 className="event-title-wireframe" style={{ color: getEventTypeColor(selectedEvent.event_type) }}>
                     {selectedEvent.title}
-                  </h5>
-                  <p className="text-muted mb-3">{selectedEvent.description || 'No description provided.'}</p>
-                </Col>
-                <Col md={6} className="text-end">
-                  {getStatusBadge(selectedEvent.status, selectedEvent.is_ongoing)}
-                </Col>
-              </Row>
+                  </h4>
+                  <div className="event-status-wireframe">
+                    {getStatusBadge(selectedEvent.status, selectedEvent.is_ongoing)}
+                  </div>
+                </div>
+                
+                <div className="event-description-wireframe">
+                  <p className="text-muted">{selectedEvent.description || 'No description provided.'}</p>
+                </div>
+                
+                {/* Warning Message */}
+                {selectedEvent.blocks_leave_submissions && (
+                  <Alert variant="info" className="event-warning-wireframe">
+                    <AlertCircle size={16} className="me-1" />
+                    This event will block employee leave submissions during its duration.
+                  </Alert>
+                )}
+              </div>
               
-              <Row className="mb-3">
-                <Col md={4}>
-                  <strong>Event Type:</strong>
-                  <div>
-                    <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }} className="mt-1">
-                      {selectedEvent.event_type}
-                    </Badge>
+              {/* Bottom Section - 2x2 Grid */}
+              <div className="event-grid-wireframe">
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Event Details</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Event Type</span>
+                      <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }}>
+                        {selectedEvent.event_type}
+                      </Badge>
+                    </div>
+                    
+                    <div className="box-row">
+                      <span className="box-label">Location</span>
+                      <span className="box-value">{selectedEvent.location || 'Not specified'}</span>
+                    </div>
+                    
+                    <div className="box-row">
+                      <span className="box-label">Blocks Leave</span>
+                      {selectedEvent.blocks_leave_submissions ? (
+                        <Badge bg="warning">Yes</Badge>
+                      ) : (
+                        <Badge bg="success">No</Badge>
+                      )}
+                    </div>
                   </div>
-                </Col>
-                <Col md={4}>
-                  <strong>Location:</strong>
-                  <div className="mt-1">
-                    {selectedEvent.location || 'Not specified'}
+                </div>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Schedule</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Start Time</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.start_datetime)}</span>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">End Time</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.end_datetime)}</span>
+                    </div>
                   </div>
-                </Col>
-                <Col md={4}>
-                  <strong>Blocks Leave Submissions:</strong>
-                  <div>
-                    {selectedEvent.blocks_leave_submissions ? (
-                      <Badge bg="warning" className="mt-1">Yes</Badge>
-                    ) : (
-                      <Badge bg="success" className="mt-1">No</Badge>
+                </div>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Created</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">By</span>
+                      <span className="box-value">{selectedEvent.created_by}</span>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">At</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Status</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Current Status</span>
+                      <Badge bg={selectedEvent.status === 'active' ? 'success' : selectedEvent.status === 'cancelled' ? 'danger' : 'secondary'}>
+                        {selectedEvent.status}
+                      </Badge>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">Duration</span>
+                      <span className="box-value">
+                        {Math.round((new Date(selectedEvent.end_datetime) - new Date(selectedEvent.start_datetime)) / (1000 * 60 * 60))} hours
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              {selectedEvent.status === 'active' && (
+                <div className="event-actions-wireframe">
+                  <div className="cancel-info">
+                    {selectedEvent.invited_employees && selectedEvent.invited_employees.length > 0 && (
+                      <small className="text-muted mb-2 d-block">
+                        <i className="fas fa-info-circle me-1"></i>
+                        {selectedEvent.invited_employees.length} employee(s) will be notified of the cancellation
+                      </small>
                     )}
                   </div>
-                </Col>
-              </Row>
-              
-              <Row>
-                <Col md={6}>
-                  <strong>Start Time:</strong>
-                  <div>{formatDateTime(selectedEvent.start_datetime)}</div>
-                </Col>
-                <Col md={6}>
-                  <strong>End Time:</strong>
-                  <div>{formatDateTime(selectedEvent.end_datetime)}</div>
-                </Col>
-              </Row>
-              
-              <hr />
-
-              <Row>
-                <Col md={6}>
-                  <small className="text-muted">
-                    Created by: {selectedEvent.created_by}<br />
-                    Created at: {formatDateTime(selectedEvent.created_at)}
-                  </small>
-                </Col>
-                <Col md={6}>
-                  {selectedEvent.blocks_leave_submissions && (
-                    <Alert variant="info" className="mb-0">
-                      <AlertCircle size={16} className="me-1" />
-                      This event will block employee leave submissions during its duration.
-                    </Alert>
-                  )}
-                </Col>
-              </Row>
+                  <Button 
+                    variant="danger" 
+                    size="sm" 
+                    onClick={() => handleCancelEvent(selectedEvent.id)}
+                    className="cancel-event-btn"
+                  >
+                    Cancel Event
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             // Create/Edit Mode
@@ -827,6 +1022,50 @@ const MyCalendar = () => {
           )}
         </Modal.Footer>
       </Modal>
+
+      {/* Validation Error Modal */}
+      <Modal 
+        show={showValidationModal} 
+        onHide={() => setShowValidationModal(false)} 
+        size="sm"
+        backdrop="static"
+        keyboard={false}
+        centered
+        style={{ zIndex: 10000 }}
+      >
+        <Modal.Header closeButton style={{ backgroundColor: '#dc3545', color: 'white' }}>
+          <Modal.Title>
+            <i className="fas fa-exclamation-triangle me-2"></i>
+            Validation Error
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center">
+            <i className="fas fa-exclamation-circle text-danger" style={{ fontSize: '3rem', marginBottom: '1rem' }}></i>
+            <p className="mb-0" style={{ whiteSpace: 'pre-line' }}>
+              {validationMessage}
+            </p>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="danger" onClick={() => setShowValidationModal(false)}>
+            OK
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        show={showConfirmationModal}
+        onHide={() => setShowConfirmationModal(false)}
+        onConfirm={confirmationData?.onConfirm}
+        title={confirmationData?.title}
+        message={confirmationData?.message}
+        confirmText="Cancel Event"
+        cancelText="Keep Event"
+        variant="danger"
+        isLoading={loading}
+      />
     </Container>
   );
 };

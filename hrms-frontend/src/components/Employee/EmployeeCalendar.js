@@ -1,25 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Badge, Modal, Alert } from 'react-bootstrap';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Users } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Clock, Users, AlertCircle } from 'lucide-react';
 import { 
   employeeCalendarApi,
   getEventTypeColor,
   getEventTypeIcon,
   getInvitationStatusColor,
-  getInvitationStatusText
+  getInvitationStatusText,
+  clearAllCalendarCaches
 } from '../../api/calendar';
+import ValidationModal from '../common/ValidationModal';
+import useValidationModal from '../../hooks/useValidationModal';
 import './EmployeeCalendar.css';
 
 const EmployeeCalendar = () => {
+  const { modalState, showSuccess, showError, showWarning, hideModal } = useValidationModal();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     loadData();
+  }, [currentDate]);
+
+  // Auto-refresh mechanism for real-time updates
+  useEffect(() => {
+    // Refresh data when window gains focus (user returns to tab)
+    const handleFocus = () => {
+      console.log('Window focused - checking for calendar updates...');
+      loadData(false);
+    };
+
+    // Periodic refresh every 30 seconds to catch real-time updates
+    const refreshInterval = setInterval(() => {
+      console.log('Auto-refresh - checking for calendar updates...');
+      loadData(false);
+    }, 30000); // 30 seconds
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(refreshInterval);
+    };
   }, [currentDate]);
 
   const loadData = async (showLoadingIndicator = true) => {
@@ -75,6 +103,7 @@ const EmployeeCalendar = () => {
 
       const events = response.data || [];
       setEvents(events);
+      setLastUpdated(new Date());
       
       // Cache the data
       localStorage.setItem(cacheKey, JSON.stringify(events));
@@ -94,8 +123,15 @@ const EmployeeCalendar = () => {
   };
 
   const showAlert = (message, type) => {
-    setAlert({ show: true, message, type });
-    setTimeout(() => setAlert({ show: false, message: '', type: '' }), 5000);
+    if (type === 'success') {
+      showSuccess(message);
+    } else if (type === 'danger') {
+      showError(message);
+    } else if (type === 'info') {
+      showWarning(message);
+    } else {
+      showSuccess(message);
+    }
   };
 
   // Calendar helper functions
@@ -134,8 +170,6 @@ const EmployeeCalendar = () => {
     setShowModal(true);
   };
 
-  // Removed invitation response functionality - employees can only view
-
   const getEventTypeColor = (eventType) => {
     const colors = {
       meeting: '#3b82f6',
@@ -171,6 +205,26 @@ const EmployeeCalendar = () => {
     });
   };
 
+  const getStatusBadge = (status, isOngoing) => {
+    if (isOngoing) {
+      return <Badge bg="success">Ongoing</Badge>;
+    }
+    
+    const variants = {
+      active: 'primary',
+      cancelled: 'danger',
+      completed: 'success'
+    };
+    
+    const labels = {
+      active: 'Active',
+      cancelled: 'Cancelled',
+      completed: 'Completed'
+    };
+    
+    return <Badge bg={variants[status] || 'secondary'}>{labels[status] || status}</Badge>;
+  };
+
   // Generate calendar grid
   const generateCalendarGrid = () => {
     const daysInMonth = getDaysInMonth(currentDate);
@@ -204,10 +258,13 @@ const EmployeeCalendar = () => {
             {dayEvents.slice(0, 3).map((event, index) => (
               <div
                 key={event.id}
-                className={`event-item event-${event.event_type}`}
-                style={{ backgroundColor: getEventTypeColor(event.event_type) }}
+                className={`event-item event-${event.event_type} ${event.status === 'cancelled' ? 'event-cancelled' : ''}`}
+                style={{ 
+                  backgroundColor: event.status === 'cancelled' ? '#6c757d' : getEventTypeColor(event.event_type),
+                  opacity: event.status === 'cancelled' ? 0.6 : 1
+                }}
                 onClick={() => handleViewEvent(event)}
-                title={`${event.title} - ${event.start_time_formatted}`}
+                title={`${event.title} - ${event.start_time_formatted}${event.status === 'cancelled' ? ' (Cancelled)' : ''}`}
               >
                 <span className="event-time">
                   {event.start_time_formatted}
@@ -240,12 +297,15 @@ const EmployeeCalendar = () => {
 
   return (
     <Container fluid className="employee-calendar responsive-container">
-      {alert.show && (
-        <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
-          {alert.message}
-        </Alert>
-      )}
-      
+      {/* Validation Modal */}
+      <ValidationModal
+        show={modalState.show}
+        type={modalState.type}
+        title={modalState.title}
+        message={modalState.message}
+        onClose={hideModal}
+      />
+
       {/* Calendar Header */}
       <div className="calendar-header responsive-header">
         <div className="calendar-navigation">
@@ -257,10 +317,18 @@ const EmployeeCalendar = () => {
             <ChevronRight size={16} />
           </Button>
         </div>
-        <div className="calendar-actions">
-          <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2 responsive-btn">
-            Today
-          </Button>
+        <div className="d-flex flex-column align-items-end">
+          {lastUpdated && (
+            <small className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+              <Clock size={12} className="me-1" />
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </small>
+          )}
+          <div className="calendar-actions">
+            <Button variant="outline-primary" size="sm" onClick={goToToday} className="me-2 responsive-btn">
+              Today
+            </Button>
+          </div>
         </div>
       </div>
       
@@ -280,101 +348,183 @@ const EmployeeCalendar = () => {
       </div>
 
       {/* Event Details Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" className="responsive-modal">
+      <Modal 
+        show={showModal} 
+        onHide={() => setShowModal(false)} 
+        size="md" 
+        className="responsive-modal"
+        backdrop="static"
+        keyboard={false}
+        centered
+        style={{ zIndex: 9999 }}
+      >
         <Modal.Header closeButton>
-          <Modal.Title className="text-responsive-lg">
-            <span className="me-2 hide-on-mobile">{getEventTypeIcon(selectedEvent?.event_type)}</span>
+          <Modal.Title>
+            <span className="me-2">{getEventTypeIcon(selectedEvent?.event_type)}</span>
             Event Details
           </Modal.Title>
         </Modal.Header>
         
-        <Modal.Body className="responsive-modal">
+        <Modal.Body className="event-details-modal">
           {selectedEvent && (
-            <div>
-              <div className="responsive-form-row">
-                <div className="responsive-form-col">
-                  <h5 className="text-responsive-lg" style={{ color: getEventTypeColor(selectedEvent.event_type) }}>
+            // View Mode - Wireframe Layout
+            <div className="event-details-wireframe">
+              {/* Top Section - Wide Rectangle */}
+              <div className="event-top-section">
+                <div className="event-header-wireframe">
+                  <h4 className="event-title-wireframe" style={{ color: getEventTypeColor(selectedEvent.event_type) }}>
                     {selectedEvent.title}
-                  </h5>
-                  <p className="text-muted mb-3 text-responsive-md">{selectedEvent.description || 'No description provided.'}</p>
+                  </h4>
+                  <div className="event-status-wireframe">
+                    {getStatusBadge(selectedEvent.status, selectedEvent.is_ongoing)}
+                  </div>
                 </div>
-                <div className="responsive-form-col text-end">
-                  <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }} className="text-responsive-sm">
-                    {selectedEvent.event_type}
-                  </Badge>
+                
+                <div className="event-description-wireframe">
+                  <p className="text-muted">{selectedEvent.description || 'No description provided.'}</p>
                 </div>
+                
+                {/* Warning Message */}
+                {selectedEvent.blocks_leave_submissions && (
+                  <Alert variant="info" className="event-warning-wireframe">
+                    <AlertCircle size={16} className="me-1" />
+                    This event will block employee leave submissions during its duration.
+                  </Alert>
+                )}
               </div>
               
-              <div className="responsive-form-row mb-3">
-                <div className="responsive-form-col">
-                  <strong className="text-responsive-md">Start Time:</strong>
-                  <div className="text-responsive-sm">{formatDateTime(selectedEvent.start_datetime)}</div>
+              {/* Bottom Section - 2x2 Grid */}
+              <div className="event-grid-wireframe">
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Event Details</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Event Type</span>
+                      <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }}>
+                        {selectedEvent.event_type}
+                      </Badge>
+                    </div>
+                    
+                    <div className="box-row">
+                      <span className="box-label">Location</span>
+                      <span className="box-value">{selectedEvent.location || 'Not specified'}</span>
+                    </div>
+                    
+                    <div className="box-row">
+                      <span className="box-label">Blocks Leave</span>
+                      {selectedEvent.blocks_leave_submissions ? (
+                        <Badge bg="warning">Yes</Badge>
+                      ) : (
+                        <Badge bg="success">No</Badge>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="responsive-form-col">
-                  <strong className="text-responsive-md">End Time:</strong>
-                  <div className="text-responsive-sm">{formatDateTime(selectedEvent.end_datetime)}</div>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Schedule</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Start Time</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.start_datetime)}</span>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">End Time</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.end_datetime)}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="responsive-form-row mb-3">
-                <div className="responsive-form-col">
-                  <strong className="text-responsive-md">Created by:</strong>
-                  <div className="text-responsive-sm">{selectedEvent.created_by}</div>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Created</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">By</span>
+                      <span className="box-value">{selectedEvent.created_by}</span>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">At</span>
+                      <span className="box-value">{formatDateTime(selectedEvent.created_at)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="responsive-form-col">
-                  <strong className="text-responsive-md">Event Type:</strong>
-                  <div>
-                    <Badge style={{ backgroundColor: getEventTypeColor(selectedEvent.event_type) }} className="text-responsive-sm">
-                      {selectedEvent.event_type}
-                    </Badge>
+                
+                <div className="event-box-wireframe">
+                  <h6 className="box-title">Status</h6>
+                  <div className="box-content">
+                    <div className="box-row">
+                      <span className="box-label">Current Status</span>
+                      <Badge bg={selectedEvent.status === 'active' ? 'success' : selectedEvent.status === 'cancelled' ? 'danger' : 'secondary'}>
+                        {selectedEvent.status}
+                      </Badge>
+                    </div>
+                    <div className="box-row">
+                      <span className="box-label">Duration</span>
+                      <span className="box-value">
+                        {(() => {
+                          const start = new Date(selectedEvent.start_datetime);
+                          const end = new Date(selectedEvent.end_datetime);
+                          const diffMs = end.getTime() - start.getTime();
+                          const diffMinutes = Math.round(diffMs / 60000);
+                          
+                          console.log('Duration Debug:', {
+                            start: selectedEvent.start_datetime,
+                            end: selectedEvent.end_datetime,
+                            diffMs,
+                            diffMinutes
+                          });
+                          
+                          if (diffMinutes < 60) {
+                            return `${diffMinutes} minutes`;
+                          } else {
+                            const hours = Math.floor(diffMinutes / 60);
+                            const mins = diffMinutes % 60;
+                            return mins === 0 ? `${hours} hour${hours !== 1 ? 's' : ''}` : `${hours} hour${hours !== 1 ? 's' : ''} ${mins} minutes`;
+                          }
+                        })()}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              {/* Invitation Status - View Only */}
-              {selectedEvent.my_invitation_status && (
-                <Row className="mb-3">
-                  <Col>
-                    <strong>Your Invitation Status:</strong>
-                    <div className="mt-2">
-                      <Badge bg={getInvitationStatusColor(selectedEvent.my_invitation_status)}>
-                        {getInvitationStatusText(selectedEvent.my_invitation_status)}
-                      </Badge>
-                      {selectedEvent.my_responded_at && (
-                        <small className="text-muted ms-2">
-                          Responded on {new Date(selectedEvent.my_responded_at).toLocaleDateString()}
-                        </small>
-                      )}
-                    </div>
-                  </Col>
-                </Row>
-              )}
-
-              {selectedEvent.location && (
-                <Row className="mb-3">
-                  <Col>
-                    <h6 className="text-muted mb-1">Location</h6>
-                    <p className="mb-0">{selectedEvent.location}</p>
-                  </Col>
-                </Row>
-              )}
-
-              <hr />
-              
-              <Row>
-                <Col md={12}>
-                  <small className="text-muted">
-                    Created at: {formatDateTime(selectedEvent.created_at)}
-                  </small>
-                </Col>
-              </Row>
             </div>
           )}
         </Modal.Body>
         
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
+        <Modal.Footer style={{ padding: '0.5rem 0.75rem' }}>
+          <Button variant="secondary" size="sm" onClick={() => setShowModal(false)}>
             Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Validation Error Modal */}
+      <Modal 
+        show={showValidationModal} 
+        onHide={() => setShowValidationModal(false)} 
+        size="sm"
+        backdrop="static"
+        keyboard={false}
+        centered
+        style={{ zIndex: 10000 }}
+      >
+        <Modal.Header closeButton style={{ backgroundColor: '#dc3545', color: 'white' }}>
+          <Modal.Title>
+            <i className="fas fa-exclamation-triangle me-2"></i>
+            Validation Error
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="text-center">
+            <i className="fas fa-exclamation-circle text-danger" style={{ fontSize: '3rem', marginBottom: '1rem' }}></i>
+            <p className="mb-0" style={{ whiteSpace: 'pre-line' }}>
+              {validationMessage}
+            </p>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="danger" onClick={() => setShowValidationModal(false)}>
+            OK
           </Button>
         </Modal.Footer>
       </Modal>

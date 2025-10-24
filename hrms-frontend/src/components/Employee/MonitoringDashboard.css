@@ -1,0 +1,365 @@
+/* Employee Monitoring Dashboard Styles */
+
+.monitoring-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Dashboard Row Layouts */
+.dashboard-top-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.dashboard-bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.calendar-section {
+  width: 100%;
+}
+
+.monitoring-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.monitoring-card {
+  min-height: 400px;
+  max-height: none;
+  overflow: visible;
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.monitoring-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Calendar Styling to match the design */
+.responsive-calendar {
+  background: white;
+  border-radius: 8px;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.responsive-calendar .react-calendar {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.responsive-calendar .react-calendar__navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: white;
+  border-bottom: 1px solid #e9ecef;
+  border-radius: 8px 8px 0 0;
+}
+
+.responsive-calendar .react-calendar__navigation__label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e3a8a;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.responsive-calendar .react-calendar__navigation__arrow {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #1e3a8a;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.responsive-calendar .react-calendar__navigation__arrow:hover {
+  background-color: #f1f5f9;
+}
+
+.responsive-calendar .react-calendar__month-view__weekdays {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.responsive-calendar .react-calendar__month-view__weekdays__weekday {
+  flex: 1;
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  background: #f8f9fa;
+  border-radius: 0;
+}
+
+.responsive-calendar .react-calendar__month-view__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 8px;
+}
+
+.responsive-calendar .react-calendar__tile {
+  background: white;
+  border: none;
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 6px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 2px;
+}
+
+.responsive-calendar .react-calendar__tile:hover {
+  background-color: #f1f5f9;
+}
+
+.responsive-calendar .react-calendar__tile--active {
+  background-color: #dbeafe !important;
+  color: #1e3a8a !important;
+  border: 2px solid #1e3a8a !important;
+  border-radius: 6px !important;
+  font-weight: 600;
+}
+
+.responsive-calendar .react-calendar__tile--now {
+  background-color: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.responsive-calendar .react-calendar__tile--now:hover {
+  background-color: #bfdbfe;
+}
+
+.responsive-calendar .react-calendar__tile--neighboringMonth {
+  color: #9ca3af;
+  background-color: #f9fafb;
+}
+
+.responsive-calendar .react-calendar__tile--neighboringMonth:hover {
+  background-color: #f3f4f6;
+}
+
+/* Calendar header with date and weather info */
+.calendar-header-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  border-radius: 0 0 8px 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.calendar-date-info {
+  font-weight: 500;
+}
+
+.calendar-weather-info {
+  color: #9ca3af;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .dashboard-top-row,
+  .dashboard-bottom-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .monitoring-sections-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .monitoring-card {
+    min-height: auto;
+  }
+  
+  .responsive-calendar .react-calendar__tile {
+    padding: 8px 4px;
+    min-height: 36px;
+    font-size: 13px;
+  }
+  
+  .responsive-calendar .react-calendar__navigation {
+    padding: 12px 16px;
+  }
+  
+  .responsive-calendar .react-calendar__navigation__label {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 576px) {
+  .monitoring-dashboard {
+    gap: 1rem;
+  }
+  
+  .dashboard-top-row,
+  .dashboard-bottom-row {
+    gap: 0.75rem;
+  }
+  
+  .monitoring-sections-grid {
+    gap: 0.75rem;
+  }
+  
+  .responsive-calendar .react-calendar__tile {
+    padding: 6px 2px;
+    min-height: 32px;
+    font-size: 12px;
+  }
+  
+  .responsive-calendar .react-calendar__month-view__weekdays__weekday {
+    padding: 8px 4px;
+    font-size: 12px;
+  }
+}
+
+/* Section-specific styles */
+.evaluation-analytics-section,
+.disciplinary-notices-section,
+.leave-tracker-section {
+  height: auto;
+  overflow: visible;
+  max-height: none;
+}
+
+/* Card header improvements */
+.monitoring-card .responsive-header {
+  border-bottom: 1px solid #e9ecef;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.monitoring-card .responsive-header h6 {
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Button styling */
+.monitoring-card .responsive-btn {
+  font-size: 0.875rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.monitoring-card .responsive-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Loading states */
+.monitoring-card .spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Empty state styling */
+.monitoring-card .fs-1 {
+  font-size: 3rem !important;
+}
+
+.monitoring-card .opacity-25 {
+  opacity: 0.25 !important;
+}
+
+/* Progress bars */
+.monitoring-card .progress {
+  height: 8px;
+  border-radius: 4px;
+}
+
+/* Badge improvements */
+.monitoring-card .badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* List group improvements */
+.monitoring-card .list-group-item {
+  border-radius: 0.375rem;
+  margin-bottom: 0.5rem;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.monitoring-card .list-group-item:hover {
+  background-color: #f8f9fa;
+}
+
+/* Alert styling */
+.monitoring-card .alert {
+  border-radius: 0.5rem;
+  border: none;
+  font-size: 0.875rem;
+}
+
+/* Icon improvements */
+.monitoring-card .fa-2x {
+  font-size: 1.5rem;
+}
+
+.monitoring-card .fa-3x {
+  font-size: 2rem;
+}
+
+.monitoring-card .fa-4x {
+  font-size: 2.5rem;
+}
+
+/* Text color improvements */
+.monitoring-card .text-responsive-sm {
+  font-size: 0.875rem;
+}
+
+.monitoring-card .text-responsive-md {
+  font-size: 1rem;
+}
+
+.monitoring-card .text-responsive-lg {
+  font-size: 1.125rem;
+}
+
+/* Card body padding adjustments */
+.monitoring-card .responsive-card-body {
+  padding: 1.25rem;
+  overflow: visible;
+  max-height: none;
+}
+
+@media (max-width: 576px) {
+  .monitoring-card .responsive-card-body {
+    padding: 1rem;
+  }
+}

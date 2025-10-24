@@ -192,7 +192,7 @@ const EmployeeDisciplinaryNotice = () => {
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
-        errorMessage = `Error: ${error.message}`;
+        errorMessage = error.message;
       }
       
       toast.error(errorMessage);

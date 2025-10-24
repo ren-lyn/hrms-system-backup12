@@ -248,13 +248,36 @@ class HrCalendarController extends Controller
      */
     public function cancel($id)
     {
-        $event = HrCalendarEvent::findOrFail($id);
+        $event = HrCalendarEvent::with(['creator', 'invitedEmployees'])->findOrFail($id);
+        
+        // Update event status
         $event->update(['status' => 'cancelled']);
+
+        // Send notifications to all invited employees
+        try {
+            if ($event->invitedEmployees->isNotEmpty()) {
+                foreach ($event->invitedEmployees as $employee) {
+                    $employee->notify(new \App\Notifications\EventCancelled($event));
+                }
+                
+                \Log::info('Event cancellation notifications sent', [
+                    'event_id' => $event->id,
+                    'event_title' => $event->title,
+                    'invited_employees_count' => $event->invitedEmployees->count(),
+                    'cancelled_by' => Auth::user()->first_name . ' ' . Auth::user()->last_name
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send event cancellation notifications', [
+                'event_id' => $event->id,
+                'error' => $e->getMessage()
+            ]);
+        }
 
         return response()->json([
             'success' => true,
             'data' => $event->fresh()->toApiFormat(),
-            'message' => 'HR calendar event cancelled successfully.'
+            'message' => 'HR calendar event cancelled successfully. Notifications have been sent to all invited employees.'
         ]);
     }
 

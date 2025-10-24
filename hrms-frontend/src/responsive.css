@@ -139,6 +139,64 @@ body {
     object-fit: cover;
 }
 
+/* Dropdown Menu Styles */
+.hrms-dropdown-container {
+    position: relative;
+}
+
+.hrms-dropdown-toggle {
+    /* No special styling needed for toggle button */
+}
+
+.hrms-dropdown-menu {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    margin-left: 20px;
+    margin-top: 4px;
+}
+
+.hrms-dropdown-menu.hrms-dropdown-open {
+    max-height: 300px;
+}
+
+.hrms-dropdown-item {
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px !important;
+    border-radius: 6px;
+    margin: 2px 8px !important;
+    color: rgba(255, 255, 255, 0.8) !important;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none !important;
+    border: none;
+    background: transparent;
+    width: calc(100% - 16px);
+    text-align: left;
+    font-size: 14px;
+}
+
+.hrms-dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+    transform: translateX(4px);
+}
+
+.hrms-dropdown-item.hrms-dropdown-active {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    font-weight: 600;
+}
+
+.hrms-dropdown-item.hrms-dropdown-active:hover {
+    background-color: rgba(255, 255, 255, 0.25) !important;
+    color: #ffffff !important;
+}
+
 /* HR Assistant Fitted Sidebar - Always visible, no mobile overlay */
 .hrms-assistant-fitted {
     position: static !important;

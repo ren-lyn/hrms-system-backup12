@@ -162,3 +162,18 @@ export const checkLeaveSubmissionAvailability = async () => {
   const response = await hrCalendarApi.checkHrAvailability();
   return response;
 };
+
+// Cache management utility
+export const clearAllCalendarCaches = () => {
+  // Get all localStorage keys
+  const keys = Object.keys(localStorage);
+  
+  // Clear all calendar-related caches
+  keys.forEach(key => {
+    if (key.includes('calendar_') || key.includes('_calendar_')) {
+      localStorage.removeItem(key);
+    }
+  });
+  
+  console.log('All calendar caches cleared for real-time sync');
+};

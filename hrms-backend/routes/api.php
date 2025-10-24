@@ -193,6 +193,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/employee/profile-data', [LeaveRequestController::class, 'getEmployeeProfile']); // Get profile data for form
     Route::get('/leave-requests/my-requests', [LeaveRequestController::class, 'myRequests']); // Employee's own requests
     Route::get('/leave-requests/my-balance', [LeaveRequestController::class, 'getLeaveBalance']); // Employee leave balance
+    Route::get('/leave-requests/my-summary', [LeaveRequestController::class, 'getLeaveSummary']); // Employee leave summary with automatic payment status
     Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // Check if employee can submit new request
     Route::get('/leave-requests/{id}/download-pdf', [LeaveRequestController::class, 'downloadPdf']); // Download leave request as PDF
 });
@@ -223,6 +224,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/leave-requests/{id}/manager-reject', [LeaveRequestController::class, 'managerReject']); // manager reject
     Route::get('/leave-requests/manager-pending', [LeaveRequestController::class, 'getManagerPendingRequests']); // manager pending requests
     Route::get('/leave-requests/hr-pending', [LeaveRequestController::class, 'getHRPendingRequests']); // hr pending requests
+    
+    // Leave Tracker API
+    Route::get('/leave-tracker', [LeaveRequestController::class, 'getLeaveTrackerData']); // get employee leave tracker data
+
+    
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
