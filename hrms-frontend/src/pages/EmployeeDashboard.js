@@ -11,6 +11,7 @@ import Bell from '../components/Notifications/Bell';
 import EvaluationAnalyticsSection from '../components/Employee/EvaluationAnalyticsSection';
 import DisciplinaryNoticesSection from '../components/Employee/DisciplinaryNoticesSection';
 import LeaveTrackerSection from '../components/Employee/LeaveTrackerSection';
+import OTForm from '../components/Employee/OTForm';
 import '../components/Employee/MonitoringDashboard.css';
 import {
   faTachometerAlt,
@@ -25,7 +26,8 @@ import {
   faClock,
   faBars,
   faExclamationTriangle,
-  faPlane
+  faPlane,
+  faClockRotateLeft
 } from '@fortawesome/free-solid-svg-icons';
 
 // Lazy load components for better performance
@@ -384,6 +386,12 @@ const EmployeeDashboard = () => {
             <EmbeddedLeaveForm />
           </Suspense>
         );
+      case 'overtime-request':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading overtime request form..." />}>
+            <OTForm />
+          </Suspense>
+        );
       case 'profile':
         return (
           <Suspense fallback={<LoadingFallback message="Loading profile..." />}>
@@ -557,6 +565,13 @@ const EmployeeDashboard = () => {
             >
               <FontAwesomeIcon icon={faHandHoldingUsd} />
               <span>Cash Advance</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'overtime-request' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('overtime-request')}
+            >
+              <FontAwesomeIcon icon={faClockRotateLeft} />
+              <span>Overtime Request</span>
             </button>
             <button
               className={`hrms-unified-nav-link ${activeView === 'evaluation-summary' ? 'hrms-unified-active' : ''}`}

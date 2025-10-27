@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\EmployeeTaxAssignmentController;
 use App\Http\Controllers\Api\EmployeeDeductionAssignmentController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\EmployeeLeaveLimitController;
+use App\Http\Controllers\Api\OvertimeRequestController;
 use App\Http\Controllers\InterviewController;
 
 
@@ -318,6 +319,23 @@ Route::middleware(['auth:sanctum'])->group(function () {
 		Route::post('/', [HolidayController::class, 'store']);
 		Route::put('/{id}', [HolidayController::class, 'update']);
 		Route::delete('/{id}', [HolidayController::class, 'destroy']);
+    });
+
+    // OT Management Routes
+    Route::prefix('ot-requests')->middleware('auth:sanctum')->group(function () {
+        // Employee routes
+        Route::get('/', [OvertimeRequestController::class, 'index']);
+        Route::post('/', [OvertimeRequestController::class, 'store']);
+        Route::get('/{id}', [OvertimeRequestController::class, 'show']);
+        Route::put('/{id}', [OvertimeRequestController::class, 'update']);
+        Route::delete('/{id}', [OvertimeRequestController::class, 'destroy']);
+        Route::get('/statistics', [OvertimeRequestController::class, 'getStatistics']);
+        
+        // Admin-only routes
+        Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
+            Route::get('/all', [OvertimeRequestController::class, 'getAll']);
+            Route::put('/{id}/status', [OvertimeRequestController::class, 'updateStatus']);
+        });
     });
 
     // Enhanced Payroll Management Routes

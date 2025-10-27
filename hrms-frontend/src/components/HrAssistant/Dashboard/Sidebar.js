@@ -7,8 +7,7 @@ import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
   FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
-  FaEye, FaChartBar, FaCog
-
+  FaEye, FaChartBar, FaCog, FaFileAlt, FaClock, FaChevronDown, FaChevronRight
 } from "react-icons/fa";
 
 
@@ -16,6 +15,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const { userProfile, loading } = useUserProfile();
   const [isLeaveDropdownOpen, setIsLeaveDropdownOpen] = useState(false);
+  const [isAttendanceDropdownOpen, setIsAttendanceDropdownOpen] = useState(false);
 
   const handleLogout = () => {
     // Remove token
@@ -28,6 +28,10 @@ const Sidebar = () => {
 
   const toggleLeaveDropdown = () => {
     setIsLeaveDropdownOpen(!isLeaveDropdownOpen);
+  };
+
+  const toggleAttendanceDropdown = () => {
+    setIsAttendanceDropdownOpen(!isAttendanceDropdownOpen);
   };
 
   return (
@@ -55,12 +59,34 @@ const Sidebar = () => {
         >
           <FaMoneyCheckAlt /> <span>Payroll</span>
         </NavLink>
-        <NavLink
-          to="attendance"
-          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
-        >
-          <FaCalendarCheck /> <span>Attendance</span>
-        </NavLink>
+        {/* Attendance Management Dropdown */}
+        <div className="hrms-dropdown-container">
+          <button
+            className="hrms-unified-nav-link hrms-dropdown-toggle"
+            onClick={toggleAttendanceDropdown}
+          >
+            <FaCalendarCheck />
+            <span>Attendance Management</span>
+            {isAttendanceDropdownOpen ? <FaChevronDown className="ms-auto" size={12} /> : <FaChevronRight className="ms-auto" size={12} />}
+          </button>
+          
+          <div className={`hrms-dropdown-menu ${isAttendanceDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+            <NavLink
+              to="attendance"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsAttendanceDropdownOpen(false)}
+            >
+              <FaClipboardList /> <span>Attendance Records</span>
+            </NavLink>
+            <NavLink
+              to="ot-management"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsAttendanceDropdownOpen(false)}
+            >
+              <FaClock /> <span>OT Management</span>
+            </NavLink>
+          </div>
+        </div>
         {/* Leave Management Dropdown */}
         <div className="hrms-dropdown-container">
           <button
