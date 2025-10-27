@@ -20,20 +20,21 @@ class DefaultAccountsSeeder extends Seeder
         $hrStaff = User::firstOrCreate(
             ['email' => 'hrstaff@company.com'],
             [
-                'first_name' => 'Helen',
-                'last_name' => 'Ramos',
+                'first_name' => 'Crystal Anne',
+                'last_name' => 'Barayang',
                 'password' => Hash::make('password123'),
                 'role_id' => $roles['HR Staff'] ?? 2,
             ]
         );
         $hrStaff->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1002',
-            'first_name' => 'Helen',
-            'last_name' => 'Ramos',
+            'first_name' => 'Crystal Anne',
+            'last_name' => 'Barayang',
             'email' => 'hrstaff@company.com',
             'position' => 'HR Staff',
             'department' => 'HR Department',
             'employment_status' => 'Full Time',
+            'salary' => 13520,
             'hire_date' => now()->subYears(1)->toDateString(),
         ]);
 
@@ -41,20 +42,21 @@ class DefaultAccountsSeeder extends Seeder
         $manager = User::firstOrCreate(
             ['email' => 'manager@company.com'],
             [
-                'first_name' => 'Marco',
-                'last_name' => 'Santos',
+                'first_name' => 'Shariel',
+                'last_name' => 'Osias',
                 'password' => Hash::make('password123'),
                 'role_id' => $roles['Manager'] ?? 3,
             ]
         );
         $manager->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1003',
-            'first_name' => 'Marco',
-            'last_name' => 'Santos',
+            'first_name' => 'Shariel',
+            'last_name' => 'Osias',
             'email' => 'manager@company.com',
             'position' => 'Manager',
             'department' => 'Operations',
             'employment_status' => 'Full Time',
+            'salary' => 13520,
             'hire_date' => now()->subYears(2)->toDateString(),
         ]);
 
@@ -76,6 +78,7 @@ class DefaultAccountsSeeder extends Seeder
             'position' => 'Staff',
             'department' => 'Operations',
             'employment_status' => 'Full Time',
+            'salary' => 13520,
             'hire_date' => now()->subMonths(6)->toDateString(),
         ]);
 
@@ -83,8 +86,8 @@ class DefaultAccountsSeeder extends Seeder
         $applicantUser = User::firstOrCreate(
             ['email' => 'applicant@company.com'],
             [
-                'first_name' => 'Aria',
-                'last_name' => 'Lopez',
+                'first_name' => 'Ren',
+                'last_name' => 'Santiago',
                 'password' => Hash::make('password123'),
                 'role_id' => $roles['Applicant'] ?? 5,
             ]
@@ -92,8 +95,8 @@ class DefaultAccountsSeeder extends Seeder
         Applicant::firstOrCreate(
             ['user_id' => $applicantUser->id],
             [
-                'first_name' => 'Aria',
-                'last_name' => 'Lopez',
+                'first_name' => 'Ren',
+                'last_name' => 'Santiago',
                 'email' => 'applicant@company.com',
                 'contact_number' => '09990001111',
                 'resume_path' => null,

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useReducer } from 'react';
 import axios from 'axios';
-import { Table, Button, Modal, Form, Spinner } from 'react-bootstrap';
+import { Table, Button, Modal, Form, Spinner, Dropdown } from 'react-bootstrap';
 import EvaluationResult from '../../components/Manager/EvaluationResult';
-import { FaEye } from 'react-icons/fa';
+import { FaEye, FaUserSlash, FaUserTimes, FaCheckCircle, FaExclamationTriangle } from 'react-icons/fa';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import Papa from 'papaparse';
@@ -17,7 +17,15 @@ const EmployeeRecords = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showTerminationModal, setShowTerminationModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [terminatingEmployee, setTerminatingEmployee] = useState(null);
+  const [terminationForm, setTerminationForm] = useState({
+    termination_date: new Date().toISOString().split('T')[0],
+    termination_reason: '',
+    termination_notes: '',
+    status: 'terminated' // default to 'terminated', can be changed to 'resigned'
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
@@ -25,6 +33,7 @@ const EmployeeRecords = () => {
   const [changedFields, setChangedFields] = useState([]);
   const [originalFormData, setOriginalFormData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('active'); // 'active', 'resigned', 'terminated'
   const [, forceUpdate] = useReducer(x => x + 1, 0);
   
   // New state for View Employee Record modal
@@ -590,32 +599,17 @@ const EmployeeRecords = () => {
     setIsFirstSave(false); // This is an existing employee
     
     setShowModal(true);
-    showInfo(`Editing ${profile?.first_name} ${profile?.last_name}'s profile`);
   };
 
-  const handleDelete = async (id, employeeName = 'this employee') => {
-    if (window.confirm(`Are you sure you want to delete ${employeeName}?`)) {
-      const loadingToast = toast.loading('Deleting employee...');
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          toast.dismiss(loadingToast);
-          showError('Authentication token not found. Please log in again.');
-          return;
-        }
-
-        await axios.delete(`http://localhost:8000/api/employees/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        toast.dismiss(loadingToast);
-        showSuccess(`${employeeName} deleted successfully!`);
-        fetchEmployees();
-      } catch (error) {
-        toast.dismiss(loadingToast);
-        handleAxiosError(error, 'Failed to delete employee. Please try again.');
-      }
-    }
+  // Handle session expiration
+  const handleSessionExpired = () => {
+    localStorage.removeItem('token');
+    setSessionValid(false);
+    showError('Your session has expired. Please log in again.');
+    // Redirect to login after a delay
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 2000);
   };
 
   // Handle viewing employee record
@@ -623,6 +617,106 @@ const EmployeeRecords = () => {
     setViewingEmployee(emp);
     setShowViewModal(true);
     showInfo(`Viewing ${emp.employee_profile?.first_name} ${emp.employee_profile?.last_name}'s record`);
+  };
+
+  // Handle termination of an employee
+  const handleTerminateEmployee = (emp, status = 'terminated') => {
+    setTerminatingEmployee(emp);
+    setTerminationForm({
+      termination_date: new Date().toISOString().split('T')[0],
+      termination_reason: '',
+      termination_notes: '',
+      status: status
+    });
+    setShowTerminationModal(true);
+  };
+
+  // Handle termination form changes
+  const handleTerminationChange = (e) => {
+    const { name, value } = e.target;
+    setTerminationForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle termination form submission
+  const handleTerminationSubmit = async (e) => {
+    e.preventDefault();
+    if (!terminatingEmployee) return;
+
+    const loadingToast = toast.loading('Updating employee status...');
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.dismiss(loadingToast);
+        handleSessionExpired();
+        return;
+      }
+
+      // Prepare the data in the correct format (flat structure)
+      const profile = terminatingEmployee.employee_profile;
+      const updateData = {
+        // Keep existing employee data
+        email: terminatingEmployee.email,
+        first_name: profile?.first_name || '',
+        last_name: profile?.last_name || '',
+        nickname: profile?.nickname || '',
+        civil_status: profile?.civil_status || '',
+        gender: profile?.gender || '',
+        place_of_birth: profile?.place_of_birth || '',
+        birth_date: profile?.birth_date || '',
+        age: profile?.age || '',
+        contact_number: profile?.contact_number || '',
+        emergency_contact_name: profile?.emergency_contact_name || '',
+        emergency_contact_phone: profile?.emergency_contact_phone || '',
+        province: profile?.province || '',
+        barangay: profile?.barangay || '',
+        city: profile?.city || '',
+        postal_code: profile?.postal_code || '',
+        present_address: profile?.present_address || '',
+        position: profile?.position || '',
+        department: profile?.department || '',
+        employment_status: profile?.employment_status || '',
+        tenurity: profile?.tenurity || '',
+        hire_date: profile?.hire_date || '',
+        salary: profile?.salary || '',
+        sss: profile?.sss || '',
+        philhealth: profile?.philhealth || '',
+        pagibig: profile?.pagibig || '',
+        tin_no: profile?.tin_no || '',
+        
+        // Update the status and termination fields
+        status: terminationForm.status,
+        termination_date: terminationForm.termination_date,
+        termination_reason: terminationForm.termination_reason,
+        termination_notes: terminationForm.termination_notes
+      };
+
+      // Update the employee's status
+      await axios.put(
+        `http://localhost:8000/api/employees/${terminatingEmployee.id}`,
+        updateData,
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}` 
+          } 
+        }
+      );
+
+      toast.dismiss(loadingToast);
+      showSuccess(`Employee marked as ${terminationForm.status === 'resigned' ? 'resigned' : 'terminated'} successfully!`);
+      setShowTerminationModal(false);
+      setTerminatingEmployee(null);
+      
+      // Refresh the employee list and switch to the appropriate tab
+      await fetchEmployees(true);
+      setActiveTab(terminationForm.status === 'resigned' ? 'resigned' : 'terminated');
+    } catch (error) {
+      console.error('Error terminating employee:', error);
+      toast.dismiss(loadingToast);
+      handleAxiosError(error, 'Failed to update employee status. Please try again.');
+    }
   };
 
   // Close view modal
@@ -660,21 +754,14 @@ const EmployeeRecords = () => {
   };
 
   // Helper function to get highlighting styles for employee-editable fields only
-  const getFieldHighlight = useCallback((fieldName) => {
+  const getFieldHighlight = (fieldName) => {
     const isChanged = changedFields.includes(fieldName);
     return {
       className: isChanged ? 'border-warning shadow-sm' : '',
       style: isChanged ? { backgroundColor: '#fff3cd' } : {},
       badge: isChanged ? <span className="badge bg-warning ms-2">Changed</span> : null
     };
-  }, [changedFields]);
-
-  const filteredEmployees = employees.filter(emp => {
-    const name = `${emp.employee_profile?.first_name || ''} ${emp.employee_profile?.last_name || ''}`.toLowerCase();
-    const dept = emp.employee_profile?.department?.toLowerCase() || '';
-    return name.includes(searchQuery.toLowerCase()) &&
-           dept.includes(departmentFilter.toLowerCase());
-  });
+  };
 
   const exportCSV = () => {
     try {
@@ -1127,55 +1214,109 @@ const EmployeeRecords = () => {
     }
   };
 
+  // Filter employees based on active tab and search criteria
+  const filteredEmployees = employees.filter(emp => {
+    // Filter by status based on active tab
+    let statusMatch = true;
+    if (activeTab === 'active') {
+      statusMatch = !emp.employee_profile?.status || emp.employee_profile?.status === 'active';
+    } else if (activeTab === 'resigned') {
+      statusMatch = emp.employee_profile?.status === 'resigned';
+    } else if (activeTab === 'terminated') {
+      statusMatch = emp.employee_profile?.status === 'terminated';
+    }
+    
+    // Filter by search query (name, email, or employee ID)
+    const searchLower = searchQuery.toLowerCase().trim();
+    const searchMatch = 
+      !searchLower ||
+      emp.employee_profile?.first_name?.toLowerCase().includes(searchLower) ||
+      emp.employee_profile?.last_name?.toLowerCase().includes(searchLower) ||
+      emp.email?.toLowerCase().includes(searchLower) ||
+      emp.employee_profile?.employee_id?.toLowerCase().includes(searchLower);
+    
+    // Filter by department (exact match since we're using dropdown)
+    const deptMatch = 
+      !departmentFilter || 
+      emp.employee_profile?.department === departmentFilter;
+    
+    return statusMatch && searchMatch && deptMatch;
+  });
+
   return (
-    <div>
-      {/* Validation Modal */}
-      <ValidationModal
-        show={modalState.show}
-        type={modalState.type}
-        title={modalState.title}
-        message={modalState.message}
-        onClose={hideModal}
-      />
+    <div className="employee-records-container">
+      {/* Main Content */}
+      <div className="employee-records-content">
+        {/* Validation Modal */}
+        <ValidationModal
+          show={modalState.show}
+          type={modalState.type}
+          title={modalState.title}
+          message={modalState.message}
+          onClose={hideModal}
+        />
 
-      <div className="employee-records-header">
-        <div className="employee-records-controls d-flex gap-2 flex-wrap">
-          <input
-            type="text"
-            className="form-control"
-            placeholder="Search by name"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <input
-            type="text"
-            className="form-control"
-            placeholder="Filter by department"
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-          />
+        <div className="employee-records-header">
+          <div className="employee-records-controls d-flex gap-2 flex-wrap mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Search by name"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <select
+              className="form-select"
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              style={{ minWidth: '200px' }}
+            >
+              <option value="">All Departments</option>
+              <option value="HR Department">HR Department</option>
+              <option value="Operations">Operations</option>
+              <option value="Logistics Department">Logistics Department</option>
+              <option value="Accounting Department">Accounting Department</option>
+              <option value="IT Department">IT Department</option>
+              <option value="Production Department">Production Department</option>
+            </select>
+          </div>
+        
+        {/* Status Tabs */}
+        <ul className="nav nav-tabs mb-3">
+          <li className="nav-item">
+            <button 
+              className={`nav-link ${activeTab === 'active' ? 'active' : ''}`}
+              onClick={() => setActiveTab('active')}
+            >
+              Active Employees
+            </button>
+          </li>
+          <li className="nav-item">
+            <button 
+              className={`nav-link ${activeTab === 'resigned' ? 'active' : ''}`}
+              onClick={() => setActiveTab('resigned')}
+            >
+              Resigned
+            </button>
+          </li>
+          <li className="nav-item">
+            <button 
+              className={`nav-link ${activeTab === 'terminated' ? 'active' : ''}`}
+              onClick={() => setActiveTab('terminated')}
+            >
+              Terminated
+            </button>
+          </li>
+        </ul>
         </div>
-        <div className="employee-records-actions d-flex gap-2 flex-wrap align-items-center">
-          <Button variant="outline-primary" size="sm" onClick={exportCSV}>
-            Export CSV
-          </Button>
-          <Button variant="outline-danger" size="sm" onClick={exportPDF}>
-            Export PDF
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-            + Add Employee
-          </Button>
-        </div>
-      </div>
-
-       {loading ? (
-        <div className="text-center py-5">
-          <Spinner animation="border" role="status" variant="primary" style={{ width: '3rem', height: '3rem' }}>
-            <span className="visually-hidden">Loading...</span>
-          </Spinner>
-          <p className="mt-3 text-muted">Loading employee records...</p>
-        </div>
-      ) : (
+        {loading ? (
+          <div className="text-center my-5">
+            <Spinner animation="border" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </Spinner>
+            <p className="mt-3 text-muted">Loading employee records...</p>
+          </div>
+        ) : (
 
       <div className="table-responsive">
         <Table bordered hover>
@@ -1228,16 +1369,64 @@ const EmployeeRecords = () => {
                     >
                       <FaEye size={14} /> <span>View Result</span>
                     </Button>{' '}
-                    <Button 
-                      size="sm" 
-                      variant="danger" 
-                      onClick={() => handleDelete(
-                        emp.id, 
-                        `${emp.employee_profile?.first_name} ${emp.employee_profile?.last_name}`
-                      )}
-                    >
-                      Delete
-                    </Button>
+                    
+                    {/* Enhanced Terminate/Resign Button */}
+                    {emp.employee_profile?.status === 'terminated' || emp.employee_profile?.status === 'resigned' ? (
+                      <Button 
+                        size="sm" 
+                        variant={emp.employee_profile?.status === 'terminated' ? 'secondary' : 'dark'}
+                        disabled
+                        style={{ 
+                          cursor: 'not-allowed', 
+                          opacity: 0.6,
+                          fontWeight: '500'
+                        }}
+                      >
+                        <FaCheckCircle size={14} className="me-1" />
+                        {emp.employee_profile?.status.charAt(0).toUpperCase() + emp.employee_profile?.status.slice(1)}
+                      </Button>
+                    ) : (
+                      <Dropdown as="span" className="d-inline-block">
+                        <Dropdown.Toggle 
+                          variant="danger" 
+                          size="sm"
+                          id={`dropdown-status-${emp.id}`}
+                          className="status-action-btn"
+                          style={{
+                            fontWeight: '500',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            minWidth: '140px',
+                            justifyContent: 'center',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <FaExclamationTriangle size={13} />
+                          <span>Status Action</span>
+                        </Dropdown.Toggle>
+
+                        <Dropdown.Menu>
+                          <Dropdown.Item 
+                            onClick={() => handleTerminateEmployee(emp, 'terminated')}
+                            className="text-danger"
+                            style={{ fontWeight: '500' }}
+                          >
+                            <FaUserSlash size={14} className="me-2" />
+                            Terminate Employee
+                          </Dropdown.Item>
+                          <Dropdown.Divider />
+                          <Dropdown.Item 
+                            onClick={() => handleTerminateEmployee(emp, 'resigned')}
+                            className="text-warning"
+                            style={{ fontWeight: '500' }}
+                          >
+                            <FaUserTimes size={14} className="me-2" />
+                            Mark as Resigned
+                          </Dropdown.Item>
+                        </Dropdown.Menu>
+                      </Dropdown>
+                    )}
                   </td>
                 </tr>
               );
@@ -1789,38 +1978,6 @@ const EmployeeRecords = () => {
               </div>
             </div>
 
-            {/* Termination Section */}
-            <div className="form-section">
-              <div className="section-header bg-light p-3 border-bottom">
-                <h6 className="mb-0 fw-bold">⚠️ Termination</h6>
-              </div>
-              <div className="section-content p-3">
-                <p className="text-muted fst-italic mb-3">
-                  This section is optional and should only be completed if the employee has resigned or gone AWOL.
-                </p>
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <Form.Group>
-                      <Form.Label>Date of Termination or Resignation</Form.Label>
-                      <Form.Control name="termination_date" type="date" value={formData.termination_date} onChange={handleInputChange} />
-                    </Form.Group>
-                  </div>
-                  <div className="col-md-6">
-                    <Form.Group>
-                      <Form.Label>Reason</Form.Label>
-                      <Form.Control name="termination_reason" value={formData.termination_reason} onChange={handleInputChange} placeholder="Reason for termination" />
-                    </Form.Group>
-                  </div>
-                  <div className="col-md-12">
-                    <Form.Group>
-                      <Form.Label>Remarks</Form.Label>
-                      <Form.Control as="textarea" rows={3} name="termination_remarks" value={formData.termination_remarks} onChange={handleInputChange} placeholder="Additional remarks or notes" />
-                    </Form.Group>
-                  </div>
-                </div>
-              </div>
-            </div>
-
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={closeModal} disabled={isSaving}>Cancel</Button>
@@ -1836,6 +1993,123 @@ const EmployeeRecords = () => {
             </Button>
           </Modal.Footer>
         </Form>
+      </Modal>
+
+      {/* Termination Modal */}
+      <Modal show={showTerminationModal} onHide={() => setShowTerminationModal(false)} size="lg">
+        <Modal.Header closeButton style={{ 
+          backgroundColor: terminationForm.status === 'terminated' ? '#dc3545' : '#ffc107',
+          color: 'white'
+        }}>
+          <Modal.Title style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {terminationForm.status === 'terminated' ? (
+              <><FaUserSlash size={20} /> Terminate Employee</>
+            ) : (
+              <><FaUserTimes size={20} /> Mark Employee as Resigned</>
+            )}
+            {terminatingEmployee && (
+              <small style={{ fontWeight: 'normal', opacity: 0.9 }}>
+                - {terminatingEmployee.employee_profile?.first_name} {terminatingEmployee.employee_profile?.last_name}
+              </small>
+            )}
+          </Modal.Title>
+        </Modal.Header>
+        <form onSubmit={handleTerminationSubmit}>
+          <Modal.Body>
+            <div className="alert alert-warning d-flex align-items-center" role="alert">
+              <FaExclamationTriangle size={20} className="me-2" />
+              <div>
+                <strong>Warning:</strong> This action will change the employee's status and move them to the {terminationForm.status === 'terminated' ? 'Terminated' : 'Resigned'} tab.
+              </div>
+            </div>
+            
+            <div className="mb-3">
+              <label className="form-label fw-bold">Status</label>
+              <select 
+                className="form-select"
+                name="status"
+                value={terminationForm.status}
+                onChange={handleTerminationChange}
+                required
+                style={{ fontWeight: '500' }}
+              >
+                <option value="terminated">🚫 Terminated</option>
+                <option value="resigned">📤 Resigned</option>
+              </select>
+            </div>
+            
+            <div className="mb-3">
+              <label className="form-label fw-bold">
+                {terminationForm.status === 'terminated' ? 'Termination Date' : 'Resignation Date'} 
+                <span className="text-danger"> *</span>
+              </label>
+              <input
+                type="date"
+                className="form-control"
+                name="termination_date"
+                value={terminationForm.termination_date}
+                onChange={handleTerminationChange}
+                required
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            
+            <div className="mb-3">
+              <label className="form-label fw-bold">
+                Reason <span className="text-danger"> *</span>
+              </label>
+              <input
+                type="text"
+                className="form-control"
+                name="termination_reason"
+                value={terminationForm.termination_reason}
+                onChange={handleTerminationChange}
+                placeholder={terminationForm.status === 'terminated' 
+                  ? "e.g., Poor performance, Misconduct, Budget cuts..." 
+                  : "e.g., Better opportunity, Personal reasons, Relocation..."}
+                required
+              />
+            </div>
+            
+            <div className="mb-3">
+              <label className="form-label fw-bold">Additional Notes</label>
+              <textarea
+                className="form-control"
+                name="termination_notes"
+                value={terminationForm.termination_notes}
+                onChange={handleTerminationChange}
+                rows="4"
+                placeholder="Add any additional information or details about this action (optional)"
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button 
+              variant="secondary" 
+              onClick={() => setShowTerminationModal(false)}
+              style={{ fontWeight: '500' }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant={terminationForm.status === 'terminated' ? 'danger' : 'warning'}
+              type="submit"
+              style={{ 
+                fontWeight: '500',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              {terminationForm.status === 'terminated' ? (
+                <><FaUserSlash size={16} /> Confirm Termination</>
+              ) : (
+                <><FaUserTimes size={16} /> Confirm Resignation</>
+              )}
+            </Button>
+          </Modal.Footer>
+        </form>
       </Modal>
 
       {/* View Employee Record Modal */}
@@ -2120,6 +2394,7 @@ const EmployeeRecords = () => {
         theme="colored"
       />
 
+      </div>
     </div>
   );
 };

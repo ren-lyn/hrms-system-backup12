@@ -72,6 +72,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/employees/{id}', [EmployeeController::class, 'update']);
+    Route::put('/employees/{id}/terminate', [EmployeeController::class, 'terminate']);
     Route::delete('/employees/{id}', [EmployeeController::class, 'destroy']);
 });
 
