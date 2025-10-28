@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Button, Badge, Table, Card } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Container, Row, Col, Button, Badge, Table } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUsers, 
@@ -14,10 +14,7 @@ import {
   faEye,
   faEdit,
   faEllipsisV,
-  faDownload,
-  faPhone,
   faEnvelope,
-  faMapMarkerAlt,
   faTimes
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
@@ -32,6 +29,7 @@ const Onboarding = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedRecordForStatus, setSelectedRecordForStatus] = useState(null);
   const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState(null);
   const [selectedApplicantForInterview, setSelectedApplicantForInterview] = useState(null);
   const [interviewData, setInterviewData] = useState({
     interview_date: '',
@@ -95,19 +93,8 @@ const Onboarding = () => {
     }
   };
 
-  useEffect(() => {
-    fetchApplicants();
-  }, []);
-
-  // Refresh data when tab changes
-  useEffect(() => {
-    console.log('🔄 [Onboarding] Tab changed to:', activeTab);
-    const filtered = getFilteredApplicants();
-    console.log('🔄 [Onboarding] Filtered applicants for', activeTab, ':', filtered.length);
-  }, [activeTab, applicants]);
-
   // Filter applicants based on active tab
-  const getFilteredApplicants = () => {
+  const getFilteredApplicants = useCallback(() => {
     if (activeTab === 'Overview') {
       return applicants;
     }
@@ -143,25 +130,20 @@ const Onboarding = () => {
     
     console.log('🔍 [Onboarding] Filtered applicants count:', filtered.length);
     return filtered;
-  };
+  }, [activeTab, applicants]);
 
-  // Calculate statistics
-  const calculateStats = () => {
-    const stats = {
-      total: applicants.length,
-      pending: applicants.filter(a => a.status === 'Pending').length,
-      shortlisted: applicants.filter(a => a.status === 'ShortListed').length,
-      interview: applicants.filter(a => a.status === 'On going Interview').length,
-      offered: applicants.filter(a => a.status === 'Offered').length,
-      accepted: applicants.filter(a => a.status === 'Accepted').length,
-      onboarding: applicants.filter(a => a.status === 'Onboarding').length,
-      hired: applicants.filter(a => a.status === 'Hired').length,
-      rejected: applicants.filter(a => a.status === 'Rejected').length
-    };
-    return stats;
-  };
+  useEffect(() => {
+    fetchApplicants();
+  }, []);
 
-  const stats = calculateStats();
+  // Refresh data when tab changes
+  useEffect(() => {
+    console.log('🔄 [Onboarding] Tab changed to:', activeTab);
+    const filtered = getFilteredApplicants();
+    console.log('🔄 [Onboarding] Filtered applicants for', activeTab, ':', filtered.length);
+  }, [activeTab, applicants, getFilteredApplicants]);
+
+
 
   // Get status badge
   const getStatusBadge = (status) => {
@@ -200,8 +182,9 @@ const Onboarding = () => {
 
   // Handle status change
   const handleChangeStatus = (record) => {
-    if (record.status !== 'Pending') {
-      alert('Status can only be changed from Pending to ShortListed or Rejected');
+    // Allow status change for Pending and Interview statuses
+    if (record.status !== 'Pending' && record.status !== 'On going Interview' && record.status !== 'Interview') {
+      alert('Status can only be changed from Pending or Interview status');
       setActiveDropdown(null);
       return;
     }
@@ -214,7 +197,7 @@ const Onboarding = () => {
   const handleStatusUpdate = async (targetStatus) => {
     try {
       const applicantToUpdate = selectedRecord || selectedRecordForStatus;
-      const response = await axios.put(
+      await axios.put(
         `http://localhost:8000/api/applications/${applicantToUpdate.id}/status`,
         { status: targetStatus },
         {
@@ -241,35 +224,6 @@ const Onboarding = () => {
     }
   };
 
-  // Handle resume download
-  const handleDownloadResume = (applicant) => {
-    // Check multiple possible resume locations
-    const resumeUrl = applicant.resume_path || applicant.applicant?.resume || applicant.resume;
-    
-    console.log('🔍 [Download Resume] Checking resume URL:', resumeUrl);
-    console.log('🔍 [Download Resume] Full applicant data:', applicant);
-    
-    if (resumeUrl) {
-      // Construct full URL if needed
-      const fullUrl = resumeUrl.startsWith('http') 
-        ? resumeUrl 
-        : `http://localhost:8000/storage/${resumeUrl}`;
-      
-      console.log('✅ [Download Resume] Downloading from URL:', fullUrl);
-      
-      // Create a temporary link to download the file
-      const link = document.createElement('a');
-      link.href = fullUrl;
-      link.download = `Resume_${applicant.applicant?.first_name || 'Applicant'}_${applicant.applicant?.last_name || 'Resume'}.pdf`;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      console.error('❌ [Download Resume] No resume URL found');
-      alert('Resume not available for this applicant.');
-    }
-  };
 
   // Handle schedule interview
   const handleScheduleInterview = (applicant) => {
@@ -296,7 +250,7 @@ const Onboarding = () => {
       }
 
       const token = localStorage.getItem('token');
-      const response = await axios.post(
+      await axios.post(
         `http://localhost:8000/api/applications/${selectedApplicantForInterview.id}/schedule-interview`,
         {
           interview_date: interviewData.interview_date,
@@ -335,6 +289,11 @@ const Onboarding = () => {
         return [...prev, applicant];
       }
     });
+  };
+
+  // Toggle expand row to show applied date
+  const toggleRowExpand = (recordId) => {
+    setExpandedRowId(prev => (prev === recordId ? null : recordId));
   };
 
   // Handle batch interview modal
@@ -378,7 +337,7 @@ const Onboarding = () => {
         }
       );
 
-      const { successful_count, failed_count, successful_interviews, failed_interviews } = response.data;
+      const { successful_count, failed_count, failed_interviews } = response.data;
       
       let message = `Batch interview scheduling completed!\n\n`;
       message += `✅ Successful: ${successful_count} interviews scheduled\n`;
@@ -449,20 +408,18 @@ const Onboarding = () => {
       {/* Professional Navigation Bar */}
       <Row className="mb-4">
         <Col>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0">Onboarding Management</h4>
-            <Button 
-              variant="outline-primary" 
-              size="sm" 
-              onClick={fetchApplicants}
-              disabled={loading}
-            >
-              {loading ? 'Refreshing...' : 'Refresh Data'}
-            </Button>
-          </div>
+           <div className="d-flex justify-content-between align-items-center mb-3">
+             <div>
+               <h4 className="mb-0">
+                 {activeTab === 'Overview' ? 'All Applications' : `${activeTab} Applications`}
+                 <Badge bg="secondary" className="ms-2">{filteredApplicants.length}</Badge>
+               </h4>
+              {activeTab === 'Overview' && null}
+             </div>
+           </div>
 
           {/* Batch Actions Bar */}
-          {selectedApplicants.length > 0 && (
+          {activeTab === 'Shortlisted' && selectedApplicants.length > 0 && (
             <div className="alert alert-info d-flex justify-content-between align-items-center mb-4">
               <div>
                 <FontAwesomeIcon icon={faUsers} className="me-2" />
@@ -552,20 +509,6 @@ const Onboarding = () => {
       <Row className="mt-3">
         <Col>
           <div className="content-section">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <div>
-                <h4 className="fw-bold text-dark mb-0">
-                  {activeTab === 'Overview' ? 'All Applications' : `${activeTab} Applications`}
-                  <Badge bg="secondary" className="ms-2">{filteredApplicants.length}</Badge>
-                </h4>
-                {activeTab === 'Overview' && (
-                  <small className="text-muted">
-                    <FontAwesomeIcon icon={faInfoCircle} className="me-1" />
-                    Summary view - Click on specific status tabs to view details
-                  </small>
-                )}
-              </div>
-            </div>
 
             {filteredApplicants.length === 0 ? (
               <div className="text-center py-5">
@@ -579,141 +522,170 @@ const Onboarding = () => {
                 </p>
               </div>
             ) : (
-              <div className="modern-table-container">
-                <Table className="modern-onboarding-table">
-                  <thead>
-                    <tr>
-                      {activeTab !== 'Overview' && (
-                        <th className="text-center" style={{ width: '50px' }}>
-                          <input 
-                            type="checkbox" 
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedApplicants(filteredApplicants);
-                              } else {
-                                setSelectedApplicants([]);
-                              }
-                            }}
-                            checked={selectedApplicants.length === filteredApplicants.length && filteredApplicants.length > 0}
-                          />
-                        </th>
+              <div className="onboarding-list" style={{ background: 'transparent' }}>
+                {activeTab === 'Shortlisted' && (
+                  <div className="list-header d-flex align-items-center mb-2" style={{ gap: '10px' }}>
+                    <input
+                      type="checkbox"
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedApplicants(filteredApplicants);
+                        } else {
+                          setSelectedApplicants([]);
+                        }
+                      }}
+                      checked={selectedApplicants.length === filteredApplicants.length && filteredApplicants.length > 0}
+                    />
+                    <span className="text-muted" style={{ fontSize: '0.9rem' }}>Select all</span>
+                  </div>
+                )}
+
+                {filteredApplicants.map((applicant) => (
+                  <div
+                    key={applicant.id}
+                    className={`onboarding-card ${expandedRowId === applicant.id ? 'expanded' : ''}`}
+                    onClick={activeTab === 'Overview' ? undefined : () => toggleRowExpand(applicant.id)}
+                    style={{
+                      cursor: activeTab === 'Overview' ? 'default' : 'pointer',
+                      background: 'var(--bs-body-bg, #fff)',
+                      border: '1px solid rgba(0,0,0,0.06)',
+                      borderRadius: '10px',
+                      padding: '12px 14px',
+                      marginBottom: '10px'
+                    }}
+                  >
+                    <div className="d-flex align-items-center" style={{ gap: '12px' }}>
+                      {activeTab === 'Shortlisted' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedApplicants.some(selected => selected.id === applicant.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => handleBatchInterviewSelection(applicant)}
+                        />
                       )}
-                      <th className="text-start">Applicant</th>
-                      <th className="text-start">Position</th>
-                      <th className="text-start">Department</th>
-                      <th className="text-center">Applied Date</th>
-                      <th className="text-end">Status</th>
-                      {activeTab !== 'Overview' && <th className="text-center">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredApplicants.map((applicant) => (
-                      <tr key={applicant.id}>
-                        {activeTab !== 'Overview' && (
-                          <td className="text-center">
-                            <input 
-                              type="checkbox" 
-                              checked={selectedApplicants.some(selected => selected.id === applicant.id)}
-                              onChange={() => handleBatchInterviewSelection(applicant)}
-                            />
-                          </td>
-                        )}
-                        <td className="align-left">
-                          <div className="applicant-cell">
-                            <div className="avatar me-3">
-                              {applicant.applicant?.first_name ? applicant.applicant.first_name.charAt(0).toUpperCase() : 'A'}
-                            </div>
-                            <div className="applicant-info">
-                              <div className="applicant-name">
-                                {applicant.applicant ? `${applicant.applicant.first_name || ''} ${applicant.applicant.last_name || ''}`.trim() : 'N/A'}
-                              </div>
-                              <div className="applicant-email">
-                                {applicant.applicant?.email || 'N/A'}
-                              </div>
-                            </div>
+
+                      <div className="flex-grow-1 d-flex align-items-center" style={{ gap: activeTab === 'Overview' ? '0.2in' : '14px' }}>
+                        <div className="avatar me-1" style={{ flex: '0 0 auto' }}>
+                          {applicant.applicant?.first_name ? applicant.applicant.first_name.charAt(0).toUpperCase() : 'A'}
+                        </div>
+                        <div className="applicant-info" style={{ minWidth: 0 }}>
+                          <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Name & Email</div>
+                          <div className="applicant-name" style={{ fontWeight: 600 }}>
+                            {applicant.applicant ? `${applicant.applicant.first_name || ''} ${applicant.applicant.last_name || ''}`.trim() : 'N/A'}
                           </div>
-                        </td>
-                        <td className="align-left" title={applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'}>
-                          <div className="position-text">{applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'}</div>
-                        </td>
-                        <td className="align-left" title={applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}>
-                          <div className="department-text">{applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}</div>
-                        </td>
-                        <td className="align-center">
-                          <div className="date-container">
-                            <div className="date-text">
-                              {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
-                            </div>
-                            <div className="time-text">
-                              {applicant.applied_at ? new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                            </div>
+                          <div className="applicant-email text-muted" style={{ fontSize: '0.85rem' }}>
+                            {applicant.applicant?.email || 'N/A'}
                           </div>
-                        </td>
-                        <td className="align-right">
+                        </div>
+
+                        <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+
+                        <div className="position-text" title={applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'} style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px', flex: '1 1 auto' }}>
+                          <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Position</div>
+                          {applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A'}
+                        </div>
+                        <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+
+                        <div className="department-text" title={applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'} style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px', flex: '1 1 auto' }}>
+                          <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Department</div>
+                          <span>{applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}</span>
+                          {activeTab === 'Overview' && (
+                            <span className="text-muted" style={{ marginLeft: '8px', fontSize: '0.85rem' }}>
+                              • {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
+                              {applicant.applied_at && (
+                                <span>
+                                  {` ${new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+
+                        <div className="ms-auto" style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px' }}>
+                          <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Status</div>
                           <div className="status-container">
                             {getStatusBadge(applicant.status)}
                           </div>
-                        </td>
+                        </div>
+
                         {activeTab === 'Pending' && (
-                          <td className="text-center">
+                          <div className="ms-2">
                             <Button
                               variant="outline-secondary"
                               size="sm"
-                              onClick={() => handleViewDetails(applicant)}
+                              onClick={(e) => { e.stopPropagation(); handleViewDetails(applicant); }}
                               className="view-details-btn"
                             >
                               View Details
                             </Button>
-                          </td>
+                          </div>
                         )}
-                        {activeTab === 'Shortlisted' && (
-                          <td className="text-center">
+
+                    {activeTab === 'Shortlisted' && (
+                          <div className="ms-2">
                             <Button
                               variant="success"
                               size="sm"
-                              onClick={() => handleScheduleInterview(applicant)}
+                              onClick={(e) => { e.stopPropagation(); handleScheduleInterview(applicant); }}
                               className="schedule-interview-btn"
                             >
                               Schedule Interview
                             </Button>
-                          </td>
+                          </div>
                         )}
-                        {activeTab !== 'Overview' && activeTab !== 'Pending' && activeTab !== 'Shortlisted' && (
-                          <td className="text-center">
-                            <div className="position-relative d-flex justify-content-center align-items-center">
-                              <Button
-                                variant="outline-secondary"
-                                size="sm"
-                                onClick={() => toggleDropdown(applicant.id)}
-                                className="dropdown-toggle-btn"
-                              >
-                                <FontAwesomeIcon icon={faEllipsisV} />
-                              </Button>
-                              {activeDropdown === applicant.id && (
-                                <div className="dropdown-menu show">
-                                  <button
-                                    className="dropdown-item"
-                                    onClick={() => handleViewDetails(applicant)}
-                                  >
-                                    <FontAwesomeIcon icon={faEye} className="me-2" />
-                                    View Details
-                                  </button>
-                                  <button
-                                    className="dropdown-item"
-                                    onClick={() => handleChangeStatus(applicant)}
-                                  >
-                                    <FontAwesomeIcon icon={faEdit} className="me-2" />
-                                    Change Status
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </td>
+
+                    {activeTab !== 'Overview' && activeTab !== 'Pending' && activeTab !== 'Shortlisted' && (
+                          <div className="ms-2 position-relative d-flex align-items-center">
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); toggleDropdown(applicant.id); }}
+                              className="dropdown-toggle-btn"
+                            >
+                              <FontAwesomeIcon icon={faEllipsisV} />
+                            </Button>
+                            {activeDropdown === applicant.id && (
+                              <div className="dropdown-menu show">
+                                <button
+                                  className="dropdown-item"
+                                  onClick={(e) => { e.stopPropagation(); handleViewDetails(applicant); }}
+                                >
+                                  <FontAwesomeIcon icon={faEye} className="me-2" />
+                                  View Details
+                                </button>
+                                <button
+                                  className="dropdown-item"
+                                  onClick={(e) => { e.stopPropagation(); handleChangeStatus(applicant); }}
+                                >
+                                  <FontAwesomeIcon icon={faEdit} className="me-2" />
+                                  Change Status
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+                      </div>
+                    </div>
+
+                    {activeTab !== 'Overview' && expandedRowId === applicant.id && (
+                      <div className="card-expand mt-2 pt-2" style={{ borderTop: '1px dashed rgba(0,0,0,0.1)' }}>
+                        <div className="expanded-content">
+                          <div className="expanded-title" style={{ fontSize: '0.85rem', color: '#6c757d' }}>Applied Date</div>
+                          <div className="expanded-value" style={{ fontWeight: 600 }}>
+                            {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
+                            {applicant.applied_at && (
+                              <span className="expanded-time" style={{ fontWeight: 400, color: '#6c757d' }}>
+                                {` • ${new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1006,32 +978,58 @@ const Onboarding = () => {
                 {selectedRecordForStatus && (
                   <div>
                     <p className="mb-3">
-                      <strong>Applicant:</strong> {selectedRecordForStatus.applicant_name}<br />
-                      <strong>Position:</strong> {selectedRecordForStatus.position}<br />
+                      <strong>Applicant:</strong> {selectedRecordForStatus.applicant ? `${selectedRecordForStatus.applicant.first_name} ${selectedRecordForStatus.applicant.last_name}` : 'N/A'}<br />
+                      <strong>Position:</strong> {selectedRecordForStatus.jobPosting?.position || selectedRecordForStatus.job_posting?.position || 'N/A'}<br />
                       <strong>Current Status:</strong> {selectedRecordForStatus.status}
                     </p>
                     <p className="text-muted mb-4">
                       Select the new status for this application:
                     </p>
                     <div className="d-grid gap-2">
-                      <Button
-                        variant="success"
-                        size="lg"
-                        onClick={() => handleStatusUpdate('ShortListed')}
-                        className="d-flex align-items-center justify-content-center"
-                      >
-                        <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
-                        Move to Shortlisted
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="lg"
-                        onClick={() => handleStatusUpdate('Rejected')}
-                        className="d-flex align-items-center justify-content-center"
-                      >
-                        <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
-                        Move to Rejected
-                      </Button>
+                      {(selectedRecordForStatus.status === 'Pending') && (
+                        <>
+                          <Button
+                            variant="success"
+                            size="lg"
+                            onClick={() => handleStatusUpdate('ShortListed')}
+                            className="d-flex align-items-center justify-content-center"
+                          >
+                            <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                            Move to Shortlisted
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="lg"
+                            onClick={() => handleStatusUpdate('Rejected')}
+                            className="d-flex align-items-center justify-content-center"
+                          >
+                            <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
+                            Move to Rejected
+                          </Button>
+                        </>
+                      )}
+                      {(selectedRecordForStatus.status === 'On going Interview' || selectedRecordForStatus.status === 'Interview') && (
+                        <>
+                          <Button
+                            variant="success"
+                            size="lg"
+                            onClick={() => handleStatusUpdate('Offered')}
+                            className="d-flex align-items-center justify-content-center"
+                          >
+                            <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                            Accepted - Move to Job Offer
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="lg"
+                            onClick={() => handleStatusUpdate('Rejected')}
+                            className="d-flex align-items-center justify-content-center"
+                          >
+                            <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
+                            Rejected
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1278,6 +1276,35 @@ const Onboarding = () => {
 
         .modern-onboarding-table tbody tr:hover td {
           background-color: #f5f7fa !important;
+        }
+
+        /* Expanded row */
+        .expanded-row td {
+          background: #fbfcfe !important;
+          border-top: none;
+        }
+
+        .expanded-content {
+          padding: 0.75rem 1rem;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #495057;
+        }
+
+        .expanded-title {
+          font-weight: 600;
+          color: #6c757d;
+          margin-right: 6px;
+        }
+
+        .expanded-value {
+          font-weight: 500;
+        }
+
+        .expanded-time {
+          color: #9ca3af;
+          margin-left: 6px;
         }
 
         .avatar {
@@ -1608,6 +1635,27 @@ const Onboarding = () => {
             font-size: 0.7rem;
             padding: 0.2rem 0.4rem;
           }
+        }
+
+        /* Overview header spacing: 5px between Applicant, Position, Department, Status */
+        .overview-spacing thead th {
+          position: relative;
+        }
+
+        .overview-spacing thead th.text-start + th.text-start,
+        .overview-spacing thead th.text-start + th.text-center,
+        .overview-spacing thead th.text-center + th.text-end {
+          padding-left: calc(0.75rem + 5px);
+        }
+
+        .overview-spacing thead th.text-start:not(:first-child) {
+          padding-left: calc(0.75rem + 5px);
+        }
+
+        .overview-spacing tbody td.align-left + td.align-left,
+        .overview-spacing tbody td.align-left + td.align-center,
+        .overview-spacing tbody td.align-center + td.align-right {
+          padding-left: calc(0.75rem + 5px);
         }
       `}</style>
 

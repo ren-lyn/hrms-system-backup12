@@ -80,6 +80,7 @@ const PersonalOnboarding = () => {
   const [toast, setToast] = useState({ show: false, type: 'success', title: '', message: '' });
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
+  const [declineReason, setDeclineReason] = useState('');
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [userApplications, setUserApplications] = useState([]);
   const [loadingApplications, setLoadingApplications] = useState(false);
@@ -125,14 +126,66 @@ const PersonalOnboarding = () => {
     setShowDeclineModal(true);
   };
 
-  const confirmAcceptOffer = () => {
-    setShowOfferModal(false);
-    showToast('success', 'Offer Accepted', 'You have successfully accepted the job offer!');
+  const confirmAcceptOffer = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const applicationId = (userApplications && userApplications[0] && userApplications[0].id) ? userApplications[0].id : null;
+
+      if (applicationId && token) {
+        // Try dedicated endpoint first
+        try {
+          await axios.post(`http://localhost:8000/api/applications/${applicationId}/accept-offer`, {}, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        } catch (e) {
+          // Fallback to generic status update
+          await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { status: 'Accepted' }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+      }
+
+      // Local UI feedback
+      setShowOfferModal(false);
+      showToast('success', 'Offer Accepted', 'Thank you for joining us! HR will contact you soon.');
+      // Optimistically update local application status
+      setUserApplications(prev => (prev && prev.length > 0) ? [{ ...prev[0], status: 'Accepted' }, ...prev.slice(1)] : prev);
+    } catch (error) {
+      console.error('Error accepting offer:', error);
+      setShowOfferModal(false);
+      showToast('error', 'Error', 'Failed to accept the offer. Please try again.');
+    }
   };
 
-  const confirmDeclineOffer = () => {
-    setShowDeclineModal(false);
-    showToast('info', 'Offer Declined', 'You have declined the job offer.');
+  const confirmDeclineOffer = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const applicationId = (userApplications && userApplications[0] && userApplications[0].id) ? userApplications[0].id : null;
+
+      if (applicationId && token) {
+        // Try dedicated endpoint first
+        try {
+          await axios.post(`http://localhost:8000/api/applications/${applicationId}/decline-offer`, { reason: declineReason }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        } catch (e) {
+          // Fallback to generic status update
+          await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { status: 'Declined', reason: declineReason }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+      }
+
+      setShowDeclineModal(false);
+      showToast('info', 'Offer Declined', 'Your response has been recorded.');
+      // Optimistically update local application status
+      setUserApplications(prev => (prev && prev.length > 0) ? [{ ...prev[0], status: 'Declined' }, ...prev.slice(1)] : prev);
+      setDeclineReason('');
+    } catch (error) {
+      console.error('Error declining offer:', error);
+      setShowDeclineModal(false);
+      showToast('error', 'Error', 'Failed to decline the offer. Please try again.');
+    }
   };
 
 
@@ -1815,34 +1868,68 @@ const PersonalOnboarding = () => {
 
         {currentPage === 'offer' && (
           <div className="container-fluid p-4">
-            <h4 className="mb-4">
-              <FontAwesomeIcon icon={faGift} className="me-2 text-primary" />
-              Job Offer Messages
-            </h4>
-            <div className="messages-list">
-              <div className="message-item">
-                <div className="d-flex align-items-start">
-                  <div className="message-icon me-3">
-                    <FontAwesomeIcon icon={faGift} className="text-success" />
-                  </div>
-                  <div className="flex-grow-1">
-                    <h6 className="mb-1">Job Offer Extended</h6>
-                    <p className="text-muted mb-1">Congratulations! We are pleased to offer you the position. Please review the offer details and respond within 5 business days.</p>
-                    <small className="text-muted">4 hours ago</small>
+            {/* Header */}
+            <div className="d-flex align-items-center justify-content-between mb-3">
+              <h4 className="mb-0 offer-header-title">
+                Job Offer for {onboardingData?.offer?.position || (userApplications[0]?.job_title) || 'Offered Position'}
+              </h4>
+            </div>
+
+            <div className="card offer-card">
+              <div className="card-body p-4">
+                {/* Company Block */}
+                <div className="mb-4">
+                  <div>
+                    <h5 className="mb-1 company-name">{onboardingData?.company?.name || 'Cabuyao Concrete Development Corporation'}</h5>
+                    <p className="text-muted mb-0">
+                      Congratulations! You've been offered the position of {onboardingData?.offer?.position || (userApplications[0]?.job_title) || 'Offered Position'}.
+                      We are pleased to extend this offer as part of our growing team and believe that your skills and experience will make a valuable contribution to our organization. Please review the details of your offer carefully, including the position, compensation, work schedule, and start date provided below. We encourage you to take the time to consider this opportunity and make a decision that aligns with your goals. Once ready, you may confirm your decision by selecting either "Accept Offer" or "Decline Offer" at the bottom of this page. Should you have any questions or need further clarification, please don't hesitate to contact our HR department. We look forward to hearing from you soon and hopefully welcoming you aboard.
+                    </p>
                   </div>
                 </div>
-              </div>
-              
-              <div className="message-item">
-                <div className="d-flex align-items-start">
-                  <div className="message-icon me-3">
-                    <FontAwesomeIcon icon={faDollarSign} className="text-info" />
+
+                {/* Offer Details */}
+                <div className="row g-3">
+                  <div className="col-md-6 col-lg-4">
+                    <div className="offer-detail">
+                      <div className="label">Position</div>
+                      <div className="value">
+                        {onboardingData?.offer?.position || (userApplications[0]?.job_title) || '—'}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-grow-1">
-                    <h6 className="mb-1">Salary Details</h6>
-                    <p className="text-muted mb-1">Your starting salary will be ₱25,000 per month with benefits including health insurance and vacation leave.</p>
-                    <small className="text-muted">5 hours ago</small>
+                  <div className="col-md-6 col-lg-4">
+                    <div className="offer-detail">
+                      <div className="label">Salary</div>
+                      <div className="value">
+                        {onboardingData?.offer?.salary || '—'}
+                      </div>
+                    </div>
                   </div>
+                  <div className="col-md-6 col-lg-4">
+                    <div className="offer-detail">
+                      <div className="label">Department</div>
+                      <div className="value">
+                        {userApplications[0]?.department || '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-4 d-flex flex-wrap gap-2">
+                  <button className="btn btn-primary d-flex align-items-center" onClick={handleAcceptOffer}>
+                    <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                    Accept Offer
+                  </button>
+                  <button className="btn btn-outline-secondary d-flex align-items-center" onClick={handleDeclineOffer}>
+                    <FontAwesomeIcon icon={faTimes} className="me-2" />
+                    Decline Offer
+                  </button>
+                </div>
+
+                <div className="mt-3 text-muted small">
+                  If you have any questions, please reach out to HR at <span className="fw-semibold">hr@company.com</span> or <span className="fw-semibold">(02) 1234-5678</span>.
                 </div>
               </div>
             </div>
@@ -2336,6 +2423,16 @@ const PersonalOnboarding = () => {
           </Modal.Header>
           <Modal.Body>
             <p>Are you sure you want to decline this job offer?</p>
+            <div className="mt-3">
+              <label className="form-label small text-muted">May we know why you’re declining? (optional)</label>
+              <textarea 
+                className="form-control" 
+                rows="3"
+                placeholder="Your reason..."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+              />
+            </div>
           </Modal.Body>
           <Modal.Footer>
             <button className="btn btn-secondary" onClick={() => setShowDeclineModal(false)}>
@@ -2553,6 +2650,66 @@ const PersonalOnboarding = () => {
           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
           border: 1px solid rgba(255, 255, 255, 0.2);
         }
+
+        /* Formal Offer Styles */
+        .offer-card {
+          border: 1px solid #e9ecef;
+          border-radius: 12px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        }
+        .offer-header-title {
+          font-weight: 800;
+          color: #1f2d3d;
+          letter-spacing: 0.2px;
+        }
+        .offer-title {
+          font-weight: 700;
+          color: #2c3e50;
+        }
+        .offer-icon {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f1f3f5;
+          color: #0d6efd;
+          border: 1px solid #e9ecef;
+        }
+        .offer-detail {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 10px;
+          padding: 14px;
+          height: 100%;
+        }
+        .offer-detail .label {
+          font-size: 0.75rem;
+          color: #6c757d;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          margin-bottom: 4px;
+          font-weight: 600;
+        }
+        .offer-detail .value {
+          font-size: 1rem;
+          color: #212529;
+          font-weight: 600;
+        }
+        .company-logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid #e9ecef;
+          background: #fff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .company-logo img { width: 100%; height: 100%; object-fit: contain; }
+        .company-name { font-weight: 700; color: #2c3e50; }
 
         .onboarding-section-title {
           color: #2c3e50;

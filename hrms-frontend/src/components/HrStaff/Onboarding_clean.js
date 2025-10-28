@@ -90,20 +90,14 @@ const Onboarding = () => {
             <div>
               <h2 className="fw-bold text-dark mb-1">
                 <FontAwesomeIcon icon={faUserPlus} className="me-2 text-primary" />
-                Onboarding Management
+                {activeTab === 'Overview' ? 'All Applications' : `${activeTab} Applications`}
+                <Badge bg="secondary" className="ms-2">{filteredApplicants.length}</Badge>
               </h2>
-              <p className="text-muted mb-0">Manage employee onboarding process</p>
-            </div>
-            <div className="d-flex gap-2">
-              <Button
-                variant="outline-primary"
-                onClick={handleManualRefresh}
-                disabled={refreshing}
-                className="modern-refresh-btn"
-              >
-                <FontAwesomeIcon icon={faRefresh} className={refreshing ? 'fa-spin' : ''} />
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </Button>
+              {activeTab === 'Overview' && (
+                <p className="text-muted mb-0">
+                  Summary view - Click on specific status tabs to view details, Pending Applications{applicants.filter(a => a.status === 'Pending').length}, Shortlisted Applications{applicants.filter(a => a.status === 'ShortListed' || a.status === 'Shortlisted').length}, Interview Applications{applicants.filter(a => a.status === 'On going Interview' || a.status === 'Interview').length}, Offered Applications{applicants.filter(a => a.status === 'Offered').length}, Accepted Offer Applications{applicants.filter(a => a.status === 'Accepted').length}, Onboarding Applications{applicants.filter(a => a.status === 'Onboarding').length}, Hired Applications{applicants.filter(a => a.status === 'Hired').length}, Rejected Applications{applicants.filter(a => a.status === 'Rejected').length}
+                </p>
+              )}
             </div>
           </div>
         </Col>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { Card, Button, Form, Modal, Collapse, Badge } from "react-bootstrap";
+import { Card, Button, Form, Modal, Badge } from "react-bootstrap";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -24,7 +24,10 @@ const JobPostings = () => {
     status: "Open",
   });
   const [isEditing, setIsEditing] = useState(false);
-  const [expandedJob, setExpandedJob] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [descriptionCharCount, setDescriptionCharCount] = useState(0);
+  const [requirementsCharCount, setRequirementsCharCount] = useState(0);
 
   // Department-Position mapping as specified by user
   const departmentPositions = {
@@ -67,6 +70,23 @@ const JobPostings = () => {
     }
   );
 
+  // Simple close function for immediate modal closure
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setCurrentJob({
+      id: null,
+      title: "",
+      description: "",
+      requirements: "",
+      department: "",
+      position: "",
+      status: "Open",
+    });
+    setIsEditing(false);
+    setDescriptionCharCount(0);
+    setRequirementsCharCount(0);
+  };
+
 
 
   // Get current Philippines time
@@ -79,6 +99,22 @@ const JobPostings = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Helper function to count characters (excluding spaces)
+  const countCharacters = (text) => {
+    if (!text) return 0;
+    return text.replace(/\s/g, '').length;
+  };
+
+  // Helper function to validate character limit
+  const validateCharacterLimit = (text, fieldName, maxChars = 300) => {
+    const charCount = countCharacters(text);
+    if (charCount > maxChars) {
+      showError(`${fieldName} exceeds the maximum limit of ${maxChars} characters (spaces not counted). Current: ${charCount} characters.`);
+      return false;
+    }
+    return true;
   };
 
   // ✅ Common error handler - same pattern as EmployeeRecords
@@ -162,6 +198,13 @@ const JobPostings = () => {
       setCurrentJob({ ...currentJob, department: value, position: "" });
     } else {
       setCurrentJob({ ...currentJob, [name]: value });
+      
+      // Update character counts for description and requirements
+      if (name === 'description') {
+        setDescriptionCharCount(countCharacters(value));
+      } else if (name === 'requirements') {
+        setRequirementsCharCount(countCharacters(value));
+      }
     }
   };
 
@@ -177,6 +220,8 @@ const JobPostings = () => {
       status: "Open",
     });
     setIsEditing(false);
+    setDescriptionCharCount(0);
+    setRequirementsCharCount(0);
     setShowModal(true);
   };
 
@@ -184,6 +229,8 @@ const JobPostings = () => {
   const handleEdit = (job) => {
     setCurrentJob(job);
     setIsEditing(true);
+    setDescriptionCharCount(countCharacters(job.description));
+    setRequirementsCharCount(countCharacters(job.requirements));
     setShowModal(true);
     showInfo(`Editing job posting: ${job.title}`);
   };
@@ -230,8 +277,14 @@ const JobPostings = () => {
       showError('Job description is required.');
       return false;
     }
+    if (!validateCharacterLimit(currentJob.description, 'Job description', 300)) {
+      return false;
+    }
     if (!currentJob.requirements.trim()) {
       showError('Job requirements are required.');
+      return false;
+    }
+    if (!validateCharacterLimit(currentJob.requirements, 'Job requirements', 300)) {
       return false;
     }
     if (!currentJob.department.trim()) {
@@ -338,9 +391,16 @@ const JobPostings = () => {
     });
   };
 
-  // Toggle expand/collapse
-  const toggleExpand = (id) => {
-    setExpandedJob(expandedJob === id ? null : id);
+  // Handle job details view
+  const handleViewDetails = (job) => {
+    setSelectedJob(job);
+    setShowDetailsModal(true);
+  };
+
+  // Close details modal
+  const handleCloseDetailsModal = () => {
+    setShowDetailsModal(false);
+    setSelectedJob(null);
   };
 
   // Handle updating existing job posting
@@ -429,7 +489,11 @@ const JobPostings = () => {
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.3 }}
               >
-                <Card className="shadow border-0 h-100 rounded-4">
+                <Card 
+                  className="shadow border-0 h-100 rounded-4" 
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => handleViewDetails(job)}
+                >
                   <Card.Body className="d-flex flex-column">
                     <div className="d-flex justify-content-between align-items-start mb-2">
                       <div>
@@ -443,7 +507,7 @@ const JobPostings = () => {
                           {job.status}
                         </Badge>
                       </div>
-                      <div>
+                      <div onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="outline-success"
                           size="sm"
@@ -461,83 +525,44 @@ const JobPostings = () => {
                           ></i>
                         </Button>
                         <Button
-                          variant="outline-primary"
+                          variant="outline-danger"
                           size="sm"
-                          className="me-2 rounded-circle"
-                          onClick={() => handleEdit(job)}
+                          className="rounded-circle"
+                          onClick={() => handleDelete(job.id, job.title)}
+                          disabled={deletingId === job.id}
                         >
-                          <i className="bi bi-pencil"></i>
+                          <i className="bi bi-trash"></i>
                         </Button>
-            <Button
-              variant="outline-danger"
-              size="sm"
-              className="rounded-circle"
-              onClick={() => handleDelete(job.id, job.title)}
-              disabled={deletingId === job.id}
-            >
-              <i className="bi bi-trash"></i>
-            </Button>
                       </div>
                     </div>
 
-                    {/* Expandable content */}
-                    <Collapse in={expandedJob === job.id}>
-                      <div className="mt-2 mb-2">
+                    {/* Brief preview */}
+                    <div className="mt-2 mb-2">
+                      <Card.Text className="text-secondary small">
+                        <strong>Description:</strong> {job.description?.substring(0, 100)}...
+                      </Card.Text>
+                      {job.department && (
                         <Card.Text className="text-secondary small">
-                          <strong>Description:</strong> {job.description}
+                          <strong>Department:</strong> {job.department}
                         </Card.Text>
-                        <Card.Text className="text-secondary small">
-                          <strong>Requirements:</strong> {job.requirements}
-                        </Card.Text>
-                        {job.department && (
-                          <Card.Text className="text-secondary small">
-                            <strong>Department:</strong> {job.department}
-                          </Card.Text>
-                        )}
-                        {job.position && (
-                          <Card.Text className="text-secondary small">
-                            <strong>Position:</strong> {job.position}
-                          </Card.Text>
-                        )}
-                        {job.salary_min && job.salary_max && (
-                          <Card.Text className="text-secondary small">
-                            <strong>Salary Range:</strong> ₱{Number(job.salary_min).toLocaleString()} – ₱{Number(job.salary_max).toLocaleString()}
-                            {job.salary_notes && (
-                              <div className="text-muted" style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>
-                                {job.salary_notes}
-                              </div>
-                            )}
-                          </Card.Text>
-                        )}
-                        <Card.Text className="text-secondary small">
-                          <strong>Posted:</strong> {job.ph_created_at || new Date(job.created_at).toLocaleString('en-PH', {
-                            timeZone: 'Asia/Manila',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </Card.Text>
-                      </div>
-                    </Collapse>
+                      )}
+                      <Card.Text className="text-secondary small">
+                        <strong>Posted:</strong> {job.ph_created_at || new Date(job.created_at).toLocaleString('en-PH', {
+                          timeZone: 'Asia/Manila',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </Card.Text>
+                    </div>
 
                     <div className="mt-auto">
-                      <Button
-                        variant="link"
-                        className="p-0 mt-2 text-decoration-none fw-semibold"
-                        onClick={() => toggleExpand(job.id)}
-                      >
-                        {expandedJob === job.id ? (
-                          <>
-                            Show Less <i className="bi bi-chevron-up"></i>
-                          </>
-                        ) : (
-                          <>
-                            Show More <i className="bi bi-chevron-down"></i>
-                          </>
-                        )}
-                      </Button>
+                      <small className="text-primary fw-semibold">
+                        <i className="bi bi-eye me-1"></i>
+                        Click to view full details
+                      </small>
                     </div>
                   </Card.Body>
                 </Card>
@@ -548,7 +573,7 @@ const JobPostings = () => {
       )}
 
       {/* Modal for Add/Edit */}
-      <Modal show={showModal} onHide={jobModalConfirmation.handleCloseRequest} centered>
+      <Modal show={showModal} onHide={handleCloseModal} centered>
         <Modal.Header
           closeButton
           style={{
@@ -585,7 +610,19 @@ const JobPostings = () => {
                 placeholder="Enter job description"
                 className="rounded-3"
                 required
+                maxLength={300}
               />
+              <div className="d-flex justify-content-between align-items-center mt-1">
+                <Form.Text className={`text-muted ${descriptionCharCount > 300 ? 'text-danger' : descriptionCharCount > 250 ? 'text-warning' : ''}`}>
+                  {descriptionCharCount} / 300 characters (spaces not counted)
+                </Form.Text>
+                {descriptionCharCount > 300 && (
+                  <small className="text-danger fw-semibold">
+                    <i className="bi bi-exclamation-triangle me-1"></i>
+                    Exceeds character limit
+                  </small>
+                )}
+              </div>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label className="fw-semibold">Requirements *</Form.Label>
@@ -598,7 +635,19 @@ const JobPostings = () => {
                 placeholder="Enter job requirements"
                 className="rounded-3"
                 required
+                maxLength={300}
               />
+              <div className="d-flex justify-content-between align-items-center mt-1">
+                <Form.Text className={`text-muted ${requirementsCharCount > 300 ? 'text-danger' : requirementsCharCount > 250 ? 'text-warning' : ''}`}>
+                  {requirementsCharCount} / 300 characters (spaces not counted)
+                </Form.Text>
+                {requirementsCharCount > 300 && (
+                  <small className="text-danger fw-semibold">
+                    <i className="bi bi-exclamation-triangle me-1"></i>
+                    Exceeds character limit
+                  </small>
+                )}
+              </div>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label className="fw-semibold">Department *</Form.Label>
@@ -644,7 +693,7 @@ const JobPostings = () => {
             <Button
               variant="outline-secondary"
               className="rounded-pill px-3"
-              onClick={jobModalConfirmation.handleCloseRequest}
+              onClick={handleCloseModal}
             >
               Cancel
             </Button>
@@ -752,6 +801,162 @@ const JobPostings = () => {
               Update Existing Post
             </Button>
           </div>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Job Details Modal */}
+      <Modal show={showDetailsModal} onHide={handleCloseDetailsModal} centered size="lg" scrollable>
+        <Modal.Header
+          closeButton
+          style={{
+            background: "linear-gradient(135deg, #28a745, #20c997)",
+            color: "white",
+          }}
+        >
+          <Modal.Title className="fw-bold">
+            <i className="bi bi-briefcase me-2"></i>
+            Job Details
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          {selectedJob && (
+            <div className="p-3">
+              {/* Job Title and Status */}
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <h4 className="fw-bold text-dark mb-0">{selectedJob.title}</h4>
+                <Badge
+                  bg={selectedJob.status === "Open" ? "success" : "danger"}
+                  className="rounded-pill px-3 py-2"
+                  style={{ fontSize: '0.9rem' }}
+                >
+                  {selectedJob.status}
+                </Badge>
+              </div>
+
+              {/* Job Information Grid */}
+              <div className="row">
+                <div className="col-md-6 mb-3">
+                  <div className="bg-light rounded-3 p-3 h-100">
+                    <h6 className="fw-bold text-primary mb-3">
+                      <i className="bi bi-building me-2"></i>
+                      Department Information
+                    </h6>
+                    {selectedJob.department && (
+                      <p className="mb-2">
+                        <strong>Department:</strong> {selectedJob.department}
+                      </p>
+                    )}
+                    {selectedJob.position && (
+                      <p className="mb-2">
+                        <strong>Position:</strong> {selectedJob.position}
+                      </p>
+                    )}
+                    <p className="mb-0">
+                      <strong>Employment Type:</strong> Full-time
+                    </p>
+                  </div>
+                </div>
+                <div className="col-md-6 mb-3">
+                  <div className="bg-light rounded-3 p-3 h-100">
+                    <h6 className="fw-bold text-success mb-3">
+                      <i className="bi bi-currency-dollar me-2"></i>
+                      Compensation
+                    </h6>
+                    {selectedJob.salary_min && selectedJob.salary_max ? (
+                      <>
+                        <p className="mb-2">
+                          <strong>Salary Range:</strong>
+                        </p>
+                        <p className="mb-2 text-success fw-semibold fs-5">
+                          ₱{Number(selectedJob.salary_min).toLocaleString()} – ₱{Number(selectedJob.salary_max).toLocaleString()}
+                        </p>
+                        {selectedJob.salary_notes && (
+                          <p className="mb-0 text-muted small">
+                            <em>{selectedJob.salary_notes}</em>
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mb-0 text-muted">
+                        Salary to be discussed during interview
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Job Description */}
+              <div className="mb-4">
+                <h6 className="fw-bold text-dark mb-3 pb-2 border-bottom border-primary border-opacity-25">
+                  <i className="bi bi-file-text me-2"></i>
+                  Job Description
+                </h6>
+                <div className="bg-white border rounded-3 p-3" style={{ minHeight: 'auto', maxHeight: 'none' }}>
+                  <p className="mb-0 lh-lg" style={{ 
+                    whiteSpace: 'pre-wrap', 
+                    color: '#495057',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'break-word',
+                    hyphens: 'auto'
+                  }}>
+                    {selectedJob.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Requirements */}
+              <div className="mb-4">
+                <h6 className="fw-bold text-dark mb-3 pb-2 border-bottom border-success border-opacity-25">
+                  <i className="bi bi-list-check me-2"></i>
+                  Requirements & Qualifications
+                </h6>
+                <div className="bg-white border rounded-3 p-3" style={{ minHeight: 'auto', maxHeight: 'none' }}>
+                  <p className="mb-0 lh-lg" style={{ 
+                    whiteSpace: 'pre-wrap', 
+                    color: '#495057',
+                    wordWrap: 'break-word',
+                    overflowWrap: 'break-word',
+                    hyphens: 'auto'
+                  }}>
+                    {selectedJob.requirements}
+                  </p>
+                </div>
+              </div>
+
+              {/* Posted Date */}
+              <div className="bg-light rounded-3 p-3">
+                <h6 className="fw-bold text-info mb-2">
+                  <i className="bi bi-calendar-event me-2"></i>
+                  Posting Information
+                </h6>
+                <p className="mb-0">
+                  <strong>Posted:</strong> {selectedJob.ph_created_at || new Date(selectedJob.created_at).toLocaleString('en-PH', {
+                    timeZone: 'Asia/Manila',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </p>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          {selectedJob && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                handleCloseDetailsModal();
+                handleEdit(selectedJob);
+              }}
+              className="rounded-pill px-4"
+            >
+              <i className="bi bi-pencil me-1"></i>
+              Edit Job
+            </Button>
+          )}
         </Modal.Footer>
       </Modal>
 
