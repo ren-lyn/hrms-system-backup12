@@ -8,7 +8,7 @@ import './CashAdvanceForm.css';
 
 const CashAdvanceForm = () => {
   const [formData, setFormData] = useState({
-    company: '',
+    company: 'Cabuyao Concrete Development Corporation',
     name: '',
     department: '',
     dateField: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD format
@@ -16,7 +16,7 @@ const CashAdvanceForm = () => {
     remCA: '',
     reason: ''
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start as false for instant display
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
@@ -24,47 +24,60 @@ const CashAdvanceForm = () => {
   const [validationMessage, setValidationMessage] = useState('');
 
   useEffect(() => {
-    fetchEmployeeData();
+    fetchEmployeeDataOptimized();
   }, []);
 
-  const fetchEmployeeData = async () => {
-    try {
-      // Check cache first
-      const cachedData = localStorage.getItem('employeeProfile');
-      const cacheTime = localStorage.getItem('employeeProfileTime');
-      const now = Date.now();
-      const cacheAge = now - (cacheTime ? parseInt(cacheTime) : 0);
-      const isCacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes
-      
-      if (cachedData && isCacheValid) {
-        try {
-          const profileData = JSON.parse(cachedData);
-          const profile = profileData.profile;
-          
-          setFormData(prev => ({
-            ...prev,
-            company: 'Cabuyao Concrete Development Corporation',
-            name: profile.name || `${profile.first_name} ${profile.last_name}` || '',
-            department: profile.department || 'Not Specified',
-            dateField: new Date().toLocaleDateString('en-CA')
-          }));
-          
-          setLoading(false);
-          
-          // Still fetch fresh data in background
-          fetchFreshEmployeeData();
-          return;
-        } catch (e) {
-          console.error('Error parsing cached data:', e);
-        }
+  const fetchEmployeeDataOptimized = async () => {
+    // Try localStorage first for instant display
+    const userInfo = JSON.parse(localStorage.getItem('user') || '{}');
+    if (userInfo.name || userInfo.first_name) {
+      const fullName = userInfo.name || `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim();
+      setFormData(prev => ({
+        ...prev,
+        company: 'Cabuyao Concrete Development Corporation',
+        name: fullName,
+        department: userInfo.department || 'Not Specified',
+        dateField: new Date().toLocaleDateString('en-CA')
+      }));
+    }
+
+    // Check cache for more complete data
+    const cachedData = localStorage.getItem('employeeProfile');
+    const cacheTime = localStorage.getItem('employeeProfileTime');
+    const now = Date.now();
+    const cacheAge = now - (cacheTime ? parseInt(cacheTime) : 0);
+    const isCacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes
+    
+    if (cachedData && isCacheValid) {
+      try {
+        const profileData = JSON.parse(cachedData);
+        const profile = profileData.profile;
+        
+        setFormData(prev => ({
+          ...prev,
+          company: 'Cabuyao Concrete Development Corporation',
+          name: profile.name || `${profile.first_name} ${profile.last_name}` || prev.name,
+          department: profile.department || prev.department,
+          dateField: new Date().toLocaleDateString('en-CA')
+        }));
+        
+        // Update silently in background
+        fetchFreshEmployeeData();
+        return;
+      } catch (e) {
+        console.error('Error parsing cached data:', e);
       }
-      
-      // Fetch fresh data
+    }
+    
+    // No cache, fetch with minimal delay
+    try {
       await fetchFreshEmployeeData();
     } catch (error) {
       console.error('Error fetching employee data:', error);
-      showAlert('Error loading employee information. Please try again.', 'danger');
-      setLoading(false);
+      // Don't show error if we have at least some data from localStorage
+      if (!userInfo.name && !userInfo.first_name) {
+        showAlert('Error loading employee information. Please try again.', 'danger');
+      }
     }
   };
 
@@ -76,15 +89,13 @@ const CashAdvanceForm = () => {
       setFormData(prev => ({
         ...prev,
         company: 'Cabuyao Concrete Development Corporation',
-        name: profile.name || `${profile.first_name} ${profile.last_name}` || '',
-        department: profile.department || 'Not Specified',
+        name: profile.name || `${profile.first_name} ${profile.last_name}` || prev.name,
+        department: profile.department || prev.department,
         dateField: new Date().toLocaleDateString('en-CA')
       }));
     } catch (error) {
       console.error('Error fetching fresh employee data:', error);
-      throw error;
-    } finally {
-      setLoading(false);
+      // Don't throw, allow form to continue with cached data
     }
   };
 
@@ -210,18 +221,6 @@ const CashAdvanceForm = () => {
       reason: ''
     }));
   };
-
-  if (loading) {
-    return (
-      <div className="cash-advance-container">
-        <div className="d-flex justify-content-center p-5">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="cash-advance-container scrollable responsive-container" style={{ padding: '20px' }}>

@@ -338,6 +338,41 @@
   margin-top: 20px;
 }
 
+/* Editable Amount Inputs */
+.editable-amount-input,
+.editable-remca-input {
+  border: none;
+  border-bottom: 2px solid #667eea;
+  border-radius: 0;
+  padding: 8px 4px;
+  font-size: 1rem;
+  background: transparent;
+  width: 100%;
+}
+
+.editable-amount-input:focus,
+.editable-remca-input:focus {
+  outline: none;
+  border-bottom-color: #764ba2;
+  box-shadow: 0 2px 0 rgba(118, 75, 162, 0.1);
+}
+
+.editable-amount-input {
+  font-weight: 600;
+  color: #0056b3;
+}
+
+.editable-remca-input {
+  font-weight: 500;
+}
+
+/* Small text showing original values */
+.form-field-replica small.text-muted {
+  font-size: 0.75rem;
+  margin-top: 2px;
+  display: block;
+}
+
 /* Employee Form Replica Styles */
 .employee-cash-advance-form {
   background: white;

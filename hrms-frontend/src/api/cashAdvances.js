@@ -34,10 +34,12 @@ export const getCashAdvanceRequest = async (id) => {
 };
 
 // Approve cash advance request
-export const approveCashAdvanceRequest = async (id, remarks = '') => {
+export const approveCashAdvanceRequest = async (id, remarks = '', amountCA = null, remCA = null) => {
   try {
     const response = await axios.put(`/cash-advances/${id}/approve`, {
-      hr_remarks: remarks
+      hr_remarks: remarks,
+      amount_ca: amountCA,
+      rem_ca: remCA
     });
     return response.data;
   } catch (error) {
@@ -47,10 +49,12 @@ export const approveCashAdvanceRequest = async (id, remarks = '') => {
 };
 
 // Reject cash advance request
-export const rejectCashAdvanceRequest = async (id, remarks) => {
+export const rejectCashAdvanceRequest = async (id, remarks, amountCA = null, remCA = null) => {
   try {
     const response = await axios.put(`/cash-advances/${id}/reject`, {
-      hr_remarks: remarks
+      hr_remarks: remarks,
+      amount_ca: amountCA,
+      rem_ca: remCA
     });
     return response.data;
   } catch (error) {

@@ -3,6 +3,7 @@ import API from '../axios';
 // Cash Advance API endpoints
 export const fetchCashAdvance = (id) => API.get(`/cash-advances/${id}`);
 export const fetchMyCashAdvances = () => API.get('/cash-advances/my-requests');
+export const fetchMyCashAdvanceStats = () => API.get('/cash-advances/my-stats');
 export const downloadCashAdvancePdf = async (id) => {
   try {
     const response = await API.get(`/cash-advances/${id}/download-pdf`, {

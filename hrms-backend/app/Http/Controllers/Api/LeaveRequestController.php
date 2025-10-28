@@ -12,6 +12,9 @@ use App\Notifications\LeaveRequestStatusChanged;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Log;
+
+
 
 class LeaveRequestController extends Controller
 {
@@ -323,7 +326,7 @@ class LeaveRequestController extends Controller
                 $hrAssistant->notify(new \App\Notifications\LeaveRequestSubmittedToHR($leaveRequest));
             }
 
-            \Log::info('Leave request submission notifications sent', [
+            Log::info('Leave request submission notifications sent', [
                 'leave_request_id' => $leaveRequest->id,
                 'employee_id' => $leaveRequest->employee_id,
                 'department' => $department,
@@ -331,7 +334,7 @@ class LeaveRequestController extends Controller
                 'hr_assistants_notified' => $hrAssistants->count()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to send leave request submission notifications', [
+            Log::error('Failed to send leave request submission notifications', [
                 'leave_request_id' => $leaveRequest->id,
                 'error' => $e->getMessage()
             ]);
@@ -716,13 +719,31 @@ class LeaveRequestController extends Controller
             ];
         }
         
-        // Rule 2: Check yearly limit (3 requests per year)
+        // Rule 2: Check yearly limit (3 requests per year) - exclude rejected leaves
         $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
             ->whereYear('created_at', $currentYear)
+            ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
             ->count();
             
         if ($yearlyRequestCount >= 3) {
             return 'You have reached the yearly limit of 3 leave requests. Please wait until next year to submit another request.';
+        }
+        
+        // Rule 2.5: Check 3-day waiting period after rejection
+        $lastRejectedLeave = LeaveRequest::where('employee_id', $employeeId)
+            ->whereIn('status', ['rejected', 'manager_rejected'])
+            ->orderBy('rejected_at', 'desc')
+            ->first();
+            
+        if ($lastRejectedLeave && $lastRejectedLeave->rejected_at) {
+            $rejectionDate = Carbon::parse($lastRejectedLeave->rejected_at);
+            $waitUntilDate = $rejectionDate->copy()->addDays(3); // 3-day waiting period
+            $todayStart = $today->copy()->startOfDay();
+            $waitUntilStart = $waitUntilDate->copy()->startOfDay();
+            
+            if ($todayStart->lt($waitUntilStart)) {
+                return "Your leave request was rejected on {$rejectionDate->format('F j, Y')}. You need to wait 3 days before filing another leave request. You can submit your next request on {$waitUntilDate->format('F j, Y')}.";
+            }
         }
         
         // Rule 3: Check 7-day waiting period after last leave end date
@@ -840,12 +861,40 @@ class LeaveRequestController extends Controller
         $currentYear = Carbon::now()->year;
         $today = Carbon::now();
         
-        // Yearly usage
+        // Yearly usage - exclude rejected leaves
         $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
             ->whereYear('created_at', $currentYear)
+            ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
             ->count();
             
-        // Last leave information
+        // Check for rejection waiting period (3 days)
+        $rejectionWaitingPeriod = null;
+        $lastRejectedLeave = LeaveRequest::where('employee_id', $employeeId)
+            ->whereIn('status', ['rejected', 'manager_rejected'])
+            ->orderBy('rejected_at', 'desc')
+            ->first();
+            
+        if ($lastRejectedLeave && $lastRejectedLeave->rejected_at) {
+            $rejectionDate = Carbon::parse($lastRejectedLeave->rejected_at);
+            $waitUntilDate = $rejectionDate->copy()->addDays(3); // 3-day waiting period
+            $todayStart = $today->copy()->startOfDay();
+            $waitUntilStart = $waitUntilDate->copy()->startOfDay();
+            
+            // Check if still in rejection waiting period
+            $waitingPeriodActive = $todayStart->lt($waitUntilStart);
+            
+            if ($waitingPeriodActive) {
+                $rejectionWaitingPeriod = [
+                    'rejection_date' => $rejectionDate->format('F j, Y'),
+                    'can_apply_from' => $waitUntilDate->format('F j, Y'),
+                    'days_remaining' => 3,
+                    'waiting_period_active' => true,
+                    'leave_type' => $lastRejectedLeave->type
+                ];
+            }
+        }
+            
+        // Last leave information (for 7-day waiting period)
         $lastLeave = LeaveRequest::where('employee_id', $employeeId)
             ->whereIn('status', ['pending', 'manager_approved', 'approved'])
             ->orderBy('to', 'desc')
@@ -877,6 +926,7 @@ class LeaveRequestController extends Controller
                 'remaining' => max(0, 3 - $yearlyRequestCount),
                 'year' => $currentYear
             ],
+            'rejection_waiting_period' => $rejectionWaitingPeriod,
             'waiting_period' => $waitingPeriodInfo
         ];
     }
@@ -978,28 +1028,50 @@ class LeaveRequestController extends Controller
                 ];
             });
         
-        // Calculate leave instances (yearly limit tracking)
+        // Calculate leave instances (yearly limit tracking) - exclude rejected leaves
         $yearlyRequestCount = LeaveRequest::where('employee_id', $user->id)
             ->whereYear('created_at', $currentYear)
+            ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
             ->count();
         
         $remainingRequests = max(0, 3 - $yearlyRequestCount);
         
-        // Determine next available filing date
+        // Check for rejection waiting period (3 days) - priority check
         $nextAvailableDate = null;
-        $lastLeave = LeaveRequest::where('employee_id', $user->id)
-            ->whereIn('status', ['pending', 'manager_approved', 'approved'])
-            ->orderBy('to', 'desc')
+        $rejectionNote = null;
+        $lastRejectedLeave = LeaveRequest::where('employee_id', $user->id)
+            ->whereIn('status', ['rejected', 'manager_rejected'])
+            ->orderBy('rejected_at', 'desc')
             ->first();
             
-        if ($lastLeave) {
-            $lastLeaveEndDate = Carbon::parse($lastLeave->to);
-            $waitUntilDate = $lastLeaveEndDate->copy()->addDays(8); // 7 full waiting days + 1
+        if ($lastRejectedLeave && $lastRejectedLeave->rejected_at) {
+            $rejectionDate = Carbon::parse($lastRejectedLeave->rejected_at);
+            $waitUntilDate = $rejectionDate->copy()->addDays(3); // 3-day waiting period
             $today = Carbon::now()->startOfDay();
             
-            // Only set next available date if still in waiting period
+            // Check if still in rejection waiting period
             if ($today->lt($waitUntilDate->startOfDay())) {
                 $nextAvailableDate = $waitUntilDate->format('F j, Y');
+                $rejectionNote = "Your {$lastRejectedLeave->type} request was rejected. Please wait 3 days before submitting another leave request.";
+            }
+        }
+        
+        // Determine next available filing date based on last leave end date (7-day rule)
+        if (!$nextAvailableDate) {
+            $lastLeave = LeaveRequest::where('employee_id', $user->id)
+                ->whereIn('status', ['pending', 'manager_approved', 'approved'])
+                ->orderBy('to', 'desc')
+                ->first();
+                
+            if ($lastLeave) {
+                $lastLeaveEndDate = Carbon::parse($lastLeave->to);
+                $waitUntilDate = $lastLeaveEndDate->copy()->addDays(8); // 7 full waiting days + 1
+                $today = Carbon::now()->startOfDay();
+                
+                // Only set next available date if still in waiting period
+                if ($today->lt($waitUntilDate->startOfDay())) {
+                    $nextAvailableDate = $waitUntilDate->format('F j, Y');
+                }
             }
         }
         
@@ -1015,7 +1087,8 @@ class LeaveRequestController extends Controller
                 'total_allowed' => 3,
                 'used' => $yearlyRequestCount,
                 'remaining' => $remainingRequests,
-                'next_available_date' => $nextAvailableDate
+                'next_available_date' => $nextAvailableDate,
+                'rejection_note' => $rejectionNote
             ],
             'tenure' => [
                 'months' => $tenureInMonths,
@@ -1060,6 +1133,28 @@ class LeaveRequestController extends Controller
                 '7' => 'All leave counters reset at the start of each calendar year',
                 '8' => 'You cannot file another leave until your current leave end date has passed'
             ]
+        ]);
+    }
+
+    /**
+     * Clear all leave requests for the authenticated user (for testing purposes)
+     */
+    public function clearMyLeaveRequests()
+    {
+        $user = Auth::user();
+        if (!$user) {
+            // Fallback for testing without auth
+            $user = \App\Models\User::find(1);
+            if (!$user) {
+                return response()->json(['error' => 'User not found'], 400);
+            }
+        }
+
+        $deleted = LeaveRequest::where('employee_id', $user->id)->delete();
+
+        return response()->json([
+            'message' => 'All your leave requests have been cleared successfully',
+            'deleted_count' => $deleted
         ]);
     }
 

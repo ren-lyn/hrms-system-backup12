@@ -195,6 +195,8 @@ class CashAdvanceController extends Controller
         $request->validate([
             'hr_remarks' => 'nullable|string|max:1000',
             'collection_date' => 'nullable|date|after_or_equal:today',
+            'amount_ca' => 'nullable|numeric|min:0.01|max:999999.99',
+            'rem_ca' => 'nullable|string|max:255',
         ]);
 
         $cashAdvanceRequest = CashAdvanceRequest::findOrFail($id);
@@ -210,13 +212,24 @@ class CashAdvanceController extends Controller
             ? Carbon::parse($request->collection_date)
             : $this->calculateCollectionDate();
 
-        $cashAdvanceRequest->update([
+        // Prepare update data
+        $updateData = [
             'status' => 'approved',
             'processed_by' => Auth::id(),
             'processed_at' => now(),
             'hr_remarks' => $request->hr_remarks,
             'collection_date' => $collectionDate,
-        ]);
+        ];
+
+        // Update amounts if provided
+        if ($request->has('amount_ca')) {
+            $updateData['amount_ca'] = $request->amount_ca;
+        }
+        if ($request->has('rem_ca')) {
+            $updateData['rem_ca'] = $request->rem_ca;
+        }
+
+        $cashAdvanceRequest->update($updateData);
 
         // Send notification to the employee
         $cashAdvanceRequest->load(['user', 'processedBy']);
@@ -249,6 +262,8 @@ class CashAdvanceController extends Controller
     {
         $request->validate([
             'hr_remarks' => 'required|string|max:1000',
+            'amount_ca' => 'nullable|numeric|min:0.01|max:999999.99',
+            'rem_ca' => 'nullable|string|max:255',
         ]);
 
         $cashAdvanceRequest = CashAdvanceRequest::findOrFail($id);
@@ -259,12 +274,23 @@ class CashAdvanceController extends Controller
             ], 400);
         }
 
-        $cashAdvanceRequest->update([
+        // Prepare update data
+        $updateData = [
             'status' => 'rejected',
             'processed_by' => Auth::id(),
             'processed_at' => now(),
             'hr_remarks' => $request->hr_remarks,
-        ]);
+        ];
+
+        // Update amounts if provided
+        if ($request->has('amount_ca')) {
+            $updateData['amount_ca'] = $request->amount_ca;
+        }
+        if ($request->has('rem_ca')) {
+            $updateData['rem_ca'] = $request->rem_ca;
+        }
+
+        $cashAdvanceRequest->update($updateData);
 
         // Send notification to the employee
         $cashAdvanceRequest->load(['user', 'processedBy']);
@@ -301,6 +327,32 @@ class CashAdvanceController extends Controller
             ->paginate(10);
 
         return response()->json($cashAdvanceRequests);
+    }
+
+    /**
+     * Get cash advance statistics for the authenticated user
+     */
+    public function userStats()
+    {
+        $userId = Auth::id();
+        
+        $stats = [
+            'total_amount_approved' => CashAdvanceRequest::where('user_id', $userId)
+                ->where('status', 'approved')
+                ->sum('amount_ca'),
+            'total_requests' => CashAdvanceRequest::where('user_id', $userId)->count(),
+            'pending_requests' => CashAdvanceRequest::where('user_id', $userId)
+                ->where('status', 'pending')
+                ->count(),
+            'approved_requests' => CashAdvanceRequest::where('user_id', $userId)
+                ->where('status', 'approved')
+                ->count(),
+            'rejected_requests' => CashAdvanceRequest::where('user_id', $userId)
+                ->where('status', 'rejected')
+                ->count(),
+        ];
+
+        return response()->json($stats);
     }
 
     /**
@@ -354,9 +406,10 @@ class CashAdvanceController extends Controller
             ->findOrFail($id);
 
         // Check if user can access this request (either owner or HR)
+        
         $user = Auth::user();
         if ($user) {
-            $user->load('role'); // Load role relationship
+           $user = \App\Models\User::with('role')->find(Auth::id()); // Load role relationship
         }
         
         if (!$user || ($cashAdvanceRequest->user_id !== $user->id && !$this->isHRUser($user))) {

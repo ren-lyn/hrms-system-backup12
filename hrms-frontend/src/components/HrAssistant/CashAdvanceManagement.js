@@ -32,6 +32,8 @@ const CashAdvanceManagement = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
+  const [editableAmount, setEditableAmount] = useState('');
+  const [editableRemCA, setEditableRemCA] = useState('');
 
   useEffect(() => {
     // Load data once when component mounts
@@ -57,8 +59,30 @@ const CashAdvanceManagement = () => {
         getCashAdvanceStats()
       ]);
       
-      const newRequests = requestsResponse.data || [];
-      const newStats = statsResponse || {
+      console.log('Cash Advance Requests Response:', requestsResponse);
+      console.log('Stats Response:', statsResponse);
+      
+      // Handle paginated response - Laravel paginator wraps data in 'data' property
+      let newRequests = [];
+      if (requestsResponse) {
+        // If it's already an array, use it directly
+        if (Array.isArray(requestsResponse)) {
+          newRequests = requestsResponse;
+        } 
+        // If it has a data.data (paginated response)
+        else if (requestsResponse.data?.data && Array.isArray(requestsResponse.data.data)) {
+          newRequests = requestsResponse.data.data;
+        }
+        // If it has data as array
+        else if (requestsResponse.data && Array.isArray(requestsResponse.data)) {
+          newRequests = requestsResponse.data;
+        }
+        // If data is an object, extract the data array
+        else if (requestsResponse.data) {
+          newRequests = [];
+        }
+      }
+      const newStats = statsResponse.data || statsResponse || {
         total_requests: 0,
         pending_requests: 0,
         approved_requests: 0,
@@ -68,14 +92,16 @@ const CashAdvanceManagement = () => {
         recent_requests: []
       };
       
-      // Data loaded successfully (no automatic notifications)
+      console.log('Processed Requests:', newRequests);
+      console.log('Processed Stats:', newStats);
+      console.log('Number of requests loaded:', newRequests.length);
       
       // Update data instantly
       setCashAdvanceRequests(newRequests);
       setStats(newStats);
       
     } catch (error) {
-      // Silent error handling
+      console.error('Error loading cash advance data:', error);
     }
   };
 
@@ -88,16 +114,26 @@ const CashAdvanceManagement = () => {
   const handleAction = async (request, type) => {
     setSelectedRequest(request);
     setActionType(type);
+    // Initialize editable fields with current values
+    setEditableAmount(request.amount_ca?.toString() || '');
+    setEditableRemCA(request.rem_ca?.toString() || '');
     setShowModal(true);
   };
 
   const confirmAction = async () => {
     try {
+      // Prepare update data with edited amounts
+      const updateData = {
+        hr_remarks: remarks,
+        amount_ca: editableAmount ? parseFloat(editableAmount) : selectedRequest.amount_ca,
+        rem_ca: editableRemCA || selectedRequest.rem_ca
+      };
+
       if (actionType === 'approve') {
-        await approveCashAdvanceRequest(selectedRequest.id, remarks);
-        showAlert(`✅ ${selectedRequest.name} - Request approved!`, 'success');
+        await approveCashAdvanceRequest(selectedRequest.id, remarks, updateData.amount_ca, updateData.rem_ca);
+        showAlert(`✅ ${selectedRequest.name} - Request approved with updated amounts!`, 'success');
       } else if (actionType === 'reject') {
-        await rejectCashAdvanceRequest(selectedRequest.id, remarks);
+        await rejectCashAdvanceRequest(selectedRequest.id, remarks, updateData.amount_ca, updateData.rem_ca);
         showAlert(`❌ ${selectedRequest.name} - Request rejected`, 'warning');
       }
       
@@ -106,6 +142,8 @@ const CashAdvanceManagement = () => {
       setSelectedRequest(null);
       setRemarks('');
       setActionType('');
+      setEditableAmount('');
+      setEditableRemCA('');
       
       // Quick data refresh
       loadData();
@@ -754,8 +792,23 @@ const CashAdvanceManagement = () => {
                       <div className="form-field-replica">
                         <label className="field-label-replica">Amount C.A. : *</label>
                         <div className="underline-input-replica">
-                          <span className="editable-field-replica amount-highlight">{formatAmount(selectedRequest.amount_ca)}</span>
+                          {actionType === 'view' ? (
+                            <span className="editable-field-replica amount-highlight">{formatAmount(selectedRequest.amount_ca)}</span>
+                          ) : (
+                            <Form.Control
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={editableAmount}
+                              onChange={(e) => setEditableAmount(e.target.value)}
+                              className="editable-amount-input"
+                              placeholder="Enter amount"
+                            />
+                          )}
                         </div>
+                        {(actionType !== 'view' && parseFloat(editableAmount) !== selectedRequest.amount_ca) && (
+                          <small className="text-muted">Original: {formatAmount(selectedRequest.amount_ca)}</small>
+                        )}
                       </div>
                     </Col>
                     <Col md={6}>
@@ -774,8 +827,21 @@ const CashAdvanceManagement = () => {
                       <div className="form-field-replica">
                         <label className="field-label-replica">REM C.A. :</label>
                         <div className="underline-input-replica">
-                          <span className="editable-field-replica">{selectedRequest.rem_ca || '(Not specified)'}</span>
+                          {actionType === 'view' ? (
+                            <span className="editable-field-replica">{selectedRequest.rem_ca || '(Not specified)'}</span>
+                          ) : (
+                            <Form.Control
+                              type="text"
+                              value={editableRemCA}
+                              onChange={(e) => setEditableRemCA(e.target.value)}
+                              className="editable-remca-input"
+                              placeholder="Enter remaining amount"
+                            />
+                          )}
                         </div>
+                        {(actionType !== 'view' && selectedRequest.rem_ca && editableRemCA !== selectedRequest.rem_ca) && (
+                          <small className="text-muted">Original: {selectedRequest.rem_ca}</small>
+                        )}
                       </div>
                     </Col>
                   </Row>

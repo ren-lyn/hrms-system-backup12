@@ -684,12 +684,33 @@ const LeaveApplicationForm = ({ onBack }) => {
         </Alert>
       )}
 
-      {/* Active Leave Warning (if exists) */}
+      {/* Active Leave Note (if exists) */}
       {leaveSummary && leaveSummary.active_leave?.exists && (
-        <Alert variant="warning" className="mb-3">
-          <strong>⚠️ Active Leave:</strong> You have an active {leaveSummary.active_leave.type} until {new Date(leaveSummary.active_leave.to).toLocaleDateString()}. 
-          You can file your next leave on {new Date(leaveSummary.active_leave.can_file_from).toLocaleDateString()}.
-        </Alert>
+        <div style={{
+          backgroundColor: '#fff3cd',
+          border: '1px solid #ffc107',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px'
+        }}>
+          <div style={{ 
+            fontSize: '20px', 
+            lineHeight: '1',
+            marginTop: '2px',
+            flexShrink: 0
+          }}>⚠️</div>
+          <div style={{ 
+            fontSize: '14px', 
+            color: '#856404',
+            lineHeight: '1.5'
+          }}>
+            <strong>Note:</strong> You have an active {leaveSummary.active_leave.type} until {new Date(leaveSummary.active_leave.to).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. 
+            You can file your next leave on {new Date(leaveSummary.active_leave.can_file_from).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+          </div>
+        </div>
       )}
 
       <Card className="form-card">

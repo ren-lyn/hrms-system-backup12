@@ -36,6 +36,8 @@ const CashAdvanceForm = React.lazy(() => import('../components/Employee/CashAdva
 const EmployeeDisciplinaryNotice = React.lazy(() => import('../components/Employee/EmployeeDisciplinaryNotice'));
 const EmployeeCalendar = React.lazy(() => import('../components/Employee/EmployeeCalendar'));
 const CashAdvanceView = React.lazy(() => import('../components/Employee/CashAdvanceView'));
+const CashAdvanceHistory = React.lazy(() => import('../components/Employee/CashAdvanceHistory'));
+
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -44,6 +46,7 @@ const EmployeeDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [activeView, setActiveView] = useState('dashboard'); // default view
+  const [isCashAdvanceDropdownOpen, setIsCashAdvanceDropdownOpen] = useState(false);
 
   // Evaluation summary state
   const [evalLoading, setEvalLoading] = useState(false);
@@ -88,6 +91,45 @@ const EmployeeDashboard = () => {
     };
   }, []);
 
+   // Preload cash advance data in background for instant loading
+  const preloadCashAdvanceData = useMemo(() => {
+    return async () => {
+      try {
+        // Check cache first
+        const cacheKey = 'cashAdvanceCache';
+        const cacheTimeKey = 'cashAdvanceCacheTime';
+        
+        const cachedData = localStorage.getItem(cacheKey);
+        const cacheTime = localStorage.getItem(cacheTimeKey);
+        const now = Date.now();
+        const cacheAge = now - (cacheTime ? parseInt(cacheTime) : 0);
+        const isCacheValid = cacheAge < 2 * 60 * 1000; // 2 minutes cache
+        
+        if (!cachedData || !isCacheValid) {
+          // Fetch fresh data in background
+          const statsPromise = axios.get('http://localhost:8000/api/cash-advances/my-stats', {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          const historyPromise = axios.get('http://localhost:8000/api/cash-advances/my-requests', {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          });
+          
+          const [statsRes, historyRes] = await Promise.all([statsPromise, historyPromise]);
+          
+          const cacheData = {
+            stats: statsRes.data,
+            history: historyRes.data.data || historyRes.data || []
+          };
+          
+          localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+          localStorage.setItem(cacheTimeKey, Date.now().toString());
+        }
+      } catch (err) {
+        console.error('Failed to preload cash advance data:', err);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -101,13 +143,14 @@ const EmployeeDashboard = () => {
         
         // Preload data in background
         preloadData(res.data.id);
+        preloadCashAdvanceData();
       } catch (err) {
         console.error('Failed to fetch user info', err);
       }
     };
 
     fetchUser();
-  }, [preloadData]);
+   }, [preloadData, preloadCashAdvanceData]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -160,10 +203,15 @@ const EmployeeDashboard = () => {
       case 'leave-request': return selectedLeaveId ? 'Leave Request Details' : 'Leave Application Form';
       case 'my-calendar': return 'My Calendar';
       case 'cash-advance': return selectedCashAdvanceId ? 'Cash Advance Details' : 'Cash Advance';
+      case 'cash-advance-history': return 'Cash Advance History';
       case 'evaluation-summary': return selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Summary';
       case 'disciplinary-notice': return 'Disciplinary Notice';
       default: return 'Dashboard';
     }
+  };
+
+    const toggleCashAdvanceDropdown = () => {
+    setIsCashAdvanceDropdownOpen(!isCashAdvanceDropdownOpen);
   };
 
   // Fetch evaluations for the logged-in employee (optimized with cache)
@@ -396,16 +444,33 @@ const EmployeeDashboard = () => {
             <Suspense fallback={<LoadingFallback message="Loading cash advance details..." />}>
               <CashAdvanceView 
                 cashAdvanceId={selectedCashAdvanceId} 
-                onBack={() => { setSelectedCashAdvanceId(null); setActiveView('dashboard'); }} 
+                 onBack={() => { setSelectedCashAdvanceId(null); setActiveView('cash-advance-history'); }} 
               />
             </Suspense>
           );
         }
         return (
-          <Suspense fallback={<LoadingFallback message="Loading cash advance form..." />}>
+          <Suspense fallback={null}>
             <CashAdvanceForm />
           </Suspense>
         );
+
+        case 'cash-advance-history':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading cash advance history..." />}>
+            <CashAdvanceHistory 
+              onViewRequest={(id) => {
+                setSelectedCashAdvanceId(id);
+                setActiveView('cash-advance');
+              }}
+              onRequestNew={() => {
+                setActiveView('cash-advance');
+                setSelectedCashAdvanceId(null);
+              }}
+            />
+          </Suspense>
+        );
+
       case 'evaluation-summary':
         return (
           <div className="responsive-card">
@@ -551,13 +616,44 @@ const EmployeeDashboard = () => {
               <FontAwesomeIcon icon={faCalendarAlt} />
               <span>My Calendar</span>
             </button>
+            
+            {/* Cash Advance with Dropdown */}
+            <div className="hrms-dropdown-container">
+
             <button
-              className={`hrms-unified-nav-link ${activeView === 'cash-advance' ? 'hrms-unified-active' : ''}`}
-              onClick={() => setActiveView('cash-advance')}
+              className={`hrms-unified-nav-link hrms-dropdown-toggle ${activeView === 'cash-advance' || activeView === 'cash-advance-history' ? 'hrms-unified-active' : ''}`}
+                onClick={() => {
+                  toggleCashAdvanceDropdown();
+                }}
+
             >
               <FontAwesomeIcon icon={faHandHoldingUsd} />
               <span>Cash Advance</span>
             </button>
+
+            <div className={`hrms-dropdown-menu ${isCashAdvanceDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+                <button
+                  className={`hrms-dropdown-item ${activeView === 'cash-advance' ? 'hrms-dropdown-active' : ''}`}
+                  onClick={() => { 
+                    setActiveView('cash-advance'); 
+                    setSelectedCashAdvanceId(null);
+                    setIsCashAdvanceDropdownOpen(false); 
+                  }}
+                >
+                  <span>📝 Cash Advance Form</span>
+                </button>
+                <button
+                  className={`hrms-dropdown-item ${activeView === 'cash-advance-history' ? 'hrms-dropdown-active' : ''}`}
+                  onClick={() => { 
+                    setActiveView('cash-advance-history'); 
+                    setIsCashAdvanceDropdownOpen(false); 
+                  }}
+                >
+                  <span>📊 History & Balance</span>
+                </button>
+              </div>
+            </div>
+
             <button
               className={`hrms-unified-nav-link ${activeView === 'evaluation-summary' ? 'hrms-unified-active' : ''}`}
               onClick={() => setActiveView('evaluation-summary')}

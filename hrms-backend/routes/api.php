@@ -187,6 +187,8 @@ Route::get('/leave-types', [LeaveRequestController::class, 'getLeaveTypes']); //
 
 // Temporary route for testing employee profile data (remove in production)
 Route::get('/employee-profile-test/{userId?}', [LeaveRequestController::class, 'getEmployeeProfileTest']); // test profile data
+Route::delete('/leave-requests/clear-my-requests', [LeaveRequestController::class, 'clearMyLeaveRequests']); // clear all leave requests for testing
+
 
 // Employee-specific leave routes (authenticated)
 Route::middleware('auth:sanctum')->group(function () {
@@ -287,6 +289,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Employee routes (submit request and view own requests)
         Route::post('/', [CashAdvanceController::class, 'store']); // Submit cash advance request
         Route::get('/my-requests', [CashAdvanceController::class, 'userRequests']); // Get user's own requests
+        Route::get('/my-stats', [CashAdvanceController::class, 'userStats']); // Get user's cash advance statistics
         Route::get('/{id}/download-pdf', [CashAdvanceController::class, 'downloadPDF']); // Download cash advance form as PDF
         
         // HR Assistant routes (manage all requests)

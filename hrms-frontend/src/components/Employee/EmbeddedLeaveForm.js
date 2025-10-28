@@ -1147,28 +1147,34 @@ const EmbeddedLeaveForm = () => {
               <span className="usage-count-minimal">
                 <strong>{leaveSummary?.leave_instances?.used || 0}/{leaveSummary?.leave_instances?.total_allowed || 3}</strong> Leave Requests Used
               </span>
-              {leaveSummary?.leave_instances?.remaining > 1 && (
+              {leaveSummary?.leave_instances?.remaining > 1 && !leaveSummary?.leave_instances?.rejection_note && (
                 <>
                   <span className="usage-divider">•</span>
                   <span className="status-text-minimal">{leaveSummary.leave_instances.remaining} remaining</span>
                 </>
               )}
-              {leaveSummary?.leave_instances?.remaining === 1 && (
+              {leaveSummary?.leave_instances?.remaining === 1 && !leaveSummary?.leave_instances?.rejection_note && (
                 <>
                   <span className="usage-divider">•</span>
                   <span className="status-text-minimal">1 remaining</span>
                 </>
               )}
-              {leaveSummary?.leave_instances?.remaining === 0 && leaveSummary?.leave_instances?.next_available_date && (
+              {leaveSummary?.leave_instances?.remaining === 0 && leaveSummary?.leave_instances?.next_available_date && !leaveSummary?.leave_instances?.rejection_note && (
                 <>
                   <span className="usage-divider">•</span>
                   <span className="status-text-minimal">Try again on <strong>{leaveSummary.leave_instances.next_available_date}</strong></span>
                 </>
               )}
-              {leaveSummary?.leave_instances?.remaining === 0 && !leaveSummary?.leave_instances?.next_available_date && (
+              {leaveSummary?.leave_instances?.remaining === 0 && !leaveSummary?.leave_instances?.next_available_date && !leaveSummary?.leave_instances?.rejection_note && (
                 <>
                   <span className="usage-divider">•</span>
                   <span className="status-text-minimal">All used</span>
+                </>
+              )}
+              {leaveSummary?.leave_instances?.rejection_note && leaveSummary?.leave_instances?.next_available_date && (
+                <>
+                  <span className="usage-divider">•</span>
+                  <span className="status-text-minimal">Try again on <strong>{leaveSummary.leave_instances.next_available_date}</strong></span>
                 </>
               )}
             </div>
@@ -1260,21 +1266,34 @@ const EmbeddedLeaveForm = () => {
                 </div>
               </div>
 
-              {/* Active Leave Warning (if exists) */}
+              {/* Active Leave Note (if exists) */}
               {leaveSummary && leaveSummary.active_leave?.exists && (
                 <Row className="form-row">
                   <Col md={12}>
                     <div style={{
                       background: '#fff3cd',
-                      padding: '12px',
-                      borderRadius: '6px',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
                       border: '1px solid #ffc107',
-                      marginBottom: '16px'
+                      marginBottom: '16px',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px'
                     }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#856404', lineHeight: '1.6' }}>
-                        ⚠️ <strong>Active Leave:</strong> You have an active {leaveSummary.active_leave.type} until {new Date(leaveSummary.active_leave.to).toLocaleDateString()}. 
-                        You can file your next leave on {new Date(leaveSummary.active_leave.can_file_from).toLocaleDateString()}.
-                      </p>
+                      <div style={{ 
+                        fontSize: '20px', 
+                        lineHeight: '1',
+                        marginTop: '2px',
+                        flexShrink: 0
+                      }}>⚠️</div>
+                      <div style={{ 
+                        fontSize: '14px', 
+                        color: '#856404',
+                        lineHeight: '1.5'
+                      }}>
+                        <strong>Note:</strong> You have an active {leaveSummary.active_leave.type} until {new Date(leaveSummary.active_leave.to).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. 
+                        You can file your next leave on {new Date(leaveSummary.active_leave.can_file_from).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+                      </div>
                     </div>
                   </Col>
                 </Row>

@@ -396,6 +396,7 @@ public function update(Request $request, $id)
     // PUT /employee/profile/contact - Update contact information
     public function updateContact(Request $request)
     {
+        /** @var User $user */
         $user = Auth::user();
         $profile = $user->employeeProfile;
         
@@ -420,7 +421,8 @@ public function update(Request $request, $id)
         
         // Also update email in User model if provided
         if (isset($validated['email'])) {
-            $user->update(['email' => $validated['email']]);
+            $user->email = $validated['email'];
+            $user->save();
         }
         
         // Ensure phone and contact_number are synchronized
@@ -442,6 +444,7 @@ public function update(Request $request, $id)
     // PUT /employee/profile/name - Update name information (first name, last name)
     public function updateName(Request $request)
     {
+        /** @var User $user */
         $user = Auth::user();
         $profile = $user->employeeProfile;
         
@@ -475,10 +478,9 @@ public function update(Request $request, $id)
         }
         
         // Update both User and EmployeeProfile
-        $user->update([
-            'first_name' => $validated['first_name'],
-            'last_name' => $validated['last_name']
-        ]);
+        $user->first_name = $validated['first_name'];
+        $user->last_name = $validated['last_name'];
+        $user->save();
         
         $profile->update([
             'first_name' => $validated['first_name'],
