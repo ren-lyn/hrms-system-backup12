@@ -15,8 +15,8 @@ class UserSeeder extends Seeder
         // Maria Santos (Employee) has been removed as requested
         
         $hrUser = User::create([
-            'first_name' => 'Juan',
-            'last_name' => 'Dela Cruz',
+            'first_name' => 'Renelyn',
+            'last_name' => 'Concina',
             'email' => 'hr@company.com',
             'password' => Hash::make('password123'),
             'role_id' => 1, // HR Assistant
@@ -26,19 +26,19 @@ class UserSeeder extends Seeder
         $hrUser->employeeProfile()->create([
             // Personal Information
             'employee_id' => 'EM1001',
-            'first_name' => 'Juan',
-            'last_name' => 'Dela Cruz',
-            'nickname' => 'Juan',
+            'first_name' => 'Renelyn',
+            'last_name' => 'Concina',
+            'nickname' => 'Renelyn',
             'email' => 'hr@company.com',
             'civil_status' => 'Single',
-            'gender' => 'Male',
+            'gender' => 'Female',
             'place_of_birth' => 'Laguna',
             'birth_date' => '1990-01-15',
             'age' => 34,
             
             // Contact Information
             'contact_number' => '09991234567',
-            'emergency_contact_name' => 'Maria Dela Cruz',
+            'emergency_contact_name' => 'Allen Jasper Ararao',
             'emergency_contact_phone' => '09987654321',
             
             // Address Information
@@ -54,7 +54,7 @@ class UserSeeder extends Seeder
             'employment_status' => 'Full Time',
             'tenurity' => '2 years',
             'hire_date' => '2023-01-15',
-            'salary' => 35000,
+            'salary' => 13520,
             'sss' => '12-3456789-0',
             'philhealth' => 'PH-123456789',
             'pagibig' => 'PG-123456789',

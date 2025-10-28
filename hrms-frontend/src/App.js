@@ -25,6 +25,7 @@ const LeaveApplicationForm = lazy(() => import('./components/Employee/LeaveAppli
 const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
 const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/DisciplinaryManagement'));
 const AttendanceDashboard = lazy(() => import('./components/HrAssistant/AttendanceDashboard'));
+const AttendanceEditRequests = lazy(() => import('./components/HrAssistant/AttendanceEditRequests'));
 const EnhancedPayrollDashboard = lazy(() => import('./components/HrAssistant/EnhancedPayrollDashboard'));
 const EmployeeEvaluationList = lazy(() => import('./pages/HrAssistant/Evaluations/EmployeeEvaluationList'));
 const EvaluationForm = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationForm'));
@@ -37,6 +38,7 @@ const OnboardingDashboard = lazy(() => import('./components/HrAssistant/Onboardi
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 const ReportGeneration = lazy(() => import('./components/HrAssistant/ReportGeneration/ReportGeneration'));
 const PredictiveTurnoverAnalytics = lazy(() => import('./components/HrAssistant/PredictiveTurnoverAnalytics/PredictiveTurnoverAnalytics'));
+const OTManagement = lazy(() => import('./components/HrAssistant/OTManagement/OTManagement'));
 
 // Loading component
 const LoadingSpinner = () => (
@@ -97,7 +99,9 @@ function App() {
           <Route path="disciplinary" element={<DisciplinaryManagement />} />
           <Route path="profile" element={<HrAssistantProfile />} />
           <Route path="attendance" element={<AttendanceDashboard />} /> 
+          <Route path="attendance-edit-requests" element={<AttendanceEditRequests />} />
           <Route path="payroll" element={<EnhancedPayrollDashboard />} />
+          <Route path="ot-management" element={<OTManagement />} />
           <Route path="report-generation" element={<ReportGeneration />} />
           <Route path="predictive-turnover-analytics" element={<PredictiveTurnoverAnalytics />} />
 

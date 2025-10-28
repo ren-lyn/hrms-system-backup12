@@ -25,6 +25,8 @@ import {
   faEnvelope,
   faBell as faBellIcon,
   faClock,
+  faChevronDown,
+  faChevronRight,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import Bell from '../components/Notifications/Bell';
@@ -33,6 +35,7 @@ const HrStaffDashboard = () => {
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
+  const [isJobOnboardingDropdownOpen, setIsJobOnboardingDropdownOpen] = useState(false);
   const [date, setDate] = useState(new Date());
   const [timeNow, setTimeNow] = useState(new Date());
   const { userProfile, loading } = useUserProfile();
@@ -61,6 +64,10 @@ const HrStaffDashboard = () => {
 
   const closeSidebar = () => {
     setSidebarOpen(false);
+  };
+
+  const toggleJobOnboardingDropdown = () => {
+    setIsJobOnboardingDropdownOpen(!isJobOnboardingDropdownOpen);
   };
 
   // Toast notification helpers
@@ -372,21 +379,40 @@ const HrStaffDashboard = () => {
                 <FontAwesomeIcon icon={faChartBar} className="me-2" /> Dashboard
               </button>
             </li>
-            <li>
+            {/* Job Posting & Onboarding Dropdown */}
+            <li className="hrms-dropdown-container">
               <button
-                onClick={() => setActiveView("job-posting")}
-                className={`hrms-unified-nav-link ${activeView === 'job-posting' ? 'hrms-unified-active' : ''}`}
+                onClick={toggleJobOnboardingDropdown}
+                className="hrms-unified-nav-link hrms-dropdown-toggle"
               >
-                <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job Posting
+                <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job Posting & Onboarding
+                <FontAwesomeIcon 
+                  icon={isJobOnboardingDropdownOpen ? faChevronDown : faChevronRight} 
+                  className="ms-auto" 
+                  size="sm" 
+                />
               </button>
-            </li>
-            <li>
-              <button
-                onClick={() => setActiveView("onboarding")}
-                className={`hrms-unified-nav-link ${activeView === 'onboarding' ? 'hrms-unified-active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Onboarding
-              </button>
+              
+              <div className={`hrms-dropdown-menu ${isJobOnboardingDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+                <button
+                  onClick={() => {
+                    setActiveView("job-posting");
+                    setIsJobOnboardingDropdownOpen(false);
+                  }}
+                  className={`hrms-dropdown-item ${activeView === 'job-posting' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faBriefcase} className="me-2" /> Job Postings
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveView("onboarding");
+                    setIsJobOnboardingDropdownOpen(false);
+                  }}
+                  className={`hrms-dropdown-item ${activeView === 'onboarding' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faUserPlus} className="me-2" /> Onboarding
+                </button>
+              </div>
             </li>
             <li>
               <button

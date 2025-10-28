@@ -200,13 +200,15 @@ public function store(Request $request)
 }
 
     // PUT /employees/{id}
-    // PUT /employees/{id}
 public function update(Request $request, $id)
 {
     $user = User::with('employeeProfile')->findOrFail($id);
 
     $validated = $request->validate([
+        // Authentication
         'password'        => 'nullable|string',
+        
+        // Required fields
         'first_name'      => 'sometimes|string',
         'last_name'       => 'sometimes|string',
         'email'           => [
@@ -215,12 +217,47 @@ public function update(Request $request, $id)
             'unique:users,email,' . $user->id,
             'unique:employee_profiles,email,' . ($user->employeeProfile->id ?? 'NULL'),
         ],
-        'position'        => 'sometimes|string',
         'role_id'         => 'sometimes|integer|exists:roles,id',
-        'department'      => 'nullable|string',
-        'salary'          => 'nullable|numeric',
+        
+        // Personal Information
+        'nickname'        => 'nullable|string',
+        'civil_status'    => 'nullable|string|in:Single,Married,Divorced,Widowed,Separated',
+        'gender'          => 'nullable|string|in:Female,Male',
+        'place_of_birth'  => 'nullable|string',
+        'birth_date'      => 'nullable|date',
+        'age'             => 'nullable|integer|min:1|max:120',
+        
+        // Contact Information
         'contact_number'  => 'nullable|string',
+        'emergency_contact_name' => 'nullable|string',
+        'emergency_contact_phone' => 'nullable|string',
+        
+        // Address Information
+        'province'        => 'nullable|string',
+        'barangay'        => 'nullable|string',
+        'city'            => 'nullable|string',
+        'postal_code'     => 'nullable|string',
+        'present_address' => 'nullable|string',
         'address'         => 'nullable|string',
+        
+        // Employment Overview
+        'position'        => 'sometimes|string',
+        'department'      => 'nullable|string',
+        'employment_status' => 'nullable|string',
+        'tenurity'        => 'nullable|string',
+        'hire_date'       => 'nullable|date',
+        'salary'          => 'nullable|numeric',
+        'sss'             => 'nullable|string',
+        'philhealth'      => 'nullable|string',
+        'pagibig'         => 'nullable|string',
+        'tin_no'          => 'nullable|string',
+        
+        // Status and Termination
+        'status'          => 'nullable|string|in:active,terminated,resigned',
+        'termination_date' => 'nullable|date',
+        'termination_reason' => 'nullable|string',
+        'termination_notes' => 'nullable|string',
+        'termination_remarks' => 'nullable|string',
     ]);
 
     // ✅ Check for duplicate name (ignore current employee)
@@ -256,16 +293,71 @@ public function update(Request $request, $id)
 
     // Update Employee Profile
     if ($user->employeeProfile) {
-        $user->employeeProfile->update([
+        $profileData = [
+            // Personal Information
             'first_name'     => $validated['first_name'] ?? $user->employeeProfile->first_name,
             'last_name'      => $validated['last_name'] ?? $user->employeeProfile->last_name,
+            'nickname'       => $validated['nickname'] ?? $user->employeeProfile->nickname,
+            'civil_status'   => $validated['civil_status'] ?? $user->employeeProfile->civil_status,
+            'gender'         => $validated['gender'] ?? $user->employeeProfile->gender,
+            'place_of_birth' => $validated['place_of_birth'] ?? $user->employeeProfile->place_of_birth,
+            'birth_date'     => $validated['birth_date'] ?? $user->employeeProfile->birth_date,
+            'age'            => $validated['age'] ?? $user->employeeProfile->age,
+            
+            // Contact Information
             'email'          => $validated['email'] ?? $user->employeeProfile->email,
+            'contact_number' => $validated['contact_number'] ?? $user->employeeProfile->contact_number,
+            'emergency_contact_name' => $validated['emergency_contact_name'] ?? $user->employeeProfile->emergency_contact_name,
+            'emergency_contact_phone' => $validated['emergency_contact_phone'] ?? $user->employeeProfile->emergency_contact_phone,
+            
+            // Address Information
+            'province'       => $validated['province'] ?? $user->employeeProfile->province,
+            'barangay'       => $validated['barangay'] ?? $user->employeeProfile->barangay,
+            'city'           => $validated['city'] ?? $user->employeeProfile->city,
+            'postal_code'    => $validated['postal_code'] ?? $user->employeeProfile->postal_code,
+            'present_address' => $validated['present_address'] ?? $user->employeeProfile->present_address,
+            
+            // Employment Overview
             'position'       => $validated['position'] ?? $user->employeeProfile->position,
             'department'     => $validated['department'] ?? $user->employeeProfile->department,
+            'employment_status' => $validated['employment_status'] ?? $user->employeeProfile->employment_status,
+            'tenurity'       => $validated['tenurity'] ?? $user->employeeProfile->tenurity,
+            'hire_date'      => $validated['hire_date'] ?? $user->employeeProfile->hire_date,
             'salary'         => $validated['salary'] ?? $user->employeeProfile->salary,
-            'contact_number' => $validated['contact_number'] ?? $user->employeeProfile->contact_number,
-            'address'        => $validated['address'] ?? $user->employeeProfile->address,
-        ]);
+            'sss'            => $validated['sss'] ?? $user->employeeProfile->sss,
+            'philhealth'     => $validated['philhealth'] ?? $user->employeeProfile->philhealth,
+            'pagibig'        => $validated['pagibig'] ?? $user->employeeProfile->pagibig,
+            'tin_no'         => $validated['tin_no'] ?? $user->employeeProfile->tin_no,
+        ];
+        
+        // Add status and termination fields if provided
+        if (isset($validated['status'])) {
+            $profileData['status'] = $validated['status'];
+        }
+        if (isset($validated['termination_date'])) {
+            $profileData['termination_date'] = $validated['termination_date'];
+        }
+        if (isset($validated['termination_reason'])) {
+            $profileData['termination_reason'] = $validated['termination_reason'];
+        }
+        if (isset($validated['termination_notes'])) {
+            $profileData['termination_notes'] = $validated['termination_notes'];
+        }
+        if (isset($validated['termination_remarks'])) {
+            $profileData['termination_remarks'] = $validated['termination_remarks'];
+        }
+        
+        // Handle legacy 'address' field
+        if (isset($validated['address'])) {
+            $profileData['address'] = $validated['address'];
+        }
+        
+        $user->employeeProfile->update($profileData);
+        
+        // Clear the employees cache when status changes
+        if (isset($validated['status'])) {
+            Cache::forget('employees_list');
+        }
     }
 
     return response()->json(['message' => 'Employee updated successfully']);
@@ -285,6 +377,39 @@ public function update(Request $request, $id)
         $user->delete();
 
         return response()->json(['message' => 'Employee deleted successfully']);
+    }
+
+    // PUT /employees/{id}/terminate
+    public function terminate(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:terminated,resigned',
+            'termination_date' => 'required|date',
+            'termination_reason' => 'required|string|max:255',
+            'termination_notes' => 'nullable|string',
+        ]);
+
+        $user = User::findOrFail($id);
+        
+        if (!$user->employeeProfile) {
+            return response()->json(['message' => 'Employee profile not found'], 404);
+        }
+
+        // Update employee profile with termination details
+        $user->employeeProfile->update([
+            'status' => $validated['status'],
+            'termination_date' => $validated['termination_date'],
+            'termination_reason' => $validated['termination_reason'],
+            'termination_notes' => $validated['termination_notes'] ?? null,
+        ]);
+
+        // Clear the employees cache
+        Cache::forget('employees_list');
+
+        return response()->json([
+            'message' => 'Employee status updated successfully',
+            'employee' => $user->load('employeeProfile')
+        ]);
     }
 
     // GET /employee/profile - Get current employee's profile

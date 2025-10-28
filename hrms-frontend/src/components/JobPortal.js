@@ -10,7 +10,6 @@ export default function JobPortal() {
   const [userRole, setUserRole] = useState(null);
   const [userName, setUserName] = useState(null);
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [resumeFile, setResumeFile] = useState(null);
@@ -27,6 +26,7 @@ export default function JobPortal() {
   const [resumeError, setResumeError] = useState('');
   const [hasOnboardingAccess, setHasOnboardingAccess] = useState(false);
   const [lastJobCount, setLastJobCount] = useState(0);
+  const [expandedJobId, setExpandedJobId] = useState(null);
 
   // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
@@ -117,7 +117,6 @@ export default function JobPortal() {
   // Fetch job postings from backend
   const fetchJobs = async () => {
     try {
-      setLoading(true);
       const response = await axios.get("http://localhost:8000/api/public/job-postings");
       const newJobs = response.data;
       
@@ -131,8 +130,6 @@ export default function JobPortal() {
     } catch (error) {
       console.error('Error fetching jobs:', error);
       setJobs([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -186,9 +183,8 @@ export default function JobPortal() {
     }
   };
 
-  const handleJobDetailsClick = (job) => {
-    setSelectedJobForDetails(job);
-    setShowJobDetailsModal(true);
+  const handleJobCardClick = (jobId) => {
+    setExpandedJobId(expandedJobId === jobId ? null : jobId);
   };
 
   // Fetch user's applications
@@ -819,6 +815,35 @@ export default function JobPortal() {
           .nav-link:hover::after {
             width: 70%;
           }
+          
+          /* Job Dropdown Animation */
+          @keyframes slideDown {
+            from {
+              opacity: 0;
+              transform: translateY(-10px);
+              max-height: 0;
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+              max-height: 1000px;
+            }
+          }
+          
+          .expanded-content {
+            overflow: hidden;
+            transition: all 0.3s ease-out;
+          }
+          
+          .job-listing-card {
+            transition: all 0.3s ease;
+          }
+          
+          .job-listing-card:hover {
+            transform: translateY(-3px) !important;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.12) !important;
+            border-color: #0575E6 !important;
+          }
         `}</style>
       </nav>
 
@@ -959,14 +984,7 @@ export default function JobPortal() {
             <h3 className="fw-bold">Job Listings</h3>
           </div>
 
-          {loading ? (
-            <div className="text-center py-5">
-              <div className="spinner-border text-primary" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
-              <p className="mt-2">Loading job postings...</p>
-            </div>
-          ) : jobs.length === 0 ? (
+          {jobs.length === 0 ? (
             <div className="text-center py-5">
               <h5 className="text-muted">No job postings available</h5>
               <p className="text-muted">Check back later for new opportunities!</p>
@@ -991,7 +1009,7 @@ export default function JobPortal() {
                   e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
                   e.currentTarget.style.borderColor = '#e9ecef';
                 }}
-                onClick={() => handleJobDetailsClick(job)}
+                onClick={() => handleJobCardClick(job.id)}
               >
                 {/* Header Section */}
                 <div className="d-flex justify-content-between align-items-start p-4 pb-2">
@@ -1044,29 +1062,25 @@ export default function JobPortal() {
                   <p className="text-muted mb-0 lh-base" style={{ fontSize: '0.95rem' }}>
                     {job.description?.substring(0, 120)}...
                   </p>
+                  <div className="mt-2">
+                    <small className="text-primary fst-italic">
+                      <i className="bi bi-hand-index me-1"></i>
+                      Click anywhere on this card to view full details
+                    </small>
+                  </div>
                 </div>
 
                 {/* Footer Section */}
                 <div className="d-flex justify-content-between align-items-center p-4 pt-3 bg-light bg-opacity-50">
-                  <small className="text-muted">
-                    <strong>Posted:</strong> {job.ph_created_at || formatDate(job.created_at)}
-                  </small>
+                  <div className="d-flex align-items-center">
+                    <small className="text-muted me-3">
+                      <strong>Posted:</strong> {job.ph_created_at || formatDate(job.created_at)}
+                    </small>
+                    <small className="text-primary fw-semibold">
+                      <i className={`bi ${expandedJobId === job.id ? 'bi-chevron-up' : 'bi-chevron-down'} me-1`}></i>
+                    </small>
+                  </div>
                   <div className="d-flex gap-2">
-                    <button 
-                      className="btn btn-outline-primary btn-sm px-3"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleJobDetailsClick(job);
-                      }}
-                      style={{ 
-                        fontSize: '0.85rem',
-                        fontWeight: '500',
-                        borderRadius: '6px',
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      View Details
-                    </button>
                     {job.status === 'Open' && (
                       <button 
                         className={`btn btn-sm px-3 ${userApplications.length > 0 ? 'btn-secondary' : 'btn-primary'}`}
@@ -1088,6 +1102,65 @@ export default function JobPortal() {
                     )}
                   </div>
                 </div>
+
+                {/* Expanded Content Section */}
+                {expandedJobId === job.id && (
+        <div
+          className="expanded-content"
+          style={{
+            backgroundColor: '#f8f9fa',
+            borderTop: '1px solid #e9ecef',
+            animation: 'slideDown 0.3s ease-out',
+            maxHeight: 'none',
+            overflow: 'visible'
+          }}
+        >
+                    <div className="p-4">
+                      {/* Job Description */}
+                      <div className="mb-4">
+                        <h6 className="fw-bold text-dark mb-3 pb-2 border-bottom border-primary border-opacity-25">
+                          <i className="bi bi-file-text me-2"></i>
+                          Job Description
+                        </h6>
+                        <div className="bg-white border rounded-3 p-3">
+                <p className="mb-0 lh-lg" style={{ fontSize: '0.95rem', whiteSpace: 'pre-wrap', color: '#495057', wordWrap: 'break-word', overflowWrap: 'break-word', wordBreak: 'break-word', hyphens: 'auto' }}>
+                            {job.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Requirements */}
+                      <div className="mb-4">
+                        <h6 className="fw-bold text-dark mb-3 pb-2 border-bottom border-success border-opacity-25">
+                          <i className="bi bi-list-check me-2"></i>
+                          Requirements & Qualifications
+                        </h6>
+                        <div className="bg-white border rounded-3 p-3">
+                <p className="mb-0 lh-lg" style={{ fontSize: '0.95rem', whiteSpace: 'pre-wrap', color: '#495057', wordWrap: 'break-word', overflowWrap: 'break-word', wordBreak: 'break-word', hyphens: 'auto' }}>
+                            {job.requirements}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Department and Compensation sections removed as requested */}
+
+                      {/* Action Buttons */}
+                      <div className="d-flex gap-3 justify-content-center pt-3">
+                        <button 
+                          className="btn btn-outline-secondary px-4 py-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedJobId(null);
+                          }}
+                          style={{ borderRadius: '8px', fontWeight: '500' }}
+                        >
+                          <i className="bi bi-chevron-up me-1"></i>
+                        </button>
+                        {/* Apply button removed from expanded dropdown */}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -1100,7 +1173,7 @@ export default function JobPortal() {
           <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content">
               <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title">Apply for {selectedJob?.title}</h5>
+                <h5 className="modal-title">Job Application</h5>
                 <button 
                   type="button" 
                   className="btn-close btn-close-white" 
@@ -1113,16 +1186,10 @@ export default function JobPortal() {
                 ></button>
               </div>
               <div className="modal-body">
-                {selectedJob && (
-                  <div className="mb-4">
-                    <h6 className="fw-bold">Job Details</h6>
-                    <p><strong>Department:</strong> {selectedJob.department}</p>
-                    <p><strong>Description:</strong></p>
-                    <p className="text-muted">{selectedJob.description}</p>
-                    <p><strong>Requirements:</strong></p>
-                    <p className="text-muted">{selectedJob.requirements}</p>
-                  </div>
-                )}
+                <div className="text-center mb-4">
+                  <h6 className="fw-bold text-primary">Apply for {selectedJob?.title}</h6>
+                  <p className="text-muted">Please upload your resume to apply for this position</p>
+                </div>
                 
                 <div className="mb-3">
                   <label htmlFor="resume" className="form-label fw-bold">
@@ -1132,7 +1199,7 @@ export default function JobPortal() {
                     type="file"
                     className="form-control"
                     id="resume"
-                    accept="*"
+                    accept=".pdf"
                     onChange={handleFileChange}
                   />
                   <div className="form-text">

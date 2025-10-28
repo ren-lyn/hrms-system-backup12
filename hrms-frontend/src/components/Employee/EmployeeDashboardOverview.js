@@ -74,7 +74,7 @@ const EmployeeDashboardOverview = ({ onNavigate }) => {
         axios.get('/leave-requests/balance'),
         axios.get('/leave-requests/my-requests'),
         axios.get('/employee-calendar'),
-        axios.get('/manager-evaluations/employee/me/results'),
+        axios.get(`/manager-evaluations/employee/${userRes.value?.data?.id || 'me'}/results`),
         axios.get('/notifications'),
         axios.get('/employee/disciplinary/dashboard-stats'),
         axios.get('/cash-advances/my-requests')

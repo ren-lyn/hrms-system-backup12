@@ -19,40 +19,40 @@ class MultipleAccountsSeeder extends Seeder
 
         $users = [
             // HR Staff
-            ['first_name' => 'Maria', 'last_name' => 'Santos', 'email' => 'maria.santos@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department'],
-            ['first_name' => 'Jose', 'last_name' => 'Ramirez', 'email' => 'jose.ramirez@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department'],
-            ['first_name' => 'Anna', 'last_name' => 'Gonzales', 'email' => 'anna.gonzales@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department'],
-            ['first_name' => 'Paolo', 'last_name' => 'Reyes', 'email' => 'paolo.reyes@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department'],
+            ['first_name' => 'Princes', 'last_name' => 'Duran', 'email' => 'princes.duran@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department', 'salary' => 13520],
+            ['first_name' => 'Lanz', 'last_name' => 'Ardenio', 'email' => 'lanz.ardenio@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department', 'salary' => 13520],
+            ['first_name' => 'Abigail', 'last_name' => 'Manalo', 'email' => 'abigail.manalo@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department', 'salary' => 13520],
+            ['first_name' => 'Allen Jasper', 'last_name' => 'Ararao', 'email' => 'allen.ararao@company.com', 'role' => 'HR Staff', 'position' => 'HR Staff', 'department' => 'HR Department', 'salary' => 13520],
 
             // Managers
-            ['first_name' => 'Leonardo', 'last_name' => 'Cruz', 'email' => 'leonardo.cruz@company.com', 'role' => 'Manager', 'position' => 'Production Manager', 'department' => 'Production Department'],
-            ['first_name' => 'Carla', 'last_name' => 'Valdez', 'email' => 'carla.valdez@company.com', 'role' => 'Manager', 'position' => 'Logistics Manager', 'department' => 'Logistics Department'],
-            ['first_name' => 'Victor', 'last_name' => 'Lim', 'email' => 'victor.lim@company.com', 'role' => 'Manager', 'position' => 'Accounting Manager', 'department' => 'Accounting Department'],
-            ['first_name' => 'Irene', 'last_name' => 'Chua', 'email' => 'irene.chua@company.com', 'role' => 'Manager', 'position' => 'HR Manager', 'department' => 'HR Department'],
-            ['first_name' => 'Marco', 'last_name' => 'Santiago', 'email' => 'marco.santiago@company.com', 'role' => 'Manager', 'position' => 'Operations Manager', 'department' => 'Operations Department'],
+            ['first_name' => 'Elwin', 'last_name' => 'Madraga', 'email' => 'elwin.madraga@company.com', 'role' => 'Manager', 'position' => 'Production Manager', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Regie Shane', 'last_name' => 'Asi', 'email' => 'regie.asi@company.com', 'role' => 'Manager', 'position' => 'Logistics Manager', 'department' => 'Logistics Department', 'salary' => 13520],
+            ['first_name' => 'Aeron', 'last_name' => 'Bagunu', 'email' => 'aeron.bagunu@company.com', 'role' => 'Manager', 'position' => 'Accounting Manager', 'department' => 'Accounting Department', 'salary' => 13520],
+            ['first_name' => 'Shielwyn', 'last_name' => 'Kipte', 'email' => 'shielwyn.kipte@company.com', 'role' => 'Manager', 'position' => 'HR Manager', 'department' => 'HR Department', 'salary' => 13520],
+            ['first_name' => 'John Marvin', 'last_name' => 'Cero', 'email' => 'johnmarvin.cero@company.com', 'role' => 'Manager', 'position' => 'Operations Manager', 'department' => 'Operations Department', 'salary' => 13520],
 
             // Employees - Logistics
-            ['first_name' => 'Ramon', 'last_name' => 'Dela Cruz', 'email' => 'ramon.delacruz@company.com', 'role' => 'Employee', 'position' => 'Driver', 'department' => 'Logistics Department'],
-            ['first_name' => 'Tony', 'last_name' => 'Garcia', 'email' => 'tony.garcia@company.com', 'role' => 'Employee', 'position' => 'Helper', 'department' => 'Logistics Department'],
-            ['first_name' => 'Luis', 'last_name' => 'Navarro', 'email' => 'luis.navarro@company.com', 'role' => 'Employee', 'position' => 'Driver', 'department' => 'Logistics Department'],
-            ['first_name' => 'Erik', 'last_name' => 'Flores', 'email' => 'erik.flores@company.com', 'role' => 'Employee', 'position' => 'Helper', 'department' => 'Logistics Department'],
+            ['first_name' => 'Joshua', 'last_name' => 'Bolilan', 'email' => 'joshua.bolilan@company.com', 'role' => 'Employee', 'position' => 'Driver', 'department' => 'Logistics Department', 'salary' => 13520],
+            ['first_name' => 'Dominic', 'last_name' => 'Acla', 'email' => 'dominic.acla@company.com', 'role' => 'Employee', 'position' => 'Helper', 'department' => 'Logistics Department', 'salary' => 13520],
+            ['first_name' =>  'Kyo', 'last_name' => 'Abaquita', 'email' => 'kyo.abaquita@company.com', 'role' => 'Employee', 'position' => 'Driver', 'department' => 'Logistics Department', 'salary' => 13520],
+            ['first_name' => 'John Carlo', 'last_name' => 'Pitogo', 'email' => 'johncarlo.pitogo@company.com', 'role' => 'Employee', 'position' => 'Helper', 'department' => 'Logistics Department', 'salary' => 13520],
 
             // Employees - Accounting
-            ['first_name' => 'Michelle', 'last_name' => 'Uy', 'email' => 'michelle.uy@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Accounting Department'],
-            ['first_name' => 'Janelle', 'last_name' => 'Tan', 'email' => 'janelle.tan@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Accounting Department'],
+            ['first_name' => 'John Chester', 'last_name' => 'Yalong', 'email' => 'johnchester.yalong@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Accounting Department', 'salary' => 13520],
+            ['first_name' => 'Aaron', 'last_name' => 'Sagan', 'email' => 'aaron.sagan@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Accounting Department', 'salary' => 13520],
 
-            // Employees - Production
-            ['first_name' => 'Rey', 'last_name' => 'Mendoza', 'email' => 'rey.mendoza@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department'],
-            ['first_name' => 'Noel', 'last_name' => 'Serrano', 'email' => 'noel.serrano@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department'],
-            ['first_name' => 'Kristine', 'last_name' => 'Lopez', 'email' => 'kristine.lopez@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department'],
+            // Employees - Production   
+            ['first_name' => 'Arthur', 'last_name' => 'Regondola', 'email' => 'rey. @company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Hans Axle', 'last_name' => 'Consuelo', 'email' => 'hans.consuelo@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Mark Vincent', 'last_name' => 'Aguado', 'email' => 'mark.aguado@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
 
             // Admins
-            ['first_name' => 'Admin', 'last_name' => 'One', 'email' => 'admin.one@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department'],
-            ['first_name' => 'Admin', 'last_name' => 'Two', 'email' => 'admin.two@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department'],
+            ['first_name' => 'Admin', 'last_name' => 'One', 'email' => 'admin.one@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department', 'salary' => 13520],
+            ['first_name' => 'Admin', 'last_name' => 'Two', 'email' => 'admin.two@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department', 'salary' => 13520],
 
             // Applicants
-            ['first_name' => 'Patrick', 'last_name' => 'Bautista', 'email' => 'patrick.bautista@company.com', 'role' => 'Applicant', 'position' => 'Applicant', 'department' => 'N/A'],
-            ['first_name' => 'Jessa', 'last_name' => 'Roque', 'email' => 'jessa.roque@company.com', 'role' => 'Applicant', 'position' => 'Applicant', 'department' => 'N/A'],
+            ['first_name' => 'Gwynne', 'last_name' => 'Nacawili', 'email' => 'gwynne.nacawili@company.com', 'role' => 'Applicant', 'position' => 'Applicant', 'department' => 'N/A', 'salary' => 13520],
+            ['first_name' => 'Nathaniel', 'last_name' => 'Catindig', 'email' => 'nathaniel.catindig@company.com', 'role' => 'Applicant', 'position' => 'Applicant', 'department' => 'N/A', 'salary' => 13520],
         ];
 
         $this->createFixedUsers($users);
@@ -85,6 +85,7 @@ class MultipleAccountsSeeder extends Seeder
                     'department' => $u['department'],
                     'employment_status' => 'Full Time',
                     'hire_date' => now()->subDays(120)->toDateString(),
+                    'salary' => $u['salary'] ?? 13520, // Use provided salary or default to 13520
                 ]);
                 $employeeCounter++;
             }
