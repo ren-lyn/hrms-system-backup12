@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { fetchNotifications, markNotificationRead, getNotificationAction, getNotificationIcon } from '../../api/notifications';
 import { getRelativeTime } from '../../utils/timeUtils';
+import { useNotificationManager } from '../../hooks/useNotificationManager';
 
 const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
   const [open, setOpen] = useState(false);
@@ -11,6 +12,9 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
   const buttonRef = useRef(null);
   const [anchor, setAnchor] = useState({ top: 0, left: 0 });
   const [, setTimeUpdate] = useState(0); // Force re-render for time updates
+  
+  // Use the global notification manager
+  const { notifications: realTimeNotifications } = useNotificationManager();
 
   const load = async () => {
     try {
@@ -26,16 +30,26 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
     }
   };
 
-  const handleNewNotification = (notification) => {
-    console.log('New notification received:', notification);
-    setItems(prev => {
-      // Check if notification already exists to avoid duplicates
-      const exists = prev.some(n => n.id === notification.id);
-      if (exists) return prev;
-      return [notification, ...prev];
-    });
-    setUnread(prev => prev + 1);
-  };
+  // Merge real-time notifications with loaded notifications
+  useEffect(() => {
+    if (realTimeNotifications.length > 0) {
+      setItems(prev => {
+        const merged = [...realTimeNotifications];
+        
+        // Add existing notifications that aren't in real-time list
+        prev.forEach(existing => {
+          if (!realTimeNotifications.some(rt => rt.id === existing.id)) {
+            merged.push(existing);
+          }
+        });
+        
+        // Sort by creation date
+        return merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      });
+      
+      setUnread(prev => prev + realTimeNotifications.filter(n => !n.read_at).length);
+    }
+  }, [realTimeNotifications]);
 
   useEffect(() => {
     load();
@@ -137,7 +151,6 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
       </button>
       {/* Always listen for real-time updates */}
       <Poller tick={load} />
-      <SSEStream onEvent={handleNewNotification} />
       {/* Show notifications dropdown when opened */}
       {open && ReactDOM.createPortal(
         (
@@ -215,47 +228,12 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
 
 export default Bell;
 
-
 // Tiny polling component for real-time updates
-const Poller = ({ tick, interval = 5000 }) => {
+const Poller = ({ tick, interval = 60000 }) => { // Increased from 5s to 60s
   useEffect(() => {
     const id = setInterval(() => tick(), interval);
     return () => clearInterval(id);
   }, [tick, interval]);
-  return null;
-};
-
-const SSEStream = ({ onEvent }) => {
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.log('No token found for SSE');
-      return;
-    }
-    
-    const url = `http://localhost:8000/api/notifications/stream?token=${encodeURIComponent(token)}`;
-    console.log('Connecting to SSE:', url);
-    
-    const es = new EventSource(url, { withCredentials: false });
-    
-    es.onopen = () => console.log('SSE connection opened');
-    es.onerror = (e) => console.log('SSE error:', e);
-    
-    es.addEventListener('notification', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        console.log('Received notification:', data);
-        onEvent && onEvent(data);
-      } catch (err) {
-        console.log('Error parsing notification:', err);
-      }
-    });
-    
-    return () => {
-      console.log('Closing SSE connection');
-      es.close();
-    };
-  }, [onEvent]);
   return null;
 };
 

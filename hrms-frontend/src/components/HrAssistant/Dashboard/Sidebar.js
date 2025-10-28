@@ -7,7 +7,7 @@ import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
   FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
-  FaEye, FaChartBar, FaCog, FaFileAlt, FaClock, FaChevronDown, FaChevronRight
+  FaEye, FaChartBar, FaCog, FaFileAlt, FaClock, FaChevronDown, FaChevronRight, FaEdit
 } from "react-icons/fa";
 
 
@@ -77,6 +77,13 @@ const Sidebar = () => {
               onClick={() => setIsAttendanceDropdownOpen(false)}
             >
               <FaClipboardList /> <span>Attendance Records</span>
+            </NavLink>
+            <NavLink
+              to="attendance-edit-requests"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsAttendanceDropdownOpen(false)}
+            >
+              <FaEdit /> <span>Edit Requests</span>
             </NavLink>
             <NavLink
               to="ot-management"

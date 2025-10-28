@@ -12,7 +12,8 @@ import {
   CalendarCheck,
   Eye,
   BarChart2,
-  CheckCircle
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 import useUserProfile from '../hooks/useUserProfile';
 import useEmployeeCount from '../hooks/useEmployeeCount';
@@ -21,6 +22,8 @@ import ManagerEmployeeEvaluations from '../components/Manager/ManagerEmployeeEva
 import ManagerDisciplinaryManagement from '../components/Manager/ManagerDisciplinaryManagement';
 import ManagerProfile from '../components/Manager/ManagerProfile';
 import ManagerCalendar from '../components/Manager/ManagerCalendar';
+import ManagerViewAttendanceRecords from '../components/Manager/ManagerViewAttendanceRecords';
+import ManagerOTManagement from '../components/Manager/ManagerOTManagement';
 import Bell from '../components/Notifications/Bell';
 
 
@@ -30,12 +33,14 @@ const ManagerDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [leaveMenuOpen, setLeaveMenuOpen] = useState(false);
+  const [attendanceMenuOpen, setAttendanceMenuOpen] = useState(false);
   const { userProfile, loading } = useUserProfile();
   const { total: employeeTotal, loading: employeeCountLoading, error: employeeCountError } = useEmployeeCount();
 
   const links = [
     { icon: <Home size={18} />, label: 'Dashboard', view: 'dashboard' },
     { icon: <CalendarCheck size={18} />, label: 'Leave Request', view: 'leave-request' },
+    { icon: <Clock size={18} />, label: 'Attendance Management', view: 'attendance-management' },
     { icon: <CalendarDays size={18} />, label: 'My Calendar', view: 'calendar' },
     { icon: <ClipboardList size={18} />, label: 'Evaluations', view: 'evaluations' },
     { icon: <AlertCircle size={18} />, label: 'Disciplinary Cases', view: 'disciplinary' },
@@ -85,6 +90,10 @@ const ManagerDashboard = () => {
       setLeaveMenuOpen(!leaveMenuOpen);
       return;
     }
+    if (view === 'attendance-management') {
+      setAttendanceMenuOpen(!attendanceMenuOpen);
+      return;
+    }
     setActiveView(view);
     if (isMobile) {
       closeSidebar();
@@ -126,6 +135,10 @@ const ManagerDashboard = () => {
         return <ManagerLeaveManagement viewType="status" />;
       case 'leave-tracker':
         return <ManagerLeaveManagement viewType="tracker" />;
+      case 'attendance-records':
+        return <ManagerViewAttendanceRecords />;
+      case 'ot-management':
+        return <ManagerOTManagement />;
       case 'calendar':
         return <ManagerCalendar />;
       case 'evaluations':
@@ -264,6 +277,7 @@ const ManagerDashboard = () => {
                 <button
                   className={`hrms-unified-nav-link ${
                     (link.view === 'leave-request' && (activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker')) ||
+                    (link.view === 'attendance-management' && (activeView === 'attendance-records' || activeView === 'ot-management')) ||
                     activeView === link.view ? 'hrms-unified-active' : ''
                   }`}
                     onClick={() => handleNavigation(link.view, link.label)}
@@ -275,6 +289,15 @@ const ManagerDashboard = () => {
                       marginLeft: 'auto', 
                       transition: 'transform 0.3s ease',
                       transform: leaveMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                    }}>
+                      ▼
+                    </span>
+                  )}
+                  {link.view === 'attendance-management' && (
+                    <span style={{ 
+                      marginLeft: 'auto', 
+                      transition: 'transform 0.3s ease',
+                      transform: attendanceMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)'
                     }}>
                       ▼
                     </span>
@@ -338,6 +361,49 @@ const ManagerDashboard = () => {
                     </button>
                   </div>
                 )}
+                
+                {/* Dropdown Menu for Attendance Management */}
+                {link.view === 'attendance-management' && attendanceMenuOpen && (
+                  <div style={{
+                    paddingLeft: '40px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    borderLeft: '3px solid rgba(255, 255, 255, 0.2)',
+                    marginLeft: '20px',
+                    marginTop: '4px',
+                    marginBottom: '4px'
+                  }}>
+                    <button
+                      className={`hrms-unified-nav-link ${activeView === 'attendance-records' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('attendance-records');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <Eye size={16} />
+                      <span>View Attendance Records</span>
+                    </button>
+                    <button
+                      className={`hrms-unified-nav-link ${activeView === 'ot-management' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('ot-management');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <CheckCircle size={16} />
+                      <span>OT Management</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -351,8 +417,8 @@ const ManagerDashboard = () => {
         </div>
 
         {/* Main Content */}
-        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-          {activeView !== 'leave-request' && activeView !== 'leave-overview' && activeView !== 'leave-status' && activeView !== 'leave-tracker' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
+        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker' || activeView === 'attendance-records' || activeView === 'ot-management' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+          {activeView !== 'leave-request' && activeView !== 'leave-overview' && activeView !== 'leave-status' && activeView !== 'leave-tracker' && activeView !== 'attendance-records' && activeView !== 'ot-management' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
             <>
               {/* Header */}
               <div style={styles.header}>

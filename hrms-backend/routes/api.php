@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\NotificationStreamController;
 use App\Http\Controllers\ManagerDisciplinaryController;
 use App\Http\Controllers\HRDisciplinaryController;
 use App\Http\Controllers\EmployeeDisciplinaryController;
+use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\holidayController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollPeriodController;
@@ -325,6 +326,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // OT Management Routes
     Route::prefix('ot-requests')->middleware('auth:sanctum')->group(function () {
         // Employee routes
+        Route::post('/validate-hours', [OvertimeRequestController::class, 'validateHours']); // Validate OT hours against attendance
         Route::get('/', [OvertimeRequestController::class, 'index']);
         Route::post('/', [OvertimeRequestController::class, 'store']);
         Route::get('/{id}', [OvertimeRequestController::class, 'show']);
@@ -458,6 +460,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/check-previous-violations', [ManagerDisciplinaryController::class, 'checkPreviousViolations']);
     });
     
+    // Manager Routes - Attendance and OT Management
+    Route::middleware(['role:Manager'])->prefix('manager')->group(function () {
+        // Attendance Records (View Only)
+        Route::get('/attendance/records', [ManagerController::class, 'getAttendanceRecords']);
+        
+        // OT Request Management
+        Route::get('/ot-requests', [ManagerController::class, 'getOTRequests']);
+        Route::post('/ot-requests/{id}/approve', [ManagerController::class, 'approveOTRequest']);
+        Route::post('/ot-requests/{id}/reject', [ManagerController::class, 'rejectOTRequest']);
+    });
+    
     // Test route for debugging
     Route::middleware(['auth:sanctum'])->get('/test-auth', function(Request $request) {
         return response()->json([
@@ -506,7 +519,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/dashboard/stats', [EmployeeDisciplinaryController::class, 'getDashboardStats']);
     });
 
-    // Attendance Management Routes
+    // Attendance Management Routes (HR Only)
     Route::middleware(['role:HR Assistant,HR Staff'])->prefix('attendance')->group(function () {
         Route::get('/dashboard', [AttendanceController::class, 'dashboard']); // Dashboard data
         Route::get('/export', [AttendanceController::class, 'export']); // Export CSV report
@@ -522,5 +535,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/import/history', [AttendanceController::class, 'importHistory']); // Import history
         Route::get('/import/{id}', [AttendanceController::class, 'importDetails']); // Import details
         Route::delete('/import/{id}', [AttendanceController::class, 'deleteImport']); // Delete import record
+        
+        // Edit request management routes
+        Route::get('/edit-requests', [AttendanceController::class, 'getEditRequests']); // Get all edit requests
+        Route::post('/edit-requests/{id}/approve', [AttendanceController::class, 'approveEditRequest']); // Approve request
+        Route::post('/edit-requests/{id}/reject', [AttendanceController::class, 'rejectEditRequest']); // Reject request
+    });
+
+    // Employee Attendance Routes (All authenticated users)
+    Route::prefix('attendance')->group(function () {
+        Route::get('/my-records', [AttendanceController::class, 'myRecords']); // Get own attendance records
+        Route::post('/request-edit', [AttendanceController::class, 'requestEdit']); // Submit edit request
+        Route::get('/my-edit-requests', [AttendanceController::class, 'myEditRequests']); // Get own edit requests
     });
 });

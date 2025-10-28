@@ -34,19 +34,36 @@ class NotificationStreamController extends Controller
         $response = new StreamedResponse(function () use ($user, $lastId) {
             @ob_end_clean();
             set_time_limit(0);
+            
+            // Set proper headers for SSE
             header('Content-Type: text/event-stream');
             header('Cache-Control: no-cache');
             header('Connection: keep-alive');
+            header('X-Accel-Buffering: no'); // Disable nginx buffering
+            header('Access-Control-Allow-Origin: *');
+            header('Access-Control-Allow-Headers: Cache-Control');
 
             $sinceId = $lastId;
             $start = time();
+            $lastPing = $start;
+
+            // Send initial connection confirmation
+            echo ": SSE connection established\n\n";
+            flush();
 
             while (true) {
-                // Break after 120 seconds, client will reconnect
-                if (time() - $start > 120) {
-                    echo ": ping\n\n";
+                // Break after 60 seconds to prevent long-running connections
+                if (time() - $start > 60) {
+                    echo ": Connection timeout\n\n";
                     flush();
                     break;
+                }
+
+                // Send ping every 30 seconds to keep connection alive
+                if (time() - $lastPing > 30) {
+                    echo ": ping\n\n";
+                    flush();
+                    $lastPing = time();
                 }
 
                 $query = $user->notifications()->latest();
@@ -88,13 +105,20 @@ class NotificationStreamController extends Controller
                     flush();
                 }
 
-                sleep(2);
+                // Check for connection issues
+                if (connection_aborted()) {
+                    break;
+                }
+
+                sleep(3); // Increased sleep time to reduce server load
             }
         });
 
         $response->headers->set('Content-Type', 'text/event-stream');
         $response->headers->set('Cache-Control', 'no-cache');
         $response->headers->set('X-Accel-Buffering', 'no');
+        $response->headers->set('Access-Control-Allow-Origin', '*');
+        $response->headers->set('Access-Control-Allow-Headers', 'Cache-Control');
         return $response;
     }
 }

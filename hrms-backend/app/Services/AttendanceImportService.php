@@ -232,10 +232,16 @@ class AttendanceImportService
                 return $attendance->employee;
             }
             
-            // Try to match person_id with employee profile ID or other fields
-            $employee = EmployeeProfile::where('id', $personId)
-                ->orWhere('sss', 'LIKE', "%{$personId}%")
-                ->orWhere('employee_id', $personId)
+            // Try to match person_id with employee profile ID or other fields (active employees only)
+            $employee = EmployeeProfile::where(function($q) use ($personId) {
+                    $q->where('id', $personId)
+                      ->orWhere('sss', 'LIKE', "%{$personId}%")
+                      ->orWhere('employee_id', $personId);
+                })
+                ->where(function($q) {
+                    $q->whereNull('status')
+                      ->orWhere('status', 'active');
+                })
                 ->first();
             
             if ($employee) {
@@ -521,13 +527,17 @@ class AttendanceImportService
         try {
             Log::info("Marking absent employees for period: {$periodStart} to {$periodEnd}");
             
-            // Get all active employees (exclude applicants - role_id 5)
+            // Get all active employees (exclude applicants and terminated/resigned employees)
             $allEmployees = EmployeeProfile::join('users', 'users.id', '=', 'employee_profiles.user_id')
                 ->where('users.role_id', '!=', 5)
+                ->where(function($q) {
+                    $q->whereNull('employee_profiles.status')
+                      ->orWhere('employee_profiles.status', 'active');
+                })
                 ->select('employee_profiles.*')
                 ->get();
             
-            Log::info("Total active employees: " . $allEmployees->count());
+            Log::info("Total active employees (excluding terminated/resigned): " . $allEmployees->count());
             
             // Generate all dates in the period
             $startDate = Carbon::parse($periodStart);
@@ -815,20 +825,31 @@ class AttendanceImportService
             }
         }
 
-        // Try exact full name match first
-        $employee = EmployeeProfile::whereRaw("LOWER(CONCAT(first_name, ' ', last_name)) = ?", [$normalizedFull])
-            ->orWhereRaw("LOWER(CONCAT(last_name, ', ', first_name)) = ?", [$normalizedFull])
+        // Try exact full name match first (active employees only)
+        $employee = EmployeeProfile::where(function($q) use ($normalizedFull) {
+                $q->whereRaw("LOWER(CONCAT(first_name, ' ', last_name)) = ?", [$normalizedFull])
+                  ->orWhereRaw("LOWER(CONCAT(last_name, ', ', first_name)) = ?", [$normalizedFull]);
+            })
+            ->where(function($q) {
+                $q->whereNull('status')
+                  ->orWhere('status', 'active');
+            })
             ->first();
 
         if ($employee) {
             return $employee;
         }
 
-        // Try first/last name combination if we extracted them
+        // Try first/last name combination if we extracted them (active employees only)
         if ($first && $last) {
             $employee = EmployeeProfile::whereRaw("LOWER(first_name) = ? AND LOWER(last_name) = ?", [
-                mb_strtolower($first), mb_strtolower($last)
-            ])->first();
+                    mb_strtolower($first), mb_strtolower($last)
+                ])
+                ->where(function($q) {
+                    $q->whereNull('status')
+                      ->orWhere('status', 'active');
+                })
+                ->first();
 
             if ($employee) {
                 return $employee;
@@ -851,26 +872,40 @@ class AttendanceImportService
                      $rowData['full_name'] ?? 
                      null;
 
-        // Try employee_id first (new column)
+        // Try employee_id first (new column) - active employees only
         if ($employeeId) {
-            $employee = EmployeeProfile::where('employee_id', $employeeId)->first();
+            $employee = EmployeeProfile::where('employee_id', $employeeId)
+                ->where(function($q) {
+                    $q->whereNull('status')
+                      ->orWhere('status', 'active');
+                })
+                ->first();
             if ($employee) {
                 return $employee;
             }
         }
 
-        // Try person_id (legacy column)
+        // Try person_id (legacy column) - active employees only
         if ($personId) {
             // First try to find by person_id in existing attendance records
             $attendance = Attendance::where('employee_biometric_id', $personId)->first();
             if ($attendance && $attendance->employee) {
-                return $attendance->employee;
+                // Verify the employee is still active
+                if (!$attendance->employee->status || $attendance->employee->status === 'active') {
+                    return $attendance->employee;
+                }
             }
             
-            // Try to match person_id with employee profile ID or other fields
-            $employee = EmployeeProfile::where('id', $personId)
-                ->orWhere('sss', 'LIKE', "%{$personId}%")
-                ->orWhere('employee_id', $personId)
+            // Try to match person_id with employee profile ID or other fields (active employees only)
+            $employee = EmployeeProfile::where(function($q) use ($personId) {
+                    $q->where('id', $personId)
+                      ->orWhere('sss', 'LIKE', "%{$personId}%")
+                      ->orWhere('employee_id', $personId);
+                })
+                ->where(function($q) {
+                    $q->whereNull('status')
+                      ->orWhere('status', 'active');
+                })
                 ->first();
             
             if ($employee) {
@@ -916,6 +951,12 @@ class AttendanceImportService
                            ->whereRaw('LOWER(TRIM(last_name)) = ?', [mb_strtolower($first)]);
                     });
                 }
+            });
+            
+            // Only match active employees
+            $query->where(function($q) {
+                $q->whereNull('status')
+                  ->orWhere('status', 'active');
             });
 
             if (!empty($rowData['department'])) {

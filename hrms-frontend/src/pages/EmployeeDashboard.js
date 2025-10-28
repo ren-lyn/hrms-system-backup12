@@ -27,7 +27,12 @@ import {
   faBars,
   faExclamationTriangle,
   faPlane,
-  faClockRotateLeft
+  faClockRotateLeft,
+  faClipboardList,
+  faChevronDown,
+  faChevronRight,
+  faEdit,
+  faEye
 } from '@fortawesome/free-solid-svg-icons';
 
 // Lazy load components for better performance
@@ -38,6 +43,8 @@ const CashAdvanceForm = React.lazy(() => import('../components/Employee/CashAdva
 const EmployeeDisciplinaryNotice = React.lazy(() => import('../components/Employee/EmployeeDisciplinaryNotice'));
 const EmployeeCalendar = React.lazy(() => import('../components/Employee/EmployeeCalendar'));
 const CashAdvanceView = React.lazy(() => import('../components/Employee/CashAdvanceView'));
+const RequestEditAttendance = React.lazy(() => import('../components/Employee/RequestEditAttendance'));
+const ViewAttendanceRecords = React.lazy(() => import('../components/Employee/ViewAttendanceRecords'));
 
 const EmployeeDashboard = () => {
   const [employeeName, setEmployeeName] = useState('');
@@ -46,6 +53,7 @@ const EmployeeDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1023);
   const [activeView, setActiveView] = useState('dashboard'); // default view
+  const [isAttendanceDropdownOpen, setIsAttendanceDropdownOpen] = useState(false);
 
   // Evaluation summary state
   const [evalLoading, setEvalLoading] = useState(false);
@@ -153,6 +161,10 @@ const EmployeeDashboard = () => {
     }
   };
 
+  const toggleAttendanceDropdown = () => {
+    setIsAttendanceDropdownOpen(!isAttendanceDropdownOpen);
+  };
+
   const getHeaderTitle = () => {
     switch (activeView) {
       case 'dashboard': return 'Dashboard';
@@ -164,6 +176,9 @@ const EmployeeDashboard = () => {
       case 'cash-advance': return selectedCashAdvanceId ? 'Cash Advance Details' : 'Cash Advance';
       case 'evaluation-summary': return selectedEvaluationId ? 'Evaluation Result' : 'Evaluation Summary';
       case 'disciplinary-notice': return 'Disciplinary Notice';
+      case 'view-attendance-records': return 'My Attendance Records';
+      case 'request-edit-attendance': return 'Request Edit Attendance';
+      case 'overtime-request': return 'Overtime Request';
       default: return 'Dashboard';
     }
   };
@@ -508,6 +523,18 @@ const EmployeeDashboard = () => {
             <EmployeeCalendar />
           </Suspense>
         );
+      case 'view-attendance-records':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading attendance records..." />}>
+            <ViewAttendanceRecords />
+          </Suspense>
+        );
+      case 'request-edit-attendance':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading request form..." />}>
+            <RequestEditAttendance />
+          </Suspense>
+        );
       default:
         return (
           <div className="card p-4">
@@ -559,19 +586,52 @@ const EmployeeDashboard = () => {
               <FontAwesomeIcon icon={faCalendarAlt} />
               <span>My Calendar</span>
             </button>
+            
+            {/* Attendance Records Dropdown */}
+            <div className="hrms-dropdown-container">
+              <button
+                className="hrms-unified-nav-link hrms-dropdown-toggle"
+                onClick={toggleAttendanceDropdown}
+              >
+                <FontAwesomeIcon icon={faClipboardList} />
+                <span>Attendance Records</span>
+                <FontAwesomeIcon 
+                  icon={isAttendanceDropdownOpen ? faChevronDown : faChevronRight} 
+                  style={{ marginLeft: 'auto', fontSize: '0.8rem' }}
+                />
+              </button>
+              
+              <div className={`hrms-dropdown-menu ${isAttendanceDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+                <button
+                  className={`hrms-dropdown-item ${activeView === 'view-attendance-records' ? 'hrms-dropdown-active' : ''}`}
+                  onClick={() => setActiveView('view-attendance-records')}
+                >
+                  <FontAwesomeIcon icon={faEye} />
+                  <span>View Attendance Records</span>
+                </button>
+                <button
+                  className={`hrms-dropdown-item ${activeView === 'request-edit-attendance' ? 'hrms-dropdown-active' : ''}`}
+                  onClick={() => setActiveView('request-edit-attendance')}
+                >
+                  <FontAwesomeIcon icon={faEdit} />
+                  <span>Request Edit Attendance</span>
+                </button>
+                <button
+                  className={`hrms-dropdown-item ${activeView === 'overtime-request' ? 'hrms-dropdown-active' : ''}`}
+                  onClick={() => setActiveView('overtime-request')}
+                >
+                  <FontAwesomeIcon icon={faClockRotateLeft} />
+                  <span>Overtime Request</span>
+                </button>
+              </div>
+            </div>
+            
             <button
               className={`hrms-unified-nav-link ${activeView === 'cash-advance' ? 'hrms-unified-active' : ''}`}
               onClick={() => setActiveView('cash-advance')}
             >
               <FontAwesomeIcon icon={faHandHoldingUsd} />
               <span>Cash Advance</span>
-            </button>
-            <button
-              className={`hrms-unified-nav-link ${activeView === 'overtime-request' ? 'hrms-unified-active' : ''}`}
-              onClick={() => setActiveView('overtime-request')}
-            >
-              <FontAwesomeIcon icon={faClockRotateLeft} />
-              <span>Overtime Request</span>
             </button>
             <button
               className={`hrms-unified-nav-link ${activeView === 'evaluation-summary' ? 'hrms-unified-active' : ''}`}

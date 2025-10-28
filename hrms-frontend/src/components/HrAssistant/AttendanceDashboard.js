@@ -129,8 +129,8 @@ const AttendanceDashboard = () => {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
     const [editFormData, setEditFormData] = useState({
-        time_in: '',
-        time_out: '',
+        clock_in: '',
+        clock_out: '',
         status: '',
         remarks: ''
     });
@@ -248,10 +248,21 @@ const AttendanceDashboard = () => {
 
     // Handle edit button click
     const handleEditClick = (record) => {
+        // Convert time format from HH:MM:SS to HH:MM for HTML time input
+        const formatTimeForInput = (time) => {
+            if (!time) return '';
+            // If time has seconds (HH:MM:SS), strip them to get HH:MM
+            const parts = time.split(':');
+            if (parts.length >= 2) {
+                return `${parts[0]}:${parts[1]}`;
+            }
+            return time;
+        };
+        
         setEditingRecord(record);
         setEditFormData({
-            time_in: record.time_in || '',
-            time_out: record.time_out || '',
+            clock_in: formatTimeForInput(record.clock_in),
+            clock_out: formatTimeForInput(record.clock_out),
             status: record.status || '',
             remarks: record.remarks || ''
         });
@@ -273,10 +284,26 @@ const AttendanceDashboard = () => {
         
         setIsSaving(true);
         try {
-            const response = await axios.put(`/attendance/${editingRecord.id}`, editFormData);
+            // Convert time format from HH:MM to HH:MM:SS for backend validation
+            const formatTimeForBackend = (time) => {
+                if (!time) return null;
+                // If already includes seconds (HH:MM:SS), return as is
+                if (time.split(':').length === 3) return time;
+                // Otherwise add :00 for seconds
+                return `${time}:00`;
+            };
+            
+            const dataToSend = {
+                ...editFormData,
+                clock_in: formatTimeForBackend(editFormData.clock_in),
+                clock_out: formatTimeForBackend(editFormData.clock_out)
+            };
+            
+            const response = await axios.put(`/attendance/${editingRecord.id}`, dataToSend);
             if (response.data.success) {
                 // Refresh the records
                 fetchAllAttendanceRecords(allPage);
+                fetchAttendanceData(); // Also refresh dashboard stats
                 setShowEditModal(false);
                 // Show success message
                 alert('Attendance record updated successfully');
@@ -1020,7 +1047,7 @@ const AttendanceDashboard = () => {
                 <Modal.Header closeButton>
                     <Modal.Title>
                         <FaUpload className="me-2" />
-                        Import Weekly Attendance Data
+                        Import Attendance Data
                     </Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
@@ -1054,7 +1081,7 @@ const AttendanceDashboard = () => {
                                 <div className="small">
                                     <strong>From:</strong> {format(new Date(detectedPeriod.period_start), 'MMM dd, yyyy')}<br />
                                     <strong>To:</strong> {format(new Date(detectedPeriod.period_end), 'MMM dd, yyyy')}<br />
-                                    <strong>Total Days:</strong> {detectedPeriod.total_dates}
+                                    <strong>Total Records:</strong> {detectedPeriod.total_dates}
                                 </div>
                             </Alert>
 
@@ -1221,8 +1248,8 @@ const AttendanceDashboard = () => {
                                         <Form.Label>Time In</Form.Label>
                                         <Form.Control
                                             type="time"
-                                            name="time_in"
-                                            value={editFormData.time_in || ''}
+                                            name="clock_in"
+                                            value={editFormData.clock_in || ''}
                                             onChange={handleEditFormChange}
                                             required
                                         />
@@ -1233,8 +1260,8 @@ const AttendanceDashboard = () => {
                                         <Form.Label>Time Out</Form.Label>
                                         <Form.Control
                                             type="time"
-                                            name="time_out"
-                                            value={editFormData.time_out || ''}
+                                            name="clock_out"
+                                            value={editFormData.clock_out || ''}
                                             onChange={handleEditFormChange}
                                         />
                                     </Form.Group>

@@ -16,11 +16,11 @@ const NotificationSystem = ({ userId, userRole, onApplicationUpdate }) => {
       // Initial check
       checkApplicationUpdates();
       
-      // Set up polling every 10 seconds
+      // Set up polling every 60 seconds (reduced from 10s)
       intervalRef.current = setInterval(() => {
         console.log('NotificationSystem: Polling for updates...');
         checkApplicationUpdates();
-      }, 10000);
+      }, 60000);
     }
 
     return () => {

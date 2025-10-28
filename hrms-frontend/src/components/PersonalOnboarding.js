@@ -1024,17 +1024,17 @@ const PersonalOnboarding = () => {
     // Set up interval to check for orientation updates
     const orientationInterval = setInterval(() => {
       fetchOrientationData();
-    }, 5000); // Check every 5 seconds
+    }, 30000); // Increased from 5s to 30s
     
     // Set up interval to check for new notifications
     const notificationInterval = setInterval(() => {
       fetchNotifications();
-    }, 30000); // Check every 30 seconds
+    }, 120000); // Increased from 30s to 120s (2 minutes)
     
     // Set up interval to check for new interviews
     const interviewInterval = setInterval(() => {
       fetchInterviewData();
-    }, 10000); // Check every 10 seconds for better real-time updates
+    }, 60000); // Increased from 10s to 60s
     
     // Handle click outside to close dropdown
     const handleClickOutside = (event) => {

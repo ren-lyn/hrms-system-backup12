@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
+use App\Models\AttendanceEditRequest;
 use App\Models\EmployeeProfile;
 use App\Models\AttendanceImport;
 use App\Services\AttendanceImportService;
@@ -41,11 +42,15 @@ class AttendanceController extends Controller
             $status = $request->get('status');
             $hasImports = AttendanceImport::query()->exists();
 
-            // Employee-centric view to include employees with no records in the range
+            // Employee-centric view to include employees with no records in the range (only active employees)
             $employeesQuery = EmployeeProfile::query()
                 ->select('employee_profiles.id', 'employee_profiles.employee_id', 'employee_profiles.first_name', 'employee_profiles.last_name', 'employee_profiles.position', 'employee_profiles.department')
                 ->join('users', 'users.id', '=', 'employee_profiles.user_id')
-                ->where('users.role_id', '!=', 5); // Exclude Applicants
+                ->where('users.role_id', '!=', 5) // Exclude Applicants
+                ->where(function($q) {
+                    $q->whereNull('employee_profiles.status')
+                      ->orWhere('employee_profiles.status', 'active');
+                });
 
             if ($search) {
                 $employeesQuery->where(function($q) use ($search) {
@@ -159,17 +164,15 @@ class AttendanceController extends Controller
                 }
             }
 
-            // Attendance summary statistics - align total with employee records count
-            $totalEmployees = User::where('role_id', '!=', 5)
-                ->whereHas('employeeProfile')
-                ->count();
-            // Optional: expose a debug hint when counts mismatch
-            $profilesJoinCount = EmployeeProfile::join('users', 'users.id', '=', 'employee_profiles.user_id')
-                ->where('users.role_id', '!=', 5)
-                ->count();
-            // Get all active employees (excluding those with role_id = 5)
+            // Attendance summary statistics - count only active employees (not terminated or resigned)
+            // Get all active employees (excluding applicants, terminated, and resigned)
             $activeEmployees = User::where('role_id', '!=', 5)
-                ->whereHas('employeeProfile')
+                ->whereHas('employeeProfile', function($query) {
+                    $query->where(function($q) {
+                        $q->whereNull('employee_profiles.status')
+                          ->orWhere('employee_profiles.status', 'active');
+                    });
+                })
                 ->with('employeeProfile')
                 ->get();
 
@@ -324,11 +327,7 @@ class AttendanceController extends Controller
                         'status' => $status
                     ],
                     'has_imports' => $hasImports,
-                    'auto_adjusted_to_latest_import' => $autoAdjusted,
-                    'employees_count_debug' => [
-                        'users_with_profile' => $totalEmployees,
-                        'profiles_join' => $profilesJoinCount
-                    ]
+                    'auto_adjusted_to_latest_import' => $autoAdjusted
                 ]
             ]);
 
@@ -874,6 +873,325 @@ class AttendanceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete import record',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get employee's own attendance records
+     */
+    public function myRecords(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+
+            if (!$employeeProfile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            $query = Attendance::where('employee_id', $employeeProfile->id);
+
+            // Apply date filters
+            if ($request->has('date_from') && $request->has('date_to')) {
+                $query->whereBetween('date', [$request->date_from, $request->date_to]);
+            }
+
+            // Filter out invalid dates
+            $query->whereDate('date', '>=', '2000-01-01');
+
+            $records = $query->orderBy('date', 'desc')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $records
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch attendance records',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Submit attendance edit request
+     */
+    public function requestEdit(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'date' => 'required|date|before_or_equal:today',
+                'requested_time_in' => 'nullable|date_format:H:i',
+                'requested_time_out' => 'nullable|date_format:H:i',
+                'reason' => 'required|string|max:500',
+                'images' => 'required|array|min:1|max:2',
+                'images.*' => 'required|image|mimes:jpeg,jpg,png,gif|max:5120' // 5MB max per image
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $user = Auth::user();
+            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+
+            if (!$employeeProfile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Check if there's already a pending request for this date
+            $existingRequest = AttendanceEditRequest::where('employee_id', $employeeProfile->id)
+                ->where('date', $request->date)
+                ->where('status', 'pending')
+                ->first();
+
+            if ($existingRequest) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You already have a pending edit request for this date'
+                ], 409);
+            }
+
+            // Upload images
+            $imagePaths = [];
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $index => $image) {
+                    $path = $image->store('attendance_edit_proofs', 'public');
+                    $imagePaths[] = $path;
+                }
+            }
+
+            // Get current attendance record if exists
+            $currentRecord = Attendance::where('employee_id', $employeeProfile->id)
+                ->where('date', $request->date)
+                ->first();
+
+            // Create edit request
+            $editRequest = AttendanceEditRequest::create([
+                'employee_id' => $employeeProfile->id,
+                'requested_by_user_id' => $user->id,
+                'date' => $request->date,
+                'current_time_in' => $currentRecord?->clock_in,
+                'current_time_out' => $currentRecord?->clock_out,
+                'requested_time_in' => $request->requested_time_in ? $request->requested_time_in . ':00' : null,
+                'requested_time_out' => $request->requested_time_out ? $request->requested_time_out . ':00' : null,
+                'reason' => $request->reason,
+                'proof_images' => $imagePaths,
+                'status' => 'pending'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Edit request submitted successfully',
+                'data' => $editRequest
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to submit edit request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get attendance edit requests (HR only)
+     */
+    public function getEditRequests(Request $request): JsonResponse
+    {
+        try {
+            $query = AttendanceEditRequest::with([
+                'employee:id,employee_id,first_name,last_name,position',
+                'requestedBy:id,first_name,last_name',
+                'reviewedBy:id,first_name,last_name'
+            ]);
+
+            // Filter by status
+            if ($request->has('status') && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+
+            $requests = $query->orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch edit requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Approve attendance edit request
+     */
+    public function approveEditRequest($id): JsonResponse
+    {
+        try {
+            $editRequest = AttendanceEditRequest::findOrFail($id);
+
+            if ($editRequest->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This request has already been processed'
+                ], 400);
+            }
+
+            // Find or create attendance record
+            $attendance = Attendance::where('employee_id', $editRequest->employee_id)
+                ->where('date', $editRequest->date)
+                ->first();
+
+            if (!$attendance) {
+                // Create new attendance record
+                $attendance = new Attendance();
+                $attendance->employee_id = $editRequest->employee_id;
+                $attendance->date = $editRequest->date;
+            }
+
+            // Update with requested times
+            if ($editRequest->requested_time_in) {
+                $attendance->clock_in = $editRequest->requested_time_in;
+            }
+            if ($editRequest->requested_time_out) {
+                $attendance->clock_out = $editRequest->requested_time_out;
+            }
+
+            // Recalculate hours and status
+            if ($attendance->clock_in && $attendance->clock_out) {
+                $attendance->total_hours = $attendance->calculateTotalHours();
+                $attendance->overtime_hours = $attendance->calculateOvertimeHours();
+                $attendance->undertime_hours = $attendance->calculateUndertimeHours();
+                $attendance->status = $attendance->determineStatus();
+            }
+
+            $attendance->remarks = 'Updated via edit request';
+            $attendance->save();
+
+            // Update edit request status
+            $editRequest->status = 'approved';
+            $editRequest->reviewed_by_user_id = Auth::id();
+            $editRequest->reviewed_at = now();
+            $editRequest->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Edit request approved and attendance record updated',
+                'data' => $editRequest
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to approve request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reject attendance edit request
+     */
+    public function rejectEditRequest(Request $request, $id): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'rejection_reason' => 'required|string|max:500'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Rejection reason is required',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $editRequest = AttendanceEditRequest::findOrFail($id);
+
+            if ($editRequest->status !== 'pending') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This request has already been processed'
+                ], 400);
+            }
+
+            // Update edit request status
+            $editRequest->status = 'rejected';
+            $editRequest->rejection_reason = $request->rejection_reason;
+            $editRequest->reviewed_by_user_id = Auth::id();
+            $editRequest->reviewed_at = now();
+            $editRequest->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Edit request rejected',
+                'data' => $editRequest
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reject request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get employee's own edit requests
+     */
+    public function myEditRequests(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+
+            if (!$employeeProfile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            $query = AttendanceEditRequest::where('employee_id', $employeeProfile->id);
+
+            // Filter by status if provided
+            if ($request->has('status') && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+
+            $requests = $query->orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch edit requests',
                 'error' => $e->getMessage()
             ], 500);
         }

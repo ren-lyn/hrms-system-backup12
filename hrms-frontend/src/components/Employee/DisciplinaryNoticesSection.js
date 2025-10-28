@@ -42,10 +42,10 @@ const DisciplinaryNoticesSection = () => {
       
       // Load disciplinary actions and stats
       const [actionsRes, statsRes] = await Promise.allSettled([
-        axios.get('/employee/disciplinary/my-actions', {
+        axios.get('/employee/disciplinary/actions', {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         }),
-        axios.get('/employee/disciplinary/dashboard-stats', {
+        axios.get('/employee/disciplinary/dashboard/stats', {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         })
       ]);
