@@ -60,7 +60,7 @@ function App() {
   return (
     <Router>
       {/* ✅ Toast container goes here so it works globally */}
-      <ToastContainer position="top-right" autoClose={3000} hideProgressBar />
+      <ToastContainer position="top-center" autoClose={3000} hideProgressBar />
       
       {/* Performance Monitor - disabled by default */}
       {false && process.env.NODE_ENV === 'development' && <PerformanceMonitor />}

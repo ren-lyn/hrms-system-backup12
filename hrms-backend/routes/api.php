@@ -332,16 +332,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/validate-hours', [OvertimeRequestController::class, 'validateHours']); // Validate OT hours against attendance
         Route::get('/', [OvertimeRequestController::class, 'index']);
         Route::post('/', [OvertimeRequestController::class, 'store']);
-        Route::get('/{id}', [OvertimeRequestController::class, 'show']);
-        Route::put('/{id}', [OvertimeRequestController::class, 'update']);
-        Route::delete('/{id}', [OvertimeRequestController::class, 'destroy']);
         Route::get('/statistics', [OvertimeRequestController::class, 'getStatistics']);
         
-        // Admin-only routes
+        // Admin-only routes (must come before /{id} routes)
         Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
             Route::get('/all', [OvertimeRequestController::class, 'getAll']);
             Route::put('/{id}/status', [OvertimeRequestController::class, 'updateStatus']);
         });
+        
+        // Parameterized routes (must come after specific routes)
+        Route::get('/{id}', [OvertimeRequestController::class, 'show']);
+        Route::put('/{id}', [OvertimeRequestController::class, 'update']);
+        Route::delete('/{id}', [OvertimeRequestController::class, 'destroy']);
+        
+        // Image serving route (accessible to employees, managers, and HR)
+        Route::get('/{id}/proof-image/{imageIndex}', [OvertimeRequestController::class, 'getProofImage']);
     });
 
     // Enhanced Payroll Management Routes

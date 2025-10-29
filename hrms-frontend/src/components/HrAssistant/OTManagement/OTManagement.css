@@ -35,6 +35,11 @@
   color: #721c24;
 }
 
+.status-manager-approved {
+  background-color: #cce5ff;
+  color: #004085;
+}
+
 /* Table Styles */
 .table {
   margin-bottom: 0;

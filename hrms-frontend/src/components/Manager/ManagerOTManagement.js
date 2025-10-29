@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Button, Form, Modal, Spinner, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Badge, Button, Form, Modal, Spinner, Alert, Image } from 'react-bootstrap';
+import OTDetailsModal from '../OT/OTDetailsModal';
 import { 
   FaClock, 
   FaCheckCircle, 
@@ -7,7 +8,9 @@ import {
   FaSync,
   FaCalendarAlt,
   FaUser,
-  FaClipboardList
+  FaClipboardList,
+  FaImage,
+  FaEye
 } from 'react-icons/fa';
 import { format } from 'date-fns';
 import axios from '../../axios';
@@ -25,6 +28,11 @@ const ManagerOTManagement = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  
+  // Image viewing states
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     fetchRequests();
@@ -56,6 +64,13 @@ const ManagerOTManagement = () => {
     setActionType(action);
     setRejectionReason('');
     setShowModal(true);
+  };
+
+  const viewImage = (imagePath) => {
+    // Convert storage path to public URL (same as attendance edit requests)
+    const imageUrl = `http://localhost:8000/storage/${imagePath}`;
+    setSelectedImage(imageUrl);
+    setShowImageModal(true);
   };
 
   const handleSubmitAction = async () => {
@@ -95,12 +110,20 @@ const ManagerOTManagement = () => {
   };
 
   const formatTime = (time) => {
-    if (!time) return '-';
+    if (!time) return '—';
     try {
-      const [hours, minutes] = time.split(':');
-      return `${hours}:${minutes}`;
+      let t = String(time).trim();
+      const match = t.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+      if (!match) return t;
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const meridiem = (match[3] || '').toUpperCase();
+      if (meridiem === 'PM' && hours < 12) hours += 12;
+      if (meridiem === 'AM' && hours === 12) hours = 0;
+      const hours12 = ((hours + 11) % 12) + 1;
+      return `${hours12}:${String(minutes).padStart(2, '0')}`;
     } catch {
-      return time;
+      return String(time);
     }
   };
 
@@ -262,16 +285,24 @@ const ManagerOTManagement = () => {
                   <tr>
                     <th className="py-3 px-3 fw-semibold text-secondary">Employee</th>
                     <th className="py-3 px-3 fw-semibold text-secondary">OT Date</th>
+                    <th className="py-3 px-3 fw-semibold text-secondary">Time</th>
                     <th className="py-3 px-3 fw-semibold text-secondary text-center">OT Hours</th>
                     <th className="py-3 px-3 fw-semibold text-secondary">Reason</th>
+                    <th className="py-3 px-3 fw-semibold text-secondary text-center">Proof Images</th>
                     <th className="py-3 px-3 fw-semibold text-secondary text-center">Status</th>
+                    <th className="py-3 px-3 fw-semibold text-secondary">Approved by</th>
+                    <th className="py-3 px-3 fw-semibold text-secondary">Noted by</th>
                     <th className="py-3 px-3 fw-semibold text-secondary">Requested On</th>
                     <th className="py-3 px-3 fw-semibold text-secondary text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {requests.map((request) => (
-                    <tr key={request.id} style={{ borderBottom: '1px solid #e9ecef' }}>
+                    <tr
+                      key={request.id}
+                      style={{ borderBottom: '1px solid #e9ecef', cursor: 'pointer' }}
+                      onClick={() => { setSelectedRequest(request); setShowDetails(true); }}
+                    >
                       <td className="py-3 px-3">
                         <div className="d-flex align-items-center">
                           <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-2">
@@ -284,6 +315,15 @@ const ManagerOTManagement = () => {
                             <small className="text-muted">{request.employee?.employee_id}</small>
                           </div>
                         </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        {request.attendance?.clock_in || request.start_time ? (
+                          <>
+                            {formatTime(request.attendance?.clock_in || request.start_time)} - {formatTime(request.attendance?.clock_out || request.end_time)}
+                          </>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <div className="d-flex align-items-center">
@@ -310,12 +350,43 @@ const ManagerOTManagement = () => {
                         </div>
                       </td>
                       <td className="py-3 px-3 text-center">
+                        {request.proof_images && request.proof_images.length > 0 ? (
+                          <div className="d-flex flex-wrap gap-1 justify-content-center">
+                            {request.proof_images.map((imagePath, index) => (
+                              <Button
+                                key={index}
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={() => viewImage(imagePath)}
+                                title={`View image ${index + 1}`}
+                                className="p-1"
+                              >
+                                <FaImage size={12} className="me-1" />
+                                {index + 1}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted small">No images</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
                         {getStatusBadge(request.status)}
                         {request.status === 'rejected' && request.rejection_reason && (
                           <div className="small text-muted mt-2" style={{ maxWidth: '150px' }}>
                             💬 {request.rejection_reason.substring(0, 30)}...
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-3">
+                        {(request.manager_reviewer?.first_name && `${request.manager_reviewer.first_name} ${request.manager_reviewer.last_name}`)
+                          || (request.managerReviewer?.first_name && `${request.managerReviewer.first_name} ${request.managerReviewer.last_name}`)
+                          || <span className="text-muted">—</span>}
+                      </td>
+                      <td className="py-3 px-3">
+                        {(request.hr_reviewer?.first_name && `${request.hr_reviewer.first_name} ${request.hr_reviewer.last_name}`)
+                          || (request.hrReviewer?.first_name && `${request.hrReviewer.first_name} ${request.hrReviewer.last_name}`)
+                          || <span className="text-muted">—</span>}
                       </td>
                       <td className="py-3 px-3">
                         <div className="d-flex align-items-center">
@@ -336,7 +407,7 @@ const ManagerOTManagement = () => {
                             <Button
                               variant="success"
                               size="sm"
-                              onClick={() => handleAction(request, 'approve')}
+                              onClick={(e) => { e.stopPropagation(); handleAction(request, 'approve'); }}
                               title="Approve OT Request"
                               className="shadow-sm"
                             >
@@ -346,7 +417,7 @@ const ManagerOTManagement = () => {
                             <Button
                               variant="danger"
                               size="sm"
-                              onClick={() => handleAction(request, 'reject')}
+                              onClick={(e) => { e.stopPropagation(); handleAction(request, 'reject'); }}
                               title="Reject OT Request"
                               className="shadow-sm"
                             >
@@ -522,11 +593,50 @@ const ManagerOTManagement = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Image View Modal */}
+      <Modal show={showImageModal} onHide={() => setShowImageModal(false)} centered size="lg">
+        <Modal.Header closeButton className="border-0">
+          <Modal.Title>
+            <div className="d-flex align-items-center">
+              <div className="bg-info bg-opacity-10 rounded-circle p-2 me-3">
+                <FaImage className="text-info" size={20} />
+              </div>
+              <div>
+                <h5 className="mb-0">Proof of Overtime</h5>
+                <small className="text-muted">Employee submitted evidence</small>
+              </div>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="text-center p-4" style={{ backgroundColor: '#f8f9fa' }}>
+          <img 
+            src={selectedImage} 
+            alt="Proof" 
+            className="img-fluid rounded shadow" 
+            style={{ maxHeight: '70vh', maxWidth: '100%' }} 
+          />
+        </Modal.Body>
+        <Modal.Footer className="border-0 bg-light">
+          <Button variant="secondary" onClick={() => setShowImageModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* OT Details Modal */}
+      <OTDetailsModal
+        show={showDetails}
+        onHide={() => setShowDetails(false)}
+        request={selectedRequest}
+      />
     </Container>
   );
 };
 
 export default ManagerOTManagement;
+
+
 
 
 

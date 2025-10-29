@@ -211,29 +211,65 @@ const EmployeeRecords = () => {
         return;
       }
 
-      const res = await axios.get('http://localhost:8000/api/employees', {
-        headers: { Authorization: `Bearer ${token}` }
+      console.log('Fetching employees from API...');
+      const response = await axios.get('http://localhost:8000/api/employees', {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
       });
+
+      console.log('API Response:', response);
+      
+      // Handle different response structures
+      let employeesData = [];
+      if (response.data) {
+        // Handle case where data is directly an array
+        if (Array.isArray(response.data)) {
+          employeesData = response.data;
+        } 
+        // Handle case where data is nested under a data property
+        else if (response.data.data && Array.isArray(response.data.data)) {
+          employeesData = response.data.data;
+        }
+        // Handle case where data is an object with employees property
+        else if (response.data.employees && Array.isArray(response.data.employees)) {
+          employeesData = response.data.employees;
+        }
+      }
+
+      console.log('Processed employees data:', employeesData);
       
       // Check for recently updated profiles (within last 2 minutes for quick notification)
-      const recentlyUpdated = res.data.filter(emp => 
-        emp.employee_profile?.updated_at && 
+      const recentlyUpdated = employeesData.filter(emp => 
+        emp && emp.employee_profile?.updated_at && 
         new Date(emp.employee_profile.updated_at) > new Date(Date.now() - 2 * 60 * 1000)
       );
       
-      setEmployees(res.data);
-      setRecentUpdates(recentlyUpdated);
+      setEmployees(employeesData);
+      setRecentUpdates(prevUpdates => {
+        // Only keep updates from the last 5 minutes to prevent memory leaks
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        return [
+          ...prevUpdates.filter(update => 
+            new Date(update.employee_profile?.updated_at) > fiveMinutesAgo
+          ),
+          ...recentlyUpdated
+        ];
+      });
       setLastRefresh(new Date());
       
       // Only notify about new updates (not already in recentUpdates) and not during silent refresh
-      if (!silent && recentUpdates.length > 0) {
-        const newUpdates = recentlyUpdated.filter(emp => 
-          !recentUpdates.some(existing => existing.id === emp.id)
+      if (!silent && recentlyUpdated.length > 0) {
+        const newUpdates = recentlyUpdated.filter(newEmp => 
+          !recentUpdates.some(existing => existing.id === newEmp.id)
         );
         
         if (newUpdates.length > 0) {
           const employeeNames = newUpdates.slice(0, 2).map(emp => 
-            `${emp.employee_profile?.first_name} ${emp.employee_profile?.last_name}`
+            `${emp.employee_profile?.first_name || ''} ${emp.employee_profile?.last_name || ''}`.trim() || 'An employee'
           ).join(', ');
           const moreText = newUpdates.length > 2 ? ` +${newUpdates.length - 2} more` : '';
           
@@ -244,11 +280,38 @@ const EmployeeRecords = () => {
         }
       }
 
-      if (res.data.length === 0) {
+      if (employeesData.length === 0) {
+        console.warn('No employee data found in the response');
         showInfo('No employees found.');
       }
     } catch (error) {
-      handleAxiosError(error, 'Failed to load employee records. Please try again.');
+      console.error('Error fetching employees:', error);
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', error.response.headers);
+        
+        if (error.response.status === 401) {
+          // Handle unauthorized (token expired/invalid)
+          showError('Your session has expired. Please log in again.');
+          localStorage.removeItem('token');
+          // Redirect to login or refresh token if you have refresh token logic
+          window.location.href = '/login';
+          return;
+        }
+        
+        showError(error.response.data.message || 'Failed to load employee records. Please try again.');
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('No response received:', error.request);
+        showError('No response from server. Please check your connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.error('Error setting up request:', error.message);
+        showError('Failed to load employee records. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -1257,57 +1320,75 @@ const EmployeeRecords = () => {
         />
 
         <div className="employee-records-header">
-          <div className="employee-records-controls d-flex gap-2 flex-wrap mb-3">
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search by name"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <select
-              className="form-select"
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              style={{ minWidth: '200px' }}
-            >
-              <option value="">All Departments</option>
-              <option value="HR Department">HR Department</option>
-              <option value="Operations">Operations</option>
-              <option value="Logistics Department">Logistics Department</option>
-              <option value="Accounting Department">Accounting Department</option>
-              <option value="IT Department">IT Department</option>
-              <option value="Production Department">Production Department</option>
-            </select>
-          </div>
+        <div className="d-flex align-items-center gap-2 flex-wrap mb-3 w-100">
+  {/* Search Bar */}
+  <input
+    type="text"
+    className="form-control"
+    placeholder="Search by name"
+    value={searchQuery}
+    onChange={(e) => setSearchQuery(e.target.value)}
+    style={{ flex: '1 1 40%', minWidth: '200px' }}
+  />
+
+  {/* Department Filter */}
+  <select
+    className="form-select"
+    value={departmentFilter}
+    onChange={(e) => setDepartmentFilter(e.target.value)}
+    style={{ flex: '1 1 30%', minWidth: '200px' }}
+  >
+    <option value="">Filter by department</option>
+    <option value="HR Department">HR Department</option>
+    <option value="Operations">Operations</option>
+    <option value="Logistics Department">Logistics Department</option>
+    <option value="Accounting Department">Accounting Department</option>
+    <option value="IT Department">IT Department</option>
+    <option value="Production Department">Production Department</option>
+  </select>
+
+  {/* Export Buttons */}
+  <div className="d-flex align-items-center gap-2" style={{ flex: '0 0 auto' }}>
+    <Button variant="outline-primary" size="sm" onClick={exportCSV}>
+      Export CSV
+    </Button>
+    <Button variant="outline-danger" size="sm" onClick={exportPDF}>
+      Export PDF
+    </Button>
+  </div>
+</div>
+
+
         
-        {/* Status Tabs */}
-        <ul className="nav nav-tabs mb-3">
-          <li className="nav-item">
-            <button 
-              className={`nav-link ${activeTab === 'active' ? 'active' : ''}`}
-              onClick={() => setActiveTab('active')}
-            >
-              Active Employees
-            </button>
-          </li>
-          <li className="nav-item">
-            <button 
-              className={`nav-link ${activeTab === 'resigned' ? 'active' : ''}`}
-              onClick={() => setActiveTab('resigned')}
-            >
-              Resigned
-            </button>
-          </li>
-          <li className="nav-item">
-            <button 
-              className={`nav-link ${activeTab === 'terminated' ? 'active' : ''}`}
-              onClick={() => setActiveTab('terminated')}
-            >
-              Terminated
-            </button>
-          </li>
-        </ul>
+        {/* Status Tabs + Actions Row */}
+        <div className="d-flex justify-content-start align-items-center mb-3 mt-1 flex-wrap gap-2 w-100">
+          <ul className="nav nav-tabs mb-0">
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'active' ? 'active' : ''}`}
+                onClick={() => setActiveTab('active')}
+              >
+                Active Employees
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'resigned' ? 'active' : ''}`}
+                onClick={() => setActiveTab('resigned')}
+              >
+                Resigned
+              </button>
+            </li>
+            <li className="nav-item">
+              <button 
+                className={`nav-link ${activeTab === 'terminated' ? 'active' : ''}`}
+                onClick={() => setActiveTab('terminated')}
+              >
+                Terminated
+              </button>
+            </li>
+          </ul>
+        </div>
         </div>
         {loading ? (
           <div className="text-center my-5">

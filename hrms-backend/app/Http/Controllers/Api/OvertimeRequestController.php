@@ -24,14 +24,36 @@ class OvertimeRequestController extends Controller
     {
         $user = Auth::user();
         $query = OvertimeRequest::with(['user', 'employee', 'managerReviewer', 'hrReviewer']);
-        
+
         // If user is not an admin or manager, only show their own requests
         if ($user->role !== 'Admin' && $user->role !== 'Manager' && $user->role !== 'HR Assistant') {
             $query->where('user_id', $user->id);
         }
-        
+
         $overtimeRequests = $query->latest()->get();
-        
+
+        // Attach attendance times (clock_in/clock_out) for the OT date
+        $overtimeRequests->each(function ($request) {
+            try {
+                $otDate = $request->ot_date instanceof \Carbon\Carbon
+                    ? $request->ot_date->format('Y-m-d')
+                    : \Carbon\Carbon::parse($request->ot_date)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                $otDate = $request->ot_date;
+            }
+
+            $attendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                ->where('date', $otDate)
+                ->first(['clock_in', 'clock_out']);
+
+            if ($attendance) {
+                $request->setAttribute('attendance', [
+                    'clock_in' => $attendance->clock_in,
+                    'clock_out' => $attendance->clock_out,
+                ]);
+            }
+        });
+
         return response()->json([
             'success' => true,
             'data' => $overtimeRequests
@@ -262,28 +284,40 @@ class OvertimeRequestController extends Controller
                 }
             }
 
-            // Check for duplicate request
+            // Check for duplicate request (any status)
             $existingRequest = OvertimeRequest::where('employee_id', $employeeProfile->id)
                 ->where('ot_date', $request->ot_date)
-                ->where('status', 'pending')
                 ->first();
 
             if ($existingRequest) {
+                $statusMessage = $this->getStatusMessage($existingRequest->status);
                 return response()->json([
                     'success' => false,
-                    'message' => 'You already have a pending OT request for this date'
+                    'message' => "You already have an OT request for this date. Status: {$statusMessage}",
+                    'existing_request' => [
+                        'id' => $existingRequest->id,
+                        'status' => $existingRequest->status,
+                        'status_message' => $statusMessage,
+                        'submitted_at' => $existingRequest->created_at,
+                        'manager_reviewed_at' => $existingRequest->manager_reviewed_at,
+                        'hr_reviewed_at' => $existingRequest->hr_reviewed_at
+                    ]
                 ], 409);
             }
 
+            // Ensure both date and ot_date are set to the same value
             $dataToCreate = [
                 'user_id' => $user->id,
                 'employee_id' => $employeeProfile->id,
-                'ot_date' => $request->ot_date,
+                'date' => $request->ot_date,  // Set date from ot_date
+                'ot_date' => $request->ot_date,  // Also set ot_date
                 'ot_hours' => $request->ot_hours,
                 'reason' => $request->reason,
                 'proof_images' => $imagePaths,
                 'status' => 'pending'
             ];
+            
+            \Log::info('OT Request - Data to create:', $dataToCreate);
             
             \Log::info('OT Request Store - About to create', $dataToCreate);
 
@@ -394,6 +428,216 @@ class OvertimeRequestController extends Controller
             'message' => 'Overtime request updated successfully',
             'data' => $overtimeRequest->fresh(['user', 'reviewer'])
         ]);
+    }
+
+    /**
+     * Get status message for display
+     */
+    private function getStatusMessage($status)
+    {
+        $statusMessages = [
+            'pending' => 'Pending Manager Approval',
+            'manager_approved' => 'Approved by Manager - Waiting for HR Approval',
+            'hr_approved' => 'Approved by HR',
+            'rejected' => 'Rejected'
+        ];
+
+        return $statusMessages[$status] ?? 'Unknown Status';
+    }
+
+    /**
+     * Get all OT requests for HR Assistant/Admin
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAll()
+    {
+        try {
+            // HR Assistant should see:
+            // 1. manager_approved requests (waiting for HR approval)
+            // 2. hr_approved requests (already approved by HR)
+            // 3. rejected requests (for reference)
+            $overtimeRequests = OvertimeRequest::with([
+                'user:id,first_name,last_name,email',
+                'employee:id,employee_id,first_name,last_name,position',
+                'managerReviewer:id,first_name,last_name',
+                'hrReviewer:id,first_name,last_name'
+            ])
+            ->whereIn('status', ['manager_approved', 'hr_approved', 'rejected'])
+            ->latest()
+            ->get();
+
+            // Manually fetch attendance data for each request
+            $overtimeRequests->each(function ($request) {
+                // Try different date formats
+                $otDate = $request->ot_date;
+                if (is_string($otDate)) {
+                    $otDate = \Carbon\Carbon::parse($otDate)->format('Y-m-d');
+                } else {
+                    $otDate = $otDate->format('Y-m-d');
+                }
+                
+                $attendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                    ->where('date', $otDate)
+                    ->first(['id', 'employee_id', 'date', 'clock_in', 'clock_out']);
+                
+                // If not found, try to find any attendance for this employee
+                if (!$attendance) {
+                    $anyAttendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                        ->orderBy('date', 'desc')
+                        ->first(['id', 'employee_id', 'date', 'clock_in', 'clock_out']);
+                    
+                    \Log::info('OT Request Debug - No attendance found for date', [
+                        'ot_request_id' => $request->id,
+                        'employee_id' => $request->employee_id,
+                        'ot_date' => $otDate,
+                        'any_attendance_found' => $anyAttendance ? true : false,
+                        'any_attendance_date' => $anyAttendance ? $anyAttendance->date : null
+                    ]);
+                } else {
+                    \Log::info('OT Request Debug - Attendance found', [
+                        'ot_request_id' => $request->id,
+                        'employee_id' => $request->employee_id,
+                        'ot_date' => $otDate,
+                        'attendance_data' => $attendance
+                    ]);
+                }
+                
+                $request->attendance = $attendance;
+            });
+            
+            return response()->json([
+                'success' => true,
+                'data' => $overtimeRequests,
+                'count' => $overtimeRequests->count()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in getAll method: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch overtime requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Serve proof images for OT requests
+     *
+     * @param  int  $id
+     * @param  int  $imageIndex
+     * @return \Illuminate\Http\Response
+     */
+    public function getProofImage($id, $imageIndex)
+    {
+        try {
+            $overtimeRequest = OvertimeRequest::findOrFail($id);
+            $user = Auth::user();
+            
+            // Check if user is authorized to view this request
+            if ($user->role !== 'Admin' && $user->role !== 'Manager' && $user->role !== 'HR Assistant' && $overtimeRequest->user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized access to this overtime request'
+                ], 403);
+            }
+            
+            $proofImages = $overtimeRequest->proof_images;
+            
+            if (!$proofImages || !isset($proofImages[$imageIndex])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Image not found'
+                ], 404);
+            }
+            
+            $imagePath = $proofImages[$imageIndex];
+            $fullPath = storage_path('app/public/' . $imagePath);
+            
+            if (!file_exists($fullPath)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Image file not found'
+                ], 404);
+            }
+            
+            return response()->file($fullPath);
+            
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update OT request status (HR Assistant/Admin only)
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'status' => 'required|in:approved,rejected',
+                'admin_notes' => 'nullable|string|max:1000',
+                'rejection_reason' => 'nullable|string|max:500'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $overtimeRequest = OvertimeRequest::findOrFail($id);
+            $user = Auth::user();
+
+            // Check if the request is in the correct status for HR approval
+            if ($overtimeRequest->status !== 'manager_approved') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This request is not pending HR approval'
+                ], 400);
+            }
+
+            // Map the status correctly
+            $newStatus = $request->status === 'approved' ? 'hr_approved' : 'rejected';
+
+            $updateData = [
+                'status' => $newStatus,
+                'admin_notes' => $request->admin_notes,
+                'hr_reviewed_by' => $user->id,
+                'hr_reviewed_at' => now()
+            ];
+
+            if ($request->status === 'rejected' && $request->rejection_reason) {
+                $updateData['rejection_reason'] = $request->rejection_reason;
+            }
+
+            $overtimeRequest->update($updateData);
+
+            return response()->json([
+                'success' => true,
+                'message' => $newStatus === 'hr_approved' 
+                    ? 'OT request approved successfully' 
+                    : 'OT request rejected successfully',
+                'data' => $overtimeRequest->load(['user', 'employee', 'hrReviewer'])
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update OT request status',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

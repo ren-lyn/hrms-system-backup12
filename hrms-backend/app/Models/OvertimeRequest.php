@@ -28,6 +28,23 @@ class OvertimeRequest extends Model
         'hr_reviewed_at'
     ];
 
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted()
+    {
+        static::creating(function ($overtime) {
+            // If date is not set but ot_date is, copy the value
+            if (empty($overtime->date) && !empty($overtime->ot_date)) {
+                $overtime->date = $overtime->ot_date;
+            }
+            // If ot_date is not set but date is, copy the value
+            elseif (empty($overtime->ot_date) && !empty($overtime->date)) {
+                $overtime->ot_date = $overtime->date;
+            }
+        });
+    }
+
     protected $dates = [
         'date',
         'ot_date',
@@ -81,5 +98,14 @@ class OvertimeRequest extends Model
     public function hrReviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'hr_reviewed_by');
+    }
+
+    /**
+     * Get the attendance record for this overtime request date.
+     */
+    public function attendance()
+    {
+        return $this->hasOne(Attendance::class, 'employee_id', 'employee_id')
+            ->where('date', $this->ot_date);
     }
 }

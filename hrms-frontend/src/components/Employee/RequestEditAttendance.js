@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, Tabs, Tab, Table } from 'react-bootstrap';
-import { FaEdit, FaCalendarAlt, FaClock, FaImage, FaTrash, FaPaperPlane, FaExclamationTriangle, FaEye, FaHistory, FaCheckCircle, FaTimesCircle, FaList } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import { Container, Row, Col, Card, Form, Button, Alert, Spinner, Badge, Tabs, Tab, Table, Modal } from 'react-bootstrap';
+import { FaEdit, FaCalendarAlt, FaClock, FaImage, FaTrash, FaPaperPlane, FaExclamationTriangle, FaEye, FaHistory, FaCheckCircle, FaTimesCircle, FaList, FaDownload } from 'react-icons/fa';
 import axios from '../../axios';
 import { format } from 'date-fns';
+import { toast } from 'react-toastify';
+import EditAttendanceDetailsModal from './EditAttendanceDetailsModal';
 
 const RequestEditAttendance = () => {
   const [activeTab, setActiveTab] = useState('submit');
@@ -31,9 +33,29 @@ const RequestEditAttendance = () => {
   // History state
   const [historyRequests, setHistoryRequests] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  
+  // Image viewing states
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const fileInputRef = useRef(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [employeeProfile, setEmployeeProfile] = useState(null);
 
   useEffect(() => {
     fetchRecentAttendance();
+    // Fetch employee profile for PDF header fields
+    (async () => {
+      try {
+        const res = await axios.get('/employee/profile');
+        // Backend returns { profile: {...}, edit_counts: {...}, ... }
+        // Prefer the nested profile object
+        setEmployeeProfile(res.data?.profile || res.data?.data || res.data || null);
+      } catch (e) {
+        // ignore if not available
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -195,7 +217,216 @@ const RequestEditAttendance = () => {
     setImagePreview(newPreviews);
   };
 
-  const handleSubmit = async (e) => {
+  const viewImage = (imagePath) => {
+    // Convert storage path to public URL (CORS-friendly media route)
+    const clean = String(imagePath).replace(/^public\//, '').replace(/^storage\//, '');
+    const imageUrl = `http://localhost:8000/media/${clean}`;
+    setSelectedImage(imageUrl);
+    setShowImageModal(true);
+  };
+
+  const extractImages = (req) => {
+    let imgs = req.images ?? req.proof_images ?? req.proofImages ?? [];
+    if (typeof imgs === 'string') {
+      try {
+        const parsed = JSON.parse(imgs);
+        if (Array.isArray(parsed)) imgs = parsed;
+      } catch {}
+    }
+    return Array.isArray(imgs) ? imgs : [];
+  };
+
+  const handleDownloadPdf = async (req) => {
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
+
+      // Resolve employee identity (request payload may omit it)
+      let resolvedEmployeeName = '';
+      let resolvedEmployeeId = '';
+      if (req.employee?.first_name) {
+        resolvedEmployeeName = `${req.employee.first_name} ${req.employee.last_name || ''}`.trim();
+        resolvedEmployeeId = req.employee.employee_id || '';
+      } else if (employeeProfile) {
+        // Employee profile endpoint returns fields like { name, employee_id }
+        if (employeeProfile.name) {
+          resolvedEmployeeName = employeeProfile.name;
+        } else if (employeeProfile.first_name) {
+          resolvedEmployeeName = `${employeeProfile.first_name} ${employeeProfile.last_name || ''}`.trim();
+        }
+        if (employeeProfile.employee_id) {
+          resolvedEmployeeId = employeeProfile.employee_id;
+        }
+      } else {
+        try {
+          const res = await axios.get('/employee/profile');
+          const prof = res.data?.profile || res.data?.data || res.data || {};
+          if (prof.name) {
+            resolvedEmployeeName = prof.name;
+          } else if (prof.first_name) {
+            resolvedEmployeeName = `${prof.first_name} ${prof.last_name || ''}`.trim();
+          }
+          if (prof.employee_id) {
+            resolvedEmployeeId = prof.employee_id;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Build a lightweight print view offscreen
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-10000px';
+      container.style.top = '0';
+      container.style.width = '800px';
+      container.style.background = '#ffffff';
+      container.style.padding = '16px';
+      const employeeName = resolvedEmployeeName;
+      const employeeId = resolvedEmployeeId;
+      const submittedOn = req.created_at ? new Date(req.created_at).toLocaleString() : '-';
+      const reviewedOn = req.reviewed_at ? new Date(req.reviewed_at).toLocaleString() : '-';
+      container.innerHTML = `
+        <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
+          <h3 style="margin:0 0 16px 0; text-align:center;">ATTENDANCE EDIT REQUEST FORM</h3>
+
+          <table style="width:100%; border-collapse:collapse; font-size:14px;">
+            <tr>
+              <td style="width:50%; padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Employee Name</div>
+                <div style="padding-top:3px; border-top:1px solid #dee2e6;">${employeeName || '—'}</div>
+              </td>
+              <td style="width:50%; padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Employee ID</div>
+                <div style="padding-top:3px; border-top:1px solid #dee2e6;">${employeeId || '—'}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Date</div>
+                <div style="padding-top:3px; border-top:1px solid #dee2e6;">${req.date ? new Date(req.date).toLocaleDateString() : '-'}</div>
+              </td>
+              <td style="padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Time</div>
+                <div style="padding-top:3px; border-top:1px solid #dee2e6;">${(req.requested_time_in || '—')} - ${(req.requested_time_out || '—')}</div>
+              </td>
+            </tr>
+          </table>
+
+          <div style="margin-top:12px; border:1px solid #dee2e6; padding:8px 10px;">
+            <div style="color:#6c757d; font-size:12px;">Reason</div>
+            <div style="min-height:40px;">${req.reason || '—'}</div>
+          </div>
+
+          <div style="margin-top:12px; border:1px solid #dee2e6; padding:8px 10px;">
+            <div style="color:#6c757d; font-size:12px;">Proof Images</div>
+            <div id="imgwrap" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;"></div>
+          </div>
+
+          <table style="width:100%; margin-top:12px; border-collapse:collapse; font-size:13px;">
+            <tr>
+              <td style="width:50%; padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Submitted On</div>
+                <div>${submittedOn}</div>
+              </td>
+              <td style="width:50%; padding:8px 10px; border:1px solid #dee2e6;">
+                <div style="color:#6c757d; font-size:12px;">Reviewed On</div>
+                <div>${reviewedOn}</div>
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%; margin-top:16px; border-collapse:collapse;">
+            <tr>
+              <td style="width:100%; padding:8px 10px; border-top:1px solid #adb5bd; text-align:center;">
+                <div style="font-weight:600;">${req.hr_reviewer?.first_name ? `${req.hr_reviewer.first_name} ${req.hr_reviewer.last_name || ''}` : (req.hrReviewer?.first_name ? `${req.hrReviewer.first_name} ${req.hrReviewer.last_name || ''}` : '__________________')}</div>
+                <div style="color:#6c757d; font-size:12px;">Approved by (HR Assistant)</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      `;
+      document.body.appendChild(container);
+
+      const imgwrap = container.querySelector('#imgwrap');
+      const imgs = extractImages(req);
+      imgs.forEach((p) => {
+        const clean = String(p).replace(/^public\//, '').replace(/^storage\//, '');
+        const src = `http://localhost:8000/media/${clean}`;
+        const img = document.createElement('img');
+        img.src = src;
+        img.style.width = '180px';
+        img.style.height = '130px';
+        img.style.objectFit = 'cover';
+        img.style.border = '1px solid #adb5bd';
+        imgwrap.appendChild(img);
+      });
+
+      // Wait a tick for images to load
+      await new Promise((r) => setTimeout(r, 200));
+      const canvas = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let position = 0;
+      let heightLeft = imgHeight;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdf.internal.pageSize.getHeight();
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdf.internal.pageSize.getHeight();
+      }
+      const filename = `Edit_Attendance_${req.id || ''}_${req.date || ''}.pdf`;
+      pdf.save(filename);
+      document.body.removeChild(container);
+    } catch (e) {
+      toast.error('Failed to generate PDF');
+    }
+  };
+
+  const submitEditToServer = async () => {
+    setSubmitting(true);
+    try {
+      const submitData = new FormData();
+      submitData.append('date', formData.date);
+      submitData.append('current_time_in', formData.current_time_in || '');
+      submitData.append('current_time_out', formData.current_time_out || '');
+      submitData.append('requested_time_in', formData.requested_time_in || '');
+      submitData.append('requested_time_out', formData.requested_time_out || '');
+      submitData.append('reason', formData.reason);
+      formData.images.forEach((image, index) => {
+        submitData.append(`images[${index}]`, image);
+      });
+      const response = await axios.post('/attendance/request-edit', submitData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      if (response.data.success) {
+        toast.success('Attendance edit request submitted');
+        setFormData({ date: '', current_time_in: '', current_time_out: '', requested_time_in: '', requested_time_out: '', reason: '', images: [] });
+        setImagePreview([]);
+        setSelectedRecord(null);
+        setShowConfirm(false);
+        setActiveTab('submitted');
+        fetchSubmittedRequests();
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        toast.error(response.data.message || 'Failed to submit request');
+      }
+    } catch (error) {
+      console.error('Error submitting edit request:', error);
+      toast.error(error.response?.data?.message || 'Failed to submit edit request. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     setMessage({ type: '', text: '' });
 
@@ -219,57 +450,7 @@ const RequestEditAttendance = () => {
       return;
     }
 
-    setSubmitting(true);
-
-    try {
-      const submitData = new FormData();
-      submitData.append('date', formData.date);
-      submitData.append('current_time_in', formData.current_time_in || '');
-      submitData.append('current_time_out', formData.current_time_out || '');
-      submitData.append('requested_time_in', formData.requested_time_in || '');
-      submitData.append('requested_time_out', formData.requested_time_out || '');
-      submitData.append('reason', formData.reason);
-
-      formData.images.forEach((image, index) => {
-        submitData.append(`images[${index}]`, image);
-      });
-
-      const response = await axios.post('/attendance/request-edit', submitData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
-      if (response.data.success) {
-        setMessage({ type: 'success', text: 'Edit request submitted successfully! HR will review your request.' });
-        
-        setFormData({
-          date: '',
-          current_time_in: '',
-          current_time_out: '',
-          requested_time_in: '',
-          requested_time_out: '',
-          reason: '',
-          images: []
-        });
-        setImagePreview([]);
-        setSelectedRecord(null);
-        
-        if (activeTab === 'submitted') {
-          fetchSubmittedRequests();
-        }
-      } else {
-        setMessage({ type: 'danger', text: response.data.message || 'Failed to submit request' });
-      }
-    } catch (error) {
-      console.error('Error submitting edit request:', error);
-      setMessage({ 
-        type: 'danger', 
-        text: error.response?.data?.message || 'Failed to submit edit request. Please try again.' 
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    setShowConfirm(true);
   };
 
   const formatTime = (time) => {
@@ -465,6 +646,7 @@ const RequestEditAttendance = () => {
                           accept="image/jpeg,image/jpg,image/png,image/gif"
                           onChange={handleImageUpload}
                           multiple
+                          ref={fileInputRef}
                         />
                         <Form.Text className="text-muted">
                           Maximum 2 images, up to 5MB each. Accepted formats: JPEG, PNG, GIF
@@ -543,13 +725,13 @@ const RequestEditAttendance = () => {
               </div>
             </Tab>
 
-            {/* View Submitted Requests Tab */}
+            {/* Pending Requests Tab (same layout naming as OT Request) */}
             <Tab 
               eventKey="submitted" 
               title={
                 <>
-                  <FaList className="me-2" />
-                  View Submitted Requests
+                  <FaClock className="me-2" />
+                  Pending Requests
                 </>
               }
             >
@@ -568,8 +750,10 @@ const RequestEditAttendance = () => {
                           <th>Current Times</th>
                           <th>Requested Times</th>
                           <th>Reason</th>
+                          <th>Proof Images</th>
                           <th>Status</th>
                           <th>Submitted On</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -602,6 +786,27 @@ const RequestEditAttendance = () => {
                               </div>
                             </td>
                             <td>
+                              {extractImages(req).length > 0 ? (
+                                <div className="d-flex flex-wrap gap-1">
+                                  {extractImages(req).map((imagePath, index) => (
+                                    <Button
+                                      key={index}
+                                      variant="outline-primary"
+                                      size="sm"
+                                      onClick={() => viewImage(imagePath)}
+                                      title={`View image ${index + 1}`}
+                                      className="p-1"
+                                    >
+                                      <FaImage size={12} className="me-1" />
+                                      {index + 1}
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted small">No images</span>
+                              )}
+                            </td>
+                            <td>
                               {getStatusBadge(req.status)}
                             </td>
                             <td>
@@ -610,6 +815,11 @@ const RequestEditAttendance = () => {
                                 <br />
                                 {format(new Date(req.created_at), 'h:mm a')}
                               </small>
+                            </td>
+                            <td>
+                              <Button variant="outline-secondary" size="sm" onClick={() => handleDownloadPdf(req)}>
+                                <FaDownload className="me-1" /> PDF
+                              </Button>
                             </td>
                           </tr>
                         ))}
@@ -652,9 +862,11 @@ const RequestEditAttendance = () => {
                           <th>Date</th>
                           <th>Requested Times</th>
                           <th>Reason</th>
+                          <th>Proof Images</th>
                           <th>Status</th>
                           <th>Submitted On</th>
                           <th>Reviewed On</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -676,6 +888,27 @@ const RequestEditAttendance = () => {
                                 {req.reason?.substring(0, 50)}
                                 {req.reason?.length > 50 && '...'}
                               </div>
+                            </td>
+                            <td>
+                              {extractImages(req).length > 0 ? (
+                                <div className="d-flex flex-wrap gap-1">
+                                  {extractImages(req).map((imagePath, index) => (
+                                    <Button
+                                      key={index}
+                                      variant="outline-primary"
+                                      size="sm"
+                                      onClick={() => viewImage(imagePath)}
+                                      title={`View image ${index + 1}`}
+                                      className="p-1"
+                                    >
+                                      <FaImage size={12} className="me-1" />
+                                      {index + 1}
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted small">No images</span>
+                              )}
                             </td>
                             <td>
                               {getStatusBadge(req.status)}
@@ -713,6 +946,11 @@ const RequestEditAttendance = () => {
                                 <small className="text-muted">--</small>
                               )}
                             </td>
+                            <td>
+                              <Button variant="outline-secondary" size="sm" onClick={() => handleDownloadPdf(req)}>
+                                <FaDownload className="me-1" /> PDF
+                              </Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -732,11 +970,101 @@ const RequestEditAttendance = () => {
           </Tabs>
         </Card.Body>
       </Card>
+
+      {/* Confirm Modal */}
+      <Modal show={showConfirm} onHide={() => setShowConfirm(false)} centered>
+        <Modal.Header closeButton className="border-0 pb-0">
+          <Modal.Title className="d-flex align-items-center">
+            <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-2">
+              <FaEdit className="text-primary" />
+            </div>
+            <div>
+              <div className="fw-semibold">Confirm Attendance Edit Request</div>
+              <small className="text-muted">Please review the details before submitting</small>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="pt-3" style={{ backgroundColor: '#f8f9fa' }}>
+          <Card className="shadow-sm border-0">
+            <Card.Body>
+              <Row className="g-3">
+                <Col md={4}>
+                  <div className="small text-muted">Date</div>
+                  <div className="fw-semibold">{formData.date}</div>
+                </Col>
+                <Col md={8}>
+                  <div className="small text-muted">Current</div>
+                  <div className="fw-semibold">{formData.current_time_in || '—'} - {formData.current_time_out || '—'}</div>
+                </Col>
+                <Col md={12}>
+                  <div className="small text-muted">Requested</div>
+                  <div className="fw-semibold">{formData.requested_time_in || '—'} - {formData.requested_time_out || '—'}</div>
+                </Col>
+                <Col md={12}>
+                  <div className="small text-muted">Reason</div>
+                  <div className="border rounded p-2 bg-light">{formData.reason || '—'}</div>
+                </Col>
+                <Col md={12}>
+                  <div className="small text-muted">Proof Images</div>
+                  <div className="fw-semibold">{formData.images.length}</div>
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
+        </Modal.Body>
+        <Modal.Footer className="border-0">
+          <Button variant="outline-secondary" onClick={() => setShowConfirm(false)}>
+            Back
+          </Button>
+          <Button variant="primary" onClick={submitEditToServer} disabled={submitting} className="px-4">
+            {submitting ? <Spinner animation="border" size="sm" className="me-2" /> : null}
+            Continue & Submit
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Image View Modal */}
+      <Modal show={showImageModal} onHide={() => setShowImageModal(false)} centered size="lg">
+        <Modal.Header closeButton className="border-0">
+          <Modal.Title>
+            <div className="d-flex align-items-center">
+              <div className="bg-info bg-opacity-10 rounded-circle p-2 me-3">
+                <FaImage className="text-info" size={20} />
+              </div>
+              <div>
+                <h5 className="mb-0">Proof of Attendance Edit</h5>
+                <small className="text-muted">Employee submitted evidence</small>
+              </div>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="text-center p-4" style={{ backgroundColor: '#f8f9fa' }}>
+          <img 
+            src={selectedImage} 
+            alt="Proof" 
+            className="img-fluid rounded shadow" 
+            style={{ maxHeight: '70vh', maxWidth: '100%' }} 
+          />
+        </Modal.Body>
+        <Modal.Footer className="border-0 bg-light">
+          <Button variant="secondary" onClick={() => setShowImageModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+      {/* Details Modal */}
+      <EditAttendanceDetailsModal
+        show={showDetails}
+        onHide={() => setShowDetails(false)}
+        request={selectedRequest}
+      />
     </Container>
   );
 };
 
 export default RequestEditAttendance;
+
+
 
 
 

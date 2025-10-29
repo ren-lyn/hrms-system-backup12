@@ -68,6 +68,28 @@ class ManagerController extends Controller
 
             $requests = $query->orderBy('created_at', 'desc')->get();
 
+            // Attach attendance times for manager view as well
+            $requests->each(function ($request) {
+                try {
+                    $otDate = $request->ot_date instanceof \Carbon\Carbon
+                        ? $request->ot_date->format('Y-m-d')
+                        : \Carbon\Carbon::parse($request->ot_date)->format('Y-m-d');
+                } catch (\Throwable $e) {
+                    $otDate = $request->ot_date;
+                }
+
+                $attendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                    ->where('date', $otDate)
+                    ->first(['clock_in', 'clock_out']);
+
+                if ($attendance) {
+                    $request->setAttribute('attendance', [
+                        'clock_in' => $attendance->clock_in,
+                        'clock_out' => $attendance->clock_out,
+                    ]);
+                }
+            });
+
             return response()->json([
                 'success' => true,
                 'data' => $requests

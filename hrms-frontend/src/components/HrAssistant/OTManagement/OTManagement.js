@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { FaClock, FaCheck, FaTimes, FaSearch, FaFilter, FaDownload } from 'react-icons/fa';
+import axios from '../../../axios';
+import { FaClock, FaCheck, FaTimes, FaSearch, FaFilter, FaDownload, FaImage, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { Modal, Image, Button, Badge } from 'react-bootstrap';
+import OTDetailsModal from '../../OT/OTDetailsModal';
 import './OTManagement.css';
 
 const OTManagement = () => {
@@ -12,6 +14,12 @@ const OTManagement = () => {
   const [selectedDate, setSelectedDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  
+  // Image viewing states
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
 
   useEffect(() => {
     fetchOTRequests();
@@ -20,11 +28,28 @@ const OTManagement = () => {
   const fetchOTRequests = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/ot-requests/all', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setOtRequests(response.data);
+      const response = await axios.get('/ot-requests/all');
+      const rawData = response.data.data || response.data;
+      
+      // Map the data to match frontend expectations
+      const mappedData = rawData.map(request => ({
+        ...request,
+        employeeName: request.employee ? `${request.employee.first_name} ${request.employee.last_name}` : 'Unknown',
+        employeeId: request.employee?.employee_id || 'N/A',
+        startTime: request.attendance?.clock_in || request.start_time,
+        endTime: request.attendance?.clock_out || request.end_time,
+        submittedAt: request.created_at,
+        rejectionReason: request.rejection_reason,
+        // Reviewer names (support both snake_case and camelCase keys just in case)
+        approvedByName: (request.manager_reviewer?.first_name && `${request.manager_reviewer.first_name} ${request.manager_reviewer.last_name}`)
+          || (request.managerReviewer?.first_name && `${request.managerReviewer.first_name} ${request.managerReviewer.last_name}`)
+          || '',
+        notedByName: (request.hr_reviewer?.first_name && `${request.hr_reviewer.first_name} ${request.hr_reviewer.last_name}`)
+          || (request.hrReviewer?.first_name && `${request.hrReviewer.first_name} ${request.hrReviewer.last_name}`)
+          || ''
+      }));
+      
+      setOtRequests(mappedData);
     } catch (error) {
       console.error('Error fetching OT requests:', error);
       toast.error('Failed to load OT requests');
@@ -33,14 +58,19 @@ const OTManagement = () => {
     }
   };
 
+  const viewImage = (imagePath) => {
+    // Convert storage path to public URL (same as attendance edit requests)
+    const imageUrl = `http://localhost:8000/storage/${imagePath}`;
+    setSelectedImage(imageUrl);
+    setShowImageModal(true);
+  };
+
   const handleApprove = async (id) => {
     if (window.confirm('Are you sure you want to approve this OT request?')) {
       try {
-        const token = localStorage.getItem('token');
         await axios.put(
-          `/api/ot-requests/${id}/status`,
-          { status: 'approved' },
-          { headers: { Authorization: `Bearer ${token}` } }
+          `/ot-requests/${id}/status`,
+          { status: 'approved' }
         );
         toast.success('OT request approved successfully');
         fetchOTRequests();
@@ -61,11 +91,9 @@ const OTManagement = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
       await axios.put(
-        `/api/ot-requests/${id}/status`,
-        { status: 'rejected', rejectionReason: reason },
-        { headers: { Authorization: `Bearer ${token}` } }
+        `/ot-requests/${id}/status`,
+        { status: 'rejected', rejection_reason: reason }
       );
       toast.success('OT request rejected successfully');
       fetchOTRequests();
@@ -99,11 +127,21 @@ const OTManagement = () => {
   const getStatusBadge = (status) => {
     const statusClasses = {
       pending: 'status-badge status-pending',
+      manager_approved: 'status-badge status-manager-approved',
+      hr_approved: 'status-badge status-approved',
       approved: 'status-badge status-approved',
       rejected: 'status-badge status-rejected'
     };
     
-    const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+    const statusTexts = {
+      pending: 'Pending',
+      manager_approved: 'Manager Approved',
+      hr_approved: 'HR Approved',
+      approved: 'Approved',
+      rejected: 'Rejected'
+    };
+    
+    const statusText = statusTexts[status] || status.charAt(0).toUpperCase() + status.slice(1);
     return <span className={statusClasses[status] || 'status-badge'}>{statusText}</span>;
   };
 
@@ -206,16 +244,23 @@ const OTManagement = () => {
                     <th>Employee</th>
                     <th>Date</th>
                     <th>Time</th>
-                    <th>Duration</th>
+                    <th>OT Hours</th>
                     <th>Reason</th>
+                    <th>Proof Images</th>
                     <th>Status</th>
+                    <th>Approved by</th>
+                    <th>Noted by</th>
                     <th>Submitted On</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentItems.map((request) => (
-                    <tr key={request.id}>
+                    <tr
+                      key={request.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => { setSelectedRequest(request); setShowDetails(true); }}
+                    >
                       <td>
                         <div className="d-flex align-items-center">
                           <img 
@@ -233,36 +278,68 @@ const OTManagement = () => {
                       </td>
                       <td>{formatDate(request.date)}</td>
                       <td>
-                        {new Date(`1970-01-01T${request.startTime}`).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
-                        {new Date(`1970-01-01T${request.endTime}`).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {request.startTime && request.endTime ? (
+                          <>
+                            {new Date(`1970-01-01T${request.startTime}`).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                            {new Date(`1970-01-01T${request.endTime}`).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </>
+                        ) : (
+                          <span className="text-muted">No attendance record</span>
+                        )}
                       </td>
                       <td>
-                        {Math.round((new Date(`1970-01-01T${request.endTime}`) - new Date(`1970-01-01T${request.startTime}`)) / (1000 * 60 * 60) * 100) / 100} hours
+                        {request.ot_hours || 0} hours
                       </td>
                       <td className="text-truncate" style={{ maxWidth: '200px' }} title={request.reason}>
                         {request.reason}
                       </td>
+                      <td>
+                        {request.proof_images && request.proof_images.length > 0 ? (
+                          <div className="d-flex flex-wrap gap-1">
+                            {request.proof_images.map((imagePath, index) => (
+                              <Button
+                                key={index}
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={() => viewImage(imagePath)}
+                                title={`View image ${index + 1}`}
+                                className="p-1"
+                              >
+                                <FaImage size={12} className="me-1" />
+                                {index + 1}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted small">No images</span>
+                        )}
+                      </td>
                       <td>{getStatusBadge(request.status)}</td>
+                      <td>{request.approvedByName || <span className="text-muted">—</span>}</td>
+                      <td>{request.notedByName || <span className="text-muted">—</span>}</td>
                       <td>{new Date(request.submittedAt).toLocaleString()}</td>
                       <td>
                         <div className="d-flex gap-2">
-                          {request.status === 'pending' && (
+                          {request.status === 'manager_approved' && (
                             <>
                               <button 
                                 className="btn btn-sm btn-outline-success"
-                                onClick={() => handleApprove(request.id)}
+                                onClick={(e) => { e.stopPropagation(); handleApprove(request.id); }}
                                 title="Approve"
                               >
                                 <FaCheck />
                               </button>
                               <button 
                                 className="btn btn-sm btn-outline-danger"
-                                onClick={() => handleReject(request.id)}
+                                onClick={(e) => { e.stopPropagation(); handleReject(request.id); }}
                                 title="Reject"
                               >
                                 <FaTimes />
                               </button>
                             </>
+                          )}
+                          {request.status === 'hr_approved' && (
+                            <span className="text-success small">✓ Approved by HR</span>
                           )}
                           {request.status === 'rejected' && request.rejectionReason && (
                             <span 
@@ -319,6 +396,43 @@ const OTManagement = () => {
           </ul>
         </nav>
       )}
+
+      {/* Image View Modal */}
+      <Modal show={showImageModal} onHide={() => setShowImageModal(false)} centered size="lg">
+        <Modal.Header closeButton className="border-0">
+          <Modal.Title>
+            <div className="d-flex align-items-center">
+              <div className="bg-info bg-opacity-10 rounded-circle p-2 me-3">
+                <FaImage className="text-info" size={20} />
+              </div>
+              <div>
+                <h5 className="mb-0">Proof of Overtime</h5>
+                <small className="text-muted">Employee submitted evidence</small>
+              </div>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="text-center p-4" style={{ backgroundColor: '#f8f9fa' }}>
+          <img 
+            src={selectedImage} 
+            alt="Proof" 
+            className="img-fluid rounded shadow" 
+            style={{ maxHeight: '70vh', maxWidth: '100%' }} 
+          />
+        </Modal.Body>
+        <Modal.Footer className="border-0 bg-light">
+          <Button variant="secondary" onClick={() => setShowImageModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* OT Details Modal */}
+      <OTDetailsModal
+        show={showDetails}
+        onHide={() => setShowDetails(false)}
+        request={selectedRequest}
+      />
     </div>
   );
 };
