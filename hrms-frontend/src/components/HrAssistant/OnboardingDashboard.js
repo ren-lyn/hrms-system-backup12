@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Button, Badge, Table, Card } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -18,7 +18,10 @@ import {
   faPhone,
   faEnvelope,
   faMapMarkerAlt,
-  faTimes
+  faTimes,
+  faRefresh,
+  faPaperclip,
+  faHourglassHalf
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
 
@@ -32,12 +35,23 @@ const OnboardingDashboard = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedRecordForStatus, setSelectedRecordForStatus] = useState(null);
   const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [showInterviewDetailsModal, setShowInterviewDetailsModal] = useState(false);
+  const [selectedInterviewDetails, setSelectedInterviewDetails] = useState(null);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [selectedApplicantForInterview, setSelectedApplicantForInterview] = useState(null);
+  const [showJobOfferModal, setShowJobOfferModal] = useState(false);
+  const [onboardingSubtab, setOnboardingSubtab] = useState('Orientation Schedule');
+  const [jobOfferData, setJobOfferData] = useState({
+    payment_schedule: 'Monthly',
+    work_setup: 'Onsite',
+    offer_validity: '7 days',
+    contact_person: '',
+    contact_number: ''
+  });
   const [interviewData, setInterviewData] = useState({
     interview_date: '',
     interview_time: '',
-    duration: '30',
+    end_time: '',
     interview_type: 'On-site',
     location: '',
     interviewer: '',
@@ -47,10 +61,19 @@ const OnboardingDashboard = () => {
   // Batch interview functionality
   const [showBatchInterviewModal, setShowBatchInterviewModal] = useState(false);
   const [selectedApplicants, setSelectedApplicants] = useState([]);
+
+  // Determine if an offer was already sent for a given applicant (from localStorage)
+  const isOfferSent = useCallback((applicantId) => {
+    try {
+      const offers = JSON.parse(localStorage.getItem('jobOffers') || '[]');
+      return offers.some((o) => String(o.applicant_id) === String(applicantId));
+    } catch (e) {
+      return false;
+    }
+  }, []);
   const [batchInterviewData, setBatchInterviewData] = useState({
     interview_date: '',
     interview_time: '',
-    duration: '30',
     interview_type: 'On-site',
     location: '',
     interviewer: '',
@@ -95,7 +118,25 @@ const OnboardingDashboard = () => {
 
   useEffect(() => {
     fetchApplicants();
+    
+    // Add debug function to window for testing
+    window.debugInterviewData = () => {
+      const storedInterviews = JSON.parse(localStorage.getItem('scheduledInterviews') || '[]');
+      const storedNotifications = JSON.parse(localStorage.getItem('applicantNotifications') || '[]');
+      
+      console.log('🔍 [DEBUG] Stored Interviews:', storedInterviews);
+      console.log('🔍 [DEBUG] Stored Notifications:', storedNotifications);
+      console.log('🔍 [DEBUG] Current Applicants:', applicants);
+      
+      return {
+        interviews: storedInterviews,
+        notifications: storedNotifications,
+        applicants: applicants
+      };
+    };
   }, []);
+
+  // Auto refresh disabled; use the Refresh button to reload
 
   // Refresh data when tab changes
   useEffect(() => {
@@ -127,7 +168,7 @@ const OnboardingDashboard = () => {
         case 'Offered':
           return status === 'Offered';
         case 'Accepted Offer':
-          return status === 'Accepted';
+          return status === 'Accepted' || status === 'Offer Accepted';
         case 'Onboarding':
           return status === 'Onboarding';
         case 'Hired':
@@ -192,7 +233,11 @@ const OnboardingDashboard = () => {
   // Handle view details
   const handleViewDetails = (record) => {
     setSelectedRecord(record);
+    if (record.status === 'Offered') {
+      setShowJobOfferModal(true);
+    } else {
     setShowModal(true);
+    }
     setActiveDropdown(null);
   };
 
@@ -270,19 +315,304 @@ const OnboardingDashboard = () => {
     }
   };
 
+  // Helper functions for time parsing
+  const parseTime = (timeString) => {
+    if (!timeString) return { hour: '09', minute: '00' };
+    const [hour, minute] = timeString.split(':');
+    // Round minute to nearest allowed interval (00, 10, 20, 30, 40, 50)
+    let roundedMinute = '00';
+    const min = parseInt(minute) || 0;
+    if (min <= 5) roundedMinute = '00';
+    else if (min <= 15) roundedMinute = '10';
+    else if (min <= 25) roundedMinute = '20';
+    else if (min <= 35) roundedMinute = '30';
+    else if (min <= 45) roundedMinute = '40';
+    else roundedMinute = '50';
+    
+    return { hour: hour || '09', minute: roundedMinute };
+  };
+
+  const formatTime = (hour, minute) => {
+    return `${hour.padStart(2, '0')}:${minute}`;
+  };
+
+  // Helper functions for 12-hour format
+  const parseTime12Hour = (timeString) => {
+    if (!timeString) return { hour: '01', minute: '00', ampm: 'AM' };
+    const [hour, minute] = timeString.split(':');
+    const h = parseInt(hour) || 0;
+    const m = parseInt(minute) || 0;
+    
+    // Round minute to nearest allowed interval
+    let roundedMinute = '00';
+    if (m <= 5) roundedMinute = '00';
+    else if (m <= 15) roundedMinute = '10';
+    else if (m <= 25) roundedMinute = '20';
+    else if (m <= 35) roundedMinute = '30';
+    else if (m <= 45) roundedMinute = '40';
+    else roundedMinute = '50';
+    
+    // Convert to 12-hour format
+    let displayHour = h;
+    let ampm = 'AM';
+    
+    if (h === 0) {
+      displayHour = 12;
+      ampm = 'AM';
+    } else if (h < 12) {
+      displayHour = h;
+      ampm = 'AM';
+    } else if (h === 12) {
+      displayHour = 12;
+      ampm = 'PM';
+    } else {
+      displayHour = h - 12;
+      ampm = 'PM';
+    }
+    
+    return { 
+      hour: displayHour.toString().padStart(2, '0'), 
+      minute: roundedMinute, 
+      ampm: ampm 
+    };
+  };
+
+  const formatTime12Hour = (hour, minute, ampm) => {
+    let h = parseInt(hour);
+    
+    // Convert from 12-hour to 24-hour format
+    if (ampm === 'AM') {
+      if (h === 12) h = 0;
+    } else { // PM
+      if (h !== 12) h += 12;
+    }
+    
+    return `${h.toString().padStart(2, '0')}:${minute}`;
+  };
+
   // Handle schedule interview
   const handleScheduleInterview = (applicant) => {
     setSelectedApplicantForInterview(applicant);
     setInterviewData({
       interview_date: '',
       interview_time: '',
-      duration: '30',
+      end_time: '',
       interview_type: 'On-site',
       location: '',
       interviewer: '',
       notes: ''
     });
     setShowInterviewModal(true);
+  };
+
+  // Handle view interview details
+  const handleViewInterviewDetails = async (applicant) => {
+    try {
+      console.log('🔍 [OnboardingDashboard] Looking for interview details for applicant:', applicant);
+      console.log('🔍 [OnboardingDashboard] Applicant email options:', {
+        'applicant.email': applicant.applicant?.email,
+        'employee_email': applicant.employee_email,
+        'applicant.employee_email': applicant.applicant?.employee_email
+      });
+      
+      // Try to get interview details from localStorage first
+      const storedInterviews = JSON.parse(localStorage.getItem('scheduledInterviews') || '[]');
+      console.log('📅 [OnboardingDashboard] Stored interviews count:', storedInterviews.length);
+      console.log('📅 [OnboardingDashboard] Stored interviews:', storedInterviews);
+      
+      // Look for interview details by multiple email variations
+      const interviewDetails = storedInterviews.find(interview => {
+        const applicantEmail = interview.applicantEmail || interview.applicant_email;
+        const targetEmails = [
+          applicant.applicant?.email,
+          applicant.employee_email,
+          applicant.applicant?.employee_email
+        ].filter(Boolean);
+        
+        console.log('🔍 [OnboardingDashboard] Comparing emails:', {
+          stored: applicantEmail,
+          target: targetEmails,
+          match: targetEmails.includes(applicantEmail)
+        });
+        
+        return targetEmails.includes(applicantEmail);
+      });
+      
+      if (interviewDetails) {
+        console.log('✅ [OnboardingDashboard] Found interview details:', interviewDetails);
+        setSelectedInterviewDetails({
+          interview_date: interviewDetails.interviewDate || interviewDetails.interview_date,
+          interview_time: interviewDetails.interviewTime || interviewDetails.interview_time,
+          end_time: interviewDetails.endTime || interviewDetails.end_time,
+          interview_type: interviewDetails.interviewType || interviewDetails.interview_type,
+          location: interviewDetails.location,
+          interviewer: interviewDetails.interviewer,
+          notes: interviewDetails.notes,
+          applicant: applicant
+        });
+        setShowInterviewDetailsModal(true);
+      } else {
+        // Try to get from notifications as fallback
+        const storedNotifications = JSON.parse(localStorage.getItem('applicantNotifications') || '[]');
+        console.log('📅 [OnboardingDashboard] Stored notifications count:', storedNotifications.length);
+        
+        const interviewNotification = storedNotifications.find(notification => {
+          const notificationEmail = notification.applicantEmail || notification.applicant_email;
+          const targetEmails = [
+            applicant.applicant?.email,
+            applicant.employee_email,
+            applicant.applicant?.employee_email
+          ].filter(Boolean);
+          
+          return notification.type === 'interview_scheduled' && targetEmails.includes(notificationEmail);
+        });
+        
+        if (interviewNotification) {
+          console.log('✅ [OnboardingDashboard] Found interview details in notifications:', interviewNotification);
+          setSelectedInterviewDetails({
+            interview_date: interviewNotification.interviewDate || interviewNotification.interview_date,
+            interview_time: interviewNotification.interviewTime || interviewNotification.interview_time,
+            end_time: interviewNotification.endTime || interviewNotification.end_time,
+            interview_type: interviewNotification.interviewType || interviewNotification.interview_type,
+            location: interviewNotification.location,
+            interviewer: interviewNotification.interviewer,
+            notes: interviewNotification.notes,
+            applicant: applicant
+          });
+          setShowInterviewDetailsModal(true);
+        } else {
+          // Try to find by name as last resort
+          const nameMatch = storedInterviews.find(interview => {
+            const storedName = interview.applicantName || interview.applicant_name;
+            const applicantName = `${applicant.applicant?.first_name || ''} ${applicant.applicant?.last_name || ''}`.trim() || applicant.employee_name;
+            return storedName && applicantName && storedName.toLowerCase().includes(applicantName.toLowerCase());
+          });
+          
+          if (nameMatch) {
+            console.log('✅ [OnboardingDashboard] Found interview details by name match:', nameMatch);
+            setSelectedInterviewDetails({
+              interview_date: nameMatch.interviewDate || nameMatch.interview_date,
+              interview_time: nameMatch.interviewTime || nameMatch.interview_time,
+              end_time: nameMatch.endTime || nameMatch.end_time,
+              interview_type: nameMatch.interviewType || nameMatch.interview_type,
+              location: nameMatch.location,
+              interviewer: nameMatch.interviewer,
+              notes: nameMatch.notes,
+              applicant: applicant
+            });
+            setShowInterviewDetailsModal(true);
+          } else {
+            console.log('❌ [OnboardingDashboard] No interview details found');
+            console.log('❌ [OnboardingDashboard] Available stored interviews:', storedInterviews.map(i => ({
+              email: i.applicantEmail || i.applicant_email,
+              name: i.applicantName || i.applicant_name
+            })));
+            alert('No interview details found for this applicant. Please schedule an interview first.');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching interview details:', error);
+      alert('Failed to load interview details.');
+    }
+  };
+
+  // Handle offer job
+  const handleOfferJob = async (applicant) => {
+    if (window.confirm(`Are you sure you want to offer a job to ${applicant.applicant?.first_name || 'this applicant'}?`)) {
+      try {
+        const token = localStorage.getItem('token');
+        await axios.put(
+          `http://localhost:8000/api/applications/${applicant.id}/status`,
+          { status: 'Offered' },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+        
+        alert('Job offer sent successfully!');
+        setShowInterviewDetailsModal(false);
+        setSelectedInterviewDetails(null);
+        await fetchApplicants(); // Refresh the list
+        setActiveTab('Offered');
+      } catch (error) {
+        console.error('Error offering job:', error);
+        alert('Failed to send job offer. Please try again.');
+      }
+    }
+  };
+
+  // Handle reject applicant
+  const handleRejectApplicant = async (applicant) => {
+    if (window.confirm(`Are you sure you want to reject ${applicant.applicant?.first_name || 'this applicant'}?`)) {
+      try {
+        const token = localStorage.getItem('token');
+        await axios.put(
+          `http://localhost:8000/api/applications/${applicant.id}/status`,
+          { status: 'Rejected' },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            }
+          }
+        );
+        
+        alert('Applicant has been rejected.');
+        setShowInterviewDetailsModal(false);
+        setSelectedInterviewDetails(null);
+        await fetchApplicants(); // Refresh the list
+        setActiveTab('Rejected');
+      } catch (error) {
+        console.error('Error rejecting applicant:', error);
+        alert('Failed to reject applicant. Please try again.');
+      }
+    }
+  };
+
+  // Handle job offer submission
+  const handleSubmitJobOffer = async () => {
+    try {
+      if (!jobOfferData.contact_person || !jobOfferData.contact_number) {
+        alert('Please fill in all required fields: Contact Person and Contact Number');
+        return;
+      }
+
+      // Save job offer data to localStorage for PersonalOnboarding to access
+      const offerData = {
+        ...jobOfferData,
+        applicant_id: selectedRecord.id,
+        applicant_name: selectedRecord.applicant ? `${selectedRecord.applicant.first_name || ''} ${selectedRecord.applicant.last_name || ''}`.trim() : 'N/A',
+        applicant_email: selectedRecord.applicant?.email || 'N/A',
+        position: selectedRecord.jobPosting?.position || selectedRecord.job_posting?.position || 'N/A',
+        department: selectedRecord.jobPosting?.department || selectedRecord.job_posting?.department || 'N/A',
+        created_at: new Date().toISOString()
+      };
+
+      // Store in localStorage
+      const existingOffers = JSON.parse(localStorage.getItem('jobOffers') || '[]');
+      existingOffers.push(offerData);
+      localStorage.setItem('jobOffers', JSON.stringify(existingOffers));
+
+      alert('Job offer sent successfully!');
+      setShowJobOfferModal(false);
+      setSelectedRecord(null);
+      
+      // Reset form
+      setJobOfferData({
+        payment_schedule: 'Monthly',
+        work_setup: 'Onsite',
+        offer_validity: '7 days',
+        contact_person: '',
+        contact_number: ''
+      });
+    } catch (error) {
+      console.error('Error submitting job offer:', error);
+      alert('Failed to send job offer. Please try again.');
+    }
   };
 
   // Handle send interview invite
@@ -300,7 +630,7 @@ const OnboardingDashboard = () => {
         {
           interview_date: interviewData.interview_date,
           interview_time: interviewData.interview_time,
-          duration: parseInt(interviewData.duration),
+          end_time: interviewData.end_time,
           interview_type: interviewData.interview_type,
           location: interviewData.location,
           interviewer: interviewData.interviewer,
@@ -315,12 +645,59 @@ const OnboardingDashboard = () => {
       );
 
       alert('Interview invitation sent successfully!');
+      
+      // Save interview details to localStorage
+      saveInterviewToLocalStorage(selectedApplicantForInterview, interviewData);
+      
       setShowInterviewModal(false);
       setSelectedApplicantForInterview(null);
       await fetchApplicants();
     } catch (error) {
       console.error('Error scheduling interview:', error);
-      alert('Failed to schedule interview. Please try again.');
+      if (error?.response?.status === 409) {
+        alert('An interview has already been scheduled for this applicant. Duplicates are not allowed.');
+      } else {
+        alert('Failed to schedule interview. Please try again.');
+      }
+    }
+  };
+
+  // Save interview details to localStorage
+  const saveInterviewToLocalStorage = (applicant, interviewData) => {
+    try {
+      const interviewDetails = {
+        id: Date.now(),
+        applicationId: applicant.id,
+        applicantEmail: applicant.applicant?.email || applicant.employee_email,
+        applicantName: applicant.applicant?.first_name + ' ' + applicant.applicant?.last_name || applicant.employee_name,
+        position: applicant.jobPosting?.position || applicant.job_posting?.position || 'N/A',
+        department: applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A',
+        interviewDate: interviewData.interview_date,
+        interviewTime: interviewData.interview_time,
+        endTime: interviewData.end_time,
+        interviewType: interviewData.interview_type,
+        location: interviewData.location,
+        interviewer: interviewData.interviewer,
+        notes: interviewData.notes,
+        status: 'scheduled',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Store interview details
+      const existingInterviews = JSON.parse(localStorage.getItem('scheduledInterviews') || '[]');
+      
+      // Remove any existing interview for this applicant to avoid duplicates
+      const filteredInterviews = existingInterviews.filter(interview => 
+        interview.applicantEmail !== interviewDetails.applicantEmail
+      );
+      
+      filteredInterviews.unshift(interviewDetails);
+      localStorage.setItem('scheduledInterviews', JSON.stringify(filteredInterviews));
+      
+      console.log('✅ [OnboardingDashboard] Interview details saved to localStorage:', interviewDetails);
+    } catch (error) {
+      console.error('❌ [OnboardingDashboard] Error saving interview to localStorage:', error);
     }
   };
 
@@ -368,7 +745,7 @@ const OnboardingDashboard = () => {
           application_ids: applicationIds,
           interview_date: batchInterviewData.interview_date,
           interview_time: batchInterviewData.interview_time,
-          duration: parseInt(batchInterviewData.duration),
+          end_time: batchInterviewData.end_time,
           interview_type: batchInterviewData.interview_type,
           location: batchInterviewData.location,
           interviewer: batchInterviewData.interviewer,
@@ -391,11 +768,18 @@ const OnboardingDashboard = () => {
         message += `Failed applicants:\n`;
         failed_interviews.forEach(failed => {
           const applicant = selectedApplicants.find(app => app.id === failed.application_id);
-          message += `• ${applicant ? applicant.first_name + ' ' + applicant.last_name : 'Unknown'}: ${failed.error}\n`;
+          const reason = failed.reason || failed.error || 'Unknown error';
+          message += `• ${applicant ? (applicant.applicant?.first_name + ' ' + applicant.applicant?.last_name) : 'Unknown'}: ${reason}\n`;
         });
       }
 
       alert(message);
+      
+      // Save interview details to localStorage for successful interviews
+      selectedApplicants.forEach(applicant => {
+        saveInterviewToLocalStorage(applicant, batchInterviewData);
+      });
+      
       setShowBatchInterviewModal(false);
       setSelectedApplicants([]);
       await fetchApplicants();
@@ -453,6 +837,18 @@ const OnboardingDashboard = () => {
                 <Badge bg="secondary" className="ms-2">{filteredApplicants.length}</Badge>
               </h4>
               {activeTab === 'Overview' && null}
+            </div>
+            <div>
+              <Button 
+                variant="outline-primary" 
+                size="sm" 
+                onClick={fetchApplicants}
+                disabled={loading}
+                className="d-flex align-items-center"
+              >
+                <FontAwesomeIcon icon={faRefresh} className="me-1" />
+                Refresh
+              </Button>
             </div>
           </div>
 
@@ -548,6 +944,179 @@ const OnboardingDashboard = () => {
         <Col>
           <div className="content-section">
 
+            {activeTab === 'Onboarding' && (
+              <div className="mb-3">
+                <div className="d-flex flex-wrap gap-2 mb-3">
+                  {['Orientation Schedule', 'Employee Documents', 'Benefits Enrollment', 'Start Date'].map((tab) => (
+                    <Button
+                      key={tab}
+                      variant={onboardingSubtab === tab ? 'primary' : 'outline-secondary'}
+                      size="sm"
+                      onClick={() => setOnboardingSubtab(tab)}
+                    >
+                      {tab}
+                    </Button>
+                  ))}
+                </div>
+                <div className="card">
+                  <div className="card-body p-0">
+                    {onboardingSubtab === 'Orientation Schedule' && (
+                      <div className="d-flex justify-content-between align-items-center px-3 py-2" style={{ background: '#e9f2ff', borderBottom: '1px solid #dbe7ff' }}>
+                        <h6 className="mb-0" style={{ color: '#084298', fontWeight: 600 }}>Orientation Schedule</h6>
+                        <Button size="sm" variant="primary">+ Add Schedule</Button>
+                      </div>
+                    )}
+                    <table className="table mb-0">
+                      <thead>
+                        {onboardingSubtab === 'Orientation Schedule' && (
+                          <tr style={{ background: '#f3f8ff' }}>
+                            <th>Applicant Name</th>
+                            <th>Position</th>
+                            <th>Schedule Date</th>
+                            <th>Time</th>
+                            <th>Location / Link</th>
+                            <th>Status</th>
+                          </tr>
+                        )}
+                        {onboardingSubtab === 'Employee Documents' && (
+                          <>
+                            <tr>
+                              <th className="px-3" colSpan={5}>
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <span className="fw-semibold">Employee Documents</span>
+                                  <div className="d-flex gap-2">
+                                    <Button size="sm" variant="outline-primary">Request Document</Button>
+                                    <Button size="sm" variant="primary">Upload Document</Button>
+                                  </div>
+                                </div>
+                              </th>
+                            </tr>
+                            <tr style={{ background: '#f3f8ff' }}>
+                              <th>Applicant Name</th>
+                              <th>Document Type</th>
+                              <th>Status</th>
+                              <th>Date Submitted</th>
+                              <th>Action</th>
+                            </tr>
+                          </>
+                        )}
+                        {onboardingSubtab === 'Benefits Enrollment' && (
+                          <tr>
+                            <th>Employee</th>
+                            <th>Plan</th>
+                            <th>Enrollment Status</th>
+                            <th>Submitted On</th>
+                            <th>Actions</th>
+                          </tr>
+                        )}
+                        {onboardingSubtab === 'Start Date' && (
+                          <tr>
+                            <th>Employee</th>
+                            <th>Position</th>
+                            <th>Department</th>
+                            <th>Start Date</th>
+                            <th>Status</th>
+                          </tr>
+                        )}
+                      </thead>
+                      <tbody>
+                        {onboardingSubtab === 'Orientation Schedule' && (() => {
+                          const rows = applicants
+                            .filter(a => a.status === 'Onboarding' || a.status === 'Offer Accepted');
+                          if (rows.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={6} className="text-center py-5">
+                                  <div className="d-flex flex-column align-items-center">
+                                    <FontAwesomeIcon icon={faCalendarAlt} className="text-muted mb-2" size="2x" />
+                                    <div className="text-muted">No orientation schedules found</div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return rows.slice(0, 20).map((a) => (
+                            <tr key={`ori-${a.id}`} style={{ transition: 'background 0.15s ease' }}>
+                              <td>{a.applicant ? `${a.applicant.first_name || ''} ${a.applicant.last_name || ''}`.trim() : 'N/A'}</td>
+                              <td>{a.jobPosting?.position || a.job_posting?.position || 'N/A'}</td>
+                              <td>-</td>
+                              <td>-</td>
+                              <td>-</td>
+                              <td><span className="badge bg-secondary">Scheduled</span></td>
+                            </tr>
+                          ));
+                        })()}
+                        {onboardingSubtab === 'Employee Documents' && (() => {
+                          const rows = applicants.filter(a => a.status === 'Onboarding' || a.status === 'Offer Accepted');
+                          if (rows.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={5} className="text-center py-5">
+                                  <div className="d-flex flex-column align-items-center">
+                                    <FontAwesomeIcon icon={faFileAlt} className="text-muted mb-2" size="2x" />
+                                    <div className="text-muted">No documents found</div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return rows.slice(0, 20).map((a) => (
+                            <tr key={`doc-${a.id}`}>
+                              <td>{a.applicant ? `${a.applicant.first_name || ''} ${a.applicant.last_name || ''}`.trim() : 'N/A'}</td>
+                              <td>Government ID</td>
+                              <td>
+                                <span className="me-2">
+                                  <FontAwesomeIcon icon={faHourglassHalf} className="text-warning" />
+                                </span>
+                                Pending
+                              </td>
+                              <td>-</td>
+                              <td>
+                                <Button size="sm" variant="outline-primary" className="me-2">
+                                  <FontAwesomeIcon icon={faEye} className="me-1" /> View
+                                </Button>
+                                <Button size="sm" variant="success">
+                                  <FontAwesomeIcon icon={faCheckCircle} className="me-1" /> Verify
+                                </Button>
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                        {onboardingSubtab === 'Benefits Enrollment' && (
+                          applicants
+                            .filter(a => a.status === 'Onboarding' || a.status === 'Offer Accepted')
+                            .slice(0, 10)
+                            .map((a) => (
+                              <tr key={`ben-${a.id}`}>
+                                <td>{a.applicant ? `${a.applicant.first_name || ''} ${a.applicant.last_name || ''}`.trim() : 'N/A'}</td>
+                                <td>Default</td>
+                                <td>Not Enrolled</td>
+                                <td>-</td>
+                                <td><Button variant="outline-primary" size="sm">View</Button></td>
+                              </tr>
+                            ))
+                        )}
+                        {onboardingSubtab === 'Start Date' && (
+                          applicants
+                            .filter(a => a.status === 'Onboarding' || a.status === 'Offer Accepted')
+                            .slice(0, 10)
+                            .map((a) => (
+                              <tr key={`start-${a.id}`}>
+                                <td>{a.applicant ? `${a.applicant.first_name || ''} ${a.applicant.last_name || ''}`.trim() : 'N/A'}</td>
+                                <td>{a.jobPosting?.position || a.job_posting?.position || 'N/A'}</td>
+                                <td>{a.jobPosting?.department || a.job_posting?.department || 'N/A'}</td>
+                                <td>-</td>
+                                <td>{a.status}</td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {filteredApplicants.length === 0 ? (
               <div className="text-center py-5">
                 <FontAwesomeIcon icon={faUsers} size="3x" className="text-muted mb-3" />
@@ -561,6 +1130,7 @@ const OnboardingDashboard = () => {
               </div>
             ) : (
               <div className="onboarding-list" style={{ background: 'transparent' }}>
+                
                 {activeTab === 'Shortlisted' && (
                   <div className="list-header d-flex align-items-center mb-2" style={{ gap: '10px' }}>
                     <input
@@ -627,21 +1197,25 @@ const OnboardingDashboard = () => {
                         <div className="department-text" title={applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'} style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px', flex: '1 1 auto' }}>
                           <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Department</div>
                           <span>{applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A'}</span>
+                        </div>
+                        <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+                        
                           {activeTab === 'Overview' && (
-                            <span className="text-muted" style={{ marginLeft: '8px', fontSize: '0.85rem' }}>
-                              • {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
+                          <div className="applied-date-text" style={{ marginLeft: '5px', flex: '1 1 auto' }}>
+                            <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Applied Date</div>
+                            <div style={{ fontSize: '0.85rem' }}>
+                              {applicant.applied_at ? new Date(applicant.applied_at).toLocaleDateString() : 'N/A'}
                               {applicant.applied_at && (
-                                <span>
-                                  {` ${new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                                </span>
-                              )}
-                            </span>
+                                <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: '2px' }}>
+                                  {new Date(applicant.applied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
                           )}
                         </div>
+                          </div>
+                        )}
 
-                        <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
-
-                        <div className="ms-auto" style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px' }}>
+                        <div className="ms-auto d-flex align-items-center" style={{ marginLeft: activeTab === 'Overview' ? '0.2in' : '5px', gap: '8px' }}>
+                          <div>
                           <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Status</div>
                           <div className="status-container">
                             {getStatusBadge(applicant.status)}
@@ -649,32 +1223,103 @@ const OnboardingDashboard = () => {
                         </div>
 
                         {activeTab === 'Pending' && (
-                          <div className="ms-2">
+                            <>
+                              <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
                             <Button
                               variant="outline-secondary"
                               size="sm"
                               onClick={(e) => { e.stopPropagation(); handleViewDetails(applicant); }}
                               className="view-details-btn"
-                            >
-                              View Details
+                                style={{ 
+                                  padding: '0.15rem 0.4rem', 
+                                  fontSize: '0.65rem', 
+                                  whiteSpace: 'nowrap',
+                                  height: '28px',
+                                  minWidth: '60px'
+                                }}
+                              >
+                                View
                             </Button>
-                          </div>
+                            </>
                         )}
 
                         {activeTab === 'Shortlisted' && (
-                          <div className="ms-2">
+                            <>
+                              <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
                             <Button
                               variant="success"
                               size="sm"
                               onClick={(e) => { e.stopPropagation(); handleScheduleInterview(applicant); }}
                               className="schedule-interview-btn"
+                                style={{ 
+                                  whiteSpace: 'nowrap', 
+                                  fontSize: '12px', 
+                                  padding: '8% 10%',
+                                  height: '3px',
+                                  minWidth: '110px',
+                                  maxWidth: '120px',
+                                  border: '1px solid transparent',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
                             >
                               Schedule Interview
                             </Button>
+                            </>
+                          )}
+
+                          {activeTab === 'Interview' && (
+                            <>
+                              <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+                              <Button
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleViewInterviewDetails(applicant); }}
+                                className="view-interview-details-btn"
+                                style={{ 
+                                  padding: '15px 20px', 
+                                  fontSize: '13px', 
+                                  whiteSpace: 'nowrap',
+                                  height: '28px',
+                                  minWidth: '60px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                View Details
+                              </Button>
+                            </>
+                          )}
                           </div>
+
+                        {activeTab === 'Offered' && (
+                          <>
+                            <div className="vr-sep" style={{ borderLeft: '1px solid rgba(0,0,0,0.12)', height: '24px' }}></div>
+                            <Button
+                              variant={isOfferSent(applicant.id) ? 'outline-secondary' : 'outline-primary'}
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleViewDetails(applicant); }}
+                              className="view-interview-details-btn"
+                              style={{ 
+                                padding: '15px 20px', 
+                                fontSize: '13px', 
+                                whiteSpace: 'nowrap',
+                                height: '28px',
+                                minWidth: '60px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              disabled={isOfferSent(applicant.id)}
+                            >
+                              {isOfferSent(applicant.id) ? 'Offer Sent' : 'Send Offer'}
+                            </Button>
+                          </>
                         )}
 
-                        {activeTab !== 'Overview' && activeTab !== 'Pending' && activeTab !== 'Shortlisted' && (
+                        {activeTab !== 'Overview' && activeTab !== 'Pending' && activeTab !== 'Shortlisted' && activeTab !== 'Interview' && activeTab !== 'Offered' && (
                           <div className="ms-2 position-relative d-flex align-items-center">
                             <Button
                               variant="outline-secondary"
@@ -891,28 +1536,104 @@ const OnboardingDashboard = () => {
                   </div>
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Interview Time <span className="text-danger">*</span></label>
-                    <input
-                      type="time"
+                    <div className="d-flex gap-2">
+                      <select
                       className="form-control"
-                      value={interviewData.interview_time}
-                      onChange={(e) => setInterviewData({...interviewData, interview_time: e.target.value})}
+                        value={parseTime12Hour(interviewData.interview_time).hour}
+                        onChange={(e) => {
+                          const { minute, ampm } = parseTime12Hour(interviewData.interview_time);
+                          setInterviewData({...interviewData, interview_time: formatTime12Hour(e.target.value, minute, ampm)});
+                        }}
                       required
-                    />
+                      >
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <option key={i} value={(i + 1).toString().padStart(2, '0')}>
+                            {(i + 1).toString().padStart(2, '0')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="align-self-center">:</span>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(interviewData.interview_time).minute}
+                        onChange={(e) => {
+                          const { hour, ampm } = parseTime12Hour(interviewData.interview_time);
+                          setInterviewData({...interviewData, interview_time: formatTime12Hour(hour, e.target.value, ampm)});
+                        }}
+                        required
+                      >
+                        <option value="00">00</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="40">40</option>
+                        <option value="50">50</option>
+                      </select>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(interviewData.interview_time).ampm}
+                        onChange={(e) => {
+                          const { hour, minute } = parseTime12Hour(interviewData.interview_time);
+                          setInterviewData({...interviewData, interview_time: formatTime12Hour(hour, minute, e.target.value)});
+                        }}
+                        required
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </div>
                   </div>
+
                   <div className="col-md-6">
-                    <label className="form-label fw-semibold">Duration (minutes) <span className="text-danger">*</span></label>
-                    <select
-                      className="form-select"
-                      value={interviewData.duration}
-                      onChange={(e) => setInterviewData({...interviewData, duration: e.target.value})}
-                    >
-                      <option value="10">10 minutes</option>
-                      <option value="20">20 minutes</option>
-                      <option value="30">30 minutes</option>
-                      <option value="40">40 minutes</option>
-                      <option value="50">50 minutes</option>
-                    </select>
+                    <label className="form-label fw-semibold">End Time <span className="text-danger">*</span></label>
+                    <div className="d-flex gap-2">
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(interviewData.end_time).hour}
+                        onChange={(e) => {
+                          const { minute, ampm } = parseTime12Hour(interviewData.end_time);
+                          setInterviewData({...interviewData, end_time: formatTime12Hour(e.target.value, minute, ampm)});
+                        }}
+                        required
+                      >
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <option key={i} value={(i + 1).toString().padStart(2, '0')}>
+                            {(i + 1).toString().padStart(2, '0')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="align-self-center">:</span>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(interviewData.end_time).minute}
+                        onChange={(e) => {
+                          const { hour, ampm } = parseTime12Hour(interviewData.end_time);
+                          setInterviewData({...interviewData, end_time: formatTime12Hour(hour, e.target.value, ampm)});
+                        }}
+                        required
+                      >
+                        <option value="00">00</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="40">40</option>
+                        <option value="50">50</option>
+                      </select>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(interviewData.end_time).ampm}
+                        onChange={(e) => {
+                          const { hour, minute } = parseTime12Hour(interviewData.end_time);
+                          setInterviewData({...interviewData, end_time: formatTime12Hour(hour, minute, e.target.value)});
+                        }}
+                        required
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </div>
                   </div>
+                  
                   <div className="col-md-6">
                     <label className="form-label fw-semibold">Interview Type</label>
                     <input
@@ -1633,7 +2354,6 @@ const OnboardingDashboard = () => {
                     setBatchInterviewData({
                       interview_date: '',
                       interview_time: '',
-                      duration: '30',
                       interview_type: 'On-site',
                       location: '',
                       interviewer: '',
@@ -1668,29 +2388,104 @@ const OnboardingDashboard = () => {
                   </div>
                   <div className="col-md-6 mb-3">
                     <label className="form-label fw-semibold">Interview Time *</label>
-                    <input
-                      type="time"
+                    <div className="d-flex gap-2">
+                      <select
                       className="form-control"
-                      value={batchInterviewData.interview_time}
-                      onChange={(e) => setBatchInterviewData({...batchInterviewData, interview_time: e.target.value})}
-                    />
+                        value={parseTime12Hour(batchInterviewData.interview_time).hour}
+                        onChange={(e) => {
+                          const { minute, ampm } = parseTime12Hour(batchInterviewData.interview_time);
+                          setBatchInterviewData({...batchInterviewData, interview_time: formatTime12Hour(e.target.value, minute, ampm)});
+                        }}
+                        required
+                      >
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <option key={i} value={(i + 1).toString().padStart(2, '0')}>
+                            {(i + 1).toString().padStart(2, '0')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="align-self-center">:</span>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(batchInterviewData.interview_time).minute}
+                        onChange={(e) => {
+                          const { hour, ampm } = parseTime12Hour(batchInterviewData.interview_time);
+                          setBatchInterviewData({...batchInterviewData, interview_time: formatTime12Hour(hour, e.target.value, ampm)});
+                        }}
+                        required
+                      >
+                        <option value="00">00</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="40">40</option>
+                        <option value="50">50</option>
+                      </select>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(batchInterviewData.interview_time).ampm}
+                        onChange={(e) => {
+                          const { hour, minute } = parseTime12Hour(batchInterviewData.interview_time);
+                          setBatchInterviewData({...batchInterviewData, interview_time: formatTime12Hour(hour, minute, e.target.value)});
+                        }}
+                        required
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
                 <div className="row">
                   <div className="col-md-6 mb-3">
-                    <label className="form-label fw-semibold">Duration (minutes)</label>
+                    <label className="form-label fw-semibold">End Time *</label>
+                    <div className="d-flex gap-2">
                     <select
-                      className="form-select"
-                      value={batchInterviewData.duration}
-                      onChange={(e) => setBatchInterviewData({...batchInterviewData, duration: e.target.value})}
-                    >
-                      <option value="30">30 minutes</option>
-                      <option value="45">45 minutes</option>
-                      <option value="60">60 minutes</option>
-                      <option value="90">90 minutes</option>
-                      <option value="120">120 minutes</option>
+                        className="form-control"
+                        value={parseTime12Hour(batchInterviewData.end_time).hour}
+                        onChange={(e) => {
+                          const { minute, ampm } = parseTime12Hour(batchInterviewData.end_time);
+                          setBatchInterviewData({...batchInterviewData, end_time: formatTime12Hour(e.target.value, minute, ampm)});
+                        }}
+                        required
+                      >
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <option key={i} value={(i + 1).toString().padStart(2, '0')}>
+                            {(i + 1).toString().padStart(2, '0')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="align-self-center">:</span>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(batchInterviewData.end_time).minute}
+                        onChange={(e) => {
+                          const { hour, ampm } = parseTime12Hour(batchInterviewData.end_time);
+                          setBatchInterviewData({...batchInterviewData, end_time: formatTime12Hour(hour, e.target.value, ampm)});
+                        }}
+                        required
+                      >
+                        <option value="00">00</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="30">30</option>
+                        <option value="40">40</option>
+                        <option value="50">50</option>
+                      </select>
+                      <select
+                        className="form-control"
+                        value={parseTime12Hour(batchInterviewData.end_time).ampm}
+                        onChange={(e) => {
+                          const { hour, minute } = parseTime12Hour(batchInterviewData.end_time);
+                          setBatchInterviewData({...batchInterviewData, end_time: formatTime12Hour(hour, minute, e.target.value)});
+                        }}
+                        required
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
                     </select>
+                    </div>
                   </div>
                   <div className="col-md-6 mb-3">
                     <label className="form-label fw-semibold">Interview Type *</label>
@@ -1749,7 +2544,7 @@ const OnboardingDashboard = () => {
                     setBatchInterviewData({
                       interview_date: '',
                       interview_time: '',
-                      duration: '30',
+                      end_time: '',
                       interview_type: 'On-site',
                       location: '',
                       interviewer: '',
@@ -1766,6 +2561,270 @@ const OnboardingDashboard = () => {
                 >
                   <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
                   Send Batch Invites
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interview Details Modal */}
+      {showInterviewDetailsModal && selectedInterviewDetails && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">
+                  <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                  Interview Details - {selectedInterviewDetails.applicant?.applicant?.first_name || 'N/A'} {selectedInterviewDetails.applicant?.applicant?.last_name || ''}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setShowInterviewDetailsModal(false);
+                    setSelectedInterviewDetails(null);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="row">
+                  <div className="col-md-6">
+                    <h6 className="fw-bold text-primary mb-3">
+                      <FontAwesomeIcon icon={faUserTie} className="me-2" />
+                      Applicant Information
+                    </h6>
+                    <div className="mb-2">
+                      <strong>Name:</strong> {selectedInterviewDetails.applicant?.applicant?.first_name || 'N/A'} {selectedInterviewDetails.applicant?.applicant?.last_name || ''}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Email:</strong> {selectedInterviewDetails.applicant?.applicant?.email || 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Position:</strong> {selectedInterviewDetails.applicant?.jobPosting?.position || selectedInterviewDetails.applicant?.job_posting?.position || 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Department:</strong> {selectedInterviewDetails.applicant?.jobPosting?.department || selectedInterviewDetails.applicant?.job_posting?.department || 'N/A'}
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <h6 className="fw-bold text-primary mb-3">
+                      <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                      Interview Information
+                    </h6>
+                    <div className="mb-2">
+                      <strong>Date:</strong> {selectedInterviewDetails.interview_date ? new Date(selectedInterviewDetails.interview_date).toLocaleDateString() : 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Start Time:</strong> {selectedInterviewDetails.interview_time ? new Date(`2000-01-01T${selectedInterviewDetails.interview_time}`).toLocaleTimeString('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      }) : 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>End Time:</strong> {selectedInterviewDetails.end_time ? new Date(`2000-01-01T${selectedInterviewDetails.end_time}`).toLocaleTimeString('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                      }) : 'N/A'}
+                    </div>
+                    
+                    <div className="mb-2">
+                      <strong>Type:</strong> {selectedInterviewDetails.interview_type || 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Location:</strong> {selectedInterviewDetails.location || 'N/A'}
+                    </div>
+                    <div className="mb-2">
+                      <strong>Interviewer:</strong> {selectedInterviewDetails.interviewer || 'N/A'}
+                    </div>
+                  </div>
+                </div>
+                {selectedInterviewDetails.notes && (
+                  <div className="mt-4">
+                    <h6 className="fw-bold text-primary mb-2">
+                      <FontAwesomeIcon icon={faFileAlt} className="me-2" />
+                      Additional Notes
+                    </h6>
+                    <div className="p-3 bg-light rounded">
+                      {selectedInterviewDetails.notes}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowInterviewDetailsModal(false);
+                    setSelectedInterviewDetails(null);
+                  }}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => handleRejectApplicant(selectedInterviewDetails.applicant)}
+                  className="ms-2"
+                >
+                  <FontAwesomeIcon icon={faTimesCircle} className="me-2" />
+                  Reject
+                </Button>
+                {(() => {
+                  const app = selectedInterviewDetails.applicant;
+                  const offerLocked = ['Offered', 'Offer Accepted', 'Hired', 'Rejected'].includes(app?.status);
+                  return (
+                    <Button
+                      variant={offerLocked ? 'outline-secondary' : 'success'}
+                      disabled={offerLocked}
+                      onClick={() => { if (!offerLocked) handleOfferJob(app); }}
+                      className="ms-2"
+                    >
+                      <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                      {offerLocked ? 'Offer Sent' : 'Offer Job'}
+                    </Button>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job Offer Modal */}
+      {showJobOfferModal && selectedRecord && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header border-0">
+                <h5 className="modal-title fw-bold">Send Job Offer</h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setShowJobOfferModal(false);
+                    setSelectedRecord(null);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                {/* Applicant Info */}
+                <div className="mb-4 p-3 bg-light rounded">
+                  <h6 className="fw-bold mb-2">Applicant Information</h6>
+                  <div className="d-flex align-items-center">
+                    <div className="avatar me-3">
+                      {selectedRecord.applicant?.first_name ? selectedRecord.applicant.first_name.charAt(0).toUpperCase() : 'A'}
+                    </div>
+                    <div>
+                      <div className="fw-semibold">
+                        {selectedRecord.applicant ? `${selectedRecord.applicant.first_name || ''} ${selectedRecord.applicant.last_name || ''}`.trim() : 'N/A'}
+                      </div>
+                      <div className="text-muted small">
+                        {selectedRecord.applicant?.email || 'N/A'}
+                      </div>
+                      <div className="text-muted small">
+                        Position: {selectedRecord.jobPosting?.position || selectedRecord.job_posting?.position || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resume Section */}
+                <div className="mb-4">
+                  <h6 className="fw-bold mb-3">Resume</h6>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleViewResume(selectedRecord)}
+                    className="view-resume-btn"
+                  >
+                    <FontAwesomeIcon icon={faEye} className="me-2" />
+                    View Resume
+                  </Button>
+                </div>
+
+                {/* Job Offer Form */}
+                <div className="border-top pt-4">
+                  <h6 className="fw-bold mb-3">Job Offer Details</h6>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Payment Schedule</label>
+                      <select
+                        className="form-select"
+                        value={jobOfferData.payment_schedule}
+                        onChange={(e) => setJobOfferData({...jobOfferData, payment_schedule: e.target.value})}
+                      >
+                        <option value="Monthly">Monthly</option>
+                        <option value="Bi-weekly">Bi-weekly</option>
+                        <option value="Weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Work Setup</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={jobOfferData.work_setup}
+                        disabled
+                        style={{ backgroundColor: '#e9ecef' }}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Offer Validity</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={jobOfferData.offer_validity}
+                        disabled
+                        style={{ backgroundColor: '#e9ecef' }}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label fw-semibold">Contact Person <span className="text-danger">*</span></label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={jobOfferData.contact_person}
+                        onChange={(e) => setJobOfferData({...jobOfferData, contact_person: e.target.value})}
+                        placeholder="Enter contact person name"
+                        required
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label fw-semibold">Contact Number <span className="text-danger">*</span></label>
+                      <input
+                        type="tel"
+                        className="form-control"
+                        value={jobOfferData.contact_number}
+                        onChange={(e) => setJobOfferData({...jobOfferData, contact_number: e.target.value})}
+                        placeholder="Enter contact number"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer border-0 px-4 pb-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowJobOfferModal(false);
+                    setSelectedRecord(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant={isOfferSent(selectedRecord?.id) ? 'secondary' : 'success'}
+                  onClick={handleSubmitJobOffer}
+                  className="px-4"
+                  disabled={isOfferSent(selectedRecord?.id)}
+                >
+                  <FontAwesomeIcon icon={faFileAlt} className="me-2" />
+                  {isOfferSent(selectedRecord?.id) ? 'Offer Sent' : 'Send Offer'}
                 </Button>
               </div>
             </div>

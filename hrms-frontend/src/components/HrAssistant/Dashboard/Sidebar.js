@@ -7,7 +7,8 @@ import {
   FaChartPie, FaTachometerAlt, FaUsers, FaMoneyCheckAlt, FaCalendarCheck,
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
   FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
-  FaEye, FaFileAlt, FaChartBar, FaCog, FaChevronRight, FaChevronDown, FaEdit, FaClock
+  FaEye, FaFileAlt, FaChartBar, FaCog, FaChevronRight, FaChevronDown, FaEdit, FaClock,
+  
 } from "react-icons/fa";
 
 

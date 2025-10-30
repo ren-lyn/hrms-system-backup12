@@ -72,13 +72,14 @@ const PersonalOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [jobOfferData, setJobOfferData] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [uploadErrors, setUploadErrors] = useState({});
   const [attendanceConfirmed, setAttendanceConfirmed] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [toast, setToast] = useState({ show: false, type: 'success', title: '', message: '' });
-  const [showOfferModal, setShowOfferModal] = useState(false);
+  
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
   const [showApplicationModal, setShowApplicationModal] = useState(false);
@@ -102,6 +103,7 @@ const PersonalOnboarding = () => {
   // Interview data state
   const [interviewData, setInterviewData] = useState([]);
   const [loadingInterview, setLoadingInterview] = useState(false);
+  const [acceptingOffer, setAcceptingOffer] = useState(false);
   
   // New state for multi-page system
   const [currentPage, setCurrentPage] = useState('status');
@@ -119,7 +121,12 @@ const PersonalOnboarding = () => {
   };
 
   const handleAcceptOffer = () => {
-    setShowOfferModal(true);
+    // Prevent double-clicks
+    if (acceptingOffer) {
+      console.log('Already processing offer acceptance...');
+      return;
+    }
+    confirmAcceptOffer();
   };
 
   const handleDeclineOffer = () => {
@@ -127,33 +134,92 @@ const PersonalOnboarding = () => {
   };
 
   const confirmAcceptOffer = async () => {
+    // Prevent double submission
+    if (acceptingOffer) {
+      return;
+    }
+
     try {
+      setAcceptingOffer(true);
+      
       const token = localStorage.getItem('token');
       const applicationId = (userApplications && userApplications[0] && userApplications[0].id) ? userApplications[0].id : null;
 
-      if (applicationId && token) {
-        // Try dedicated endpoint first
+      console.log('🔍 Accept Offer - Application ID:', applicationId);
+      console.log('🔍 Accept Offer - Token:', token ? 'Present' : 'Missing');
+      console.log('🔍 Accept Offer - User Applications:', userApplications);
+
+      if (!applicationId) {
+        console.error('❌ Missing application ID');
+        showToast('error', 'Error', 'No application found. Please refresh the page and try again.');
+        setAcceptingOffer(false);
+        return;
+      }
+
+      if (!token) {
+        console.error('❌ Missing authentication token');
+        showToast('error', 'Authentication Error', 'Please log in again.');
+        setAcceptingOffer(false);
+        return;
+      }
+
+      let success = false;
+      let responseData = null;
+      
+      // Try dedicated endpoint first
+      try {
+        console.log('📤 Calling accept-offer endpoint...');
+        const response = await axios.post(`http://localhost:8000/api/applications/${applicationId}/accept-offer`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        console.log('✅ Accept offer response:', response.data);
+        responseData = response.data;
+        success = true;
+      } catch (e) {
+        console.log('⚠️ Dedicated endpoint failed:', e.response?.data || e.message);
+        
+        // Fallback to generic status update
         try {
-          await axios.post(`http://localhost:8000/api/applications/${applicationId}/accept-offer`, {}, {
+          console.log('📤 Trying fallback status update...');
+          const response = await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { 
+            status: 'Offer Accepted' 
+          }, {
             headers: { Authorization: `Bearer ${token}` }
           });
-        } catch (e) {
-          // Fallback to generic status update
-          await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { status: 'Accepted' }, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          console.log('✅ Status update response:', response.data);
+          responseData = response.data;
+          success = true;
+        } catch (fallbackError) {
+          console.error('❌ Both endpoints failed:', fallbackError.response?.data || fallbackError.message);
+          throw fallbackError;
         }
       }
 
-      // Local UI feedback
-      setShowOfferModal(false);
-      showToast('success', 'Offer Accepted', 'Thank you for joining us! HR will contact you soon.');
-      // Optimistically update local application status
-      setUserApplications(prev => (prev && prev.length > 0) ? [{ ...prev[0], status: 'Accepted' }, ...prev.slice(1)] : prev);
+      if (success) {
+        // Local UI feedback
+        showToast('success', 'Offer Accepted', 'Thank you for joining us! HR will contact you soon.');
+        
+        // Optimistically update local application status
+        setUserApplications(prev => {
+          if (!prev || prev.length === 0) return prev;
+          const updated = [...prev];
+          updated[0] = { ...updated[0], status: 'Offer Accepted' };
+          return updated;
+        });
+
+        console.log('✅ Offer accepted successfully!');
+        
+        // Refresh applications after 2 seconds to sync with backend
+        setTimeout(() => {
+          fetchUserApplications();
+        }, 2000);
+      }
     } catch (error) {
-      console.error('Error accepting offer:', error);
-      setShowOfferModal(false);
-      showToast('error', 'Error', 'Failed to accept the offer. Please try again.');
+      console.error('❌ Error accepting offer:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to accept the offer. Please try again.';
+      showToast('error', 'Error', errorMessage);
+    } finally {
+      setAcceptingOffer(false);
     }
   };
 
@@ -162,25 +228,50 @@ const PersonalOnboarding = () => {
       const token = localStorage.getItem('token');
       const applicationId = (userApplications && userApplications[0] && userApplications[0].id) ? userApplications[0].id : null;
 
-      if (applicationId && token) {
-        // Try dedicated endpoint first
+      if (!applicationId || !token) {
+        console.error('Missing application ID or token');
+        setShowDeclineModal(false);
+        showToast('error', 'Error', 'Unable to process offer decline. Please try again.');
+        return;
+      }
+
+      let success = false;
+      
+      // Try dedicated endpoint first
+      try {
+        const response = await axios.post(`http://localhost:8000/api/applications/${applicationId}/decline-offer`, { 
+          reason: declineReason 
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        console.log('Decline offer response:', response.data);
+        success = true;
+      } catch (e) {
+        console.log('Dedicated endpoint failed, trying fallback:', e.response?.data || e.message);
+        
+        // Fallback to generic status update
         try {
-          await axios.post(`http://localhost:8000/api/applications/${applicationId}/decline-offer`, { reason: declineReason }, {
+          const response = await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { 
+            status: 'Rejected', 
+            reason: declineReason 
+          }, {
             headers: { Authorization: `Bearer ${token}` }
           });
-        } catch (e) {
-          // Fallback to generic status update
-          await axios.put(`http://localhost:8000/api/applications/${applicationId}/status`, { status: 'Declined', reason: declineReason }, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          console.log('Status update response:', response.data);
+          success = true;
+        } catch (fallbackError) {
+          console.error('Both endpoints failed:', fallbackError.response?.data || fallbackError.message);
+          throw fallbackError;
         }
       }
 
-      setShowDeclineModal(false);
-      showToast('info', 'Offer Declined', 'Your response has been recorded.');
-      // Optimistically update local application status
-      setUserApplications(prev => (prev && prev.length > 0) ? [{ ...prev[0], status: 'Declined' }, ...prev.slice(1)] : prev);
-      setDeclineReason('');
+      if (success) {
+        setShowDeclineModal(false);
+        showToast('info', 'Offer Declined', 'Your response has been recorded.');
+        // Optimistically update local application status
+        setUserApplications(prev => (prev && prev.length > 0) ? [{ ...prev[0], status: 'Rejected' }, ...prev.slice(1)] : prev);
+        setDeclineReason('');
+      }
     } catch (error) {
       console.error('Error declining offer:', error);
       setShowDeclineModal(false);
@@ -271,9 +362,10 @@ const PersonalOnboarding = () => {
       
       if (latestApplication && latestApplication.job_title && latestApplication.department && latestApplication.position && latestApplication.applied_at) {
         console.log('Found latest application from localStorage:', latestApplication);
-        setUserApplications([latestApplication]);
+        const result = [latestApplication];
+        setUserApplications(result);
         setLoadingApplications(false);
-        return;
+        return result;
       } else if (latestApplication) {
         // Clear invalid application data from localStorage
         console.log('Clearing invalid application data from localStorage');
@@ -359,9 +451,11 @@ const PersonalOnboarding = () => {
       
       console.log('Enhanced applications:', enhancedApplications);
       setUserApplications(enhancedApplications);
+      return enhancedApplications;
     } catch (error) {
       console.error('Error fetching applications:', error);
       setUserApplications([]);
+      return [];
     } finally {
       setLoadingApplications(false);
     }
@@ -393,9 +487,9 @@ const PersonalOnboarding = () => {
         const applications = userApplications.length > 0 ? userApplications : await fetchUserApplications();
         
         console.log('📋 [PersonalOnboarding] User applications:', applications);
-        console.log('📋 [PersonalOnboarding] User applications length:', applications.length);
+        console.log('📋 [PersonalOnboarding] User applications length:', applications ? applications.length : 0);
         
-        if (applications.length > 0) {
+        if (applications && applications.length > 0) {
           const applicationIds = applications.map(app => app.id);
           console.log('📤 [PersonalOnboarding] Fetching interviews for application IDs:', applicationIds);
           
@@ -404,8 +498,11 @@ const PersonalOnboarding = () => {
             params: { application_ids: applicationIds }
           });
           
-          allInterviews = response.data;
+          allInterviews = response.data || [];
           console.log('📥 [PersonalOnboarding] Received interview data via application IDs:', allInterviews);
+
+          // Enrich with local end time if present
+          allInterviews = enrichInterviewsWithLocalEndTime(allInterviews);
           
           if (allInterviews.length > 0) {
             console.log('✅ [PersonalOnboarding] Successfully found interviews via applications:', allInterviews.length);
@@ -425,8 +522,11 @@ const PersonalOnboarding = () => {
             headers: { Authorization: `Bearer ${token}` }
           });
           
-          allInterviews = response.data;
+          allInterviews = response.data || [];
           console.log('📥 [PersonalOnboarding] Received interview data via direct user ID:', allInterviews);
+
+          // Enrich with local end time if present
+          allInterviews = enrichInterviewsWithLocalEndTime(allInterviews);
           
           if (allInterviews.length > 0) {
             console.log('✅ [PersonalOnboarding] Found interviews via direct user approach:', allInterviews.length);
@@ -438,33 +538,8 @@ const PersonalOnboarding = () => {
         }
       }
       
-      // Approach 3: Try to get all interviews (for debugging - remove in production)
-      try {
-        console.log('🌐 [PersonalOnboarding] Approach 3: Trying to get all interviews (debug mode)');
-        const response = await axios.get('http://localhost:8000/api/interviews', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        allInterviews = response.data;
-        console.log('📥 [PersonalOnboarding] Received all interviews (debug):', allInterviews);
-        
-        if (allInterviews.length > 0) {
-          console.log('✅ [PersonalOnboarding] Found interviews via debug approach:', allInterviews.length);
-          setInterviewData(allInterviews);
-          return;
-        }
-      } catch (error) {
-        console.log('⚠️ [PersonalOnboarding] Approach 3 failed:', error.message);
-      }
-      
-      // If all approaches failed
-      console.log('❌ [PersonalOnboarding] All approaches failed to fetch interviews');
-      console.log('💡 [PersonalOnboarding] This might be because:');
-      console.log('   1. User has no applications');
-      console.log('   2. User is not logged in as the correct user');
-      console.log('   3. Interview was created for a different user');
-      console.log('   4. Backend API is not working');
-      
+      // If no backend data found, keep interview list empty
+      console.log('❌ [PersonalOnboarding] No interviews found from backend');
       setInterviewData([]);
       
     } catch (error) {
@@ -474,6 +549,92 @@ const PersonalOnboarding = () => {
       setLoadingInterview(false);
     }
   };
+
+  // Enrich backend interviews with HR-entered time fields saved locally (interview_time and end_time)
+  const enrichInterviewsWithLocalEndTime = (backendInterviews) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('scheduledInterviews') || '[]');
+      if (!Array.isArray(backendInterviews) || stored.length === 0) return backendInterviews;
+      return backendInterviews.map((iv) => {
+        const appId = iv.application_id || iv.application?.id;
+        const match = stored.find(si => (si.applicationId && appId && si.applicationId === appId) || (si.applicantEmail && iv.application?.applicant?.email && si.applicantEmail === iv.application?.applicant?.email));
+        if (!match) return iv;
+        const enriched = { ...iv };
+        // Copy HR-entered end time
+        if (match.endTime) {
+          enriched.end_time = match.endTime;
+          enriched.endTime = match.endTime;
+        }
+        // Copy HR-entered interview time (mirror endTime behavior)
+        if (match.interviewTime) {
+          enriched.interview_time = match.interviewTime;
+          enriched.interviewTime = match.interviewTime;
+        }
+        return enriched;
+      });
+    } catch (e) {
+      console.log('⚠️ [PersonalOnboarding] Failed to enrich interviews with local end time:', e.message);
+      return backendInterviews;
+    }
+  };
+
+  // Helpers: safe formatters that show HR-entered values if parsing fails
+  const formatInterviewDateSafe = (dateStr) => {
+    if (!dateStr) return 'Not specified';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    try {
+      return d.toLocaleDateString('en-PH', {
+        timeZone: 'Asia/Manila',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (_) {
+      return String(dateStr);
+    }
+  };
+
+  const formatInterviewTimeSafe = (timeStr) => {
+    if (!timeStr) return 'Not specified';
+    const raw = String(timeStr).trim();
+    // If already 12-hour format with AM/PM, show as-is
+    if (/\b(am|pm)\b/i.test(raw)) return raw.toUpperCase();
+    // If it's a full ISO datetime, parse directly
+    if (/^\d{4}-\d{2}-\d{2}t/i.test(raw)) {
+      const iso = new Date(raw);
+      if (!isNaN(iso.getTime())) {
+        try {
+          return iso.toLocaleTimeString('en-PH', {
+            timeZone: 'Asia/Manila',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        } catch (_) {
+          return raw;
+        }
+      }
+    }
+    // Try to format via Date if HH:MM[:SS]
+    const d = new Date(`2000-01-01T${raw}`);
+    if (!isNaN(d.getTime())) {
+      try {
+        return d.toLocaleTimeString('en-PH', {
+          timeZone: 'Asia/Manila',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (_) {
+        return raw;
+      }
+    }
+    return raw;
+  };
+
+  // Local interview merge removed: only backend-sourced interview data is used
 
   // Notification handlers
   const handleNotificationClick = async (notificationId) => {
@@ -518,8 +679,8 @@ const PersonalOnboarding = () => {
         // If interview-related, go to interview tab and refresh data
         else if (notification.message?.toLowerCase().includes('interview')) {
           targetTab = 'interview';
-          // Immediately fetch fresh interview data when interview notification is clicked
-          fetchInterviewData();
+          // Removed auto loading - will only load when tab is clicked
+          // fetchInterviewData();
         }
           break;
       
@@ -1072,7 +1233,7 @@ const PersonalOnboarding = () => {
     loadChecklist();
     loadAttendanceStatus();
     fetchNotifications(); // Initial fetch of notifications
-    fetchInterviewData(); // Fetch interview data
+    // fetchInterviewData(); // Removed auto loading - will only load when tab is clicked
     
     // Set up interval to check for orientation updates
     const orientationInterval = setInterval(() => {
@@ -1084,10 +1245,10 @@ const PersonalOnboarding = () => {
       fetchNotifications();
     }, 120000); // Increased from 30s to 120s (2 minutes)
     
-    // Set up interval to check for new interviews
-    const interviewInterval = setInterval(() => {
-      fetchInterviewData();
-    }, 60000); // Increased from 10s to 60s
+    // Set up interval to check for new interviews - REMOVED AUTO LOADING
+    // const interviewInterval = setInterval(() => {
+    //   fetchInterviewData();
+    // }, 60000); // Removed auto loading - will only load when tab is clicked
     
     // Handle click outside to close dropdown
     const handleClickOutside = (event) => {
@@ -1104,17 +1265,35 @@ const PersonalOnboarding = () => {
     return () => {
       clearInterval(orientationInterval);
       clearInterval(notificationInterval);
-      clearInterval(interviewInterval);
+      // clearInterval(interviewInterval); // Removed since interval is disabled
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showNotificationDropdown]);
 
-  // Fetch interview data when userApplications change
+  // Fetch interview data when userApplications change - REMOVED AUTO LOADING
+  // useEffect(() => {
+  //   if (userApplications.length > 0) {
+  //     fetchInterviewData();
+  //   }
+  // }, [userApplications]);
+
+  // Fetch job offer data from localStorage
   useEffect(() => {
-    if (userApplications.length > 0) {
-      fetchInterviewData();
-    }
-  }, [userApplications]);
+    const fetchJobOfferData = () => {
+      try {
+        const offers = JSON.parse(localStorage.getItem('jobOffers') || '[]');
+        if (offers.length > 0) {
+          // Get the most recent offer (assuming it's for the current user)
+          const latestOffer = offers[offers.length - 1];
+          setJobOfferData(latestOffer);
+        }
+      } catch (error) {
+        console.error('Error fetching job offer data:', error);
+      }
+    };
+
+    fetchJobOfferData();
+  }, []);
 
   const NavigationTabs = () => (
     <div className="row mb-4" style={{ 
@@ -1728,15 +1907,7 @@ const PersonalOnboarding = () => {
                                 </div>
                                 <div className="detail-content">
                                   <label>📅 Interview Date</label>
-                                  <span>
-                                    {new Date(interview.interview_date).toLocaleDateString('en-PH', {
-                                      timeZone: 'Asia/Manila',
-                                      weekday: 'long',
-                                      year: 'numeric',
-                                      month: 'long',
-                                      day: 'numeric'
-                                    })}
-                                  </span>
+                                  <span>{formatInterviewDateSafe(interview.interview_date)}</span>
                                 </div>
                               </div>
                               <div className="detail-item">
@@ -1745,14 +1916,7 @@ const PersonalOnboarding = () => {
                             </div>
                                 <div className="detail-content">
                                   <label>🕐 Interview Time</label>
-                                  <span>
-                                    {new Date(`2000-01-01T${interview.interview_time}`).toLocaleTimeString('en-PH', {
-                                      timeZone: 'Asia/Manila',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      hour12: true
-                                    })}
-                                  </span>
+                                  <span>{formatInterviewTimeSafe(interview.interview_time || interview.interviewTime)}</span>
                                 </div>
                               </div>
                               <div className="detail-item">
@@ -1760,8 +1924,8 @@ const PersonalOnboarding = () => {
                                   <FontAwesomeIcon icon={faClock} />
                             </div>
                                 <div className="detail-content">
-                                  <label>⏱️ Duration</label>
-                                  <span>{interview.duration || 30} minutes</span>
+                                  <label>🕑 Interview End Time</label>
+                                  <span>{formatInterviewTimeSafe(interview.end_time || interview.endTime)}</span>
                           </div>
                               </div>
                             </div>
@@ -1870,8 +2034,8 @@ const PersonalOnboarding = () => {
           <div className="container-fluid p-4">
             {/* Header */}
             <div className="d-flex align-items-center justify-content-between mb-3">
-              <h4 className="mb-0 offer-header-title">
-                Job Offer for {onboardingData?.offer?.position || (userApplications[0]?.job_title) || 'Offered Position'}
+              <h4 className="mb-0 offer-header-title" style={{ color: '#28a745', fontWeight: '600' }}>
+                Congratulations! You Have Been Accepted
               </h4>
             </div>
 
@@ -1881,55 +2045,228 @@ const PersonalOnboarding = () => {
                 <div className="mb-4">
                   <div>
                     <h5 className="mb-1 company-name">{onboardingData?.company?.name || 'Cabuyao Concrete Development Corporation'}</h5>
-                    <p className="text-muted mb-0">
-                      Congratulations! You've been offered the position of {onboardingData?.offer?.position || (userApplications[0]?.job_title) || 'Offered Position'}.
-                      We are pleased to extend this offer as part of our growing team and believe that your skills and experience will make a valuable contribution to our organization. Please review the details of your offer carefully, including the position, compensation, work schedule, and start date provided below. We encourage you to take the time to consider this opportunity and make a decision that aligns with your goals. Once ready, you may confirm your decision by selecting either "Accept Offer" or "Decline Offer" at the bottom of this page. Should you have any questions or need further clarification, please don't hesitate to contact our HR department. We look forward to hearing from you soon and hopefully welcoming you aboard.
+                    <p className="text-muted mb-4">
+                      Congratulations! You have been offered a position with our organization. We are pleased to extend this opportunity and believe your skills will make a valuable contribution to our team. Please review the offer details carefully, including the compensation, work schedule, and start date. For any questions or clarifications, feel free to contact our HR department. We look forward to your response.
                     </p>
+
+                    {/* Offer Details Section */}
+                    <div className="offer-details-section mb-4">
+                      <h6 className="mb-4 text-dark fw-semibold" style={{ 
+                        color: '#495057',
+                        fontSize: '1.1rem',
+                        borderBottom: '2px solid #007bff',
+                        paddingBottom: '0.5rem'
+                      }}>Offer Details</h6>
+                      <div className="row g-3">
+                        {/* Department & Position */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Department & Position</h6>
+                            <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
+                              <div className="mb-2">
+                                <strong>Department:</strong> {userApplications[0]?.department || '—'}
+                              </div>
+                              <div className="mb-0">
+                                <strong>Position:</strong> {userApplications[0]?.position || userApplications[0]?.job_title || '—'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Employment Type */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Employment Type</h6>
+                            <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
+                              Full-time
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Salary */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Salary</h6>
+                            <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
+                              {onboardingData?.offer?.salary || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Payment Schedule */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Payment Schedule</h6>
+                            <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
+                              {jobOfferData?.payment_schedule || 'Monthly'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Work Setup */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Work Setup</h6>
+                            <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
+                              {jobOfferData?.work_setup || 'Onsite only'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Offer Validity */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Offer Validity</h6>
+                            <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
+                              {jobOfferData?.offer_validity || '7 days from offer date'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Contact Person */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Contact Person</h6>
+                            <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
+                              {jobOfferData?.contact_person || 'HR Department'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Contact Number */}
+                        <div className="col-md-6 col-lg-4">
+                          <div className="detail-card" style={{ 
+                            backgroundColor: 'white',
+                            padding: '1.25rem',
+                            borderRadius: '8px',
+                            border: '1px solid #dee2e6',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            height: '100%'
+                          }}>
+                            <h6 className="detail-title mb-3" style={{ 
+                              color: '#007bff',
+                              fontSize: '1rem',
+                              fontWeight: '600'
+                            }}>Contact Number</h6>
+                            <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
+                              {jobOfferData?.contact_number || '(02) 1234-5678'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Offer Details */}
-                <div className="row g-3">
-                  <div className="col-md-6 col-lg-4">
-                    <div className="offer-detail">
-                      <div className="label">Position</div>
-                      <div className="value">
-                        {onboardingData?.offer?.position || (userApplications[0]?.job_title) || '—'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-md-6 col-lg-4">
-                    <div className="offer-detail">
-                      <div className="label">Salary</div>
-                      <div className="value">
-                        {onboardingData?.offer?.salary || '—'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-md-6 col-lg-4">
-                    <div className="offer-detail">
-                      <div className="label">Department</div>
-                      <div className="value">
-                        {userApplications[0]?.department || '—'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Actions */}
                 <div className="mt-4 d-flex flex-wrap gap-2">
-                  <button className="btn btn-primary d-flex align-items-center" onClick={handleAcceptOffer}>
-                    <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
-                    Accept Offer
+                  <button 
+                    className="btn btn-primary d-flex align-items-center" 
+                    onClick={handleAcceptOffer}
+                    disabled={acceptingOffer || (userApplications[0]?.status === 'Offer Accepted')}
+                  >
+                    {acceptingOffer ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                        {userApplications[0]?.status === 'Offer Accepted' ? 'Offer Already Accepted' : 'Accept Offer'}
+                      </>
+                    )}
                   </button>
-                  <button className="btn btn-outline-secondary d-flex align-items-center" onClick={handleDeclineOffer}>
+                  <button 
+                    className="btn btn-outline-secondary d-flex align-items-center" 
+                    onClick={handleDeclineOffer}
+                    disabled={acceptingOffer || (userApplications[0]?.status === 'Offer Accepted')}
+                  >
                     <FontAwesomeIcon icon={faTimes} className="me-2" />
                     Decline Offer
                   </button>
                 </div>
 
                 <div className="mt-3 text-muted small">
-                  If you have any questions, please reach out to HR at <span className="fw-semibold">hr@company.com</span> or <span className="fw-semibold">(02) 1234-5678</span>.
+                  If you have any questions, please reach out to {jobOfferData?.contact_person || 'HR'} at <span className="fw-semibold">hr@company.com</span> or <span className="fw-semibold">{jobOfferData?.contact_number || '(02) 1234-5678'}</span>.
                 </div>
               </div>
             </div>
@@ -2391,27 +2728,7 @@ const PersonalOnboarding = () => {
           onClose={hideToast}
         />
 
-        {/* Accept Offer Confirmation Modal */}
-        <Modal show={showOfferModal} onHide={() => setShowOfferModal(false)} centered>
-          <Modal.Header closeButton>
-            <Modal.Title>
-              <FontAwesomeIcon icon={faCheckCircle} className="me-2 text-success" />
-              Accept Job Offer
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <p>Are you sure you want to accept this job offer?</p>
-          </Modal.Body>
-          <Modal.Footer>
-            <button className="btn btn-secondary" onClick={() => setShowOfferModal(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-success" onClick={confirmAcceptOffer}>
-              <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
-              Accept Offer
-            </button>
-          </Modal.Footer>
-        </Modal>
+        
 
         {/* Decline Offer Confirmation Modal */}
         <Modal show={showDeclineModal} onHide={() => setShowDeclineModal(false)} centered>
