@@ -1194,6 +1194,8 @@ const OnboardingDashboard = () => {
       // Refresh the list
       await fetchApplicants();
       
+      // Switch to Offered tab after sending offer
+      setActiveTab('Offered');
 
       // Reset form
 
@@ -5669,19 +5671,19 @@ const OnboardingDashboard = () => {
 
                 <Button
 
-                  variant={isOfferSent(selectedRecord?.id) ? 'secondary' : 'success'}
+                  variant={['Offered', 'Offer Accepted', 'Hired', 'Rejected'].includes(selectedRecord?.status) ? 'secondary' : 'success'}
 
                   onClick={handleSubmitJobOffer}
 
                   className="px-4"
 
-                  disabled={isOfferSent(selectedRecord?.id)}
+                  disabled={['Offered', 'Offer Accepted', 'Hired', 'Rejected'].includes(selectedRecord?.status)}
 
                 >
 
                   <FontAwesomeIcon icon={faFileAlt} className="me-2" />
 
-                  {isOfferSent(selectedRecord?.id) ? 'Offer Sent' : 'Send Offer'}
+                  Send Offer
 
                 </Button>
 
