@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "bootstrap/dist/css/bootstrap.min.css";
 import NotificationSystem from './NotificationSystem';
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
 
 export default function JobPortal() {
   const navigate = useNavigate();
@@ -28,6 +28,62 @@ export default function JobPortal() {
   const [hasOnboardingAccess, setHasOnboardingAccess] = useState(false);
   const [lastJobCount, setLastJobCount] = useState(0);
   const [expandedJobId, setExpandedJobId] = useState(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [isHoveringText, setIsHoveringText] = useState(false);
+  const introSectionRef = useRef(null);
+  
+  // Smooth cursor tracking for glowing light
+  const cursorX = useMotionValue(0);
+  const cursorY = useMotionValue(0);
+  const smoothX = useSpring(cursorX, { stiffness: 150, damping: 15 });
+  const smoothY = useSpring(cursorY, { stiffness: 150, damping: 15 });
+
+  // Handle mouse movement for interactive glow effect
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (introSectionRef.current) {
+        const rect = introSectionRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        cursorX.set(x);
+        cursorY.set(y);
+        setMousePosition({ x: e.clientX, y: e.clientY });
+        
+        // Check if cursor is over text elements
+        const textElements = introSectionRef.current.querySelectorAll('h1, h3, p');
+        let hoveringAnyText = false;
+        
+        textElements.forEach((element) => {
+          const elementRect = element.getBoundingClientRect();
+          const elementLeft = elementRect.left;
+          const elementTop = elementRect.top;
+          const elementRight = elementRect.right;
+          const elementBottom = elementRect.bottom;
+          
+          // Check if cursor is within element bounds with some padding for glow radius
+          if (
+            e.clientX >= elementLeft - 150 &&
+            e.clientX <= elementRight + 150 &&
+            e.clientY >= elementTop - 150 &&
+            e.clientY <= elementBottom + 150
+          ) {
+            hoveringAnyText = true;
+          }
+        });
+        
+        setIsHoveringText(hoveringAnyText);
+      }
+    };
+    
+    const introSection = introSectionRef.current;
+    if (introSection) {
+      introSection.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        introSection.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [cursorX, cursorY]);
 
   // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
@@ -873,6 +929,7 @@ export default function JobPortal() {
 
       {/* Intro Section */}
       <section
+        ref={introSectionRef}
         style={{
           minHeight: "100vh",
           backgroundColor: "#00033d",
@@ -886,10 +943,35 @@ export default function JobPortal() {
         }}
         className="px-3 px-md-5"
       >
-        {/* Static Background */}
+        {/* Interactive Glowing Light that follows cursor */}
+        <motion.div
+          style={{
+            position: "absolute",
+            left: smoothX,
+            top: smoothY,
+            width: "200px",
+            height: "200px",
+            borderRadius: "50%",
+            background: "#0033ff",
+            pointerEvents: "none",
+            x: "-50%",
+            y: "-50%",
+            zIndex: 1,
+            mixBlendMode: "difference",
+          }}
+          animate={{
+            scale: isHoveringText ? 1.2 : 0.15,
+            opacity: isHoveringText ? 0.8 : 0.8,
+          }}
+          transition={{
+            duration: 0.3,
+            ease: "easeOut",
+          }}
+        />
 
+        {/* Text Content with dynamic color based on cursor position */}
         <div style={{ maxWidth: "650px", position: "relative", zIndex: 2 }}>
-          <h1
+          <motion.h1
             style={{
               fontSize: "clamp(2rem, 5vw, 3rem)",
               fontWeight: "800",
@@ -902,8 +984,8 @@ export default function JobPortal() {
             }}
           >
             Welcome, <strong>{userName || 'Applicant'}</strong>
-          </h1>
-          <h3
+          </motion.h1>
+          <motion.h3
             style={{
               fontWeight: "500",
               fontSize: "clamp(1.2rem, 3vw, 1.5rem)",
@@ -915,8 +997,8 @@ export default function JobPortal() {
             }}
           >
             Are you ready to join our team?
-          </h3>
-          <p
+          </motion.h3>
+          <motion.p
             style={{
               fontSize: "clamp(1rem, 2.5vw, 1.1rem)",
               color: "#ffffff",
@@ -928,8 +1010,8 @@ export default function JobPortal() {
             Cabuyao Concrete Development Corporation is seeking talented and
             motivated individuals to contribute to our growing success. We
             value professionalism, dedication, and a passion for excellence.
-          </p>
-          <p
+          </motion.p>
+          <motion.p
             style={{
               fontSize: "clamp(0.9rem, 2vw, 1rem)",
               color: "#ffffff",
@@ -940,7 +1022,7 @@ export default function JobPortal() {
           >
             Review the job details below and take the first step towards
             building your career with us.
-          </p>
+          </motion.p>
         </div>
 
         <style>
