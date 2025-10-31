@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const RegisterApplicant = () => {
   const navigate = useNavigate();
@@ -125,6 +126,9 @@ const RegisterApplicant = () => {
       }}
     >
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Momo+Trust+Display&display=swap');
+        
         html, body, #root {
           height: 100%;
         }
@@ -135,8 +139,12 @@ const RegisterApplicant = () => {
           min-height: 100vh;
           width: 100vw;
           overflow-y: auto;
+          font-family: 'Noto Sans', sans-serif;
         }
-        * { box-sizing: border-box; }
+        * { 
+          box-sizing: border-box;
+          font-family: 'Noto Sans', sans-serif;
+        }
 
         .register-wrapper {
           width: 100%;
@@ -501,60 +509,130 @@ const RegisterApplicant = () => {
       `}</style>
 
       <div className="register-wrapper">
-        <div className="register-card">
+        <motion.div 
+          className="register-card"
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
           {/* Header Section */}
-          <div className="register-header">
+          <motion.div 
+            className="register-header"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
             {/* Back to Home button */}
-            <button
+            <motion.button
               className="back-home-btn"
               onClick={() => navigate('/')}
               type="button"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               ← Home
-            </button>
-            <div className="header-icon">
+            </motion.button>
+            <motion.div 
+              className="header-icon"
+              initial={{ opacity: 0, scale: 0.8, rotate: -180 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              transition={{ duration: 0.6, delay: 0.3, type: "spring" }}
+            >
               <i className="bi bi-person-plus-fill text-white" style={{ fontSize: '2.2rem' }}></i>
-            </div>
-            <h2 style={{
-              fontWeight: '700',
-              color: '#1f2937',
-              marginBottom: '10px',
-              fontSize: '1.8rem'
-            }}>
+            </motion.div>
+            <motion.h2 
+              style={{
+                fontFamily: "'Momo Trust Display', sans-serif",
+                fontWeight: '700',
+                color: '#1f2937',
+                marginBottom: '10px',
+                fontSize: '1.8rem'
+              }}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+            >
               Applicant Registration
-            </h2>
-            <p style={{
-              color: '#6b7280',
-              margin: 0,
-              fontSize: '1rem',
-              lineHeight: '1.5'
-            }}>
+            </motion.h2>
+            <motion.p 
+              style={{
+                color: '#6b7280',
+                margin: 0,
+                fontSize: '1rem',
+                lineHeight: '1.5'
+              }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+            >
               Join Cabuyao Concrete Development Corporation<br />
               Create your account to apply for positions
-            </p>
-          </div>
+            </motion.p>
+          </motion.div>
 
           {/* Body Section */}
-          <div className="register-body">
-            {error && <div className="alert alert-danger">{error}</div>}
-            {success && <div className="alert alert-success">{success}</div>}
+          <motion.div 
+            className="register-body"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.div 
+                  className="alert alert-danger"
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {error}
+                </motion.div>
+              )}
+              {success && (
+                <motion.div 
+                  className="alert alert-success"
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {success}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <form onSubmit={handleRegister}>
+            <form onSubmit={handleRegister} autoComplete="off">
               {/* Personal Information */}
-              <div style={{ marginBottom: '30px' }}>
-                <h4 style={{
-                  color: '#374151',
-                  fontWeight: '600',
-                  marginBottom: '20px',
-                  fontSize: '1.1rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>
+              <motion.div 
+                style={{ marginBottom: '30px' }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.6 }}
+              >
+                <motion.h4 
+                  style={{
+                    color: '#374151',
+                    fontWeight: '600',
+                    marginBottom: '20px',
+                    fontSize: '1.1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 0.7 }}
+                >
                   Personal Information
-                </h4>
+                </motion.h4>
 
                 <div className="form-grid">
-                  <div className="form-group">
+                  <motion.div 
+                    className="form-group"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 0.8 }}
+                  >
                     <label className="form-label">
                       First Name <span className="required-indicator">*</span>
                     </label>
@@ -567,12 +645,18 @@ const RegisterApplicant = () => {
                         placeholder="Enter your first name"
                         value={form.first_name}
                         onChange={handleChange}
+                        autoComplete="off"
                         required
                       />
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="form-group">
+                  <motion.div 
+                    className="form-group"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 0.9 }}
+                  >
                     <label className="form-label">
                       Last Name <span className="required-indicator">*</span>
                     </label>
@@ -585,27 +669,43 @@ const RegisterApplicant = () => {
                         placeholder="Enter your last name"
                         value={form.last_name}
                         onChange={handleChange}
+                        autoComplete="off"
                         required
                       />
                     </div>
-                  </div>
+                  </motion.div>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Contact Information */}
-              <div style={{ marginBottom: '30px' }}>
-                <h4 style={{
-                  color: '#374151',
-                  fontWeight: '600',
-                  marginBottom: '20px',
-                  fontSize: '1.1rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>
+              <motion.div 
+                style={{ marginBottom: '30px' }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 1.0 }}
+              >
+                <motion.h4 
+                  style={{
+                    color: '#374151',
+                    fontWeight: '600',
+                    marginBottom: '20px',
+                    fontSize: '1.1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 1.1 }}
+                >
                   Contact Information
-                </h4>
+                </motion.h4>
 
-                <div className="form-group">
+                <motion.div 
+                  className="form-group"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 1.2 }}
+                >
                   <label className="form-label">
                     Email Address <span className="required-indicator">*</span>
                   </label>
@@ -618,12 +718,18 @@ const RegisterApplicant = () => {
                       placeholder="Enter your email address"
                       value={form.email}
                       onChange={handleChange}
+                      autoComplete="off"
                       required
                     />
-                  </div>
-                </div>
+                    </div>
+                </motion.div>
 
-                <div className="form-group">
+                <motion.div 
+                  className="form-group"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 1.3 }}
+                >
                   <label className="form-label">
                     Phone Number <span className="required-indicator">*</span>
                   </label>
@@ -638,6 +744,7 @@ const RegisterApplicant = () => {
                       onChange={handleChange}
                       maxLength="11"
                       pattern="[0-9]{11}"
+                      autoComplete="off"
                       required
                     />
                   </div>
@@ -646,24 +753,39 @@ const RegisterApplicant = () => {
                       Philippine mobile number format: 09XXXXXXXXX (11 digits)
                     </small>
                   </div>
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
 
               {/* Account Security */}
-              <div style={{ marginBottom: '30px' }}>
-                <h4 style={{
-                  color: '#374151',
-                  fontWeight: '600',
-                  marginBottom: '20px',
-                  fontSize: '1.1rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>
+              <motion.div 
+                style={{ marginBottom: '30px' }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 1.4 }}
+              >
+                <motion.h4 
+                  style={{
+                    color: '#374151',
+                    fontWeight: '600',
+                    marginBottom: '20px',
+                    fontSize: '1.1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.4, delay: 1.5 }}
+                >
                   Account Security
-                </h4>
+                </motion.h4>
 
                 <div className="form-grid">
-                  <div className="form-group">
+                  <motion.div 
+                    className="form-group"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 1.6 }}
+                  >
                     <label className="form-label">
                       Password <span className="required-indicator">*</span>
                     </label>
@@ -676,12 +798,18 @@ const RegisterApplicant = () => {
                         placeholder="Create a secure password (12-16 characters)"
                         value={form.password}
                         onChange={handleChange}
+                        autoComplete="new-password"
                         required
                       />
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="form-group">
+                  <motion.div 
+                    className="form-group"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 1.7 }}
+                  >
                     <label className="form-label">
                       Confirm Password <span className="required-indicator">*</span>
                     </label>
@@ -694,19 +822,30 @@ const RegisterApplicant = () => {
                         placeholder="Confirm your password"
                         value={form.password_confirmation}
                         onChange={handleChange}
+                        autoComplete="new-password"
                         required
                       />
-                      <i 
+                      <motion.i 
                         className={`bi ${showPasswords ? 'bi-eye-slash' : 'bi-eye'} password-toggle`}
                         onClick={() => setShowPasswords(!showPasswords)}
-                      ></i>
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        style={{ cursor: 'pointer' }}
+                      ></motion.i>
                     </div>
-                  </div>
+                  </motion.div>
                 </div>
                 
                 {/* Password Requirements - Full Width */}
-                {form.password && (
-                  <div className="password-requirements full-width">
+                <AnimatePresence>
+                  {form.password && (
+                    <motion.div 
+                      className="password-requirements full-width"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
                     {/* Password Strength Indicator */}
                     <div className="password-strength">
                       {form.password.length > 0 && (
@@ -730,12 +869,18 @@ const RegisterApplicant = () => {
                         Must be 12-16 characters with uppercase, lowercase, numbers, and special characters.
                       </small>
                     </div>
-                  </div>
-                )}
-              </div>
+                  </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
 
               {/* Terms and Conditions */}
-              <div className="terms-checkbox-wrapper">
+              <motion.div 
+                className="terms-checkbox-wrapper"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 1.8 }}
+              >
                 <input
                   type="checkbox"
                   id="terms"
@@ -747,10 +892,9 @@ const RegisterApplicant = () => {
                   I agree to the <a href="#" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="#" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. 
                   I understand that my information will be used solely for recruitment and application purposes.
                 </label>
-              </div>
+              </motion.div>
 
-
-              <button 
+              <motion.button 
                 type="submit" 
                 className="register-button"
                 disabled={!termsAccepted}
@@ -758,19 +902,32 @@ const RegisterApplicant = () => {
                   opacity: termsAccepted ? 1 : 0.6,
                   cursor: termsAccepted ? 'pointer' : 'not-allowed'
                 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: termsAccepted ? 1 : 0.6, y: 0 }}
+                transition={{ duration: 0.4, delay: 1.9 }}
+                whileHover={termsAccepted ? { 
+                  scale: 1.02,
+                  boxShadow: "0 12px 35px rgba(59, 130, 246, 0.4)"
+                } : {}}
+                whileTap={termsAccepted ? { scale: 0.98 } : {}}
               >
                 Create Account
-              </button>
+              </motion.button>
             </form>
 
-            <div className="login-link">
+            <motion.div 
+              className="login-link"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 2.0 }}
+            >
               <span>Already have an account? </span>
               <button onClick={() => navigate('/login')}>
                 Sign in here
               </button>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
   );

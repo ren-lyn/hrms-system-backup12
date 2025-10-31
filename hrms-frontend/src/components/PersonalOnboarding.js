@@ -1314,7 +1314,7 @@ const PersonalOnboarding = () => {
               className="btn btn-outline-primary btn-sm"
               onClick={() => window.location.href = '/'}
               style={{
-                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                fontFamily: "'Noto Sans', sans-serif",
                 fontWeight: '500'
               }}
             >
@@ -1408,7 +1408,7 @@ const PersonalOnboarding = () => {
                   className="btn btn-outline-secondary btn-sm notification-icon"
                   onClick={handleBellIconClick}
                   style={{
-                     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif', 
+                     fontFamily: "'Noto Sans', sans-serif", 
                     fontWeight: '500',
                     position: 'relative'
                   }}
@@ -2875,6 +2875,13 @@ const PersonalOnboarding = () => {
         </Modal>
 
         <style jsx>{`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+        
+        /* Global font for all text */
+        * {
+          font-family: 'Noto Sans', sans-serif;
+        }
+        
         .onboarding-container {
           min-height: 100vh;
           background: white;
@@ -2913,7 +2920,7 @@ const PersonalOnboarding = () => {
           justify-content: center;
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          font-family: 'Noto Sans', sans-serif;
         }
 
         .modern-tab:hover {
@@ -3031,7 +3038,7 @@ const PersonalOnboarding = () => {
         .onboarding-section-title {
           color: #2c3e50;
           font-weight: 700;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          font-family: 'Noto Sans', sans-serif;
         }
 
         /* Responsive Design */
@@ -3477,7 +3484,7 @@ const PersonalOnboarding = () => {
           padding: 0.5rem 1rem;
           font-size: 0.9rem;
           font-weight: 500;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          font-family: 'Noto Sans', sans-serif;
           cursor: pointer;
           transition: all 0.3s ease;
           color: #495057;
