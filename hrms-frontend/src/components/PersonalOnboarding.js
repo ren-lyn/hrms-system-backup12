@@ -208,11 +208,6 @@ const PersonalOnboarding = () => {
         });
 
         console.log('✅ Offer accepted successfully!');
-        
-        // Refresh applications after 2 seconds to sync with backend
-        setTimeout(() => {
-          fetchUserApplications();
-        }, 2000);
       }
     } catch (error) {
       console.error('❌ Error accepting offer:', error);
@@ -1277,23 +1272,38 @@ const PersonalOnboarding = () => {
   //   }
   // }, [userApplications]);
 
-  // Fetch job offer data from localStorage
+  // Fetch job offer data from backend API
   useEffect(() => {
-    const fetchJobOfferData = () => {
+    const fetchJobOfferData = async () => {
       try {
+        // First try to fetch from localStorage as fallback
         const offers = JSON.parse(localStorage.getItem('jobOffers') || '[]');
         if (offers.length > 0) {
-          // Get the most recent offer (assuming it's for the current user)
           const latestOffer = offers[offers.length - 1];
           setJobOfferData(latestOffer);
         }
+        
+        // Then try to fetch from backend if we have an application with offer status
+        if (userApplications.length > 0 && (userApplications[0].status === 'Offered' || userApplications[0].status === 'Offer Accepted')) {
+          const token = localStorage.getItem('token');
+          const response = await axios.get(
+            `http://localhost:8000/api/applications/${userApplications[0].id}/job-offer`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          if (response.data.offer) {
+            console.log('✅ [PersonalOnboarding] Job offer fetched from API:', response.data.offer);
+            setJobOfferData(response.data.offer);
+          }
+        }
       } catch (error) {
         console.error('Error fetching job offer data:', error);
+        // Fallback to localStorage data if API fails
       }
     };
 
     fetchJobOfferData();
-  }, []);
+  }, [userApplications]);
 
   const NavigationTabs = () => (
     <div className="row mb-4" style={{ 
@@ -2121,7 +2131,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Salary</h6>
                             <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
-                              {onboardingData?.offer?.salary || '—'}
+                              {jobOfferData?.salary || onboardingData?.offer?.salary || '—'}
                             </div>
                           </div>
                         </div>
@@ -2142,7 +2152,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Payment Schedule</h6>
                             <div className="detail-value" style={{ fontSize: '1rem', color: '#495057' }}>
-                              {jobOfferData?.payment_schedule || 'Monthly'}
+                              {jobOfferData?.payment_schedule || onboardingData?.offer?.payment_schedule || 'Monthly'}
                             </div>
                           </div>
                         </div>
@@ -2163,7 +2173,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Work Setup</h6>
                             <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
-                              {jobOfferData?.work_setup || 'Onsite only'}
+                              {jobOfferData?.work_setup || onboardingData?.offer?.work_setup || 'Onsite only'}
                             </div>
                           </div>
                         </div>
@@ -2184,7 +2194,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Offer Validity</h6>
                             <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
-                              {jobOfferData?.offer_validity || '7 days from offer date'}
+                              {jobOfferData?.offer_validity || onboardingData?.offer?.offer_validity || '7 days from offer date'}
                             </div>
                           </div>
                         </div>
@@ -2205,7 +2215,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Contact Person</h6>
                             <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
-                              {jobOfferData?.contact_person || 'HR Department'}
+                              {jobOfferData?.contact_person || onboardingData?.offer?.contact_person || 'HR Department'}
                             </div>
                           </div>
                         </div>
@@ -2226,7 +2236,7 @@ const PersonalOnboarding = () => {
                               fontWeight: '600'
                             }}>Contact Number</h6>
                             <div className="detail-value" style={{ fontSize: '0.9rem', color: '#6c757d' }}>
-                              {jobOfferData?.contact_number || '(02) 1234-5678'}
+                              {jobOfferData?.contact_number || onboardingData?.offer?.contact_number || '(02) 1234-5678'}
                             </div>
                           </div>
                         </div>
@@ -2237,32 +2247,46 @@ const PersonalOnboarding = () => {
 
 
                 {/* Actions */}
-                <div className="mt-4 d-flex flex-wrap gap-2">
-                  <button 
-                    className="btn btn-primary d-flex align-items-center" 
-                    onClick={handleAcceptOffer}
-                    disabled={acceptingOffer || (userApplications[0]?.status === 'Offer Accepted')}
-                  >
-                    {acceptingOffer ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
-                        {userApplications[0]?.status === 'Offer Accepted' ? 'Offer Already Accepted' : 'Accept Offer'}
-                      </>
-                    )}
-                  </button>
-                  <button 
-                    className="btn btn-outline-secondary d-flex align-items-center" 
-                    onClick={handleDeclineOffer}
-                    disabled={acceptingOffer || (userApplications[0]?.status === 'Offer Accepted')}
-                  >
-                    <FontAwesomeIcon icon={faTimes} className="me-2" />
-                    Decline Offer
-                  </button>
+                <div className="mt-4">
+                  {userApplications[0]?.status === 'Offer Accepted' ? (
+                    <div className="alert alert-success d-flex align-items-center" role="alert" style={{ 
+                      borderRadius: '8px',
+                      padding: '1rem 1.5rem',
+                      fontSize: '1.1rem',
+                      fontWeight: '600'
+                    }}>
+                      <FontAwesomeIcon icon={faCheckCircle} className="me-2" style={{ fontSize: '1.5rem' }} />
+                      Offer Accepted
+                    </div>
+                  ) : (
+                    <div className="d-flex flex-wrap gap-2">
+                      <button 
+                        className="btn btn-primary d-flex align-items-center" 
+                        onClick={handleAcceptOffer}
+                        disabled={acceptingOffer}
+                      >
+                        {acceptingOffer ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                            Accept Offer
+                          </>
+                        )}
+                      </button>
+                      <button 
+                        className="btn btn-outline-secondary d-flex align-items-center" 
+                        onClick={handleDeclineOffer}
+                        disabled={acceptingOffer}
+                      >
+                        <FontAwesomeIcon icon={faTimes} className="me-2" />
+                        Decline Offer
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 text-muted small">

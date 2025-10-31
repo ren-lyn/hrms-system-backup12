@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Application;
 use App\Models\JobPosting;
 use App\Models\Applicant;
+use App\Models\JobOffer;
 // use App\Models\OnboardingRecord; // Removed model dependency; using query builder instead
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,7 @@ class ApplicationController extends Controller
     // Get all applications for HR staff to view
     public function index(Request $request)
     {
-        $applications = Application::with(['jobPosting', 'applicant'])
+        $applications = Application::with(['jobPosting', 'applicant', 'jobOffer'])
             ->when($request->job_posting_id, function($query, $jobId) {
                 return $query->where('job_posting_id', $jobId);
             })
@@ -497,26 +498,99 @@ class ApplicationController extends Controller
     // Send job offer to applicant
     public function sendOffer(Request $request, $id)
     {
-        $application = Application::findOrFail($id);
-        
-        // Idempotent send: if already offered/accepted/hired/rejected, do not change state
-        if (in_array($application->status, ['Offered', 'Offer Accepted', 'Hired', 'Rejected'])) {
-            return response()->json([
-                'message' => 'Offer already processed.',
-                'application' => $application->load(['jobPosting', 'applicant'])
+        try {
+            $request->validate([
+                'payment_schedule' => 'required|string',
+                'employment_type' => 'required|string',
+                'work_setup' => 'required|string',
+                'offer_validity' => 'required|string',
+                'contact_person' => 'required|string',
+                'contact_number' => 'required|string',
+                'department' => 'nullable|string',
+                'position' => 'nullable|string',
+                'salary' => 'nullable|string',
+                'notes' => 'nullable|string'
             ]);
-        }
 
-        // Update status to Offered (HR UI shows this under Offered tab)
-        $application->update(['status' => 'Offered']);
-        
-        // Here you could send email notification to applicant
-        // Mail::to($application->applicant->email)->send(new JobOfferMail($application));
-        
-        return response()->json([
-            'message' => 'Job offer sent successfully.',
-            'application' => $application->load(['jobPosting', 'applicant'])
-        ]);
+            $application = Application::findOrFail($id);
+            
+            // Idempotent send: if already offered/accepted/hired/rejected, do not change state
+            if (in_array($application->status, ['Offered', 'Offer Accepted', 'Hired', 'Rejected'])) {
+                return response()->json([
+                    'message' => 'Offer already processed.',
+                    'application' => $application->load(['jobPosting', 'applicant', 'jobOffer'])
+                ]);
+            }
+
+            // Check if job offer already exists for this application
+            $existingOffer = JobOffer::where('application_id', $id)->first();
+            
+            if ($existingOffer) {
+                // Update existing offer
+                $existingOffer->update([
+                    'department' => $request->department,
+                    'position' => $request->position,
+                    'salary' => $request->salary,
+                    'payment_schedule' => $request->payment_schedule,
+                    'employment_type' => $request->employment_type,
+                    'work_setup' => $request->work_setup,
+                    'offer_validity' => $request->offer_validity,
+                    'contact_person' => $request->contact_person,
+                    'contact_number' => $request->contact_number,
+                    'notes' => $request->notes,
+                    'status' => 'pending'
+                ]);
+                
+                Log::info('Job offer updated', [
+                    'application_id' => $id,
+                    'offer_id' => $existingOffer->id
+                ]);
+            } else {
+                // Create new job offer
+                $existingOffer = JobOffer::create([
+                    'application_id' => $id,
+                    'department' => $request->department,
+                    'position' => $request->position,
+                    'salary' => $request->salary,
+                    'payment_schedule' => $request->payment_schedule,
+                    'employment_type' => $request->employment_type,
+                    'work_setup' => $request->work_setup,
+                    'offer_validity' => $request->offer_validity,
+                    'contact_person' => $request->contact_person,
+                    'contact_number' => $request->contact_number,
+                    'notes' => $request->notes,
+                    'status' => 'pending',
+                    'offer_sent_at' => now()
+                ]);
+                
+                Log::info('Job offer created', [
+                    'application_id' => $id,
+                    'offer_id' => $existingOffer->id
+                ]);
+            }
+
+            // Update application status to Offered
+            $application->update(['status' => 'Offered']);
+            
+            // Here you could send email notification to applicant
+            // Mail::to($application->applicant->email)->send(new JobOfferMail($application));
+            
+            return response()->json([
+                'message' => 'Job offer sent successfully.',
+                'application' => $application->load(['jobPosting', 'applicant', 'jobOffer']),
+                'job_offer' => $existingOffer
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error sending job offer', [
+                'application_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to send job offer.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
     
     // Accept job offer (applicant action)
@@ -525,12 +599,18 @@ class ApplicationController extends Controller
         try {
             DB::beginTransaction();
             
-            $application = Application::with(['jobPosting', 'applicant'])->findOrFail($id);
+            $user = $request->user();
+            $application = Application::with(['jobPosting', 'applicant'])
+                ->whereHas('applicant', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->findOrFail($id);
             
             Log::info('Accept offer request received', [
                 'application_id' => $id,
                 'current_status' => $application->status,
-                'applicant_id' => $application->applicant_id
+                'applicant_id' => $application->applicant_id,
+                'user_id' => $user->id
             ]);
             
             // Idempotency: if already accepted, return success
@@ -671,22 +751,40 @@ class ApplicationController extends Controller
     // Decline job offer
     public function declineOffer(Request $request, $id)
     {
-        $application = Application::findOrFail($id);
-        
-        // Verify the application status is 'Offer Sent'
-        if ($application->status !== 'Offer Sent') {
+        try {
+            $user = $request->user();
+            $application = Application::with(['jobPosting', 'applicant'])
+                ->whereHas('applicant', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->findOrFail($id);
+            
+            // Verify the application status allows declining
+            $allowedStatuses = ['Offer Sent', 'Offered'];
+            if (!in_array($application->status, $allowedStatuses)) {
+                return response()->json([
+                    'message' => 'Invalid application status for offer decline.'
+                ], 400);
+            }
+            
+            // Update status to Rejected
+            $application->update(['status' => 'Rejected']);
+            
             return response()->json([
-                'message' => 'Invalid application status for offer decline.'
-            ], 400);
+                'message' => 'Job offer declined.',
+                'application' => $application->load(['jobPosting', 'applicant'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error declining offer', [
+                'application_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to decline offer. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
         }
-        
-        // Update status to Rejected
-        $application->update(['status' => 'Rejected']);
-        
-        return response()->json([
-            'message' => 'Job offer declined.',
-            'application' => $application->load(['jobPosting', 'applicant'])
-        ]);
     }
     
     // Get applicant's own applications
@@ -695,7 +793,7 @@ class ApplicationController extends Controller
         $user = $request->user();
         
         // Get applications for the current user (assuming they have an applicant profile)
-        $applications = Application::with(['jobPosting', 'applicant'])
+        $applications = Application::with(['jobPosting', 'applicant', 'jobOffer'])
             ->whereHas('applicant', function($query) use ($user) {
                 $query->where('user_id', $user->id);
             })
@@ -742,5 +840,46 @@ class ApplicationController extends Controller
             'applications' => $applications,
             'timestamp' => now()->toISOString()
         ]);
+    }
+    
+    // Get job offer for applicant
+    public function getJobOffer(Request $request, $applicationId)
+    {
+        try {
+            $user = $request->user();
+            
+            // Verify the application belongs to the current user
+            $application = Application::with(['jobPosting', 'applicant'])
+                ->whereHas('applicant', function($query) use ($user) {
+                    $query->where('user_id', $user->id);
+                })
+                ->findOrFail($applicationId);
+            
+            // Get job offer if exists
+            $jobOffer = JobOffer::where('application_id', $applicationId)->first();
+            
+            if (!$jobOffer) {
+                return response()->json([
+                    'message' => 'No job offer found for this application.',
+                    'offer' => null
+                ], 404);
+            }
+            
+            return response()->json([
+                'message' => 'Job offer retrieved successfully.',
+                'offer' => $jobOffer,
+                'application' => $application
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving job offer', [
+                'application_id' => $applicationId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to retrieve job offer.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

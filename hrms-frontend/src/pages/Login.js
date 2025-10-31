@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -10,6 +10,60 @@ const Login = () => {
   const [role, setRole] = useState('Admin');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const welcomePanelRef = useRef(null);
+  const [isHoveringText, setIsHoveringText] = useState(false);
+  
+  // Smooth cursor tracking for glowing light
+  const cursorX = useMotionValue(0);
+  const cursorY = useMotionValue(0);
+  const smoothX = useSpring(cursorX, { stiffness: 150, damping: 15 });
+  const smoothY = useSpring(cursorY, { stiffness: 150, damping: 15 });
+
+  // Handle mouse movement for interactive glow effect
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (welcomePanelRef.current) {
+        const rect = welcomePanelRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        cursorX.set(x);
+        cursorY.set(y);
+        
+        // Check if cursor is over text elements
+        const textElements = welcomePanelRef.current.querySelectorAll('h2');
+        let hoveringAnyText = false;
+        
+        textElements.forEach((element) => {
+          const elementRect = element.getBoundingClientRect();
+          const elementLeft = elementRect.left;
+          const elementTop = elementRect.top;
+          const elementRight = elementRect.right;
+          const elementBottom = elementRect.bottom;
+          
+          // Check if cursor is within element bounds with some padding for glow radius
+          if (
+            e.clientX >= elementLeft - 100 &&
+            e.clientX <= elementRight + 100 &&
+            e.clientY >= elementTop - 100 &&
+            e.clientY <= elementBottom + 100
+          ) {
+            hoveringAnyText = true;
+          }
+        });
+        
+        setIsHoveringText(hoveringAnyText);
+      }
+    };
+    
+    const welcomePanel = welcomePanelRef.current;
+    if (welcomePanel) {
+      welcomePanel.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        welcomePanel.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [cursorX, cursorY]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -108,7 +162,7 @@ const Login = () => {
         }
 
         .welcome-panel {
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1e40af 100%);
+          background: linear-gradient(135deg, #3b82f6, #1e40af);
           color: white;
           padding: 60px 40px;
           display: flex;
@@ -117,6 +171,7 @@ const Login = () => {
           align-items: center;
           position: relative;
           border-radius: 24px 0 0 24px;
+          overflow: hidden;
         }
 
         /* Back to Home button */
@@ -405,11 +460,36 @@ const Login = () => {
         >
           {/* Left welcome panel */}
           <motion.div 
+            ref={welcomePanelRef}
             className="welcome-panel"
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
           >
+            {/* Interactive Glowing Light that follows cursor */}
+            <motion.div
+              style={{
+                position: "absolute",
+                left: smoothX,
+                top: smoothY,
+                width: "150px",
+                height: "150px",
+                borderRadius: "50%",
+                background: "white",
+                pointerEvents: "none",
+                x: "-50%",
+                y: "-50%",
+                zIndex: 1,
+              }}
+              animate={{
+                scale: isHoveringText ? 1.3 : 0.2,
+              }}
+              transition={{
+                duration: 0.3,
+                ease: "easeOut",
+              }}
+            />
+
             {/* Back to Home button */}
             <motion.button
               className="back-home-btn"
@@ -417,6 +497,7 @@ const Login = () => {
               type="button"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              style={{ zIndex: 10 }}
             >
               <svg viewBox="0 0 24 24">
                 <path d="M3 9.5L12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z" />
@@ -429,6 +510,7 @@ const Login = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
+              style={{ position: "relative", zIndex: 2 }}
             >
               <h2>
                 Cabuyao Concrete

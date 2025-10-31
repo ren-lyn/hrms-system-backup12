@@ -170,6 +170,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Applicant routes
     Route::get('/my-applications', [ApplicationController::class, 'myApplications']);
+    Route::get('/applications/{id}/job-offer', [ApplicationController::class, 'getJobOffer']);
     Route::post('/applications/{id}/accept-offer', [ApplicationController::class, 'acceptOffer']);
     Route::post('/applications/{id}/decline-offer', [ApplicationController::class, 'declineOffer']);
 });
