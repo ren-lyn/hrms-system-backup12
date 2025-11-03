@@ -24,7 +24,7 @@ class DatabaseSeeder extends Seeder
             // JobPostingSeeder::class,
             // ApplicantSeeder::class,
             MultipleAccountsLeaveSeeder::class,
-            EvaluationResultsSeeder::class,
+            // EvaluationResultsSeeder::class, // Disabled - evaluations created in DefaultAccountsSeeder and MultipleAccountsSeeder
             CashAdvanceSeeder::class,
             // ApplicationSeeder::class,
             // AttendanceSeeder::class,

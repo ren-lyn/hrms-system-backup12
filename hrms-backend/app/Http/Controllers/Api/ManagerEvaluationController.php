@@ -270,7 +270,8 @@ class ManagerEvaluationController extends Controller
             // Calculate scores and percentages
             $averageScore = $responseCount > 0 ? round($totalScore / $responseCount, 2) : 0;
             $percentage = ($totalScore / ($responseCount * 10)) * 100; // Percentage based on max possible score
-            $passingScore = 42; // As specified
+            $maxPossibleScore = $responseCount * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
             $isPassed = $totalScore >= $passingScore;
 
             // Set evaluation period
@@ -383,7 +384,8 @@ class ManagerEvaluationController extends Controller
             $responses = $evaluation->responses;
             $totalQuestions = $responses->count();
             $percentage = ($evaluation->total_score / ($totalQuestions * 10)) * 100;
-            $passingScore = 42;
+            $maxPossibleScore = $totalQuestions * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
             $isPassed = $evaluation->total_score >= $passingScore;
 
             $strengths = $responses->where('classification', 'Strength')->values();
@@ -483,7 +485,8 @@ class ManagerEvaluationController extends Controller
             $responses = $evaluation->responses;
             $totalQuestions = $responses->count();
             $percentage = ($totalQuestions > 0) ? ($evaluation->total_score / ($totalQuestions * 10)) * 100 : 0;
-            $passingScore = 42;
+            $maxPossibleScore = $totalQuestions * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
             $isPassed = $evaluation->total_score >= $passingScore;
 
             $strengths = $responses->where('classification', 'Strength')->values();
@@ -639,7 +642,8 @@ class ManagerEvaluationController extends Controller
             $responses = $evaluation->responses;
             $totalQuestions = $responses->count();
             $percentage = ($evaluation->total_score / ($totalQuestions * 10)) * 100;
-            $passingScore = 42;
+            $maxPossibleScore = $totalQuestions * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
             $isPassed = $evaluation->total_score >= $passingScore;
 
             $strengths = $responses->where('classification', 'Strength')->values();
@@ -698,7 +702,8 @@ class ManagerEvaluationController extends Controller
             $responses = $evaluation->responses;
             $totalQuestions = $responses->count();
             $percentage = ($totalQuestions > 0) ? ($evaluation->total_score / ($totalQuestions * 10)) * 100 : 0;
-            $passingScore = 42;
+            $maxPossibleScore = $totalQuestions * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
             $isPassed = $evaluation->total_score >= $passingScore;
 
             $strengths = $responses->where('classification', 'Strength')->values();

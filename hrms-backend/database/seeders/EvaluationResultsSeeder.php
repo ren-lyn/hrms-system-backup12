@@ -40,6 +40,7 @@ class EvaluationResultsSeeder extends Seeder
                 ['category' => 'Quality of work', 'question_text' => 'Kalidad ng trabaho (Quality of work)', 'order' => 3],
                 ['category' => 'Initiative', 'question_text' => 'Pagkukusa (Initiative)', 'order' => 4],
                 ['category' => 'Teamwork', 'question_text' => 'Pagtutulungan ng magkasama (Teamwork)', 'order' => 5],
+                ['category' => 'Trustworthy and Reliable', 'question_text' => 'Mapagkakatiwalaan at Maaasahan (Trustworthy and Reliable)', 'order' => 6],
             ];
             foreach ($questions as $q) {
                 $form->questions()->create($q);
@@ -57,21 +58,38 @@ class EvaluationResultsSeeder extends Seeder
 
         foreach ($employees as $emp) {
             $submittedAt = Carbon::now()->subDays(rand(1, 30));
+            
+            // Create responses for each question with random ratings 6-10
+            $total = 0; $count = 0;
+            foreach ($form->questions as $question) {
+                $rating = rand(6, 10);
+                $total += $rating; $count++;
+            }
+
+            $average = $count ? $total / $count : 0;
+            $percentage = $average * 10; // if rating is 1-10
+            $maxPossibleScore = $count * 10; // Maximum possible score
+            $passingScore = round($maxPossibleScore * 0.70); // 70% of maximum possible score
+            
             $eval = Evaluation::create([
                 'evaluation_form_id' => $form->id,
                 'employee_id' => $emp->id,
                 'manager_id' => $managerId ?? $emp->id,
                 'status' => 'Submitted',
-                'passing_threshold' => 75,
+                'total_score' => $total,
+                'average_score' => round($average, 2),
+                'percentage_score' => round($percentage, 2),
+                'passing_threshold' => $passingScore,
+                'is_passed' => $total >= $passingScore,
                 'general_comments' => 'Auto-generated evaluation record.',
                 'submitted_at' => $submittedAt,
                 'due_date' => $submittedAt->copy()->addDays(7),
                 'evaluation_period_start' => $submittedAt->copy()->subMonths(3)->startOfMonth()->toDateString(),
                 'evaluation_period_end' => $submittedAt->copy()->endOfMonth()->toDateString(),
+                'next_evaluation_date' => $submittedAt->copy()->addMonths(3),
             ]);
 
-            // Create responses for each question with random ratings 6-10
-            $total = 0; $count = 0;
+            // Create responses after evaluation is created
             foreach ($form->questions as $question) {
                 $rating = rand(6, 10);
                 EvaluationResponse::create([
@@ -80,18 +98,7 @@ class EvaluationResultsSeeder extends Seeder
                     'rating' => $rating,
                     'manager_comment' => $rating >= 8 ? 'Great performance' : 'Needs improvement in this area',
                 ]);
-                $total += $rating; $count++;
             }
-
-            $average = $count ? $total / $count : 0;
-            $percentage = $average * 10; // if rating is 1-10
-            $eval->update([
-                'total_score' => $total,
-                'average_score' => round($average, 2),
-                'percentage_score' => round($percentage, 2),
-                'is_passed' => $percentage >= 75,
-                'next_evaluation_date' => $submittedAt->copy()->addMonths(3),
-            ]);
         }
     }
 }

@@ -22,15 +22,13 @@ use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\holidayController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollPeriodController;
+use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\TaxTitleController;
 use App\Http\Controllers\Api\DeductionTitleController;
-use App\Http\Controllers\Api\BenefitController;
-use App\Http\Controllers\Api\EmployeeTaxAssignmentController;
-use App\Http\Controllers\Api\EmployeeDeductionAssignmentController;
-use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\EmployeeLeaveLimitController;
 use App\Http\Controllers\Api\OvertimeRequestController;
 use App\Http\Controllers\InterviewController;
+use App\Http\Controllers\Api\ReportController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -87,6 +85,7 @@ Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 
 Route::middleware('auth:sanctum')->get('/auth/user', [AuthController::class, 'user']);
+Route::middleware('auth:sanctum')->get('/user', [AuthController::class, 'user']); // Alias for /auth/user
 
 // Employee Profile Routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -350,91 +349,61 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{id}/proof-image/{imageIndex}', [OvertimeRequestController::class, 'getProofImage']);
     });
 
-    // Enhanced Payroll Management Routes
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll')->group(function () {
-        // Main payroll routes
-        Route::get('/', [PayrollController::class, 'index']);
-        Route::post('/', [PayrollController::class, 'store']);
-        Route::get('/{payroll}', [PayrollController::class, 'show']);
-        Route::put('/{payroll}', [PayrollController::class, 'update']);
-        Route::delete('/{payroll}', [PayrollController::class, 'destroy']);
-        Route::post('/generate', [PayrollController::class, 'generate']);
-        Route::get('/attendance-summary', [PayrollController::class, 'attendanceSummary']);
-        Route::get('/export', [PayrollController::class, 'export']);
-        Route::get('/reports/generate', [PayrollController::class, 'generateReport']);
-        Route::post('/{payroll}/process', [PayrollController::class, 'process']);
-        
-        // Employee payslip routes
-        Route::get('/employee/{employeeId}/payslip/{periodId}', [PayrollController::class, 'getEmployeePayslip']);
-        Route::get('/employee/{employeeId}/payslip/{periodId}/export', [PayrollController::class, 'exportEmployeePayslip']);
-    });
 
-    // Payroll Periods Management
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/periods')->group(function () {
+    
+    // Payroll Period Routes (must be BEFORE main payroll routes)
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll-periods')->group(function () {
         Route::get('/', [PayrollPeriodController::class, 'index']);
         Route::post('/', [PayrollPeriodController::class, 'store']);
-        Route::get('/active', [PayrollPeriodController::class, 'active']);
-        Route::get('/current', [PayrollPeriodController::class, 'current']);
         Route::get('/{payrollPeriod}', [PayrollPeriodController::class, 'show']);
         Route::put('/{payrollPeriod}', [PayrollPeriodController::class, 'update']);
         Route::delete('/{payrollPeriod}', [PayrollPeriodController::class, 'destroy']);
     });
 
-    // Tax Titles Management
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/tax-titles')->group(function () {
-        Route::get('/', [TaxTitleController::class, 'index']);
-        Route::post('/', [TaxTitleController::class, 'store']);
-        Route::get('/active', [TaxTitleController::class, 'active']);
-        Route::get('/{taxTitle}', [TaxTitleController::class, 'show']);
-        Route::put('/{taxTitle}', [TaxTitleController::class, 'update']);
-        Route::delete('/{taxTitle}', [TaxTitleController::class, 'destroy']);
-        Route::post('/{taxTitle}/toggle', [TaxTitleController::class, 'toggle']);
+    // Payroll Management Routes
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll')->group(function () {
+        Route::get('/', [PayrollController::class, 'index']);
+        Route::post('/generate', [PayrollController::class, 'generate']);
     });
 
-    // Deduction Titles Management
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/deduction-titles')->group(function () {
+    // Deduction Title Management Routes
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('deduction-titles')->group(function () {
         Route::get('/', [DeductionTitleController::class, 'index']);
         Route::post('/', [DeductionTitleController::class, 'store']);
-        Route::get('/active', [DeductionTitleController::class, 'active']);
-        Route::get('/{deductionTitle}', [DeductionTitleController::class, 'show']);
-        Route::put('/{deductionTitle}', [DeductionTitleController::class, 'update']);
-        Route::delete('/{deductionTitle}', [DeductionTitleController::class, 'destroy']);
-        Route::post('/{deductionTitle}/toggle', [DeductionTitleController::class, 'toggle']);
+        Route::get('/{id}', [DeductionTitleController::class, 'show']);
+        Route::put('/{id}', [DeductionTitleController::class, 'update']);
+        Route::delete('/{id}', [DeductionTitleController::class, 'destroy']);
+        
+        // Employee assignment routes
+        Route::get('/{id}/employees', [DeductionTitleController::class, 'getAssignedEmployees']);
+        Route::get('/{id}/available-employees', [DeductionTitleController::class, 'getAvailableEmployees']);
+        Route::post('/{id}/assign', [DeductionTitleController::class, 'assignToEmployees']);
+        Route::post('/{id}/remove', [DeductionTitleController::class, 'removeFromEmployees']);
+        Route::put('/{id}/assignments/{assignmentId}', [DeductionTitleController::class, 'updateAssignment']);
     });
 
-    // Benefits Management
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/benefits')->group(function () {
-        Route::get('/', [BenefitController::class, 'index']);
-        Route::post('/', [BenefitController::class, 'store']);
-        Route::get('/active', [BenefitController::class, 'active']);
-        Route::get('/{benefit}', [BenefitController::class, 'show']);
-        Route::put('/{benefit}', [BenefitController::class, 'update']);
-        Route::delete('/{benefit}', [BenefitController::class, 'destroy']);
-        Route::post('/{benefit}/toggle', [BenefitController::class, 'toggle']);
+    // Tax Title Management Routes
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('tax-titles')->group(function () {
+        Route::get('/', [TaxTitleController::class, 'index']);
+        Route::post('/', [TaxTitleController::class, 'store']);
+        Route::get('/{id}', [TaxTitleController::class, 'show']);
+        Route::put('/{id}', [TaxTitleController::class, 'update']);
+        Route::delete('/{id}', [TaxTitleController::class, 'destroy']);
+        
+        // Employee assignment routes
+        Route::get('/{id}/employees', [TaxTitleController::class, 'getAssignedEmployees']);
+        Route::get('/{id}/available-employees', [TaxTitleController::class, 'getAvailableEmployees']);
+        Route::post('/{id}/assign', [TaxTitleController::class, 'assignToEmployees']);
+        Route::post('/{id}/remove', [TaxTitleController::class, 'removeFromEmployees']);
+        Route::put('/{id}/assignments/{assignmentId}', [TaxTitleController::class, 'updateAssignment']);
     });
 
-    // Employee Tax Assignments
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/employee-tax-assignments')->group(function () {
-        Route::get('/', [EmployeeTaxAssignmentController::class, 'index']);
-        Route::post('/', [EmployeeTaxAssignmentController::class, 'store']);
-        Route::get('/{employeeTaxAssignment}', [EmployeeTaxAssignmentController::class, 'show']);
-        Route::put('/{employeeTaxAssignment}', [EmployeeTaxAssignmentController::class, 'update']);
-        Route::delete('/{employeeTaxAssignment}', [EmployeeTaxAssignmentController::class, 'destroy']);
-        Route::post('/{employeeTaxAssignment}/toggle', [EmployeeTaxAssignmentController::class, 'toggle']);
-        Route::get('/employee/{employee}', [EmployeeTaxAssignmentController::class, 'getEmployeeTaxes']);
-        Route::get('/tax/{taxTitle}', [EmployeeTaxAssignmentController::class, 'getTaxEmployees']);
-    });
-
-    // Employee Deduction Assignments
-    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll/employee-deduction-assignments')->group(function () {
-        Route::get('/', [EmployeeDeductionAssignmentController::class, 'index']);
-        Route::post('/', [EmployeeDeductionAssignmentController::class, 'store']);
-        Route::get('/{employeeDeductionAssignment}', [EmployeeDeductionAssignmentController::class, 'show']);
-        Route::put('/{employeeDeductionAssignment}', [EmployeeDeductionAssignmentController::class, 'update']);
-        Route::delete('/{employeeDeductionAssignment}', [EmployeeDeductionAssignmentController::class, 'destroy']);
-        Route::post('/{employeeDeductionAssignment}/toggle', [EmployeeDeductionAssignmentController::class, 'toggle']);
-        Route::get('/employee/{employee}', [EmployeeDeductionAssignmentController::class, 'getEmployeeDeductions']);
-        Route::get('/deduction/{deductionTitle}', [EmployeeDeductionAssignmentController::class, 'getDeductionEmployees']);
+    // Report Generation Routes
+    Route::middleware(['role:HR Assistant,HR Staff'])->prefix('reports')->group(function () {
+        Route::get('/departments', [ReportController::class, 'getDepartments']);
+        Route::get('/positions', [ReportController::class, 'getPositions']);
+        Route::get('/performance', [ReportController::class, 'getPerformanceReport']);
+        Route::get('/performance/download', [ReportController::class, 'downloadPerformanceReportPDF']);
     });
 
     // Employee Calendar Management

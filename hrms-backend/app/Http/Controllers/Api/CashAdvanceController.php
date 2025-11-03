@@ -229,6 +229,10 @@ class CashAdvanceController extends Controller
             $updateData['rem_ca'] = $request->rem_ca;
         }
 
+        // Set initial remaining balance when approving
+        $finalAmount = $updateData['amount_ca'] ?? $cashAdvanceRequest->amount_ca;
+        $updateData['remaining_balance'] = $finalAmount;
+
         $cashAdvanceRequest->update($updateData);
 
         // Send notification to the employee

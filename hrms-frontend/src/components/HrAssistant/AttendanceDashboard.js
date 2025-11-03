@@ -33,6 +33,7 @@ import { useDebounce } from '../../utils/debounce';
 import { toast } from 'react-toastify';
 
 const AttendanceDashboard = () => {
+    
     // Get current month start and end dates
     const getCurrentMonthDates = () => {
         const now = new Date();
@@ -460,34 +461,46 @@ const AttendanceDashboard = () => {
             
             if (response.data.success) {
                 const { imported, failed, skipped, absent_marked: absentMarked = 0 } = response.data.data || {};
-                toast.success(
-                    (
-                        <div>
-                            <div className="fw-semibold">Import completed successfully</div>
-                            <div className="small">Imported: {imported} | Failed: {failed} | Skipped: {skipped}{absentMarked > 0 ? ` | Marked as Absent: ${absentMarked}` : ''}</div>
-                        </div>
-                    ),
-                    { autoClose: 7000 }
-                );
-                fetchAttendanceData();
-                fetchAllAttendanceRecords(1); // Refresh the records table
+                const successMessage = `Import completed successfully!\nImported: ${imported || 0} | Failed: ${failed || 0} | Skipped: ${skipped || 0}${absentMarked > 0 ? ` | Marked as Absent: ${absentMarked}` : ''}`;
+                
+                // Close modal first, then show toast
                 setShowImportModal(false);
                 setSelectedFile(null);
                 setDetectedPeriod(null);
                 setValidationWarning('');
+                
+                // Small delay to ensure modal closes before toast
+                setTimeout(() => {
+                    toast.success(successMessage, { 
+                        autoClose: 7000
+                    });
+                }, 100);
+                
+                fetchAttendanceData();
+                fetchAllAttendanceRecords(1); // Refresh the records table
             } else {
                 let errorMsg = 'Import failed: ' + (response.data.message || 'Unknown error');
                 if (response.data.errors && response.data.errors.length > 0) {
                     errorMsg += ' | ' + response.data.errors.slice(0, 3).join(' | ');
                 }
-                toast.error(errorMsg);
+                setShowImportModal(false);
+                setTimeout(() => {
+                    toast.error(errorMsg, { 
+                        autoClose: 7000
+                    });
+                }, 100);
             }
         } catch (error) {
             let errorMsg = 'Import failed: ' + (error.response?.data?.message || error.message);
             if (error.response?.data?.errors) {
                 errorMsg += ' | ' + JSON.stringify(error.response.data.errors);
             }
-            toast.error(errorMsg);
+            setShowImportModal(false);
+            setTimeout(() => {
+                toast.error(errorMsg, { 
+                    autoClose: 7000
+                });
+            }, 100);
         } finally {
             setUploadLoading(false);
         }
@@ -548,6 +561,7 @@ const AttendanceDashboard = () => {
     }
 
     return (
+        <>
         <Container fluid className="py-4">
             {/* Header */}
             <div className="d-flex justify-content-between align-items-center mb-4">
@@ -1313,8 +1327,11 @@ const AttendanceDashboard = () => {
                     </Button>
                 </Modal.Footer>
             </Modal>
+            
         </Container>
+        </>
     );
 };
+
 
 export default AttendanceDashboard;

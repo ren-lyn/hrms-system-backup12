@@ -6,34 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\PayrollPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Validation\Rule;
 
 class PayrollPeriodController extends Controller
 {
     /**
      * Display a listing of payroll periods
      */
-    public function index(Request $request): JsonResponse
+    public function index(): JsonResponse
     {
-        $query = PayrollPeriod::query();
-
-        // Filter by status
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        // Search by name
-        if ($request->has('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
-        }
-
-        // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
-
-        $periods = $query->paginate($request->get('per_page', 15));
-
+        $periods = PayrollPeriod::with(['payrolls' => function($query) {
+                $query->with(['employee:id,first_name,last_name,position']);
+            }])
+            ->orderBy('start_date', 'desc')
+            ->get();
+        
         return response()->json([
             'success' => true,
             'data' => $periods
@@ -49,11 +35,16 @@ class PayrollPeriodController extends Controller
             'name' => 'required|string|max:255',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
-            'status' => ['required', Rule::in(['active', 'inactive', 'closed'])],
             'description' => 'nullable|string'
         ]);
 
-        $period = PayrollPeriod::create($validated);
+        $period = PayrollPeriod::create([
+            'name' => $validated['name'],
+            'start_date' => $validated['start_date'],
+            'end_date' => $validated['end_date'],
+            'description' => $validated['description'] ?? null,
+            'status' => 'active'
+        ]);
 
         return response()->json([
             'success' => true,
@@ -67,11 +58,9 @@ class PayrollPeriodController extends Controller
      */
     public function show(PayrollPeriod $payrollPeriod): JsonResponse
     {
-        $payrollPeriod->load('payrolls.employee');
-
         return response()->json([
             'success' => true,
-            'data' => $payrollPeriod
+            'data' => $payrollPeriod->load('payrolls')
         ]);
     }
 
@@ -84,7 +73,7 @@ class PayrollPeriodController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'start_date' => 'sometimes|required|date',
             'end_date' => 'sometimes|required|date|after:start_date',
-            'status' => ['sometimes', 'required', Rule::in(['active', 'inactive', 'closed'])],
+            'status' => 'sometimes|in:active,closed',
             'description' => 'nullable|string'
         ]);
 
@@ -107,7 +96,7 @@ class PayrollPeriodController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot delete payroll period with existing payrolls'
-            ], 422);
+            ], 400);
         }
 
         $payrollPeriod->delete();
@@ -117,35 +106,5 @@ class PayrollPeriodController extends Controller
             'message' => 'Payroll period deleted successfully'
         ]);
     }
-
-    /**
-     * Get active payroll periods
-     */
-    public function active(): JsonResponse
-    {
-        $periods = PayrollPeriod::active()->orderBy('start_date', 'desc')->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $periods
-        ]);
-    }
-
-    /**
-     * Get current payroll period
-     */
-    public function current(): JsonResponse
-    {
-        $currentDate = now()->toDateString();
-        
-        $period = PayrollPeriod::where('start_date', '<=', $currentDate)
-            ->where('end_date', '>=', $currentDate)
-            ->where('status', 'active')
-            ->first();
-
-        return response()->json([
-            'success' => true,
-            'data' => $period
-        ]);
-    }
 }
+

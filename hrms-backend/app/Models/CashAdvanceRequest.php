@@ -17,6 +17,7 @@ class CashAdvanceRequest extends Model
         'department',
         'date_field',
         'amount_ca',
+        'remaining_balance',
         'rem_ca',
         'reason',
         'status',
@@ -29,6 +30,7 @@ class CashAdvanceRequest extends Model
     protected $casts = [
         'date_field' => 'date',
         'amount_ca' => 'decimal:2',
+        'remaining_balance' => 'decimal:2',
         'processed_at' => 'datetime',
         'collection_date' => 'date'
     ];

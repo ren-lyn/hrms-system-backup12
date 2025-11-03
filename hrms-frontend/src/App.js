@@ -26,7 +26,7 @@ const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
 const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/DisciplinaryManagement'));
 const AttendanceDashboard = lazy(() => import('./components/HrAssistant/AttendanceDashboard'));
 const AttendanceEditRequests = lazy(() => import('./components/HrAssistant/AttendanceEditRequests'));
-const EnhancedPayrollDashboard = lazy(() => import('./components/HrAssistant/EnhancedPayrollDashboard'));
+const PayrollDashboard = lazy(() => import('./components/HrAssistant/PayrollDashboard'));
 const EmployeeEvaluationList = lazy(() => import('./pages/HrAssistant/Evaluations/EmployeeEvaluationList'));
 const EvaluationForm = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationForm'));
 const EvaluationAdministration = lazy(() => import('./components/EvaluationAdministration'));
@@ -60,7 +60,19 @@ function App() {
   return (
     <Router>
       {/* ✅ Toast container goes here so it works globally */}
-      <ToastContainer position="top-center" autoClose={3000} hideProgressBar />
+      <ToastContainer 
+        position="top-center" 
+        autoClose={3000} 
+        hideProgressBar={false}
+        newestOnTop={true}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+        style={{ zIndex: 9999 }}
+      />
       
       {/* Performance Monitor - disabled by default */}
       {false && process.env.NODE_ENV === 'development' && <PerformanceMonitor />}
@@ -100,7 +112,7 @@ function App() {
           <Route path="profile" element={<HrAssistantProfile />} />
           <Route path="attendance" element={<AttendanceDashboard />} /> 
           <Route path="attendance-edit-requests" element={<AttendanceEditRequests />} />
-          <Route path="payroll" element={<EnhancedPayrollDashboard />} />
+          <Route path="payroll" element={<PayrollDashboard />} />
           <Route path="ot-management" element={<OTManagement />} />
           <Route path="report-generation" element={<ReportGeneration />} />
           <Route path="predictive-turnover-analytics" element={<PredictiveTurnoverAnalytics />} />

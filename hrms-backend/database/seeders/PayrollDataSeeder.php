@@ -15,21 +15,62 @@ class PayrollDataSeeder extends Seeder
 {
     public function run(): void
     {
+        // Map old tax title names to new ones
+        $taxTitleMapping = [
+            'SSS' => 'SSS Contribution',
+            'PhilHealth' => 'PhilHealth Contribution',
+            'Pag-IBIG' => 'Pag-IBIG Contribution',
+        ];
+
+        // Migrate employee assignments from old tax titles to new ones
+        foreach ($taxTitleMapping as $oldName => $newName) {
+            $oldTax = TaxTitle::where('name', $oldName)->first();
+            $newTax = TaxTitle::where('name', $newName)->first();
+
+            if ($oldTax && $newTax) {
+                // Get all assignments from old tax title
+                $oldAssignments = EmployeeTaxAssignment::where('tax_title_id', $oldTax->id)->get();
+
+                // Migrate assignments to new tax title
+                foreach ($oldAssignments as $assignment) {
+                    EmployeeTaxAssignment::updateOrCreate(
+                        [
+                            'employee_id' => $assignment->employee_id,
+                            'tax_title_id' => $newTax->id,
+                        ],
+                        [
+                            'custom_rate' => $assignment->custom_rate,
+                            'is_active' => $assignment->is_active,
+                        ]
+                    );
+                }
+            }
+        }
+
+        // Remove old tax titles with shorter names to avoid duplicates
+        $oldTaxTitlesToDelete = ['SSS', 'PhilHealth', 'Pag-IBIG'];
+        TaxTitle::whereIn('name', $oldTaxTitlesToDelete)->delete();
+
         // Create Tax Titles
         $taxTitles = [
-            ['name' => 'Income Tax', 'rate' => 10.00, 'type' => 'percentage', 'description' => 'Standard income tax', 'is_active' => true],
-            ['name' => 'SSS Contribution', 'rate' => 11.00, 'type' => 'percentage', 'description' => 'Social Security System contribution', 'is_active' => true],
-            ['name' => 'PhilHealth Contribution', 'rate' => 3.00, 'type' => 'percentage', 'description' => 'Philippine Health Insurance Corporation contribution', 'is_active' => true],
-            ['name' => 'Pag-IBIG Contribution', 'rate' => 2.00, 'type' => 'percentage', 'description' => 'Home Development Mutual Fund contribution', 'is_active' => true],
+            ['name' => 'SSS Contribution', 'rate' => 168.84, 'type' => 'fixed', 'description' => 'Social Security System contribution per payroll period', 'is_active' => true],
+            ['name' => 'PhilHealth Contribution', 'rate' => 84.50, 'type' => 'fixed', 'description' => 'Philippine Health Insurance Corporation contribution per payroll period', 'is_active' => true],
+            ['name' => 'Pag-IBIG Contribution', 'rate' => 50.00, 'type' => 'fixed', 'description' => 'Pag-IBIG Fund contribution per payroll period', 'is_active' => true],
         ];
 
         foreach ($taxTitles as $tax) {
             TaxTitle::firstOrCreate(['name' => $tax['name']], $tax);
         }
 
+        // Remove SSS, PhilHealth, and Pag-IBIG from deduction titles if they exist
+        $deductionTitlesToDelete = ['SSS', 'PhilHealth', 'Pag-IBIG'];
+        DeductionTitle::whereIn('name', $deductionTitlesToDelete)->delete();
+
         // Create Deduction Titles
         $deductionTitles = [
-            ['name' => 'Late Penalty', 'amount' => 50.00, 'type' => 'fixed', 'description' => 'Penalty for late arrival', 'is_active' => true],
+            ['name' => 'Late Penalty', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated penalty for late arrival (15-minute grace period, then 8.67 per minute after 8:15 AM)', 'is_active' => true],
+            ['name' => 'Undertime Penalty', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated penalty for clocking out before 5:00 PM (8.67 per minute early)', 'is_active' => true],
+            ['name' => 'Cash Advance', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated cash advance deduction (500 for amounts ≤10k, 1000 for amounts >10k per payroll period until paid)', 'is_active' => true],
             ['name' => 'Absence Deduction', 'amount' => 500.00, 'type' => 'fixed', 'description' => 'Deduction for unexcused absence', 'is_active' => true],
             ['name' => 'Loan Deduction', 'amount' => 1000.00, 'type' => 'fixed', 'description' => 'Salary loan deduction', 'is_active' => true],
             ['name' => 'Uniform Deduction', 'amount' => 200.00, 'type' => 'fixed', 'description' => 'Uniform cost deduction', 'is_active' => true],
