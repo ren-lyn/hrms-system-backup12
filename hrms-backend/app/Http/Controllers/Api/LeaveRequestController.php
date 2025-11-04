@@ -272,7 +272,18 @@ class LeaveRequestController extends Controller
         $leaveRequest->total_hours = $totalDays * 8; // Automatically calculate: 8 hours per day
         $leaveRequest->date_filed = now();
         $leaveRequest->reason = $validated['reason'];
-        $leaveRequest->status = 'pending';
+        
+        // Check if user is a Manager - if so, set status to 'manager_approved' to skip manager approval
+        $userRole = $user->role ? $user->role->name : null;
+        if ($userRole === 'Manager') {
+            // Manager's leave requests go directly to HR Assistant
+            $leaveRequest->status = 'manager_approved';
+            $leaveRequest->manager_approved_by = $user->id;
+            $leaveRequest->manager_approved_at = now();
+        } else {
+            // Regular employees go through manager approval first
+            $leaveRequest->status = 'pending';
+        }
 
         // Handle signature file upload
         if ($request->hasFile('signature')) {
@@ -297,31 +308,37 @@ class LeaveRequestController extends Controller
             $leaveRequest->load(['employee.employeeProfile']);
             $department = $leaveRequest->employee->employeeProfile->department ?? $leaveRequest->department;
             
-            // Get managers in the same department
-            $managers = \App\Models\User::whereHas('role', function($query) {
-                $query->where('name', 'Manager');
-            })->whereHas('employeeProfile', function($query) use ($department) {
-                $query->where('department', $department);
-            })->get();
-
-            // If no managers in same department, get all managers
-            if ($managers->isEmpty()) {
-                $managers = \App\Models\User::whereHas('role', function($query) {
-                    $query->where('name', 'Manager');
-                })->get();
-            }
-
             // Get HR Assistant only (Leave Management is HR Assistant's responsibility)
             $hrAssistants = \App\Models\User::whereHas('role', function($query) {
                 $query->where('name', 'HR Assistant');
             })->get();
 
-            // Notify managers
-            foreach ($managers as $manager) {
-                $manager->notify(new \App\Notifications\LeaveRequestSubmitted($leaveRequest));
+            $managersNotified = 0;
+            // Only notify managers if the submitter is NOT a manager
+            // Managers' leave requests skip manager approval and go directly to HR
+            if ($userRole !== 'Manager') {
+                // Get managers in the same department
+                $managers = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'Manager');
+                })->whereHas('employeeProfile', function($query) use ($department) {
+                    $query->where('department', $department);
+                })->get();
+
+                // If no managers in same department, get all managers
+                if ($managers->isEmpty()) {
+                    $managers = \App\Models\User::whereHas('role', function($query) {
+                        $query->where('name', 'Manager');
+                    })->get();
+                }
+
+                // Notify managers (only for non-manager employees)
+                foreach ($managers as $manager) {
+                    $manager->notify(new \App\Notifications\LeaveRequestSubmitted($leaveRequest));
+                }
+                $managersNotified = $managers->count();
             }
 
-            // Notify HR Assistants only (not HR Staff)
+            // Always notify HR Assistants (for both employee and manager submissions)
             foreach ($hrAssistants as $hrAssistant) {
                 $hrAssistant->notify(new \App\Notifications\LeaveRequestSubmittedToHR($leaveRequest));
             }
@@ -329,8 +346,10 @@ class LeaveRequestController extends Controller
             Log::info('Leave request submission notifications sent', [
                 'leave_request_id' => $leaveRequest->id,
                 'employee_id' => $leaveRequest->employee_id,
+                'user_role' => $userRole,
+                'status' => $leaveRequest->status,
                 'department' => $department,
-                'managers_notified' => $managers->count(),
+                'managers_notified' => $managersNotified,
                 'hr_assistants_notified' => $hrAssistants->count()
             ]);
         } catch (\Exception $e) {
@@ -936,7 +955,13 @@ class LeaveRequestController extends Controller
      */
     public function downloadPdf($id)
     {
-        $leaveRequest = LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->findOrFail($id);
+        // Load all necessary relationships, ensuring role is loaded
+        $leaveRequest = LeaveRequest::with([
+            'employee.role', 
+            'employee.employeeProfile',
+            'approvedBy', 
+            'managerApprovedBy'
+        ])->findOrFail($id);
         
         // Check if user can access this leave request
         $user = Auth::user();
@@ -949,11 +974,56 @@ class LeaveRequestController extends Controller
             return response()->json(['error' => 'Access denied'], 403);
         }
 
-        $pdf = Pdf::loadView('pdf.leave-application', compact('leaveRequest'));
+        // Check if this leave request was submitted by a manager
+        // Ensure role relationship is loaded
+        if ($leaveRequest->employee && !$leaveRequest->employee->relationLoaded('role')) {
+            $leaveRequest->employee->load('role');
+        }
         
-        $filename = 'leave-application-' . $leaveRequest->id . '.pdf';
+        $isManagerLeave = false;
+        if ($leaveRequest->employee && $leaveRequest->employee->role) {
+            $isManagerLeave = $leaveRequest->employee->role->name === 'Manager';
+        }
+        
+        $pdf = Pdf::loadView('pdf.leave-application', compact('leaveRequest', 'isManagerLeave'));
+        
+        $filename = 'leave-application-' . ($leaveRequest->employee_name ?? 'Unknown') . '_' . $leaveRequest->id . '.pdf';
         
         return $pdf->download($filename);
+    }
+
+    /**
+     * Serve attachment file for leave request
+     */
+    public function serveAttachment($id)
+    {
+        $leaveRequest = LeaveRequest::findOrFail($id);
+        
+        // Check if user can access this leave request
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+        
+        // Only allow the employee who created the request, HR staff, or manager to view
+        $canAccess = $leaveRequest->employee_id === $user->id 
+            || in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'Manager']);
+        
+        if (!$canAccess) {
+            return response()->json(['error' => 'Access denied'], 403);
+        }
+
+        if (!$leaveRequest->attachment) {
+            return response()->json(['error' => 'No attachment found'], 404);
+        }
+
+        $filePath = storage_path('app/public/' . $leaveRequest->attachment);
+        
+        if (!file_exists($filePath)) {
+            return response()->json(['error' => 'File not found'], 404);
+        }
+
+        return response()->file($filePath);
     }
 
     /**

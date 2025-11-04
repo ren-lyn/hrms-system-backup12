@@ -13,14 +13,14 @@ return [
     
     'entitlements' => [
         'Vacation Leave' => 5,
-        'Sick Leave' => 8,
-        'Emergency Leave' => 8,
+        'Sick Leave' => 4,
+        'Emergency Leave' => 5,
         'Personal Leave' => 5,
         'Bereavement Leave' => 5,
         'Maternity Leave' => 105,
         'Paternity Leave' => 7,
         'Leave for Victims of Violence Against Women and Their Children (VAWC)' => 10,
-        "Women's Special Leave" => 60,
+        'Women\'s Special Leave' => 60,
         'Parental Leave' => 7,
     ],
 
@@ -36,13 +36,13 @@ return [
     */
     
     'with_pay_days' => [
-        'Sick Leave' => 8,
-        'Emergency Leave' => 8,
+        'Sick Leave' => 1,
+        'Emergency Leave' => 4,
         'Vacation Leave' => 5,
         'Maternity Leave' => 105,
         'Paternity Leave' => 7,
         'Leave for Victims of Violence Against Women and Their Children (VAWC)' => 10,
-        "Women's Special Leave" => 60,
+        'Women\'s Special Leave' => 60,
         'Parental Leave' => 7,
         'Personal Leave' => 5,
         'Bereavement Leave' => 5,
@@ -92,7 +92,7 @@ return [
         'Emergency Leave' => [
             'requires_documentation' => true,
             'advance_notice_days' => 0,
-            'paid' => false, // Usually unpaid unless specified
+            'paid' => false,
         ],
     ],
 ];

@@ -136,7 +136,7 @@ class CashAdvanceController extends Controller
     public function index(Request $request)
     {
         // Fast query with minimal relationships for better performance
-        $query = CashAdvanceRequest::select('id', 'user_id', 'name', 'company', 'department', 'date_field', 'amount_ca', 'rem_ca', 'reason', 'status', 'hr_remarks', 'processed_by', 'processed_at', 'created_at', 'updated_at')
+        $query = CashAdvanceRequest::select('id', 'user_id', 'name', 'company', 'department', 'date_field', 'amount_ca', 'rem_ca', 'reason', 'status', 'hr_remarks', 'processed_by', 'processed_at', 'collection_date', 'created_at', 'updated_at')
             ->orderBy('created_at', 'desc');
 
         // Quick filters
@@ -427,6 +427,27 @@ class CashAdvanceController extends Controller
     }
 
     /**
+     * Update money received status for a cash advance request
+     */
+    public function updateMoneyReceivedStatus(Request $request, $id)
+    {
+        $request->validate([
+            'money_received_status' => 'required|in:received,not_received',
+        ]);
+
+        $cashAdvanceRequest = CashAdvanceRequest::findOrFail($id);
+
+        $cashAdvanceRequest->update([
+            'money_received_status' => $request->money_received_status,
+        ]);
+
+        return response()->json([
+            'message' => 'Money received status updated successfully',
+            'data' => $cashAdvanceRequest,
+        ]);
+    }
+
+    /**
      * Check if user has HR role
      */
     private function isHRUser($user)
@@ -436,7 +457,9 @@ class CashAdvanceController extends Controller
             return false;
         }
         
-        $roleName = $user->role->name;
-        return in_array($roleName, ['hr', 'hr_assistant', 'admin']);
+        // Normalize role name to handle variations like "HR Assistant" vs "hr_assistant"
+        $normalizedRole = strtolower(str_replace([' ', '-'], '_', $user->role->name));
+        
+        return in_array($normalizedRole, ['hr', 'hr_assistant', 'admin']);
     }
 }

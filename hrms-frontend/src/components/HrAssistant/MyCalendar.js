@@ -10,7 +10,8 @@ import {
   getEventTypeIcon,
   getInvitationStatusColor,
   getInvitationStatusText,
-  clearAllCalendarCaches
+  clearAllCalendarCaches,
+  holidaysApi
 } from '../../api/calendar';
 import ValidationModal from '../common/ValidationModal';
 import ConfirmationModal from '../common/ConfirmationModal';
@@ -42,6 +43,8 @@ const MyCalendar = () => {
     date: '',
     invited_employees: []
   });
+  // Removed custom time picker overlay – using native inputs only
+  // no custom picker UI
 
   const [formErrors, setFormErrors] = useState({});
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -49,6 +52,44 @@ const MyCalendar = () => {
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [confirmationData, setConfirmationData] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [tooltipState, setTooltipState] = useState({ visible: false, text: '', x: 0, y: 0 });
+
+  // Custom picker states
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [datePickerMonth, setDatePickerMonth] = useState(new Date());
+  const [allDayEvent, setAllDayEvent] = useState(false);
+  
+  // Close pickers when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.custom-date-picker-wrapper')) {
+        setShowDatePicker(false);
+      }
+      if (!event.target.closest('.custom-time-picker-wrapper')) {
+        setShowStartTimePicker(false);
+        setShowEndTimePicker(false);
+      }
+    };
+    
+    if (showDatePicker || showStartTimePicker || showEndTimePicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showDatePicker, showStartTimePicker, showEndTimePicker]);
+  
+  // Initialize date picker month when form data changes
+  useEffect(() => {
+    if (formData.date) {
+      const date = new Date(formData.date + 'T00:00:00');
+      setDatePickerMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    } else if (selectedDate) {
+      setDatePickerMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    }
+  }, [formData.date, selectedDate]);
 
   const eventTypes = [
     { value: 'meeting', label: 'Meeting', color: '#007bff' },
@@ -56,12 +97,109 @@ const MyCalendar = () => {
     { value: 'interview', label: 'Interview', color: '#ffc107' },
     { value: 'break', label: 'Break', color: '#fd7e14' },
     { value: 'unavailable', label: 'Unavailable', color: '#dc3545' },
+    { value: 'holiday_regular', label: 'Holiday (Regular)', color: '#0ea5e9' },
+    { value: 'holiday_special', label: 'Holiday (Special)', color: '#ef4444' },
     { value: 'other', label: 'Other', color: '#6c757d' }
   ];
 
   useEffect(() => {
     loadData();
   }, [currentDate]);
+
+  // Local fallback: 2025 PH holidays (used only if API returns none)
+  const getFallbackPH2025Holidays = (startDate, endDate) => {
+    const withinRange = (d) => d >= startDate.toISOString().split('T')[0] && d <= endDate.toISOString().split('T')[0];
+    const list = [
+      { name: "New Year's Day", date: '2025-01-01', type: 'Regular' },
+      { name: 'Chinese New Year', date: '2025-01-29', type: 'Special' },
+      { name: 'EDSA People Power Revolution Anniversary', date: '2025-02-25', type: 'Special' },
+      { name: 'Eid al-Fitr', date: '2025-04-01', type: 'Regular' },
+      { name: 'Araw ng Kagitingan (Day of Valor)', date: '2025-04-09', type: 'Regular' },
+      { name: 'Maundy Thursday', date: '2025-04-17', type: 'Regular' },
+      { name: 'Good Friday', date: '2025-04-18', type: 'Regular' },
+      { name: 'Black Saturday', date: '2025-04-19', type: 'Special' },
+      { name: 'Labor Day', date: '2025-05-01', type: 'Regular' },
+      { name: 'Eid al-Adha', date: '2025-06-06', type: 'Regular' },
+      { name: 'Independence Day', date: '2025-06-12', type: 'Regular' },
+      { name: 'Ninoy Aquino Day', date: '2025-08-21', type: 'Special' },
+      { name: "National Heroes' Day", date: '2025-08-25', type: 'Regular' },
+      { name: "All Saints' Day", date: '2025-11-01', type: 'Special' },
+      { name: "All Souls' Day", date: '2025-11-02', type: 'Special' },
+      { name: 'Bonifacio Day', date: '2025-11-30', type: 'Regular' },
+      { name: 'Feast of the Immaculate Conception of the Blessed Virgin Mary', date: '2025-12-08', type: 'Special' },
+      { name: 'Christmas Eve', date: '2025-12-24', type: 'Special' },
+      { name: 'Christmas Day', date: '2025-12-25', type: 'Regular' },
+      { name: 'Rizal Day', date: '2025-12-30', type: 'Regular' },
+      { name: "New Year's Eve", date: '2025-12-31', type: 'Special' }
+    ];
+    return list
+      .filter(h => withinRange(h.date))
+      .map((h, idx) => ({
+        id: `manual_holiday_static_${h.date}_${idx}`,
+        title: h.name,
+        description: h.type ? `${h.type} Holiday` : 'Official Holiday',
+        event_type: h.type && h.type.toLowerCase() === 'special' ? 'holiday_special' : 'holiday_regular',
+        status: 'active',
+        start_datetime: `${h.date}T00:00:00+08:00`,
+        end_datetime: `${h.date}T23:59:59+08:00`,
+        start_date_manila: h.date,
+        start_time_formatted: 'All day',
+        end_time_formatted: '',
+        created_by: 'System',
+        blocks_leave_submissions: false
+      }));
+  };
+
+  // Extended fallback for 2025-2030 (fixed-date holidays and Chinese New Year dates)
+  const getFallbackPHHolidays = (startDate, endDate) => {
+    const withinRange = (d) => d >= startDate.toISOString().split('T')[0] && d <= endDate.toISOString().split('T')[0];
+    const fixedForYear = (year) => ([
+      { name: "New Year's Day", date: `${year}-01-01`, type: 'Regular' },
+      { name: 'EDSA People Power Revolution Anniversary', date: `${year}-02-25`, type: 'Special' },
+      { name: 'Araw ng Kagitingan (Day of Valor)', date: `${year}-04-09`, type: 'Regular' },
+      { name: 'Labor Day', date: `${year}-05-01`, type: 'Regular' },
+      { name: 'Independence Day', date: `${year}-06-12`, type: 'Regular' },
+      { name: 'Ninoy Aquino Day', date: `${year}-08-21`, type: 'Special' },
+      { name: "National Heroes' Day", date: `${year}-08-25`, type: 'Regular' },
+      { name: "All Saints' Day", date: `${year}-11-01`, type: 'Special' },
+      { name: "All Souls' Day", date: `${year}-11-02`, type: 'Special' },
+      { name: 'Bonifacio Day', date: `${year}-11-30`, type: 'Regular' },
+      { name: 'Feast of the Immaculate Conception of the Blessed Virgin Mary', date: `${year}-12-08`, type: 'Special' },
+      { name: 'Christmas Eve', date: `${year}-12-24`, type: 'Special' },
+      { name: 'Christmas Day', date: `${year}-12-25`, type: 'Regular' },
+      { name: 'Rizal Day', date: `${year}-12-30`, type: 'Regular' },
+      { name: "New Year's Eve", date: `${year}-12-31`, type: 'Special' },
+    ]);
+    const cnyByYear = {
+      2025: '2025-01-29',
+      2026: '2026-02-17',
+      2027: '2027-02-06',
+      2028: '2028-01-26',
+      2029: '2029-02-13',
+      2030: '2030-02-03'
+    };
+    const years = [2025, 2026, 2027, 2028, 2029, 2030];
+    const list = years.flatMap(y => [
+      { name: 'Chinese New Year', date: cnyByYear[y], type: 'Special' },
+      ...fixedForYear(y)
+    ]);
+    return list
+      .filter(h => withinRange(h.date))
+      .map((h, idx) => ({
+        id: `manual_holiday_ext_${h.date}_${idx}`,
+        title: h.name,
+        description: h.type ? `${h.type} Holiday` : 'Official Holiday',
+        event_type: h.type && h.type.toLowerCase() === 'special' ? 'holiday_special' : 'holiday_regular',
+        status: 'active',
+        start_datetime: `${h.date}T00:00:00+08:00`,
+        end_datetime: `${h.date}T23:59:59+08:00`,
+        start_date_manila: h.date,
+        start_time_formatted: 'All day',
+        end_time_formatted: '',
+        created_by: 'System',
+        blocks_leave_submissions: false
+      }));
+  };
 
   // Auto-refresh mechanism for real-time updates
   useEffect(() => {
@@ -78,12 +216,21 @@ const MyCalendar = () => {
     }, 30000); // 30 seconds
 
     window.addEventListener('focus', handleFocus);
+    const handleGlobalClick = () => setTooltipState({ visible: false, text: '', x: 0, y: 0 });
+    window.addEventListener('click', handleGlobalClick);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('click', handleGlobalClick);
       clearInterval(refreshInterval);
     };
   }, [currentDate]);
+  const showHolidayTooltip = (event, text) => {
+    const x = event.clientX + 8;
+    const y = event.clientY + 8;
+    setTooltipState({ visible: true, text, x, y });
+  };
+
 
   const loadData = async (showLoadingIndicator = true) => {
     try {
@@ -101,7 +248,28 @@ const MyCalendar = () => {
         hrCalendarApi.getEmployees()
       ]);
 
-      setEvents(eventsResponse.data || []);
+      const baseEvents = eventsResponse.data || [];
+      let holidays = [];
+      try {
+        const holidaysResponse = await holidaysApi.getManualHolidaysCalendar({
+          start_date: startDate.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0]
+        });
+        holidays = holidaysResponse?.data || [];
+      } catch (e) {
+        // Non-blocking: fall back to local list
+        holidays = [];
+      }
+      if (!holidays || holidays.length === 0) {
+        // Use safe local fallback for 2025-2030 if backend has no data
+        holidays = getFallbackPHHolidays(startDate, endDate);
+      }
+      // Merge and de-duplicate by id
+      const merged = [...baseEvents, ...holidays].filter((event, index, arr) =>
+        arr.findIndex(e => e.id === event.id) === index
+      );
+
+      setEvents(merged);
       setEmployees(employeesResponse.data || []);
       setFilteredEmployees(employeesResponse.data || []);
       setLastUpdated(new Date());
@@ -184,12 +352,66 @@ const MyCalendar = () => {
   const getEventsForDate = (date) => {
     // Compare using precomputed Manila date from API to avoid timezone shifts
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return events.filter(event => (event.start_date_manila || '').startsWith(dateStr));
+    return events.filter(event => {
+      const eventDate = event.start_date_manila || '';
+      // Use exact match for precision (dates are formatted as Y-m-d strings from backend)
+      return eventDate === dateStr || eventDate.split('T')[0] === dateStr;
+    });
   };
 
   const formatMonthYear = (date) => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
+  // no custom picker helpers
+
+  // Time selection helpers - enforce 5-minute steps and disallow past times for today
+  // (restored) native time inputs; helpers below retained minimal
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const roundToFiveMinutes = (timeStr) => {
+    if (!timeStr) return '';
+    const [hStr, mStr] = timeStr.split(':');
+    let h = parseInt(hStr, 10);
+    let m = parseInt(mStr || '0', 10);
+    const rounded = Math.round(m / 5) * 5;
+    if (rounded === 60) {
+      h = (h + 1) % 24;
+    }
+    const finalMin = rounded === 60 ? 0 : rounded;
+    return `${pad2(h)}:${pad2(finalMin)}`;
+  };
+
+  const ceilNowToFiveMinutes = () => {
+    const now = new Date();
+    const mins = now.getMinutes();
+    const ceilMin = Math.ceil(mins / 5) * 5;
+    const h = ceilMin === 60 ? now.getHours() + 1 : now.getHours();
+    const m = ceilMin === 60 ? 0 : ceilMin;
+    return `${pad2(h % 24)}:${pad2(m)}`;
+  };
+
+  // removed custom popover time selector to restore original inputs
+
+  const getSelectedDateISO = () => {
+    let d = null;
+    if (formData.date) {
+      d = new Date(`${formData.date}T00:00:00`);
+    } else if (selectedDate) {
+      d = selectedDate;
+    }
+    return d ? `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` : '';
+  };
+
+  const isSelectedDateToday = () => {
+    const selectedISO = getSelectedDateISO();
+    const today = new Date();
+    const todayISO = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+    return selectedISO && selectedISO === todayISO;
+  };
+
+  // 12h/24h utilities for AM/PM selectors
+  // no AM/PM helpers needed in restored mode
 
   const goToPreviousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -230,6 +452,15 @@ const MyCalendar = () => {
     setEmployeeSearchTerm('');
     setPositionFilter('all');
     setFilteredEmployees(employees);
+    setShowDatePicker(false);
+    setShowStartTimePicker(false);
+    setShowEndTimePicker(false);
+    setAllDayEvent(false);
+    if (selectedDate) {
+      setDatePickerMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    } else {
+      setDatePickerMonth(new Date());
+    }
   };
 
   const handleCreateEvent = async (date = null) => {
@@ -282,6 +513,11 @@ const MyCalendar = () => {
     setModalType('edit');
     setSelectedEvent(event);
     setEmployeeSearchTerm('');
+    setShowDatePicker(false);
+    setShowStartTimePicker(false);
+    setShowEndTimePicker(false);
+    setAllDayEvent(false);
+    setDatePickerMonth(new Date(eventDate.getFullYear(), eventDate.getMonth(), 1));
     
     // Refresh employee list to ensure it's current
     try {
@@ -548,6 +784,93 @@ const MyCalendar = () => {
     });
   };
 
+  // Custom picker helper functions
+  const formatDateForPicker = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr + 'T00:00:00');
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+  };
+
+  const formatTimeForPicker = (timeStr) => {
+    if (!timeStr || allDayEvent) return '00:00 AM';
+    const [hours, minutes] = timeStr.split(':');
+    const h = parseInt(hours, 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    return `${String(hour12).padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
+  const parseTimeFromPicker = (timeStr) => {
+    if (!timeStr || timeStr === '00:00 AM') return '';
+    const [time, ampm] = timeStr.split(' ');
+    const [hours, minutes] = time.split(':');
+    let hour24 = parseInt(hours, 10);
+    if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+    if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+    return `${String(hour24).padStart(2, '0')}:${minutes}`;
+  };
+
+  // Generate time slots (every 15 minutes) - shows 12-hour format with both AM/PM options
+  const generateTimeSlots = () => {
+    const slots = [];
+    // Generate for 12-hour format (1-12) with both AM and PM options
+    for (let hour12 = 1; hour12 <= 12; hour12++) {
+      for (let m = 0; m < 60; m += 15) {
+        const timeDisplay = `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        
+        // Create AM variant
+        let hour24AM = hour12 === 12 ? 0 : hour12;
+        slots.push({
+          hour24: hour24AM,
+          minute: m,
+          display: timeDisplay,
+          ampm: 'AM',
+          value: `${String(hour24AM).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+          isAM: true
+        });
+        
+        // Create PM variant
+        let hour24PM = hour12 === 12 ? 12 : hour12 + 12;
+        slots.push({
+          hour24: hour24PM,
+          minute: m,
+          display: timeDisplay,
+          ampm: 'PM',
+          value: `${String(hour24PM).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+          isAM: false
+        });
+      }
+    }
+    return slots;
+  };
+
+  const handleDateSelect = (day, month, year) => {
+    const selected = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    setFormData({ ...formData, date: selected });
+    setShowDatePicker(false);
+  };
+
+  const handleTimeSelect = (timeValue, field) => {
+    setFormData({ ...formData, [field]: timeValue });
+    if (field === 'start_time') {
+      setShowStartTimePicker(false);
+    } else {
+      setShowEndTimePicker(false);
+    }
+  };
+
+  // Calendar helper for date picker
+  const getDaysInMonthForPicker = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonthForPicker = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
   // Generate calendar grid
   const generateCalendarGrid = () => {
     const daysInMonth = getDaysInMonth(currentDate);
@@ -579,26 +902,42 @@ const MyCalendar = () => {
         >
           <span className="day-number">{day}</span>
           <div className="events-container">
-            {dayEvents.slice(0, 3).map((event, index) => (
-              <div
-                key={event.id}
-                className={`event-item event-${event.event_type} ${event.status === 'cancelled' ? 'event-cancelled' : ''}`}
-                style={{ 
-                  backgroundColor: event.status === 'cancelled' ? '#6c757d' : getEventTypeColor(event.event_type),
-                  opacity: event.status === 'cancelled' ? 0.6 : 1
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleViewEvent(event);
-                }}
-                title={`${event.title} - ${event.start_time_formatted}${event.status === 'cancelled' ? ' (Cancelled)' : ''}`}
-              >
-                <span className="event-time">
-                  {event.start_time_formatted}
-                </span>
-                <span className="event-title">{event.title}</span>
-              </div>
-            ))}
+            {dayEvents.slice(0, 3).map((event, index) => {
+              const isHoliday = event.event_type === 'holiday_regular' || event.event_type === 'holiday_special';
+              const displayTitle = isHoliday
+                ? (event.title && event.title.length > 16 ? `${event.title.slice(0, 16)}…` : event.title)
+                : event.title;
+              return (
+                <div
+                  key={event.id}
+                  className={`event-item event-${event.event_type} ${event.status === 'cancelled' ? 'event-cancelled' : ''}`}
+                  style={{ 
+                    backgroundColor: event.status === 'cancelled' ? '#6c757d' : getEventTypeColor(event.event_type),
+                    opacity: event.status === 'cancelled' ? 0.6 : 1,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isHoliday) {
+                      showHolidayTooltip(e, event.title);
+                    } else {
+                      handleViewEvent(event);
+                    }
+                  }}
+                  title={isHoliday ? event.title : `${event.title} - ${event.start_time_formatted}${event.status === 'cancelled' ? ' (Cancelled)' : ''}`}
+                  role="button"
+                >
+                  {!isHoliday && (
+                    <span className="event-time">
+                      {event.start_time_formatted}
+                    </span>
+                  )}
+                  <span className="event-title">{displayTitle}</span>
+                </div>
+              );
+            })}
             {dayEvents.length > 3 && (
               <div className="more-events" onClick={(e) => {
                 e.stopPropagation();
@@ -678,6 +1017,27 @@ const MyCalendar = () => {
         <div className="calendar-grid">
           {generateCalendarGrid()}
         </div>
+        {tooltipState.visible && (
+          <div
+            style={{
+              position: 'fixed',
+              top: tooltipState.y,
+              left: tooltipState.x,
+              background: 'rgba(17, 24, 39, 0.95)',
+              color: '#fff',
+              padding: '6px 10px',
+              borderRadius: 6,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+              zIndex: 10000,
+              maxWidth: 260,
+              fontSize: 12,
+              lineHeight: 1.25,
+              pointerEvents: 'none'
+            }}
+          >
+            {tooltipState.text}
+          </div>
+        )}
       </div>
 
       {/* Event Modal */}
@@ -759,11 +1119,21 @@ const MyCalendar = () => {
                   <div className="box-content">
                     <div className="box-row">
                       <span className="box-label">Start Time</span>
-                      <span className="box-value">{formatDateTime(selectedEvent.start_datetime)}</span>
+                      <span className="box-value">
+                        {selectedEvent.start_time_formatted ? 
+                          `${selectedEvent.date_formatted || new Date(selectedEvent.start_datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${selectedEvent.start_time_formatted}` :
+                          formatDateTime(selectedEvent.start_datetime)
+                        }
+                      </span>
                     </div>
                     <div className="box-row">
                       <span className="box-label">End Time</span>
-                      <span className="box-value">{formatDateTime(selectedEvent.end_datetime)}</span>
+                      <span className="box-value">
+                        {selectedEvent.end_time_formatted ? 
+                          `${selectedEvent.date_formatted || new Date(selectedEvent.end_datetime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${selectedEvent.end_time_formatted}` :
+                          formatDateTime(selectedEvent.end_datetime)
+                        }
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -881,43 +1251,313 @@ const MyCalendar = () => {
                 </Form.Text>
               </Form.Group>
               
+              {/* Custom Date and Time Pickers */}
               <Row>
-                <Col md={4}>
+                <Col md={6}>
                   <Form.Group className="mb-3">
                     <Form.Label>Date *</Form.Label>
-                    <Form.Control
-                      type="date"
-                      value={formData.date || (selectedDate ? (() => {
-                        const year = selectedDate.getFullYear();
-                        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                        const day = String(selectedDate.getDate()).padStart(2, '0');
-                        return `${year}-${month}-${day}`;
-                      })() : '')}
-                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      required
-                    />
+                    <div className="custom-date-picker-wrapper" style={{ position: 'relative' }}>
+                      <div 
+                        className="custom-date-input"
+                        onClick={() => setShowDatePicker(!showDatePicker)}
+                      >
+                        <Calendar size={20} className="date-picker-icon" />
+                        <div className="date-input-content">
+                          <div className="date-input-label">Select a day</div>
+                          <div className="date-input-value">
+                            {formData.date ? formatDateForPicker(formData.date) : 
+                             selectedDate ? formatDateForPicker(`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`) :
+                             'Select a day'}
+                          </div>
+                        </div>
+                        <ChevronRight 
+                          size={20} 
+                          className={`date-picker-chevron ${showDatePicker ? 'rotated' : ''}`}
+                        />
+                      </div>
+                      
+                      {showDatePicker && (
+                        <div className="custom-date-picker-dropdown">
+                          <div className="date-picker-header">
+                            <ChevronLeft 
+                              size={16} 
+                              onClick={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1))}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span className="date-picker-month-year">
+                              {datePickerMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </span>
+                            <ChevronRight 
+                              size={16} 
+                              onClick={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1))}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </div>
+                          <div className="date-picker-weekdays">
+                            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
+                              <div key={idx} className="date-picker-weekday">{day}</div>
+                            ))}
+                          </div>
+                          <div className="date-picker-grid">
+                            {(() => {
+                              const daysInMonth = getDaysInMonthForPicker(datePickerMonth);
+                              const firstDay = getFirstDayOfMonthForPicker(datePickerMonth);
+                              const days = [];
+                              
+                              // Empty cells for days before month starts
+                              for (let i = 0; i < firstDay; i++) {
+                                days.push(<div key={`empty-${i}`} className="date-picker-day empty"></div>);
+                              }
+                              
+                              // Days of the month
+                              for (let day = 1; day <= daysInMonth; day++) {
+                                const isSelected = formData.date && (() => {
+                                  const selected = new Date(formData.date + 'T00:00:00');
+                                  return selected.getDate() === day && 
+                                         selected.getMonth() === datePickerMonth.getMonth() &&
+                                         selected.getFullYear() === datePickerMonth.getFullYear();
+                                })();
+                                days.push(
+                                  <div
+                                    key={day}
+                                    className={`date-picker-day ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => handleDateSelect(day, datePickerMonth.getMonth() + 1, datePickerMonth.getFullYear())}
+                                  >
+                                    {day}
+                                  </div>
+                                );
+                              }
+                              return days;
+                            })()}
+                          </div>
+                          <div className="date-picker-actions">
+                            <button 
+                              type="button"
+                              className="date-picker-remove-btn"
+                              onClick={() => {
+                                setFormData({ ...formData, date: '' });
+                                setShowDatePicker(false);
+                              }}
+                            >
+                              Remove
+                            </button>
+                            <button 
+                              type="button"
+                              className="date-picker-done-btn"
+                              onClick={() => setShowDatePicker(false)}
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </Form.Group>
                 </Col>
-                <Col md={4}>
+                <Col md={6}>
                   <Form.Group className="mb-3">
-                    <Form.Label>Start Time *</Form.Label>
-                    <Form.Control
-                      type="time"
-                      value={formData.start_time}
-                      onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                      required
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={4}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>End Time *</Form.Label>
-                    <Form.Control
-                      type="time"
-                      value={formData.end_time}
-                      onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                      required
-                    />
+                    <Form.Label>Time *</Form.Label>
+                    <div className="custom-time-picker-wrapper">
+                      {/* Start Time */}
+                      <div 
+                        className={`custom-time-input ${showStartTimePicker ? 'active' : ''}`}
+                        onClick={() => {
+                          setShowStartTimePicker(!showStartTimePicker);
+                          setShowEndTimePicker(false);
+                        }}
+                      >
+                        <Clock size={20} className="time-picker-icon" />
+                        <div className="time-input-content">
+                          <div className="time-input-label">Start with</div>
+                          <div className="time-input-value">
+                            {allDayEvent ? 'All day' : (formData.start_time ? formatTimeForPicker(formData.start_time) : '00:00 AM')}
+                          </div>
+                        </div>
+                        <ChevronRight 
+                          size={20} 
+                          className={`time-picker-chevron ${showStartTimePicker ? 'rotated' : ''}`}
+                        />
+                      </div>
+                      
+                      {/* Time Picker Dropdown for Start Time */}
+                      {showStartTimePicker && (
+                        <div className="custom-time-picker-dropdown">
+                          <div className="time-picker-all-day">
+                            <input
+                              type="radio"
+                              id="all-day-start"
+                              checked={allDayEvent}
+                              onChange={(e) => {
+                                setAllDayEvent(e.target.checked);
+                                if (e.target.checked) {
+                                  setFormData({ ...formData, start_time: '00:00', end_time: '23:59' });
+                                }
+                              }}
+                            />
+                            <label htmlFor="all-day-start">All day</label>
+                          </div>
+                          <div className="time-picker-slots">
+                            {(() => {
+                              // Group slots by display time (e.g., "12:00" groups AM and PM together)
+                              const slots = generateTimeSlots();
+                              const grouped = {};
+                              slots.forEach(slot => {
+                                if (!grouped[slot.display]) {
+                                  grouped[slot.display] = { am: null, pm: null };
+                                }
+                                if (slot.isAM) {
+                                  grouped[slot.display].am = slot;
+                                } else {
+                                  grouped[slot.display].pm = slot;
+                                }
+                              });
+                              
+                              return Object.keys(grouped).map((displayTime, idx) => {
+                                const group = grouped[displayTime];
+                                const amSelected = formData.start_time === group.am?.value;
+                                const pmSelected = formData.start_time === group.pm?.value;
+                                const isSelected = amSelected || pmSelected;
+                                
+                                return (
+                                  <div 
+                                    key={idx}
+                                    className={`time-picker-slot ${isSelected ? 'selected' : ''}`}
+                                  >
+                                    <span className="time-slot-time">{displayTime}</span>
+                                    <div className="time-slot-ampm">
+                                      <button
+                                        type="button"
+                                        className={`ampm-btn ${amSelected ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (group.am) {
+                                            handleTimeSelect(group.am.value, 'start_time');
+                                          }
+                                        }}
+                                      >
+                                        AM
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`ampm-btn ${pmSelected ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (group.pm) {
+                                            handleTimeSelect(group.pm.value, 'start_time');
+                                          }
+                                        }}
+                                      >
+                                        PM
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* End Time */}
+                      <div 
+                        className={`custom-time-input ${showEndTimePicker ? 'active' : ''}`}
+                        onClick={() => {
+                          setShowEndTimePicker(!showEndTimePicker);
+                          setShowStartTimePicker(false);
+                        }}
+                      >
+                        <Clock size={20} className="time-picker-icon" />
+                        <div className="time-input-content">
+                          <div className="time-input-label">End with</div>
+                          <div className="time-input-value">
+                            {allDayEvent ? '' : (formData.end_time ? formatTimeForPicker(formData.end_time) : '')}
+                          </div>
+                        </div>
+                        <ChevronRight 
+                          size={20} 
+                          className={`time-picker-chevron ${showEndTimePicker ? 'rotated' : ''}`}
+                        />
+                      </div>
+                      
+                      {/* Time Picker Dropdown for End Time */}
+                      {showEndTimePicker && (
+                        <div className="custom-time-picker-dropdown">
+                          <div className="time-picker-all-day">
+                            <input
+                              type="radio"
+                              id="all-day-end"
+                              checked={allDayEvent}
+                              onChange={(e) => {
+                                setAllDayEvent(e.target.checked);
+                                if (e.target.checked) {
+                                  setFormData({ ...formData, start_time: '00:00', end_time: '23:59' });
+                                }
+                              }}
+                            />
+                            <label htmlFor="all-day-end">All day</label>
+                          </div>
+                          <div className="time-picker-slots">
+                            {(() => {
+                              // Group slots by display time (e.g., "12:00" groups AM and PM together)
+                              const slots = generateTimeSlots();
+                              const grouped = {};
+                              slots.forEach(slot => {
+                                if (!grouped[slot.display]) {
+                                  grouped[slot.display] = { am: null, pm: null };
+                                }
+                                if (slot.isAM) {
+                                  grouped[slot.display].am = slot;
+                                } else {
+                                  grouped[slot.display].pm = slot;
+                                }
+                              });
+                              
+                              return Object.keys(grouped).map((displayTime, idx) => {
+                                const group = grouped[displayTime];
+                                const amSelected = formData.end_time === group.am?.value;
+                                const pmSelected = formData.end_time === group.pm?.value;
+                                const isSelected = amSelected || pmSelected;
+                                
+                                return (
+                                  <div 
+                                    key={idx}
+                                    className={`time-picker-slot ${isSelected ? 'selected' : ''}`}
+                                  >
+                                    <span className="time-slot-time">{displayTime}</span>
+                                    <div className="time-slot-ampm">
+                                      <button
+                                        type="button"
+                                        className={`ampm-btn ${amSelected ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (group.am) {
+                                            handleTimeSelect(group.am.value, 'end_time');
+                                          }
+                                        }}
+                                      >
+                                        AM
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`ampm-btn ${pmSelected ? 'active' : ''}`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (group.pm) {
+                                            handleTimeSelect(group.pm.value, 'end_time');
+                                          }
+                                        }}
+                                      >
+                                        PM
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </Form.Group>
                 </Col>
               </Row>

@@ -154,14 +154,23 @@ class HrCalendarEvent extends Model
         $startTimeManila = $this->start_datetime->setTimezone('Asia/Manila');
         $endTimeManila = $this->end_datetime->setTimezone('Asia/Manila');
         
+        // Format time with spaces around colons and before AM/PM: "1 : 30 : 30 AM"
+        $formatTimeWithSpaces = function($time) {
+            $hour = (int)$time->format('g'); // 12-hour format without leading zero
+            $minute = $time->format('i');
+            $second = $time->format('s');
+            $ampm = $time->format('A');
+            return "{$hour} : {$minute} : {$second} {$ampm}";
+        };
+
         return [
             'id' => $this->id,
             'title' => $this->title,
             'description' => $this->description,
             'start_datetime' => $this->start_datetime->toISOString(),
             'end_datetime' => $this->end_datetime->toISOString(),
-            'start_time_formatted' => $startTimeManila->format('g:i A'),
-            'end_time_formatted' => $endTimeManila->format('g:i A'),
+            'start_time_formatted' => $formatTimeWithSpaces($startTimeManila),
+            'end_time_formatted' => $formatTimeWithSpaces($endTimeManila),
             'date_formatted' => $startTimeManila->format('M j, Y'),
             'event_type' => $this->event_type,
             'status' => $this->status,

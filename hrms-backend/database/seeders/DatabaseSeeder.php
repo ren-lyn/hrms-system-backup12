@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RoleSeeder::class,
+            AdminAccountSeeder::class,
             UserSeeder::class,
             DefaultAccountsSeeder::class,
             MultipleAccountsSeeder::class,
@@ -36,6 +37,8 @@ class DatabaseSeeder extends Seeder
             EmployeeShiftSeeder::class,
             // OnboardingTaskSeeder::class,
             // ResignationFlagSeeder::class,
+            SecuritySettingsSeeder::class,
+            Holiday2025To2050Seeder::class,
         ]);
     }
 }

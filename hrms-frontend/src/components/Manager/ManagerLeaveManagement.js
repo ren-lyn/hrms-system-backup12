@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert, Nav, Tab } from 'react-bootstrap';
 import { Search, Calendar, Download, Eye, Check, X, FileText, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { fetchLeaveRequests, getLeaveStats, getLeaveRequest, approveLeaveRequest, rejectLeaveRequest, approveLeaveRequestAsManager, rejectLeaveRequestAsManager } from '../../api/leave';
+import ManagerLeaveTracker from './ManagerLeaveTracker';
 import jsPDF from 'jspdf';
 import './ManagerLeaveManagement.css';
 
-const ManagerLeaveManagement = () => {
+const ManagerLeaveManagement = ({ viewType }) => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [stats, setStats] = useState({
     approval_stats: { requested: 0, approved: 0, rejected: 0, pending: 0 },
@@ -26,6 +27,16 @@ const ManagerLeaveManagement = () => {
   const [loadingLeaveDetails, setLoadingLeaveDetails] = useState(false);
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [attachmentImageUrl, setAttachmentImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    // Set initial active tab based on viewType
+    if (viewType === 'overview') {
+      setActiveTab('pending');
+    }
+  }, [viewType]);
 
   useEffect(() => {
     loadData();
@@ -41,6 +52,15 @@ const ManagerLeaveManagement = () => {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+
+  // Cleanup blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      if (attachmentImageUrl && attachmentImageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(attachmentImageUrl);
+      }
+    };
+  }, [attachmentImageUrl]);
 
   const loadData = async () => {
     try {
@@ -86,9 +106,17 @@ const ManagerLeaveManagement = () => {
       if (actionType === 'approve') {
         response = await approveLeaveRequestAsManager(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been approved and forwarded to HR!`, 'success');
+        // Automatically switch to Approved tab after approval
+        if (viewType === 'overview') {
+          setActiveTab('approved');
+        }
       } else if (actionType === 'reject') {
         response = await rejectLeaveRequestAsManager(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been rejected.`, 'info');
+        // Automatically switch to Rejected tab after rejection
+        if (viewType === 'overview') {
+          setActiveTab('rejected');
+        }
       }
       
       console.log('Manager action response:', response);
@@ -111,10 +139,52 @@ const ManagerLeaveManagement = () => {
   const handleViewLeave = async (request) => {
     try {
       setLoadingLeaveDetails(true);
+      // Reset image states
+      setAttachmentImageUrl(null);
+      setImageLoading(false);
+      setImageError(false);
+      
       const response = await getLeaveRequest(request.id);
       console.log('Full leave request data:', response.data);
-      setSelectedLeaveForView(response.data);
+      const fullRequest = response.data;
+      setSelectedLeaveForView(fullRequest);
       setShowViewModal(true);
+      
+      // Fetch image if attachment exists and is an image
+      if (fullRequest.attachment) {
+        const attachmentPath = fullRequest.attachment;
+        const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+        
+        if (isImage) {
+          try {
+            setImageLoading(true);
+            const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+            const apiUrl = `http://localhost:8000/api/leave-requests/${fullRequest.id}/attachment`;
+            
+            const imageResponse = await fetch(apiUrl, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'image/*'
+              }
+            });
+            
+            if (imageResponse.ok) {
+              const blob = await imageResponse.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              setAttachmentImageUrl(blobUrl);
+              setImageLoading(false);
+              setImageError(false);
+            } else {
+              // Fallback to direct storage URL
+              setImageLoading(false);
+            }
+          } catch (error) {
+            console.error('Error fetching image:', error);
+            setImageLoading(false);
+            // Will fall back to direct storage URLs in the display logic
+          }
+        }
+      }
     } catch (error) {
       console.error('Error fetching leave details:', error);
       showAlert('Error loading leave details. Please try again.', 'danger');
@@ -343,6 +413,11 @@ const ManagerLeaveManagement = () => {
     return <div className="d-flex justify-content-center p-4">Loading...</div>;
   }
 
+  // Render Leave Tracker if viewType is 'tracker'
+  if (viewType === 'tracker') {
+    return <ManagerLeaveTracker />;
+  }
+
   return (
     <div style={{ height: '100%', backgroundColor: '#f8f9fa' }}>
       <Container fluid className="manager-leave-management" style={{ 
@@ -375,12 +450,16 @@ const ManagerLeaveManagement = () => {
       )}
 
       {/* Stats Cards */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="stats-card">
-            <Card.Body>
+      <Row className="mb-4" style={{ display: 'flex' }}>
+        <Col md={6} className="order-1" style={{ display: 'flex', order: 1 }}>
+          <Card className="stats-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Card.Body style={{ display: 'flex', flexDirection: 'column', flex: '1', justifyContent: 'center' }}>
               <div className="d-flex align-items-center mb-3">
-                <div className="stats-icon me-3">
+                <div className="stats-icon me-3" style={{
+                  backgroundColor: activeTab === 'pending' ? '#ffc107' : 
+                                  activeTab === 'approved' ? '#28a745' : 
+                                  '#dc3545'
+                }}>
                   {activeTab === 'pending' ? <Clock size={20} /> : 
                    activeTab === 'approved' ? <CheckCircle size={20} /> : 
                    <XCircle size={20} />}
@@ -391,7 +470,7 @@ const ManagerLeaveManagement = () => {
                    'Rejected Requests'}
                 </h6>
               </div>
-              <Row className="text-center">
+              <Row className="text-center" style={{ margin: 0 }}>
                 <Col>
                   <div className="stat-item">
                     <div className="stat-label">Total</div>
@@ -462,15 +541,21 @@ const ManagerLeaveManagement = () => {
             </Card.Body>
           </Card>
         </Col>
-        <Col md={6}>
-          <Card className="stats-card">
-            <Card.Body>
+        <Col md={6} className="order-2" style={{ display: 'flex', order: 2 }}>
+          <Card className="stats-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Card.Body style={{ display: 'flex', flexDirection: 'column', flex: '1', minHeight: 0 }}>
               <h6 className="mb-3">
                 {activeTab === 'pending' ? 'Pending by Leave Type' : 
                  activeTab === 'approved' ? 'Approved by Leave Type' : 
                  'Rejected by Leave Type'}
               </h6>
-              <div className="leave-types" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              <div className="leave-types" style={{ 
+                maxHeight: '200px', 
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                flex: '1',
+                minHeight: 0
+              }}>
                 {(() => {
                   const filteredRequests = leaveRequests.filter(r => {
                     if (activeTab === 'pending') return r.status === 'pending';
@@ -1007,7 +1092,16 @@ const ManagerLeaveManagement = () => {
 
 
       {/* View Leave Form Modal */}
-      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="xl">
+      <Modal show={showViewModal} onHide={() => {
+        setShowViewModal(false);
+        // Cleanup blob URL when modal closes
+        if (attachmentImageUrl && attachmentImageUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(attachmentImageUrl);
+        }
+        setAttachmentImageUrl(null);
+        setImageLoading(false);
+        setImageError(false);
+      }} size="lg" className="leave-application-modal">
         <Modal.Header closeButton>
           <Modal.Title>
             <div className="d-flex align-items-center">
@@ -1125,6 +1219,175 @@ const ManagerLeaveManagement = () => {
                 </div>
               </div>
 
+              {/* Proof Picture Section */}
+              {selectedLeaveForView.attachment && (
+                <div className="pb-3 mb-4">
+                  <h5 className="text-primary mb-3">📷 PROOF PICTURE:</h5>
+                  <div style={{ marginTop: '10px' }}>
+                    {(() => {
+                      const attachmentPath = selectedLeaveForView.attachment;
+                      const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+                      const isPdf = /\.pdf$/i.test(attachmentPath);
+                      const leaveRequestId = selectedLeaveForView.id;
+                      const apiAttachmentUrl = `http://localhost:8000/api/leave-requests/${leaveRequestId}/attachment`;
+                      
+                      // Clean the path
+                      const cleanPath = attachmentPath.replace(/^\/+|\/+$/g, '');
+                      const filename = cleanPath.split('/').pop();
+                      const encodedFilename = encodeURIComponent(filename);
+                      
+                      // Generate possible URLs
+                      const possibleUrls = [
+                        apiAttachmentUrl,
+                        `http://localhost:8000/storage/leave_attachments/${encodedFilename}`,
+                        `http://localhost:8000/storage/leave_attachments/${filename}`,
+                        cleanPath.startsWith('leave_attachments/') 
+                          ? `http://localhost:8000/storage/${encodeURIComponent(cleanPath)}` 
+                          : null,
+                        `http://localhost:8000/storage/${encodeURIComponent(cleanPath)}`,
+                        cleanPath.startsWith('storage/') 
+                          ? `http://localhost:8000/${encodeURIComponent(cleanPath)}` 
+                          : null,
+                        cleanPath.startsWith('http') ? cleanPath : null,
+                      ].filter(Boolean);
+                      
+                      if (isImage) {
+                        // Prioritize blob URL from authenticated fetch, then use other URLs
+                        let finalImageUrl;
+                        if (attachmentImageUrl) {
+                          finalImageUrl = attachmentImageUrl;
+                        } else {
+                          // Use the API endpoint first, then fallbacks
+                          finalImageUrl = apiAttachmentUrl;
+                        }
+                        
+                        return (
+                          <div style={{ 
+                            maxWidth: '100%', 
+                            textAlign: 'left',
+                            marginTop: '10px'
+                          }}>
+                            {imageLoading && !attachmentImageUrl ? (
+                              <div style={{ 
+                                padding: '40px', 
+                                textAlign: 'left',
+                                color: '#6c757d'
+                              }}>
+                                <div className="spinner-border spinner-border-sm me-2" role="status">
+                                  <span className="visually-hidden">Loading...</span>
+                                </div>
+                                Loading image...
+                              </div>
+                            ) : imageError && !attachmentImageUrl ? (
+                              <div style={{ 
+                                padding: '20px', 
+                                textAlign: 'left',
+                                color: '#dc3545',
+                                border: '1px solid #dc3545',
+                                borderRadius: '8px',
+                                background: '#f8d7da'
+                              }}>
+                                Failed to load image
+                              </div>
+                            ) : (
+                              <img
+                                key={finalImageUrl}
+                                src={finalImageUrl}
+                                alt="Leave proof attachment"
+                                style={{
+                                  maxWidth: '300px',
+                                  maxHeight: '250px',
+                                  width: 'auto',
+                                  height: 'auto',
+                                  borderRadius: '8px',
+                                  border: '1px solid #dee2e6',
+                                  objectFit: 'contain',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                  backgroundColor: '#f8f9fa',
+                                  display: 'block',
+                                  margin: '0'
+                                }}
+                                onLoad={() => {
+                                  setImageError(false);
+                                  setImageLoading(false);
+                                }}
+                                onError={(e) => {
+                                  // Only show error if we've tried all possible URLs
+                                  const currentSrc = e.target.src;
+                                  
+                                  // Find current URL index in possibleUrls array
+                                  let currentIndex = -1;
+                                  for (let i = 0; i < possibleUrls.length; i++) {
+                                    if (currentSrc.includes(possibleUrls[i].replace('http://localhost:8000', '')) || 
+                                        currentSrc === possibleUrls[i]) {
+                                      currentIndex = i;
+                                      break;
+                                    }
+                                  }
+                                  
+                                  // If we can't find it or it's a blob URL, check if blob failed
+                                  if (currentIndex === -1 && currentSrc.startsWith('blob:')) {
+                                    // Blob URL failed, try fallback URLs
+                                    e.target.src = possibleUrls[0];
+                                    return;
+                                  }
+                                  
+                                  // Try next fallback URL
+                                  if (currentIndex >= 0 && currentIndex < possibleUrls.length - 1) {
+                                    const nextUrl = possibleUrls[currentIndex + 1];
+                                    e.target.src = nextUrl;
+                                  } else {
+                                    // All URLs exhausted, show error
+                                    setImageError(true);
+                                    setImageLoading(false);
+                                  }
+                                }}
+                              />
+                            )}
+                          </div>
+                        );
+                      } else if (isPdf) {
+                        return (
+                          <div style={{ marginTop: '10px' }}>
+                            <div className="d-flex align-items-center mb-2 p-3 bg-light rounded border">
+                              <div style={{
+                                width: '40px',
+                                height: '40px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#dc3545',
+                                color: 'white',
+                                borderRadius: '6px',
+                                fontSize: '16px',
+                                fontWeight: 'bold',
+                                marginRight: '12px'
+                              }}>
+                                PDF
+                              </div>
+                              <div className="flex-grow-1">
+                                <div style={{ fontWeight: '500' }}>PDF Document</div>
+                                <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                                  Click to view or download
+                                </div>
+                              </div>
+                              <a 
+                                href={possibleUrls[0]} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="btn btn-sm btn-outline-danger"
+                              >
+                                View PDF
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </div>
+              )}
 
             </div>
           ) : (

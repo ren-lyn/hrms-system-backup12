@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Table, Button, Badge, Form, InputGroup, Modal, Alert, Nav, Tab } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, Check, X, FileText, Clock } from 'lucide-react';
+import { Search, Calendar, Download, Eye, Check, X, FileText, Clock, CheckCircle, XCircle, Image as ImageIcon, ExternalLink } from 'lucide-react';
 import { fetchLeaveRequests, getLeaveStats, approveLeaveRequest, confirmManagerRejection, updateLeaveTermsAndCategory, getLeaveRequest } from '../../api/leave';
 import jsPDF from 'jspdf';
 import axios from '../../axios';
@@ -34,6 +34,13 @@ const LeaveManagement = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const [selectedAttachment, setSelectedAttachment] = useState(null);
+  const [attachmentType, setAttachmentType] = useState(null); // 'image' or 'pdf' or 'other'
+  const [imageUrlIndex, setImageUrlIndex] = useState({}); // Track URL index for each attachment
+  const [imageError, setImageError] = useState({}); // Track errors for each attachment
+  const [imageLoaded, setImageLoaded] = useState({}); // Track if image loaded successfully
+  const [imageBlobUrls, setImageBlobUrls] = useState({}); // Store blob URLs for images fetched via API
 
   useEffect(() => {
     loadData();
@@ -51,6 +58,79 @@ const LeaveManagement = () => {
     return () => {
       clearInterval(interval);
       window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Fetch image via API and create blob URL when viewing a leave request with attachment
+  useEffect(() => {
+    if (!selectedLeaveForView?.attachment || !selectedLeaveForView?.id) return;
+    
+    const attachmentId = selectedLeaveForView.id;
+    const attachmentPath = selectedLeaveForView.attachment;
+    const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+    
+    // Only fetch images via API if not already fetched
+    if (!isImage) return;
+    
+    // Check if we already have a blob URL for this attachment
+    const hasBlobUrl = imageBlobUrls[attachmentId];
+    if (hasBlobUrl) {
+      // Already have blob URL, no need to fetch
+      return;
+    }
+    
+    // Fetch the image via API
+    const fetchImageViaAPI = async () => {
+      try {
+        const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+        const apiUrl = `http://localhost:8000/api/leave-requests/${attachmentId}/attachment`;
+        
+        const response = await fetch(apiUrl, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'image/*'
+          }
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          setImageBlobUrls(prev => ({ ...prev, [attachmentId]: blobUrl }));
+          setImageError(prev => ({ ...prev, [attachmentId]: false }));
+          setImageLoaded(prev => ({ ...prev, [attachmentId]: true }));
+          console.log('✅ Image fetched via API and blob URL created:', blobUrl);
+        } else {
+          console.error('❌ Failed to fetch image via API:', response.status);
+          // Will fall back to direct storage URLs
+          setImageError(prev => ({ ...prev, [attachmentId]: false }));
+        }
+      } catch (error) {
+        console.error('❌ Error fetching image via API:', error);
+        // Will fall back to direct storage URLs
+        setImageError(prev => ({ ...prev, [attachmentId]: false }));
+      }
+    };
+    
+    fetchImageViaAPI();
+  }, [selectedLeaveForView?.id, selectedLeaveForView?.attachment, imageBlobUrls]);
+
+  // Reset image loading state when viewing a new leave request
+  useEffect(() => {
+    if (selectedLeaveForView && selectedLeaveForView.attachment) {
+      const attachmentId = selectedLeaveForView.id || selectedLeaveForView.attachment;
+      setImageUrlIndex(prev => ({ ...prev, [attachmentId]: 0 }));
+      setImageError(prev => ({ ...prev, [attachmentId]: false }));
+      setImageLoaded(prev => ({ ...prev, [attachmentId]: false }));
+      // Don't reset blob URL - it will be fetched fresh if needed
+    }
+  }, [selectedLeaveForView?.id, selectedLeaveForView?.attachment]);
+  
+  // Cleanup all blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      Object.values(imageBlobUrls).forEach(url => {
+        if (url) URL.revokeObjectURL(url);
+      });
     };
   }, []);
 
@@ -75,7 +155,7 @@ const LeaveManagement = () => {
       console.log('Loaded leave requests:', requestsResponse.data);
       console.log('Loaded stats:', statsResponse.data);
       
-      // Filter to show only manager-approved and manager-rejected requests for HR
+      // Show all requests that HR needs to see: pending HR action, approved, and rejected
       const hrRequests = requestsResponse.data.filter(request => 
         request.status === 'manager_approved' || request.status === 'manager_rejected' || request.status === 'approved' || request.status === 'rejected'
       );
@@ -112,9 +192,13 @@ const LeaveManagement = () => {
       if (actionType === 'approve') {
         response = await approveLeaveRequest(selectedLeave.id, remarks);
         showAlert(`Leave request for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)} has been approved successfully!`, 'success');
+        // Automatically switch to Approved tab after approval
+        setActiveTab('approved');
       } else if (actionType === 'confirm_rejection') {
         response = await confirmManagerRejection(selectedLeave.id, remarks);
         showAlert(`Manager rejection confirmed for ${getEmployeeName(selectedLeave.employee, selectedLeave.employee_name)}. Employee has been notified.`, 'info');
+        // Automatically switch to Rejected tab after rejection
+        setActiveTab('rejected');
       }
       
       console.log('Action response:', response);
@@ -165,6 +249,10 @@ const LeaveManagement = () => {
       console.log('Full leave request data:', response.data);
       console.log('Total days:', response.data.total_days);
       console.log('Total hours:', response.data.total_hours);
+      console.log('🔍 Attachment field:', response.data.attachment);
+      console.log('🔍 Attachment type:', typeof response.data.attachment);
+      console.log('🔍 Manager Approved By:', response.data.managerApprovedBy);
+      console.log('🔍 Approved By:', response.data.approvedBy);
       setSelectedLeaveForView(response.data);
       setShowViewModal(true);
     } catch (error) {
@@ -274,7 +362,8 @@ const LeaveManagement = () => {
       pdf.text(`Generated on: ${reportDate}`, margin, yPosition);
       yPosition += 5;
       
-      const tabLabel = 'Pending Requests';
+      const tabLabel = activeTab === 'pending' ? 'Pending Requests' : 
+                      activeTab === 'approved' ? 'Approved Requests' : 'Rejected Requests';
       pdf.text(`Filter: ${tabLabel}`, margin, yPosition);
       yPosition += 5;
       
@@ -531,8 +620,152 @@ const LeaveManagement = () => {
       
       yPosition += (reasonLines.length * 5) + 15;
       
-      // Approval Information Section (only for PDF export)
+      // Proof Picture/Attachment Section (moved before Approval Information)
+      if (selectedLeaveForView.attachment) {
+        try {
+          const attachmentPath = selectedLeaveForView.attachment;
+          const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+          const leaveRequestId = selectedLeaveForView.id;
+          
+          if (isImage) {
+            // Check if we need a new page
+            if (yPosition > pageHeight - 80) {
+              pdf.addPage();
+              yPosition = margin;
+            }
+            
+            // Section header
+            pdf.setFontSize(12);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Proof Picture', margin, yPosition);
+            yPosition += 10;
+            
+            try {
+              // Try to fetch the image via API
+              const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+              const apiUrl = `http://localhost:8000/api/leave-requests/${leaveRequestId}/attachment`;
+              
+              // Use fetch to get the image as blob
+              const imageResponse = await fetch(apiUrl, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'image/*'
+                }
+              });
+              
+              if (imageResponse.ok) {
+                const blob = await imageResponse.blob();
+                
+                // Convert blob to data URL
+                const reader = new FileReader();
+                const imageDataUrl = await new Promise((resolve, reject) => {
+                  reader.onload = () => resolve(reader.result);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+                
+                // Create an image element to get dimensions
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = imageDataUrl;
+                
+                await new Promise((resolve, reject) => {
+                  img.onload = () => {
+                    // Calculate image dimensions to fit within PDF page width
+                    const maxWidth = 60; // Reduced width for smaller image (60mm)
+                    const maxHeight = 50; // Reduced height for smaller image (50mm)
+                    let imgWidth = img.width;
+                    let imgHeight = img.height;
+                    const aspectRatio = imgWidth / imgHeight;
+                    
+                    // Scale to fit width if needed
+                    if (imgWidth > maxWidth) {
+                      imgWidth = maxWidth;
+                      imgHeight = imgWidth / aspectRatio;
+                    }
+                    
+                    // Scale to fit height if needed
+                    if (imgHeight > maxHeight) {
+                      imgHeight = maxHeight;
+                      imgWidth = imgHeight * aspectRatio;
+                    }
+                    
+                    // Check if we need a new page
+                    if (yPosition + imgHeight > pageHeight - 30) {
+                      pdf.addPage();
+                      yPosition = margin;
+                    }
+                    
+                    // Determine image format from blob type
+                    let imageFormat = 'JPEG';
+                    if (blob.type === 'image/png') {
+                      imageFormat = 'PNG';
+                    } else if (blob.type === 'image/jpeg' || blob.type === 'image/jpg') {
+                      imageFormat = 'JPEG';
+                    }
+                    
+                    // Add image to PDF using data URL
+                    pdf.addImage(imageDataUrl, imageFormat, margin, yPosition, imgWidth, imgHeight);
+                    yPosition += imgHeight + 10;
+                    
+                    resolve();
+                  };
+                  img.onerror = () => {
+                    // Fallback: show text message
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setFontSize(10);
+                    pdf.text('Attachment image available but could not be loaded in PDF', margin, yPosition);
+                    yPosition += 8;
+                    resolve();
+                  };
+                });
+              } else {
+                // Fallback: show text message
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(10);
+                pdf.text('Proof picture available (see attachment)', margin, yPosition);
+                yPosition += 8;
+              }
+            } catch (imgError) {
+              console.error('Error loading image for PDF:', imgError);
+              // Fallback: show text message
+              pdf.setFont('helvetica', 'normal');
+              pdf.setFontSize(10);
+              pdf.text('Proof picture available (see attachment)', margin, yPosition);
+              yPosition += 8;
+            }
+          } else {
+            // For non-image attachments, just mention it
+            if (yPosition > pageHeight - 30) {
+              pdf.addPage();
+              yPosition = margin;
+            }
+            
+            pdf.setFontSize(12);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Attachment', margin, yPosition);
+            yPosition += 10;
+            
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(10);
+            const fileName = attachmentPath.split('/').pop() || 'attachment';
+            pdf.text(`Attachment file: ${fileName}`, margin, yPosition);
+            yPosition += 8;
+          }
+        } catch (error) {
+          console.error('Error adding attachment to PDF:', error);
+          // Continue without attachment if there's an error
+        }
+      }
+      
+      // Approval Information Section (moved after Proof Picture)
       if (selectedLeaveForView.status === 'approved' || selectedLeaveForView.status === 'rejected') {
+        // Check if we need a new page
+        if (yPosition > pageHeight - 50) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        
         pdf.setFontSize(12);
         pdf.setFont('helvetica', 'bold');
         pdf.text('Approval Information', margin, yPosition);
@@ -541,17 +774,45 @@ const LeaveManagement = () => {
         // Requested by
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'bold');
+        const labelWidth = 35; // Consistent width for all labels for alignment
         pdf.text('Requested by:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(getEmployeeName(selectedLeaveForView.employee, selectedLeaveForView.employee_name), margin + 30, yPosition);
+        pdf.text(getEmployeeName(selectedLeaveForView.employee, selectedLeaveForView.employee_name), margin + labelWidth, yPosition);
         yPosition += 6;
         
-        // Noted by (HR Assistant) - always show HR Assistant
+        // Noted by - show HR Assistant name (actual name only, no role placeholder)
         pdf.setFont('helvetica', 'bold');
         pdf.text('Noted by (HR Assistant):', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        const hrAssistantName = currentUser?.name || selectedLeaveForView.approved_by?.name || selectedLeaveForView.approvedBy?.name || '—';
-        pdf.text(hrAssistantName, margin + 45, yPosition);
+        let hrAssistantName = '';
+        
+        // Try multiple ways to get HR Assistant name
+        if (selectedLeaveForView.approvedBy) {
+          hrAssistantName = getEmployeeName(selectedLeaveForView.approvedBy, selectedLeaveForView.approvedBy.name || selectedLeaveForView.approvedBy.first_name);
+        } else if (selectedLeaveForView.approved_by) {
+          if (typeof selectedLeaveForView.approved_by === 'object') {
+            hrAssistantName = getEmployeeName(selectedLeaveForView.approved_by, selectedLeaveForView.approved_by.name || selectedLeaveForView.approved_by.first_name);
+          } else if (typeof selectedLeaveForView.approved_by === 'number') {
+            // It's just an ID, use currentUser
+            if (currentUser) {
+              hrAssistantName = getEmployeeName(currentUser, currentUser.name);
+            }
+          }
+        }
+        
+        // Fallback to currentUser if no name found
+        if (!hrAssistantName || hrAssistantName === 'Unknown Employee') {
+          if (currentUser) {
+            hrAssistantName = getEmployeeName(currentUser, currentUser.name);
+          }
+        }
+        
+        // Only show if we have a valid name (not role placeholder)
+        if (!hrAssistantName || hrAssistantName === 'Unknown Employee' || hrAssistantName === 'HR Assistant') {
+          hrAssistantName = currentUser ? getEmployeeName(currentUser, currentUser.name) : '—';
+        }
+        
+        pdf.text(hrAssistantName, margin + labelWidth, yPosition);
         yPosition += 6;
         
         // Show appropriate action based on status
@@ -560,17 +821,42 @@ const LeaveManagement = () => {
           pdf.setFont('helvetica', 'bold');
           pdf.text('Approved by:', margin, yPosition);
           pdf.setFont('helvetica', 'normal');
-          const approverName = selectedLeaveForView.approved_by?.name || selectedLeaveForView.approvedBy?.name || 'HR Assistant';
-          pdf.text(approverName, margin + 25, yPosition);
+          
+          // Get manager name from managerApprovedBy relationship (actual name only)
+          let approverName = '';
+          
+          if (selectedLeaveForView.managerApprovedBy) {
+            approverName = getEmployeeName(selectedLeaveForView.managerApprovedBy, selectedLeaveForView.managerApprovedBy.name || selectedLeaveForView.managerApprovedBy.first_name);
+          } else if (selectedLeaveForView.manager_approved_by) {
+            if (typeof selectedLeaveForView.manager_approved_by === 'object') {
+              approverName = getEmployeeName(selectedLeaveForView.manager_approved_by, selectedLeaveForView.manager_approved_by.name || selectedLeaveForView.manager_approved_by.first_name);
+            }
+          }
+          
+          // Don't show role placeholder - only show actual name or dash
+          if (!approverName || approverName === 'Unknown Employee' || approverName === 'Manager') {
+            approverName = '—';
+          }
+          
+          pdf.text(approverName, margin + labelWidth, yPosition);
           yPosition += 6;
           
           pdf.setFont('helvetica', 'bold');
           pdf.text('Approval Date:', margin, yPosition);
           pdf.setFont('helvetica', 'normal');
-          const approvalDate = new Date(selectedLeaveForView.approved_at).toLocaleDateString('en-US', {
-            year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
-          });
-          pdf.text(approvalDate, margin + 28, yPosition);
+          // Format date as: November 4, 2025 at 1:05 AM
+          const approvalDateObj = new Date(selectedLeaveForView.approved_at || selectedLeaveForView.manager_approved_at);
+          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+          const month = monthNames[approvalDateObj.getMonth()];
+          const day = approvalDateObj.getDate();
+          const year = approvalDateObj.getFullYear();
+          const hours = approvalDateObj.getHours();
+          const minutes = approvalDateObj.getMinutes();
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12; // Convert to 12-hour format
+          const displayMinutes = minutes.toString().padStart(2, '0'); // Ensure 2 digits
+          const approvalDate = `${month} ${day}, ${year} at ${displayHours}:${displayMinutes} ${ampm}`;
+          pdf.text(approvalDate, margin + labelWidth, yPosition);
           
         } else if (selectedLeaveForView.status === 'rejected') {
           // Show who rejected it - either Manager or HR
@@ -630,25 +916,6 @@ const LeaveManagement = () => {
         yPosition += 15;
       }
       
-      // E-Signature Section
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('E-Signature', margin, yPosition);
-      yPosition += 10;
-      
-      // Signature status
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      if (selectedLeaveForView.signature_path) {
-        pdf.text('Signature provided', margin, yPosition);
-        
-        // Show filename
-        pdf.setFontSize(9);
-        pdf.text(`File: ${selectedLeaveForView.signature_path.split('/').pop()}`, margin, yPosition + 6);
-      } else {
-        pdf.text('No signature provided', margin, yPosition);
-      }
-      
       // Footer
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'italic');
@@ -692,8 +959,15 @@ const LeaveManagement = () => {
                          request.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          request.department?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Filter by tab status - only pending requests
-    const matchesTab = request.status === 'manager_approved' || request.status === 'manager_rejected';
+    // Filter by tab status
+    let matchesTab = false;
+    if (activeTab === 'pending') {
+      matchesTab = request.status === 'manager_approved' || request.status === 'manager_rejected';
+    } else if (activeTab === 'approved') {
+      matchesTab = request.status === 'approved';
+    } else if (activeTab === 'rejected') {
+      matchesTab = request.status === 'rejected';
+    }
     
     // Filter by period
     let matchesPeriod = true;
@@ -747,8 +1021,25 @@ const LeaveManagement = () => {
       <Container fluid className="leave-management" style={{ 
         height: 'auto', 
         overflowY: 'auto', 
-        padding: isMobile ? '20px 8px' : '20px 20px'
+        padding: isMobile ? '20px 8px' : '20px 20px',
+        backgroundColor: '#f8f9fa'
       }}>
+
+      {/* Header */}
+      <div style={{ 
+        backgroundColor: 'white', 
+        padding: '20px', 
+        borderBottom: '1px solid #e9ecef',
+        marginBottom: '20px',
+        borderRadius: '8px 8px 0 0'
+      }}>
+        <div className="d-flex justify-content-between align-items-center">
+          <h4 className="mb-0" style={{ color: '#495057', fontWeight: '600' }}>Leave Management</h4>
+          <div className="text-muted small">
+            Last updated: {lastUpdated ? lastUpdated.toLocaleTimeString() : 'Never'}
+          </div>
+        </div>
+      </div>
 
       {alert.show && (
         <Alert variant={alert.type} dismissible onClose={() => setAlert({ show: false, message: '', type: '' })}>
@@ -757,24 +1048,36 @@ const LeaveManagement = () => {
       )}
 
       {/* Stats Cards */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="stats-card">
-            <Card.Body>
+      <Row className="mb-4" style={{ display: 'flex' }}>
+        <Col md={6} className="order-1" style={{ display: 'flex', order: 1 }}>
+          <Card className="stats-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Card.Body style={{ display: 'flex', flexDirection: 'column', flex: '1', justifyContent: 'center' }}>
               <div className="d-flex align-items-center mb-3">
-                <div className="stats-icon me-3">
-                  <Clock size={20} />
+                <div className="stats-icon me-3" style={{
+                  backgroundColor: activeTab === 'pending' ? '#ffc107' : 
+                                  activeTab === 'approved' ? '#28a745' : 
+                                  '#dc3545'
+                }}>
+                  {activeTab === 'pending' ? <Clock size={20} /> : 
+                   activeTab === 'approved' ? <CheckCircle size={20} /> : 
+                   <XCircle size={20} />}
                 </div>
                 <h6 className="mb-0">
-                  Pending Requests
+                  {activeTab === 'pending' ? 'Pending Requests' : 
+                   activeTab === 'approved' ? 'Approved Requests' : 
+                   'Rejected Requests'}
                 </h6>
               </div>
-              <Row className="text-center">
+              <Row className="text-center" style={{ margin: 0 }}>
                 <Col>
                   <div className="stat-item">
                     <div className="stat-label">Total</div>
                     <div className="stat-value">
-                      {leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length}
+                      {activeTab === 'pending' ? 
+                        leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length :
+                        activeTab === 'approved' ? 
+                        leaveRequests.filter(r => r.status === 'approved').length :
+                        leaveRequests.filter(r => r.status === 'rejected').length}
                     </div>
                   </div>
                 </Col>
@@ -787,7 +1090,9 @@ const LeaveManagement = () => {
                         const currentYear = new Date().getFullYear();
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at);
-                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
+                          const matchesTab = activeTab === 'pending' ? (r.status === 'manager_approved' || r.status === 'manager_rejected') :
+                            activeTab === 'approved' ? (r.status === 'approved') : 
+                            (r.status === 'rejected');
                           return matchesTab && requestDate.getMonth() === currentMonth && requestDate.getFullYear() === currentYear;
                         }).length;
                       })()}
@@ -804,7 +1109,9 @@ const LeaveManagement = () => {
                         const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at);
-                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
+                          const matchesTab = activeTab === 'pending' ? (r.status === 'manager_approved' || r.status === 'manager_rejected') :
+                            activeTab === 'approved' ? (r.status === 'approved') : 
+                            (r.status === 'rejected');
                           return matchesTab && requestDate >= startOfWeek && requestDate <= endOfWeek;
                         }).length;
                       })()}
@@ -819,7 +1126,9 @@ const LeaveManagement = () => {
                         const today = new Date().toDateString();
                         return leaveRequests.filter(r => {
                           const requestDate = new Date(r.created_at).toDateString();
-                          const matchesTab = (r.status === 'manager_approved' || r.status === 'manager_rejected');
+                          const matchesTab = activeTab === 'pending' ? (r.status === 'manager_approved' || r.status === 'manager_rejected') :
+                            activeTab === 'approved' ? (r.status === 'approved') : 
+                            (r.status === 'rejected');
                           return matchesTab && requestDate === today;
                         }).length;
                       })()}
@@ -830,16 +1139,27 @@ const LeaveManagement = () => {
             </Card.Body>
           </Card>
         </Col>
-        <Col md={6}>
-          <Card className="stats-card">
-            <Card.Body>
+        <Col md={6} className="order-2" style={{ display: 'flex', order: 2 }}>
+          <Card className="stats-card" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Card.Body style={{ display: 'flex', flexDirection: 'column', flex: '1', minHeight: 0 }}>
               <h6 className="mb-3">
-                Pending by Leave Type
+                {activeTab === 'pending' ? 'Pending by Leave Type' : 
+                 activeTab === 'approved' ? 'Approved by Leave Type' : 
+                 'Rejected by Leave Type'}
               </h6>
-              <div className="leave-types" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              <div className="leave-types" style={{ 
+                maxHeight: '200px', 
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                flex: '1',
+                minHeight: 0
+              }}>
                 {(() => {
                   const filteredRequests = leaveRequests.filter(r => {
-                    return r.status === 'manager_approved' || r.status === 'manager_rejected';
+                    if (activeTab === 'pending') return r.status === 'manager_approved' || r.status === 'manager_rejected';
+                    if (activeTab === 'approved') return r.status === 'approved';
+                    if (activeTab === 'rejected') return r.status === 'rejected';
+                    return false;
                   });
                   
                   const typeCounts = {};
@@ -860,11 +1180,13 @@ const LeaveManagement = () => {
                             style={{
                               width: `${total > 0 ? (count / total) * 100 : 0}%`,
                               height: '100%',
-                              backgroundColor: '#ffc107'
+                              backgroundColor: activeTab === 'pending' ? '#ffc107' : 
+                                            activeTab === 'approved' ? '#198754' : '#dc3545'
                             }}
                           ></div>
                         </div>
-                        <Badge bg="warning">
+                        <Badge bg={activeTab === 'pending' ? 'warning' : 
+                                   activeTab === 'approved' ? 'success' : 'danger'}>
                           {count}
                         </Badge>
                       </div>
@@ -965,6 +1287,24 @@ const LeaveManagement = () => {
                   Pending Requests
                   <Badge bg="warning" className="ms-2">
                     {leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length}
+                  </Badge>
+                </Nav.Link>
+              </Nav.Item>
+              <Nav.Item>
+                <Nav.Link eventKey="approved" className="d-flex align-items-center">
+                  <CheckCircle size={16} className="me-2" />
+                  Approved Requests
+                  <Badge bg="success" className="ms-2">
+                    {leaveRequests.filter(r => r.status === 'approved').length}
+                  </Badge>
+                </Nav.Link>
+              </Nav.Item>
+              <Nav.Item>
+                <Nav.Link eventKey="rejected" className="d-flex align-items-center">
+                  <XCircle size={16} className="me-2" />
+                  Rejected Requests
+                  <Badge bg="danger" className="ms-2">
+                    {leaveRequests.filter(r => r.status === 'rejected').length}
                   </Badge>
                 </Nav.Link>
               </Nav.Item>
@@ -1107,6 +1447,232 @@ const LeaveManagement = () => {
                   </div>
                 )}
               </Tab.Pane>
+              
+              <Tab.Pane eventKey="approved">
+                <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
+                  {loading && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 1000
+                    }}>
+                      <div className="spinner-border text-primary" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                    </div>
+                  )}
+                  <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
+                    <thead>
+                    <tr>
+                      <th>👤 Employee Name</th>
+                      <th>Department</th>
+                      <th>Type of Leave</th>
+                      <th>Terms</th>
+                      <th>Start Date</th>
+                      <th>End Date</th>
+                      <th>Days</th>
+                      <th>Reason</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((request) => (
+                      <tr key={request.id}>
+                        <td>
+                          <div className="employee-info">
+                            <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
+                            {request.company && <div className="company-text">{request.company}</div>}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="department-text">{request.department || '-'}</span>
+                        </td>
+                        <td>
+                          <div className="leave-type-info">
+                            <div>{request.type}</div>
+                            {request.leave_category && (
+                              <small className="text-muted">({request.leave_category})</small>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="terms-section">
+                            <div style={{ fontSize: '13px', color: '#212529', marginBottom: '4px' }}>
+                              <strong>
+                                {request.terms === 'with PAY' ? 'with PAY' : 
+                                 request.terms === 'without PAY' ? 'without PAY' : 
+                                 'TBD by HR'}
+                              </strong>
+                            </div>
+                            {request.leave_category && (
+                              <div style={{ fontSize: '13px', color: '#6c757d' }}>
+                                <strong>
+                                  {request.leave_category === 'Service Incentive Leave (SIL)' ? 'SIL' : 'Emergency Leave'}
+                                </strong>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>{formatDate(request.from)}</td>
+                        <td>{formatDate(request.to)}</td>
+                        <td>
+                          <span className="days-count">{request.total_days || '-'}</span>
+                        </td>
+                        <td>
+                          <span className="reason-text">
+                            {request.reason || 'No reason provided'}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="action-buttons d-flex align-items-center gap-1">
+                            <Button
+                              variant="outline-info"
+                              size="sm"
+                              onClick={() => handleViewLeave(request)}
+                              disabled={loadingLeaveDetails}
+                              title="View leave form details"
+                            >
+                              <Eye size={14} />
+                            </Button>
+                            <div className="ms-2">
+                              {getStatusBadge(request.status)}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  </Table>
+                </div>
+                
+                {filteredRequests.length === 0 && (
+                  <div className="text-center p-4">
+                    <CheckCircle size={48} className="text-success mb-3" />
+                    <p className="text-muted">No approved leave requests found.</p>
+                    <small className="text-muted">Approved leave requests will appear here.</small>
+                  </div>
+                )}
+              </Tab.Pane>
+              
+              <Tab.Pane eventKey="rejected">
+                <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
+                  {loading && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 1000
+                    }}>
+                      <div className="spinner-border text-primary" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                    </div>
+                  )}
+                  <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
+                    <thead>
+                    <tr>
+                      <th>👤 Employee Name</th>
+                      <th>Department</th>
+                      <th>Type of Leave</th>
+                      <th>Terms</th>
+                      <th>Start Date</th>
+                      <th>End Date</th>
+                      <th>Days</th>
+                      <th>Reason</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((request) => (
+                      <tr key={request.id}>
+                        <td>
+                          <div className="employee-info">
+                            <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
+                            {request.company && <div className="company-text">{request.company}</div>}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="department-text">{request.department || '-'}</span>
+                        </td>
+                        <td>
+                          <div className="leave-type-info">
+                            <div>{request.type}</div>
+                            {request.leave_category && (
+                              <small className="text-muted">({request.leave_category})</small>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="terms-section">
+                            <div style={{ fontSize: '13px', color: '#212529', marginBottom: '4px' }}>
+                              <strong>
+                                {request.terms === 'with PAY' ? 'with PAY' : 
+                                 request.terms === 'without PAY' ? 'without PAY' : 
+                                 'TBD by HR'}
+                              </strong>
+                            </div>
+                            {request.leave_category && (
+                              <div style={{ fontSize: '13px', color: '#6c757d' }}>
+                                <strong>
+                                  {request.leave_category === 'Service Incentive Leave (SIL)' ? 'SIL' : 'Emergency Leave'}
+                                </strong>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td>{formatDate(request.from)}</td>
+                        <td>{formatDate(request.to)}</td>
+                        <td>
+                          <span className="days-count">{request.total_days || '-'}</span>
+                        </td>
+                        <td>
+                          <span className="reason-text">
+                            {request.reason || 'No reason provided'}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="action-buttons d-flex align-items-center gap-1">
+                            <Button
+                              variant="outline-info"
+                              size="sm"
+                              onClick={() => handleViewLeave(request)}
+                              disabled={loadingLeaveDetails}
+                              title="View leave form details"
+                            >
+                              <Eye size={14} />
+                            </Button>
+                            <div className="ms-2">
+                              {getStatusBadge(request.status)}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  </Table>
+                </div>
+                
+                {filteredRequests.length === 0 && (
+                  <div className="text-center p-4">
+                    <XCircle size={48} className="text-danger mb-3" />
+                    <p className="text-muted">No rejected leave requests found.</p>
+                    <small className="text-muted">Rejected leave requests will appear here.</small>
+                  </div>
+                )}
+              </Tab.Pane>
             </Tab.Content>
           </Tab.Container>
         </Card.Body>
@@ -1233,7 +1799,7 @@ const LeaveManagement = () => {
 
 
       {/* View Leave Form Modal */}
-      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="xl">
+      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg" className="leave-application-modal">
         <Modal.Header closeButton>
           <Modal.Title>
             <div className="d-flex align-items-center">
@@ -1371,6 +1937,253 @@ const LeaveManagement = () => {
                 </div>
               </div>
 
+              {/* Attachment Section */}
+              {selectedLeaveForView.attachment && (
+                <div className="border-bottom pb-3 mb-4">
+                  <h5 className="text-primary mb-3">📎 Attachment (Proof)</h5>
+                  <div className="bg-light p-3 rounded">
+                    {(() => {
+                      // Handle attachment path - it might already include 'storage/' or not
+                      const attachmentPath = selectedLeaveForView.attachment;
+                      console.log('🔍 Attachment path from API:', attachmentPath);
+                      console.log('🔍 Full leave data:', selectedLeaveForView);
+                      
+                      // Use API endpoint first (most reliable) - then fallback to direct storage URLs
+                      const leaveRequestId = selectedLeaveForView.id;
+                      const apiAttachmentUrl = `http://localhost:8000/api/leave-requests/${leaveRequestId}/attachment`;
+                      
+                      // Clean the path - remove any leading/trailing slashes
+                      const cleanPath = attachmentPath.replace(/^\/+|\/+$/g, '');
+                      
+                      // Generate all possible URL formats - try most common first
+                      const filename = cleanPath.split('/').pop();
+                      // URL encode the filename to handle spaces and special characters
+                      const encodedFilename = encodeURIComponent(filename);
+                      const encodedCleanPath = cleanPath.split('/').map(part => encodeURIComponent(part)).join('/');
+                      
+                      const possibleUrls = [
+                        // Primary: Use API endpoint (most reliable, handles authentication and file serving)
+                        apiAttachmentUrl,
+                        // Fallback: Direct storage URLs
+                        // Most common: Laravel stores as 'leave_attachments/filename' in DB
+                        // Accessible via /storage/leave_attachments/filename
+                        // Try with encoded filename
+                        `http://localhost:8000/storage/leave_attachments/${encodedFilename}`,
+                        // Also try unencoded (in case server handles it)
+                        `http://localhost:8000/storage/leave_attachments/${filename}`,
+                        // If path already includes leave_attachments/, prepend storage/
+                        cleanPath.startsWith('leave_attachments/') 
+                          ? `http://localhost:8000/storage/${encodedCleanPath}` 
+                          : null,
+                        cleanPath.startsWith('leave_attachments/') 
+                          ? `http://localhost:8000/storage/${cleanPath}` 
+                          : null,
+                        // Direct path with storage prefix (encoded)
+                        `http://localhost:8000/storage/${encodedCleanPath}`,
+                        // Direct path with storage prefix (unencoded)
+                        `http://localhost:8000/storage/${cleanPath}`,
+                        // If path already has storage/
+                        cleanPath.startsWith('storage/') 
+                          ? `http://localhost:8000/${encodedCleanPath}` 
+                          : null,
+                        cleanPath.startsWith('storage/') 
+                          ? `http://localhost:8000/${cleanPath}` 
+                          : null,
+                        // Full URL if provided
+                        cleanPath.startsWith('http') ? cleanPath : null,
+                      ].filter(Boolean);
+                      
+                      // Remove duplicates while preserving order
+                      const uniqueUrls = Array.from(new Set(possibleUrls));
+                      console.log('🔍 Attachment path:', attachmentPath);
+                      console.log('🔍 Clean path:', cleanPath);
+                      console.log('🔍 Filename:', filename);
+                      console.log('🔍 Possible URLs to try:', uniqueUrls);
+                      
+                      const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+                      const isPdf = /\.pdf$/i.test(attachmentPath);
+                      
+                      if (isImage) {
+                        // Get current URL index for this attachment (default to 0)
+                        const attachmentId = selectedLeaveForView.id || attachmentPath;
+                        
+                        // Prioritize blob URL from API fetch (most reliable)
+                        const blobUrl = imageBlobUrls[attachmentId];
+                        
+                        // If blob URL is available, use it directly
+                        if (blobUrl) {
+                          return (
+                            <div>
+                              <img
+                                src={blobUrl}
+                                alt="Leave proof attachment"
+                                style={{
+                                  maxWidth: '100%',
+                                  width: 'auto',
+                                  maxHeight: '300px',
+                                  height: 'auto',
+                                  borderRadius: '8px',
+                                  border: '1px solid #dee2e6',
+                                  objectFit: 'contain',
+                                  display: 'block',
+                                  margin: '0 auto',
+                                  backgroundColor: '#fff'
+                                }}
+                              />
+                            </div>
+                          );
+                        }
+                        
+                        // Fallback to direct storage URLs
+                        const currentIndex = imageUrlIndex[attachmentId] !== undefined ? imageUrlIndex[attachmentId] : 0;
+                        const currentUrl = uniqueUrls[currentIndex] || uniqueUrls[0];
+                        const hasError = imageError[attachmentId] || false;
+                        
+                        const handleImageLoad = () => {
+                          console.log('✅ Image loaded successfully from:', currentUrl);
+                          setImageError(prev => ({ ...prev, [attachmentId]: false }));
+                          setImageLoaded(prev => ({ ...prev, [attachmentId]: true }));
+                        };
+                        
+                        const handleImageError = (e) => {
+                          console.error('❌ Failed to load image from:', currentUrl);
+                          
+                          // Try next URL if available
+                          if (currentIndex < uniqueUrls.length - 1) {
+                            console.log('🔄 Trying next URL...');
+                            setImageUrlIndex(prev => ({
+                              ...prev,
+                              [attachmentId]: currentIndex + 1
+                            }));
+                            setImageError(prev => ({ ...prev, [attachmentId]: false }));
+                            setImageLoaded(prev => ({ ...prev, [attachmentId]: false }));
+                          } else {
+                            // All URLs failed
+                            console.error('❌ All URL attempts failed for:', uniqueUrls);
+                            setImageError(prev => ({ ...prev, [attachmentId]: true }));
+                            setImageLoaded(prev => ({ ...prev, [attachmentId]: false }));
+                          }
+                        };
+                        
+                        if (hasError && currentIndex >= uniqueUrls.length - 1) {
+                          return (
+                            <div style={{ padding: '20px', textAlign: 'center' }}>
+                              <p className="text-muted mb-2">⚠️ Failed to load image</p>
+                              <small className="text-muted d-block">Path: {attachmentPath}</small>
+                              <small className="text-muted d-block mt-1">Tried {uniqueUrls.length} URL(s)</small>
+                              <div className="mt-2">
+                                {uniqueUrls.map((url, idx) => (
+                                  <small key={idx} className="d-block text-muted" style={{ fontSize: '0.75rem' }}>
+                                    {idx + 1}. {url}
+                                  </small>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div>
+                            <img
+                              key={`img-${attachmentId}-${currentIndex}`} // Force re-render when URL changes
+                              src={currentUrl}
+                              alt="Leave proof attachment"
+                              onLoad={handleImageLoad}
+                              onError={handleImageError}
+                              style={{
+                                maxWidth: '100%',
+                                width: 'auto',
+                                maxHeight: '300px',
+                                height: 'auto',
+                                borderRadius: '8px',
+                                border: '1px solid #dee2e6',
+                                objectFit: 'contain',
+                                display: 'block',
+                                margin: '0 auto',
+                                backgroundColor: '#fff'
+                              }}
+                            />
+                            {!imageLoaded[attachmentId] && !hasError && currentIndex < uniqueUrls.length - 1 && (
+                              <div style={{ 
+                                textAlign: 'center', 
+                                padding: '10px',
+                                fontSize: '0.85rem',
+                                color: '#6c757d'
+                              }}>
+                                Loading image... (Attempt {currentIndex + 1} of {uniqueUrls.length})
+                              </div>
+                            )}
+                          </div>
+                        );
+                      } else if (isPdf) {
+                        // Use same URL construction logic for PDF
+                        const pdfUrl = uniqueUrls[0] || `http://localhost:8000/storage/leave_attachments/${cleanPath}`;
+                          
+                        return (
+                          <div>
+                            <div className="d-flex align-items-center mb-3 p-3 bg-white rounded border">
+                              <FileText size={32} className="text-danger me-3" />
+                              <div className="flex-grow-1">
+                                <div className="fw-bold">PDF Document</div>
+                                <small className="text-muted">Leave proof attachment</small>
+                              </div>
+                            </div>
+                            <div>
+                              <Button
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedAttachment(pdfUrl);
+                                  setAttachmentType('pdf');
+                                  setShowAttachmentModal(true);
+                                }}
+                                className="me-2"
+                              >
+                                <FileText size={16} className="me-1" />
+                                View PDF
+                              </Button>
+                              <Button
+                                variant="outline-secondary"
+                                size="sm"
+                                href={pdfUrl}
+                                download
+                              >
+                                <Download size={16} className="me-1" />
+                                Download PDF
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        // Use same URL construction logic for other file types
+                        const fileUrl = uniqueUrls[0] || `http://localhost:8000/storage/leave_attachments/${cleanPath}`;
+                          
+                        return (
+                          <div>
+                            <div className="d-flex align-items-center mb-3 p-3 bg-white rounded border">
+                              <FileText size={32} className="text-primary me-3" />
+                              <div className="flex-grow-1">
+                                <div className="fw-bold">Attachment File</div>
+                                <small className="text-muted">{attachmentPath.split('/').pop()}</small>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              href={fileUrl}
+                              download
+                            >
+                              <Download size={16} className="me-1" />
+                              Download Attachment
+                            </Button>
+                          </div>
+                        );
+                      }
+                    })()}
+                  </div>
+                </div>
+              )}
+
               {/* Manager Rejection Section - Only show for manager_rejected status */}
               {selectedLeaveForView.status === 'manager_rejected' && (
                 <div className="border-bottom pb-3 mb-4">
@@ -1433,6 +2246,91 @@ const LeaveManagement = () => {
               Close
             </Button>
           </div>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Attachment Preview Modal */}
+      <Modal show={showAttachmentModal} onHide={() => setShowAttachmentModal(false)} size="xl" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            {attachmentType === 'pdf' ? 'PDF Document' : 'Attachment Preview'}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ 
+          maxHeight: '75vh', 
+          overflow: 'auto',
+          padding: '0',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: attachmentType === 'pdf' ? 'flex-start' : 'center',
+          backgroundColor: attachmentType === 'pdf' ? '#f5f5f5' : 'transparent'
+        }}>
+          {selectedAttachment && attachmentType === 'image' && (
+            <img
+              src={selectedAttachment}
+              alt="Leave proof attachment"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '400px',
+                height: 'auto',
+                borderRadius: '8px',
+                display: 'block',
+                objectFit: 'contain'
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextElementSibling.style.display = 'block';
+              }}
+            />
+          )}
+          {selectedAttachment && attachmentType === 'pdf' && (
+            <iframe
+              src={`${selectedAttachment}#toolbar=1`}
+              title="PDF Document"
+              style={{
+                width: '100%',
+                height: '75vh',
+                border: 'none',
+                borderRadius: '8px'
+              }}
+              onError={() => {
+                // Fallback if iframe fails
+                console.error('Failed to load PDF in iframe');
+              }}
+            />
+          )}
+          {selectedAttachment && attachmentType !== 'image' && attachmentType !== 'pdf' && (
+            <div style={{ padding: '40px', textAlign: 'center' }}>
+              <FileText size={48} className="text-muted mb-3" />
+              <p className="text-muted">Preview not available for this file type</p>
+            </div>
+          )}
+          <div style={{ display: 'none', padding: '40px', textAlign: 'center' }}>
+            <p className="text-muted">Failed to load attachment</p>
+            <Button
+              variant="primary"
+              href={selectedAttachment}
+              download
+            >
+              <Download size={16} className="me-1" />
+              Download File
+            </Button>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowAttachmentModal(false)}>
+            Close
+          </Button>
+          {selectedAttachment && (
+            <Button
+              variant="primary"
+              href={selectedAttachment}
+              download
+            >
+              <Download size={16} className="me-1" />
+              Download
+            </Button>
+          )}
         </Modal.Footer>
       </Modal>
       </Container>

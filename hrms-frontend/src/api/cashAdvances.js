@@ -107,3 +107,16 @@ export const downloadCashAdvancePdf = async (id) => {
     throw error;
   }
 };
+
+// Update money received status for a cash advance request
+export const updateMoneyReceivedStatus = async (id, status) => {
+  try {
+    const response = await axios.put(`/cash-advances/${id}/money-received-status`, {
+      money_received_status: status
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating money received status:', error);
+    throw error;
+  }
+};

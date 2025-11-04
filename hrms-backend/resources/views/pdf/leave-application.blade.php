@@ -57,6 +57,24 @@
             color: #dc3545;
             font-weight: bold;
         }
+        .attachment-section {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .attachment-image {
+            max-width: 100%;
+            max-height: 300px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .signature-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
     </style>
 </head>
 <body>
@@ -74,8 +92,44 @@
         <h2>Application Details</h2>
         <div class="field"><strong>Date Filed:</strong> {{ \Carbon\Carbon::parse($leaveRequest->date_filed)->format('F j, Y') }}</div>
         <div class="field"><strong>Status:</strong> 
-            <span class="status-{{ $leaveRequest->status === 'approved' ? 'approved' : ($leaveRequest->status === 'rejected' ? 'rejected' : '') }}">
-                {{ ucfirst($leaveRequest->status) }}
+            @php
+                $statusDisplay = '';
+                $statusClass = '';
+                
+                // Check if this is a manager's leave request
+                $isManagerLeave = isset($isManagerLeave) ? $isManagerLeave : ($leaveRequest->employee && $leaveRequest->employee->role && $leaveRequest->employee->role->name === 'Manager');
+                
+                if ($isManagerLeave) {
+                    // For manager's leave requests
+                    if ($leaveRequest->status === 'manager_approved') {
+                        $statusDisplay = 'For Approval (HR Assistant)';
+                        $statusClass = '';
+                    } elseif ($leaveRequest->status === 'approved') {
+                        $statusDisplay = 'HR Assistant Approved';
+                        $statusClass = 'status-approved';
+                    } elseif ($leaveRequest->status === 'rejected') {
+                        $statusDisplay = 'Rejected';
+                        $statusClass = 'status-rejected';
+                    } else {
+                        $statusDisplay = ucfirst(str_replace('_', ' ', $leaveRequest->status));
+                        $statusClass = '';
+                    }
+                } else {
+                    // For regular employee leave requests
+                    if ($leaveRequest->status === 'approved') {
+                        $statusDisplay = 'Approved';
+                        $statusClass = 'status-approved';
+                    } elseif ($leaveRequest->status === 'rejected') {
+                        $statusDisplay = 'Rejected';
+                        $statusClass = 'status-rejected';
+                    } else {
+                        $statusDisplay = ucfirst(str_replace('_', ' ', $leaveRequest->status));
+                        $statusClass = '';
+                    }
+                }
+            @endphp
+            <span class="{{ $statusClass }}">
+                {{ $statusDisplay }}
             </span>
         </div>
         <div class="field"><strong>Application ID:</strong> #{{ $leaveRequest->id }}</div>
@@ -100,6 +154,54 @@
         <h2>Reason for Leave</h2>
         <div class="field">{{ $leaveRequest->reason }}</div>
     </div>
+
+    @php
+        // Check if this is a manager's leave request
+        // First check if variable was passed from controller, otherwise check employee's role
+        if (!isset($isManagerLeave)) {
+            $isManagerLeave = false;
+            if ($leaveRequest->employee) {
+                // Load role if not already loaded
+                if (!$leaveRequest->employee->relationLoaded('role')) {
+                    $leaveRequest->employee->load('role');
+                }
+                $isManagerLeave = $leaveRequest->employee->role && $leaveRequest->employee->role->name === 'Manager';
+            }
+        }
+    @endphp
+
+    {{-- E-Signature or Attachment Section --}}
+    @if($isManagerLeave)
+        {{-- For manager's leave: show attachment if exists, otherwise skip E-Signature section entirely --}}
+        @if($leaveRequest->attachment)
+            @php
+                $attachmentPath = storage_path('app/public/' . $leaveRequest->attachment);
+                $imageSrc = null;
+                if (file_exists($attachmentPath)) {
+                    $imageData = base64_encode(file_get_contents($attachmentPath));
+                    $imageInfo = @getimagesize($attachmentPath);
+                    if ($imageInfo !== false) {
+                        $mimeType = $imageInfo['mime'];
+                        $imageSrc = 'data:' . $mimeType . ';base64,' . $imageData;
+                    }
+                }
+            @endphp
+            
+            @if($imageSrc)
+                {{-- Show attachment image with "Proof of Leave" heading --}}
+                <div class="section">
+                    <h2>Proof of Leave</h2>
+                    <div class="field">
+                        <img src="{{ $imageSrc }}" alt="Leave proof attachment" style="max-width: 100%; max-height: 300px; border: 1px solid #dee2e6; border-radius: 8px; margin-top: 10px; display: block; margin-left: auto; margin-right: auto;" />
+                    </div>
+                </div>
+            @endif
+            {{-- If attachment file not found, don't show anything --}}
+        @endif
+        {{-- For manager's leave without attachment: intentionally show nothing (no E-Signature section) --}}
+    @else
+        {{-- E-Signature section removed for HR Assistant PDF --}}
+    @endif
 
     @if(in_array($leaveRequest->status, ['approved', 'rejected', 'manager_approved', 'manager_rejected']))
     <div class="approval-info">

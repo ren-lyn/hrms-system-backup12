@@ -20,7 +20,7 @@ const ManagerLeaveTracker = () => {
     totalLeaveDays: 0,
     averageLeaveDays: 0
   });
-  const [showStatsModal, setShowStatsModal] = useState(null);
+  const [showStatsModal, setShowStatsModal] = useState(null); // 'employees', 'withLeave', 'totalDays', 'average'
 
   useEffect(() => {
     loadLeaveTrackerData();
@@ -52,6 +52,7 @@ const ManagerLeaveTracker = () => {
         message: 'Failed to load leave tracker data. Please try again.',
         type: 'danger'
       });
+      // Set empty array on error to prevent filter errors
       setLeaveData([]);
       calculateStats([]);
     } finally {
@@ -60,6 +61,7 @@ const ManagerLeaveTracker = () => {
   };
 
   const calculateStats = (data) => {
+    // Ensure data is an array
     const safeData = Array.isArray(data) ? data : [];
     
     const totalEmployees = safeData.length;
@@ -90,10 +92,12 @@ const ManagerLeaveTracker = () => {
     const position = employee.position || '';
     const searchLower = searchTerm.toLowerCase();
     
+    // Search filter
     const matchesSearch = name.toLowerCase().includes(searchLower) ||
            department.toLowerCase().includes(searchLower) ||
            position.toLowerCase().includes(searchLower);
     
+    // Department filter
     const matchesDepartment = !selectedDepartment || department === selectedDepartment;
     
     return matchesSearch && matchesDepartment;
@@ -125,10 +129,30 @@ const ManagerLeaveTracker = () => {
     });
   };
 
+  const getLeaveTypeColor = (leaveType) => {
+    const colors = {
+      'Vacation Leave': 'success',
+      'Sick Leave': 'warning',
+      'Emergency Leave': 'danger',
+      'Maternity/Paternity': 'info',
+      'Personal Leave': 'secondary',
+      'LOA': 'primary'
+    };
+    return colors[leaveType] || 'secondary';
+  };
+
+  const getBalanceStatus = (remaining, total) => {
+    const percentage = (remaining / total) * 100;
+    if (percentage >= 70) return { color: 'success', icon: <CheckCircle size={16} /> };
+    if (percentage >= 40) return { color: 'warning', icon: <Clock size={16} /> };
+    return { color: 'danger', icon: <XCircle size={16} /> };
+  };
+
   const exportToPDF = async () => {
     try {
       const pdf = new jsPDF();
       
+      // Header
       pdf.setFontSize(20);
       pdf.text('Leave Tracker Report - Manager', 20, 20);
       
@@ -136,6 +160,7 @@ const ManagerLeaveTracker = () => {
       pdf.text(`Year: ${selectedYear}`, 20, 30);
       pdf.text(`Generated on: ${new Date().toLocaleDateString()}`, 20, 35);
       
+      // Table data
       const tableData = filteredData.map(emp => {
         const totalLeaves = emp.leavePeriods ? emp.leavePeriods.length : 0;
         const remainingLeaves = Math.max(0, 3 - totalLeaves);
@@ -159,7 +184,7 @@ const ManagerLeaveTracker = () => {
         headStyles: { fillColor: [32, 65, 118] }
       });
       
-      pdf.save(`manager-leave-tracker-${selectedMonth}-${selectedYear}.pdf`);
+      pdf.save(`leave-tracker-${selectedMonth}-${selectedYear}.pdf`);
     } catch (error) {
       console.error('Error exporting PDF:', error);
       setAlert({
@@ -381,9 +406,11 @@ const ManagerLeaveTracker = () => {
                     </tr>
                   ) : (
                     filteredData.map((employee) => {
+                      // Calculate total leaves (count of leave instances) - max 3
                       const totalLeaves = employee.leavePeriods ? employee.leavePeriods.length : 0;
                       const remainingLeaves = Math.max(0, 3 - totalLeaves);
                       
+                      // Determine balance status based on remaining leave instances
                       let balanceStatus;
                       if (remainingLeaves >= 2) {
                         balanceStatus = { color: 'success', icon: <CheckCircle size={16} /> };
@@ -468,6 +495,7 @@ const ManagerLeaveTracker = () => {
     </Container>
   );
 
+  // Render modals based on which stat was clicked
   function renderStatsModal() {
     if (!showStatsModal) return null;
 
@@ -736,12 +764,7 @@ const ManagerLeaveTracker = () => {
       </div>
     );
   }
+
 };
 
 export default ManagerLeaveTracker;
-
-
-
-
-
-

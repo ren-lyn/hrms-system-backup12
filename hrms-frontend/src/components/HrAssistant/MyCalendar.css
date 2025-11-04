@@ -1285,3 +1285,361 @@
     font-size: 0.75rem;
   }
 }
+
+/* Custom Date and Time Picker Styles */
+.custom-date-picker-wrapper {
+  position: relative;
+}
+
+.custom-date-input {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid #4A90E2;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  gap: 12px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.custom-date-input:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.date-picker-icon {
+  color: #666;
+  flex-shrink: 0;
+}
+
+.date-input-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-input-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 400;
+}
+
+.date-input-value {
+  font-size: 16px;
+  color: #000;
+  font-weight: 500;
+}
+
+.date-picker-chevron {
+  color: #666;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.date-picker-chevron.rotated {
+  transform: rotate(90deg);
+}
+
+.custom-date-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 16px;
+  z-index: 1000;
+  min-width: 320px;
+}
+
+.date-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 8px 0;
+}
+
+.date-picker-month-year {
+  font-size: 16px;
+  font-weight: 600;
+  color: #000;
+}
+
+.date-picker-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.date-picker-weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  padding: 8px 0;
+}
+
+.date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.date-picker-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #000;
+  transition: all 0.2s ease;
+}
+
+.date-picker-day.empty {
+  cursor: default;
+}
+
+.date-picker-day:hover:not(.empty):not(.selected) {
+  background: #E3F2FD;
+  border: 1px solid #4A90E2;
+}
+
+.date-picker-day.selected {
+  background: #4A90E2;
+  color: white;
+  font-weight: 600;
+}
+
+.date-picker-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #E9ECEF;
+}
+
+.date-picker-remove-btn,
+.date-picker-done-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.date-picker-remove-btn {
+  background: #F5F5F5;
+  color: #666;
+}
+
+.date-picker-remove-btn:hover {
+  background: #E9ECEF;
+}
+
+.date-picker-done-btn {
+  background: #4A90E2;
+  color: white;
+}
+
+.date-picker-done-btn:hover {
+  background: #357ABD;
+}
+
+/* Custom Time Picker Styles */
+.custom-time-picker-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.custom-time-input {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid #E9ECEF;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  gap: 12px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.custom-time-input.active {
+  border-color: #4A90E2;
+}
+
+.custom-time-input:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.time-picker-icon {
+  color: #666;
+  flex-shrink: 0;
+}
+
+.time-input-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.time-input-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 400;
+}
+
+.time-input-value {
+  font-size: 16px;
+  color: #000;
+  font-weight: 500;
+}
+
+.time-picker-chevron {
+  color: #666;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.time-picker-chevron.rotated {
+  transform: rotate(90deg);
+}
+
+.custom-time-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 16px;
+  z-index: 1000;
+  max-height: 400px;
+  overflow-y: auto;
+  min-width: 280px;
+}
+
+.time-picker-all-day {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #E9ECEF;
+}
+
+.time-picker-all-day input[type="radio"] {
+  cursor: pointer;
+}
+
+.time-picker-all-day label {
+  font-size: 14px;
+  color: #000;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.time-picker-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.time-picker-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-picker-slot:hover {
+  background: #F5F5F5;
+}
+
+.time-picker-slot.selected {
+  background: #E3F2FD;
+}
+
+.time-slot-time {
+  font-size: 14px;
+  color: #000;
+  font-weight: 500;
+}
+
+.time-slot-ampm {
+  display: flex;
+  gap: 4px;
+}
+
+.ampm-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #F5F5F5;
+  color: #999;
+}
+
+.ampm-btn:hover {
+  background: #E3F2FD;
+  color: #4A90E2;
+}
+
+.ampm-btn.active {
+  background: #4A90E2;
+  color: white;
+}
+
+.ampm-btn.active:hover {
+  background: #357ABD;
+  color: white;
+}
+
+.ampm-btn:not(.active) {
+  background: #F5F5F5;
+  color: #999;
+}
+
+/* Scrollbar styling for time picker */
+.custom-time-picker-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-time-picker-dropdown::-webkit-scrollbar-track {
+  background: #F5F5F5;
+  border-radius: 10px;
+}
+
+.custom-time-picker-dropdown::-webkit-scrollbar-thumb {
+  background: #C1C1C1;
+  border-radius: 10px;
+}
+
+.custom-time-picker-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #A8A8A8;
+}

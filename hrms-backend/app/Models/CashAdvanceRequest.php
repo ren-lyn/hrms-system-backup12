@@ -20,6 +20,7 @@ class CashAdvanceRequest extends Model
         'rem_ca',
         'reason',
         'status',
+        'money_received_status',
         'hr_remarks',
         'processed_by',
         'processed_at',

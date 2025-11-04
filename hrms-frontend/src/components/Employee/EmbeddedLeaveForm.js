@@ -3,7 +3,7 @@ import { Row, Col, Form, Button, Modal } from 'react-bootstrap';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, getMyLeaveRequests, downloadLeavePdf, getLeaveSummary } from '../../api/leave';
+import { createLeaveRequest, getEmployeeProfile, getEmployeeProfileTest, getMyLeaveRequests, downloadLeavePdf, getLeaveSummary, getLeaveRequest } from '../../api/leave';
 import axios from '../../axios';
 import ValidationModal from '../common/ValidationModal';
 import useValidationModal from '../../hooks/useValidationModal';
@@ -23,13 +23,18 @@ const EmbeddedLeaveForm = () => {
     totalDays: 0,
     totalHours: 0,
     reason: '',
-    applicantName: ''
+    applicantName: '',
+    attachment: null,
+    attachmentPreview: null
   });
 
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [attachmentImageUrl, setAttachmentImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [remainingLeaves, setRemainingLeaves] = useState(3);
   const [paidLeaveStatus, setPaidLeaveStatus] = useState({ hasPaidLeave: true, paidLeavesUsed: 0 });
   const [leaveSummary, setLeaveSummary] = useState(null);
@@ -209,9 +214,16 @@ const EmbeddedLeaveForm = () => {
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
-      // Cleanup function - no intervals to clear
+      // Cleanup attachment preview URL if exists
+      if (formData.attachmentPreview) {
+        URL.revokeObjectURL(formData.attachmentPreview);
+      }
+      // Cleanup blob URL for attachment image if exists
+      if (attachmentImageUrl && attachmentImageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(attachmentImageUrl);
+      }
     };
-  }, []);
+  }, [formData.attachmentPreview, attachmentImageUrl]);
 
   // Fetch leave requests from backend API
   const fetchLeaveRequests = async () => {
@@ -460,6 +472,54 @@ const EmbeddedLeaveForm = () => {
     }));
   };
 
+  const handleAttachmentChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type (images and PDFs)
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        showAlert('Please upload an image file (JPEG, PNG) or PDF as proof.', 'danger');
+        e.target.value = '';
+        return;
+      }
+      
+      // Validate file size (max 2MB)
+      const maxSize = 2 * 1024 * 1024; // 2MB
+      if (file.size > maxSize) {
+        showAlert('File size must be less than 2MB. Please choose a smaller file.', 'danger');
+        e.target.value = '';
+        return;
+      }
+      
+      // Create preview for images
+      let preview = null;
+      if (file.type.startsWith('image/')) {
+        preview = URL.createObjectURL(file);
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        attachment: file,
+        attachmentPreview: preview
+      }));
+    }
+  };
+
+  const handleRemoveAttachment = () => {
+    if (formData.attachmentPreview) {
+      URL.revokeObjectURL(formData.attachmentPreview);
+    }
+    setFormData(prev => ({
+      ...prev,
+      attachment: null,
+      attachmentPreview: null
+    }));
+    // Reset file input
+    const fileInput = document.getElementById('attachment-input');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -789,6 +849,10 @@ const EmbeddedLeaveForm = () => {
       }
       submitData.append('reason', formData.reason || 'Leave request');
       
+      // Add attachment file if provided
+      if (formData.attachment) {
+        submitData.append('attachment', formData.attachment);
+      }
       
       // Debug the form data being sent
       console.log('=== FORM SUBMISSION DEBUG ===');
@@ -798,7 +862,12 @@ const EmbeddedLeaveForm = () => {
       console.log('Total days:', formData.totalDays);
       console.log('Total hours:', formData.totalHours);
       console.log('Reason length:', formData.reason.length);
-      console.log('Has signature file:', !!formData.signatureFile);
+      console.log('Has attachment file:', !!formData.attachment);
+      if (formData.attachment) {
+        console.log('Attachment file name:', formData.attachment.name);
+        console.log('Attachment file size:', formData.attachment.size);
+        console.log('Attachment file type:', formData.attachment.type);
+      }
       
       // Log FormData contents
       for (let pair of submitData.entries()) {
@@ -822,6 +891,10 @@ const EmbeddedLeaveForm = () => {
       setRemainingLeaves(prev => Math.max(0, prev - 1));
       
       // Reset form after successful submission
+      // Clean up attachment preview URL if exists
+      if (formData.attachmentPreview) {
+        URL.revokeObjectURL(formData.attachmentPreview);
+      }
       setFormData(prev => ({
         ...prev,
         leaveType: 'Sick Leave',
@@ -829,8 +902,16 @@ const EmbeddedLeaveForm = () => {
         endDate: null,
         totalDays: 0,
         totalHours: 0,
-        reason: ''
+        reason: '',
+        attachment: null,
+        attachmentPreview: null
       }));
+      
+      // Reset file input
+      const fileInput = document.getElementById('attachment-input');
+      if (fileInput) {
+        fileInput.value = '';
+      }
       
       // Switch to details tab to show the new request
       setActiveTab('details');
@@ -1014,11 +1095,72 @@ const EmbeddedLeaveForm = () => {
                request.status === 'rejected' ? 'danger' : 'info'
     }));
 
-    const handleViewRequest = (requestId) => {
+    const handleViewRequest = async (requestId) => {
       // Find the request in the history
       const request = leaveHistory.find(req => req.id === requestId);
       if (request) {
-        setSelectedRequest(request);
+        // Reset image states
+        setAttachmentImageUrl(null);
+        setImageLoading(false);
+        setImageError(false);
+        
+        // Fetch full request details to ensure attachment is loaded
+        try {
+          const response = await getLeaveRequest(requestId);
+          const fullRequest = response.data;
+          setSelectedRequest(fullRequest);
+          
+          // Fetch attachment image if it exists and is an image
+          if (fullRequest.attachment) {
+            const attachmentPath = fullRequest.attachment;
+            const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+            
+            if (isImage) {
+              setImageLoading(true);
+              setImageError(false);
+              
+              try {
+                const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+                const apiUrl = `http://localhost:8000/api/leave-requests/${requestId}/attachment`;
+                
+                const imageResponse = await fetch(apiUrl, {
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'image/*'
+                  }
+                });
+                
+                if (imageResponse.ok) {
+                  const blob = await imageResponse.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  setAttachmentImageUrl(blobUrl);
+                  setImageError(false);
+                  setImageLoading(false);
+                } else {
+                  console.error('Failed to fetch image via API:', imageResponse.status);
+                  // Generate fallback URL
+                  const cleanPath = attachmentPath.replace(/^\/+|\/+$/g, '');
+                  const filename = cleanPath.split('/').pop();
+                  const fallbackUrl = `http://localhost:8000/storage/leave_attachments/${encodeURIComponent(filename)}`;
+                  setAttachmentImageUrl(fallbackUrl);
+                  setImageLoading(false);
+                }
+              } catch (error) {
+                console.error('Error fetching attachment image:', error);
+                // Try fallback URL
+                const cleanPath = attachmentPath.replace(/^\/+|\/+$/g, '');
+                const filename = cleanPath.split('/').pop();
+                const fallbackUrl = `http://localhost:8000/storage/leave_attachments/${encodeURIComponent(filename)}`;
+                setAttachmentImageUrl(fallbackUrl);
+                setImageLoading(false);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching full leave request details:', error);
+          // Fallback to using request from history if fetch fails
+          setSelectedRequest(request);
+        }
         setShowModal(true);
       }
     };
@@ -1346,6 +1488,92 @@ const EmbeddedLeaveForm = () => {
                 </div>
               </div>
 
+              {/* Attachment Section */}
+              <div className="responsive-form-row">
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">
+                      Attachment (Proof)
+                      <span className="text-muted" style={{ fontSize: '0.85em', fontWeight: 'normal', marginLeft: '8px' }}>
+                        (Optional)
+                      </span>
+                    </Form.Label>
+                    {!formData.attachment && (
+                      <Form.Control
+                        id="attachment-input"
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,application/pdf"
+                        onChange={handleAttachmentChange}
+                        className="form-input responsive-form-control"
+                      />
+                    )}
+                    {formData.attachment && (
+                      <div style={{
+                        border: '1px solid #dee2e6',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        background: '#f8f9fa',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                          {formData.attachmentPreview && (
+                            <img
+                              src={formData.attachmentPreview}
+                              alt="Preview"
+                              style={{
+                                width: '60px',
+                                height: '60px',
+                                objectFit: 'cover',
+                                borderRadius: '6px',
+                                border: '1px solid #dee2e6'
+                              }}
+                            />
+                          )}
+                          {formData.attachment.type === 'application/pdf' && (
+                            <div style={{
+                              width: '60px',
+                              height: '60px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: '#dc3545',
+                              color: 'white',
+                              borderRadius: '6px',
+                              fontSize: '24px',
+                              fontWeight: 'bold'
+                            }}>
+                              PDF
+                            </div>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+                              {formData.attachment.name}
+                            </div>
+                            <div style={{ fontSize: '0.85em', color: '#6c757d' }}>
+                              {(formData.attachment.size / 1024 / 1024).toFixed(2)} MB
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={handleRemoveAttachment}
+                          style={{ flexShrink: 0 }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                    <Form.Text className="text-muted" style={{ fontSize: '0.85em', display: 'block', marginTop: '6px' }}>
+                      Upload an image (JPEG, PNG) or PDF as proof. Maximum file size: 2MB.
+                    </Form.Text>
+                  </Form.Group>
+                </div>
+              </div>
+
               {/* Reason Section */}
               <div className="responsive-form-row">
                 <div className="responsive-form-col">
@@ -1397,7 +1625,16 @@ const EmbeddedLeaveForm = () => {
       )}
 
       {/* Leave Request Details Modal */}
-      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" centered className="responsive-modal">
+      <Modal show={showModal} onHide={() => {
+        setShowModal(false);
+        // Cleanup blob URL when modal closes
+        if (attachmentImageUrl && attachmentImageUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(attachmentImageUrl);
+        }
+        setAttachmentImageUrl(null);
+        setImageLoading(false);
+        setImageError(false);
+      }} size="lg" centered className="responsive-modal">
         <Modal.Header closeButton>
           <Modal.Title className="text-responsive-lg">Leave Request Details</Modal.Title>
         </Modal.Header>
@@ -1486,6 +1723,212 @@ const EmbeddedLeaveForm = () => {
                   </div>
                 </Col>
               </Row>
+              {selectedRequest.attachment && (
+                <Row>
+                  <Col md={12}>
+                    <div className="summary-field">
+                      <label>PROOF PICTURE:</label>
+                      <div style={{ marginTop: '10px' }}>
+                        {(() => {
+                          const attachmentPath = selectedRequest.attachment;
+                          const isImage = /\.(jpg|jpeg|png|gif)$/i.test(attachmentPath);
+                          const isPdf = /\.pdf$/i.test(attachmentPath);
+                          const leaveRequestId = selectedRequest.id;
+                          const apiAttachmentUrl = `http://localhost:8000/api/leave-requests/${leaveRequestId}/attachment`;
+                          
+                          // Clean the path
+                          const cleanPath = attachmentPath.replace(/^\/+|\/+$/g, '');
+                          const filename = cleanPath.split('/').pop();
+                          const encodedFilename = encodeURIComponent(filename);
+                          
+                          // Generate possible URLs
+                          const possibleUrls = [
+                            apiAttachmentUrl,
+                            `http://localhost:8000/storage/leave_attachments/${encodedFilename}`,
+                            `http://localhost:8000/storage/leave_attachments/${filename}`,
+                            cleanPath.startsWith('leave_attachments/') 
+                              ? `http://localhost:8000/storage/${encodeURIComponent(cleanPath)}` 
+                              : null,
+                            `http://localhost:8000/storage/${encodeURIComponent(cleanPath)}`,
+                            cleanPath.startsWith('storage/') 
+                              ? `http://localhost:8000/${encodeURIComponent(cleanPath)}` 
+                              : null,
+                            cleanPath.startsWith('http') ? cleanPath : null,
+                          ].filter(Boolean);
+                          
+                          const imageUrl = possibleUrls[0];
+                          
+                          if (isImage) {
+                            // Prioritize blob URL from authenticated fetch, then use other URLs
+                            let finalImageUrl;
+                            if (attachmentImageUrl) {
+                              finalImageUrl = attachmentImageUrl;
+                            } else {
+                              // Use the API endpoint first, then fallbacks
+                              finalImageUrl = apiAttachmentUrl;
+                            }
+                            
+                            return (
+                              <div style={{ 
+                                maxWidth: '100%', 
+                                textAlign: 'left',
+                                marginTop: '10px'
+                              }}>
+                                {imageLoading && !attachmentImageUrl ? (
+                                  <div style={{ 
+                                    padding: '40px', 
+                                    textAlign: 'left',
+                                    color: '#6c757d'
+                                  }}>
+                                    <div className="spinner-border spinner-border-sm me-2" role="status">
+                                      <span className="visually-hidden">Loading...</span>
+                                    </div>
+                                    Loading image...
+                                  </div>
+                                ) : imageError && !attachmentImageUrl ? (
+                                  <div style={{ 
+                                    padding: '20px', 
+                                    textAlign: 'left',
+                                    color: '#dc3545',
+                                    border: '1px solid #dc3545',
+                                    borderRadius: '8px',
+                                    background: '#f8d7da'
+                                  }}>
+                                    Failed to load image
+                                  </div>
+                                ) : (
+                                  <img
+                                    key={finalImageUrl} // Force re-render when URL changes
+                                    src={finalImageUrl}
+                                    alt="Leave proof attachment"
+                                    style={{
+                                      maxWidth: '300px',
+                                      maxHeight: '250px',
+                                      width: 'auto',
+                                      height: 'auto',
+                                      borderRadius: '8px',
+                                      border: '1px solid #dee2e6',
+                                      objectFit: 'contain',
+                                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                      backgroundColor: '#f8f9fa',
+                                      display: 'block',
+                                      margin: '0'
+                                    }}
+                                    onLoad={() => {
+                                      setImageError(false);
+                                      setImageLoading(false);
+                                    }}
+                                    onError={(e) => {
+                                      // Only show error if we've tried all possible URLs
+                                      const currentSrc = e.target.src;
+                                      
+                                      // Find current URL index in possibleUrls array
+                                      let currentIndex = -1;
+                                      for (let i = 0; i < possibleUrls.length; i++) {
+                                        if (currentSrc.includes(possibleUrls[i].replace('http://localhost:8000', '')) || 
+                                            currentSrc === possibleUrls[i]) {
+                                          currentIndex = i;
+                                          break;
+                                        }
+                                      }
+                                      
+                                      // If we can't find it or it's a blob URL, check if blob failed
+                                      if (currentIndex === -1 && currentSrc.startsWith('blob:')) {
+                                        // Blob URL failed, try fallback URLs
+                                        e.target.src = possibleUrls[0];
+                                        return;
+                                      }
+                                      
+                                      // Try next fallback URL
+                                      if (currentIndex >= 0 && currentIndex < possibleUrls.length - 1) {
+                                        const nextUrl = possibleUrls[currentIndex + 1];
+                                        e.target.src = nextUrl;
+                                      } else {
+                                        // All URLs exhausted, show error
+                                        setImageError(true);
+                                        setImageLoading(false);
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          } else if (isPdf) {
+                            return (
+                              <div style={{ marginTop: '10px' }}>
+                                <div className="d-flex align-items-center mb-2 p-3 bg-light rounded border">
+                                  <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    background: '#dc3545',
+                                    color: 'white',
+                                    borderRadius: '6px',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    marginRight: '12px'
+                                  }}>
+                                    PDF
+                                  </div>
+                                  <div className="flex-grow-1">
+                                    <div style={{ fontWeight: '500' }}>PDF Document</div>
+                                    <small className="text-muted">{filename}</small>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="outline-primary"
+                                  size="sm"
+                                  href={imageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  View PDF
+                                </Button>
+                              </div>
+                            );
+                          } else {
+                            return (
+                              <div style={{ marginTop: '10px' }}>
+                                <div className="d-flex align-items-center mb-2 p-3 bg-light rounded border">
+                                  <div style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    background: '#6c757d',
+                                    color: 'white',
+                                    borderRadius: '6px',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    marginRight: '12px'
+                                  }}>
+                                    📎
+                                  </div>
+                                  <div className="flex-grow-1">
+                                    <div style={{ fontWeight: '500' }}>Attachment File</div>
+                                    <small className="text-muted">{filename}</small>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="outline-primary"
+                                  size="sm"
+                                  href={imageUrl}
+                                  download
+                                >
+                                  Download Attachment
+                                </Button>
+                              </div>
+                            );
+                          }
+                        })()}
+                      </div>
+                    </div>
+                  </Col>
+                </Row>
+              )}
               {selectedRequest.approved_at && (
                 <Row>
                   <Col md={12}>

@@ -47,6 +47,8 @@
 .leave-types {
   max-height: 200px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .leave-type-item {
@@ -586,4 +588,10 @@ body::-webkit-scrollbar-thumb {
 
 body::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Leave Application Form Modal Width */
+.leave-application-modal .modal-dialog {
+  max-width: 700px;
+  margin: 1.75rem auto;
 }

@@ -61,7 +61,7 @@ const ValidationModal = ({
     
     switch (type) {
       case 'success':
-        return 'Oh Yeah!';
+        return 'Successful!';
       case 'error':
         return 'Sorry!';
       case 'warning':

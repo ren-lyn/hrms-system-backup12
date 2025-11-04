@@ -86,6 +86,34 @@ export const employeeCalendarApi = {
   }
 };
 
+// Holidays API functions
+export const holidaysApi = {
+  // Get manual holidays from backend and format as calendar events
+  getManualHolidaysCalendar: async (params = {}) => {
+    // Backend expects 'from' and 'to' params
+    const { start_date, end_date } = params;
+    const response = await axios.get('/holidays', { params: { from: start_date, to: end_date } });
+    const holidays = response.data?.data || [];
+    return {
+      success: true,
+      data: holidays.map(h => ({
+        id: `manual_holiday_${h.id}`,
+        title: h.name,
+        description: h.type ? `${h.type} Holiday` : 'Official Holiday',
+        event_type: h.type && h.type.toLowerCase() === 'special' ? 'holiday_special' : 'holiday_regular',
+        status: 'active',
+        start_datetime: `${h.date}T00:00:00+08:00`,
+        end_datetime: `${h.date}T23:59:59+08:00`,
+        start_date_manila: h.date,
+        start_time_formatted: 'All day',
+        end_time_formatted: '',
+        created_by: 'System',
+        blocks_leave_submissions: false,
+      }))
+    };
+  }
+};
+
 // Utility functions
 export const formatEventForForm = (event) => {
   if (!event) return null;

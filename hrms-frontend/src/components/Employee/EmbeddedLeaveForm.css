@@ -1212,6 +1212,12 @@
   background-color: #f8f9fa;
   border-top: 1px solid #dee2e6;
 }
+
+/* Leave Request Details Modal Width */
+.modal.responsive-modal .modal-dialog {
+  max-width: 700px;
+  margin: 1.75rem auto;
+}
 .status-icon {
   font-size: 16px;
 }

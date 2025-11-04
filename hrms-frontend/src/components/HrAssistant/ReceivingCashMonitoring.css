@@ -1,0 +1,183 @@
+.receiving-cash-monitoring {
+  padding: 24px;
+  background: #f8f9fa;
+  min-height: calc(100vh - 60px);
+}
+
+.monitoring-header {
+  margin-bottom: 32px;
+}
+
+.monitoring-header h4 {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+
+.monitoring-header p {
+  font-size: 0.95rem;
+  color: #6c757d;
+}
+
+.stat-card {
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  background: white;
+  border: 2px solid transparent;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card.stat-card-active {
+  border-color: #007bff;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.stat-card .stat-label {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.stat-card .stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.stat-received {
+  border-left: 4px solid #28a745;
+}
+
+.stat-not-received {
+  border-left: 4px solid #ffc107;
+}
+
+.stat-not-set {
+  border-left: 4px solid #6c757d;
+}
+
+.stat-card-active.stat-received {
+  border-color: #28a745;
+}
+
+.stat-card-active.stat-not-received {
+  border-color: #ffc107;
+}
+
+.stat-card-active.stat-not-set {
+  border-color: #6c757d;
+}
+
+.monitoring-table {
+  background: white;
+}
+
+.monitoring-table thead th {
+  background: #f8f9fa;
+  color: #495057;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #dee2e6;
+  padding: 16px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.monitoring-table tbody td {
+  padding: 16px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.9rem;
+}
+
+.monitoring-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.monitoring-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.employee-info strong {
+  color: #2c3e50;
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.employee-info .small {
+  font-size: 0.8rem;
+  color: #868e96;
+}
+
+.department-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #e9ecef;
+  color: #495057;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.amount-display {
+  color: #28a745;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.status-select {
+  min-width: 150px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+}
+
+.status-select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.status-select:disabled {
+  background-color: #e9ecef;
+  cursor: not-allowed;
+  opacity: 0.7;
+  border-color: #ced4da;
+}
+
+.status-select:disabled:hover {
+  cursor: not-allowed;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .receiving-cash-monitoring {
+    padding: 16px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .monitoring-table {
+    font-size: 0.85rem;
+  }
+
+  .monitoring-table thead th,
+  .monitoring-table tbody td {
+    padding: 12px 8px;
+  }
+}
+

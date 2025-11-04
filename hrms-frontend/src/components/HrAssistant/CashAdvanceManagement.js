@@ -6,7 +6,7 @@ import {
   getCashAdvanceStats, 
   approveCashAdvanceRequest, 
   rejectCashAdvanceRequest,
-  downloadCashAdvancePdf 
+  downloadCashAdvancePdf
 } from '../../api/cashAdvances';
 import jsPDF from 'jspdf';
 import './CashAdvanceManagement.css';
@@ -65,24 +65,26 @@ const CashAdvanceManagement = () => {
       // Handle paginated response - Laravel paginator wraps data in 'data' property
       let newRequests = [];
       if (requestsResponse) {
-        // If it's already an array, use it directly
-        if (Array.isArray(requestsResponse)) {
-          newRequests = requestsResponse;
+        // Handle paginated response structure (Laravel paginator)
+        if (requestsResponse.data && Array.isArray(requestsResponse.data)) {
+          newRequests = requestsResponse.data;
         } 
-        // If it has a data.data (paginated response)
+        // If it's already an array, use it directly
+        else if (Array.isArray(requestsResponse)) {
+          newRequests = requestsResponse;
+        }
+        // If it has a data.data (nested paginated response)
         else if (requestsResponse.data?.data && Array.isArray(requestsResponse.data.data)) {
           newRequests = requestsResponse.data.data;
         }
-        // If it has data as array
-        else if (requestsResponse.data && Array.isArray(requestsResponse.data)) {
-          newRequests = requestsResponse.data;
-        }
-        // If data is an object, extract the data array
-        else if (requestsResponse.data) {
+        // If data is an object but not an array, initialize empty
+        else if (requestsResponse.data && !Array.isArray(requestsResponse.data)) {
           newRequests = [];
         }
       }
-      const newStats = statsResponse.data || statsResponse || {
+      
+      // Handle stats response - can be direct object or wrapped in data
+      let newStats = {
         total_requests: 0,
         pending_requests: 0,
         approved_requests: 0,
@@ -92,16 +94,48 @@ const CashAdvanceManagement = () => {
         recent_requests: []
       };
       
+      if (statsResponse) {
+        if (statsResponse.data) {
+          newStats = { ...newStats, ...statsResponse.data };
+        } else if (typeof statsResponse === 'object' && !Array.isArray(statsResponse)) {
+          newStats = { ...newStats, ...statsResponse };
+        }
+      }
+      
       console.log('Processed Requests:', newRequests);
       console.log('Processed Stats:', newStats);
       console.log('Number of requests loaded:', newRequests.length);
       
       // Update data instantly
-      setCashAdvanceRequests(newRequests);
+      setCashAdvanceRequests(newRequests || []);
       setStats(newStats);
       
     } catch (error) {
       console.error('Error loading cash advance data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Set default empty values to prevent undefined errors
+      setCashAdvanceRequests([]);
+      setStats({
+        total_requests: 0,
+        pending_requests: 0,
+        approved_requests: 0,
+        rejected_requests: 0,
+        total_amount_requested: 0,
+        total_amount_approved: 0,
+        recent_requests: []
+      });
+      
+      // Show user-friendly error message
+      const errorMessage = error.response?.data?.message 
+        || error.message 
+        || 'Failed to load cash advance data. Please try again.';
+      
+      showAlert(errorMessage, 'danger');
     }
   };
 
@@ -439,14 +473,7 @@ const CashAdvanceManagement = () => {
             <small className="text-muted">
               Showing {filteredRequests.length} of {cashAdvanceRequests.length} requests
             </small>
-            <Button 
-              variant="outline-primary" 
-              size="sm"
-              onClick={loadData}
-              title="Manual refresh"
-            >
-              🔄 Refresh
-            </Button>
+            
             <Button 
               variant="outline-danger" 
               size="sm"
