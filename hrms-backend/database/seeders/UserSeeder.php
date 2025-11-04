@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use App\Models\Role;
 use App\Models\EmployeeProfile;
 use Illuminate\Support\Facades\Hash;
 
@@ -14,16 +15,34 @@ class UserSeeder extends Seeder
         // Create default HR Assistant user only (Juan Dela Cruz)
         // Maria Santos (Employee) has been removed as requested
         
-        $hrUser = User::create([
-            'first_name' => 'Renelyn',
-            'last_name' => 'Concina',
-            'email' => 'hr@company.com',
-            'password' => Hash::make('password123'),
-            'role_id' => 1, // HR Assistant
-        ]);
+        // Get HR Assistant role ID by name to avoid hardcoding
+        $hrAssistantRole = Role::where('name', 'HR Assistant')->first();
+        if (!$hrAssistantRole) {
+            $this->command->error('HR Assistant role not found. Please run RoleSeeder first.');
+            return;
+        }
+        
+        // Use firstOrCreate to handle existing users and update role if needed
+        $hrUser = User::firstOrCreate(
+            ['email' => 'hr@company.com'],
+            [
+                'first_name' => 'Renelyn',
+                'last_name' => 'Concina',
+                'password' => Hash::make('password123'),
+                'role_id' => $hrAssistantRole->id, // HR Assistant
+            ]
+        );
+        
+        // Update role_id if user already existed with wrong role
+        if ($hrUser->role_id !== $hrAssistantRole->id) {
+            $hrUser->update(['role_id' => $hrAssistantRole->id]);
+            $this->command->info('Updated HR Assistant role for existing user.');
+        }
 
         // Create comprehensive employee profile for HR Assistant
-        $hrUser->employeeProfile()->create([
+        $hrUser->employeeProfile()->updateOrCreate(
+            ['user_id' => $hrUser->id],
+            [
             // Personal Information
             'employee_id' => 'EM1001',
             'first_name' => 'Renelyn',
