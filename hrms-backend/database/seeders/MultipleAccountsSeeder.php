@@ -6,6 +6,11 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\EmployeeProfile;
+use App\Models\EvaluationForm;
+use App\Models\Evaluation;
+use App\Models\EvaluationResponse;
+use Carbon\Carbon;
 
 class MultipleAccountsSeeder extends Seeder
 {
@@ -55,12 +60,17 @@ class MultipleAccountsSeeder extends Seeder
             ['first_name' => 'Nathaniel', 'last_name' => 'Catindig', 'email' => 'nathaniel.catindig@company.com', 'role' => 'Applicant', 'position' => 'Applicant', 'department' => 'N/A', 'salary' => 13520],
         ];
 
-        $this->createFixedUsers($users);
+        $createdUsers = $this->createFixedUsers($users);
+        
+        // Create evaluation results for employees
+        $this->createEvaluationResults($createdUsers);
     }
 
-    private function createFixedUsers(array $users): void
+    private function createFixedUsers(array $users): array
     {
         $employeeCounter = 1005; // Start from EM1005 (after DefaultAccountsSeeder uses EM1001-EM1003)
+        $createdUsers = [];
+        
         foreach ($users as $u) {
             $roleId = Role::where('name', $u['role'])->value('id');
 
@@ -74,8 +84,8 @@ class MultipleAccountsSeeder extends Seeder
                 ]
             );
 
-            // Only create employee profile for non-Applicants
-            if ($u['role'] !== 'Applicant') {
+            // Only create employee profile for non-Applicants and non-Admins
+            if ($u['role'] !== 'Applicant' && $u['role'] !== 'Admin') {
                 $profile = $user->employeeProfile()->updateOrCreate([], [
                     'employee_id' => 'EM' . $employeeCounter,
                     'first_name' => $u['first_name'],
@@ -87,9 +97,175 @@ class MultipleAccountsSeeder extends Seeder
                     'hire_date' => now()->subDays(120)->toDateString(),
                     'salary' => $u['salary'] ?? 13520, // Use provided salary or default to 13520
                 ]);
+                $createdUsers[] = $user;
                 $employeeCounter++;
             }
         }
+        
+        return $createdUsers;
+    }
+    
+    private function createEvaluationResults(array $users): void
+    {
+        // Get or create evaluation form
+        $form = $this->getOrCreateEvaluationForm();
+        
+        // Get a manager for evaluations
+        $managerId = User::whereHas('role', fn($q) => $q->where('name', 'Manager'))->first()?->id;
+        
+        if (!$form || !$managerId) {
+            return;
+        }
+        
+        // Get current year start
+        $currentYear = Carbon::now()->year;
+        
+        // Define the evaluation months (March, June, September)
+        $evaluationMonths = [3, 6, 9]; // March, June, September
+        
+            // Create evaluations for each user for each evaluation month
+            foreach ($users as $userIndex => $user) {
+                // Skip if user doesn't have an employee profile
+                if (!$user->employeeProfile) {
+                    continue;
+                }
+
+                // Create evaluations for each evaluation month
+                foreach ($evaluationMonths as $month) {
+                    $evaluationDate = Carbon::create($currentYear, $month, 1);
+
+                    // Calculate evaluation period
+                    $periodStart = $evaluationDate->copy()->startOfMonth();
+                    $periodEnd = $evaluationDate->copy()->endOfMonth();
+                    
+                    // Determine employee performance pattern
+                    // Mix: Some employees consistently good, some fail in June, some fail in September
+                    $total = 0;
+                    $ratings = [];
+                    $questionCount = 0;
+                    
+                    $shouldPass = true;
+                    // Approximately 15% (about 5) fail in June (indices 2, 8, 14, 20, 26)
+                    if ($month === 6 && $userIndex % 6 === 2) {
+                        $shouldPass = false;
+                    }
+                    // Approximately 10% (about 3-4) fail in September (indices 3, 10, 17, 24)
+                    elseif ($month === 9 && $userIndex % 7 === 3) {
+                        $shouldPass = false;
+                    }
+                    
+                    foreach ($form->questions as $question) {
+                        if ($shouldPass) {
+                            // Employee will pass - give good ratings (7-10)
+                            $rating = rand(7, 10);
+                        } else {
+                            // Employee will fail - give low ratings (1-5)
+                            $rating = rand(1, 5);
+                        }
+                        $ratings[$question->id] = $rating;
+                        $total += $rating;
+                        $questionCount++;
+                    }
+                
+                $average = $questionCount ? $total / $questionCount : 0;
+                $percentage = $average * 10; // if rating is 1-10
+                $maxPossibleScore = $questionCount * 10;
+                $passingScore = round($maxPossibleScore * 0.70); // 70% threshold
+                
+                // Check if evaluation already exists for this period
+                $eval = Evaluation::where('evaluation_form_id', $form->id)
+                    ->where('employee_id', $user->id)
+                    ->where('manager_id', $managerId)
+                    ->where('evaluation_period_start', $periodStart->toDateString())
+                    ->where('evaluation_period_end', $periodEnd->toDateString())
+                    ->first();
+                
+                if (!$eval) {
+                    $eval = Evaluation::create([
+                        'evaluation_form_id' => $form->id,
+                        'employee_id' => $user->id,
+                        'manager_id' => $managerId,
+                        'evaluation_period_start' => $periodStart->toDateString(),
+                        'evaluation_period_end' => $periodEnd->toDateString(),
+                        'status' => 'Submitted',
+                        'total_score' => $total,
+                        'average_score' => round($average, 2),
+                        'percentage_score' => round($percentage, 2),
+                        'passing_threshold' => $passingScore,
+                        'is_passed' => $total >= $passingScore,
+                        'general_comments' => 'Quarterly performance evaluation.',
+                        'submitted_at' => $evaluationDate,
+                        'due_date' => $evaluationDate->copy()->addDays(7),
+                        'next_evaluation_date' => $evaluationDate->copy()->addMonths(3),
+                    ]);
+                    
+                    // Create responses for each question only if evaluation was created
+                    foreach ($ratings as $questionId => $rating) {
+                        $comment = '';
+                        if ($rating >= 9) {
+                            $comment = 'Outstanding performance in this area.';
+                        } elseif ($rating >= 7) {
+                            $comment = 'Good performance with consistent results.';
+                        } elseif ($rating >= 5) {
+                            $comment = 'Adequate performance. Improvement needed.';
+                        } elseif ($rating >= 3) {
+                            $comment = 'Below expectations. Significant improvement required.';
+                        } else {
+                            $comment = 'Poor performance. Immediate action required.';
+                        }
+                        
+                        EvaluationResponse::create([
+                            'evaluation_id' => $eval->id,
+                            'evaluation_question_id' => $questionId,
+                            'rating' => $rating,
+                            'manager_comment' => $comment,
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+    
+    private function getOrCreateEvaluationForm()
+    {
+        // Try to get existing "Assessment 1" form
+        $form = EvaluationForm::whereIn('title', ['Assessment 1', 'Assesstment 1'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('created_at')
+            ->first();
+            
+        if (!$form) {
+            // Try to get any Active form
+            $form = EvaluationForm::where('status', 'Active')->latest()->first();
+        }
+        
+        if (!$form) {
+            // Create a new form if none exists
+            $hrStaffId = User::whereHas('role', fn($q) => $q->where('name', 'HR Staff'))->value('id') ?? User::first()?->id;
+            
+            $form = EvaluationForm::create([
+                'hr_staff_id' => $hrStaffId,
+                'title' => 'Assessment 1',
+                'description' => 'Default performance evaluation form.',
+                'status' => 'Active',
+            ]);
+            
+            // Add questions if form is newly created
+            $questions = [
+                ['category' => 'Punctuality & Attendance', 'question_text' => 'Pagpasok sa tamang oras at hindi pagliban (Punctuality & Attendance)', 'order' => 1],
+                ['category' => 'Attitude towards co-workers', 'question_text' => 'Pag-uugali sa kapwa manggagawa (Attitude towards co-workers)', 'order' => 2],
+                ['category' => 'Quality of work', 'question_text' => 'Kalidad ng trabaho (Quality of work)', 'order' => 3],
+                ['category' => 'Initiative', 'question_text' => 'Pagkukusa (Initiative)', 'order' => 4],
+                ['category' => 'Teamwork', 'question_text' => 'Pagtutulungan ng magkasama (Teamwork)', 'order' => 5],
+                ['category' => 'Trustworthy and Reliable', 'question_text' => 'Mapagkakatiwalaan at Maaasahan (Trustworthy and Reliable)', 'order' => 6],
+            ];
+            
+            foreach ($questions as $q) {
+                $form->questions()->create($q);
+            }
+        }
+        
+        return $form;
     }
 }
 

@@ -43,7 +43,6 @@ const CashAdvanceForm = React.lazy(() => import('../components/Employee/CashAdva
 const EmployeeDisciplinaryNotice = React.lazy(() => import('../components/Employee/EmployeeDisciplinaryNotice'));
 const EmployeeCalendar = React.lazy(() => import('../components/Employee/EmployeeCalendar'));
 const CashAdvanceView = React.lazy(() => import('../components/Employee/CashAdvanceView'));
-
 const CashAdvanceHistory = React.lazy(() => import('../components/Employee/CashAdvanceHistory'));
 
 
@@ -860,7 +859,7 @@ const EmployeeDashboard = () => {
       
       {/* Toast Container */}
       <ToastContainer
-        position="top-right"
+        position="top-center"
         autoClose={3000}
         hideProgressBar={false}
         newestOnTop={false}

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "bootstrap/dist/css/bootstrap.min.css";
 import NotificationSystem from './NotificationSystem';
+import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
 
 export default function JobPortal() {
   const navigate = useNavigate();
@@ -27,6 +28,62 @@ export default function JobPortal() {
   const [hasOnboardingAccess, setHasOnboardingAccess] = useState(false);
   const [lastJobCount, setLastJobCount] = useState(0);
   const [expandedJobId, setExpandedJobId] = useState(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [isHoveringText, setIsHoveringText] = useState(false);
+  const introSectionRef = useRef(null);
+  
+  // Smooth cursor tracking for glowing light
+  const cursorX = useMotionValue(0);
+  const cursorY = useMotionValue(0);
+  const smoothX = useSpring(cursorX, { stiffness: 150, damping: 15 });
+  const smoothY = useSpring(cursorY, { stiffness: 150, damping: 15 });
+
+  // Handle mouse movement for interactive glow effect
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (introSectionRef.current) {
+        const rect = introSectionRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        cursorX.set(x);
+        cursorY.set(y);
+        setMousePosition({ x: e.clientX, y: e.clientY });
+        
+        // Check if cursor is over text elements
+        const textElements = introSectionRef.current.querySelectorAll('h1, h3, p');
+        let hoveringAnyText = false;
+        
+        textElements.forEach((element) => {
+          const elementRect = element.getBoundingClientRect();
+          const elementLeft = elementRect.left;
+          const elementTop = elementRect.top;
+          const elementRight = elementRect.right;
+          const elementBottom = elementRect.bottom;
+          
+          // Check if cursor is within element bounds with some padding for glow radius
+          if (
+            e.clientX >= elementLeft - 150 &&
+            e.clientX <= elementRight + 150 &&
+            e.clientY >= elementTop - 150 &&
+            e.clientY <= elementBottom + 150
+          ) {
+            hoveringAnyText = true;
+          }
+        });
+        
+        setIsHoveringText(hoveringAnyText);
+      }
+    };
+    
+    const introSection = introSectionRef.current;
+    if (introSection) {
+      introSection.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        introSection.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [cursorX, cursorY]);
 
   // Check if user is logged in when component mounts and fetch jobs
   useEffect(() => {
@@ -423,21 +480,29 @@ export default function JobPortal() {
   };
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto" }}>
+    <div style={{ height: "100vh", overflowY: "auto", paddingTop: "70px" }}>
       {/* Professional Clean Navbar */}
-      <nav className="navbar navbar-dark sticky-top" style={{ 
-        background: "linear-gradient(45deg, #0575E6, #021B79)",
+      <nav 
+        className="navbar navbar-dark" 
+        style={{ 
+        backgroundColor: "#0033ff",
         boxShadow: '0 2px 15px rgba(0,0,0,0.15)',
         borderBottom: '1px solid rgba(255,255,255,0.1)',
         padding: '0.75rem 0',
-        position: 'relative'
-      }}>
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
+          zIndex: 1030
+        }}
+      >
         <div className="container-fluid px-4">
           <div className="d-flex align-items-center justify-content-between w-100">
             {/* Left side - Menu button and Logo */}
             <div className="d-flex align-items-center">
               {/* Mobile Toggle Button - Left of Logo */}
-              <button
+                <button
                 className="d-lg-none btn p-2 me-3"
                 onClick={toggleMobileMenu}
                 aria-label="Toggle navigation"
@@ -462,12 +527,15 @@ export default function JobPortal() {
               {/* CCDC Brand/Logo Section - No Image */}
               <div className="navbar-brand d-flex align-items-center">
                 <a className="d-flex align-items-center text-decoration-none" href="/">
-                  <span className="fw-bold fs-3" style={{
+                  <span 
+                    className="fw-bold fs-3" 
+                    style={{
                     color: '#ffffff',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    letterSpacing: '-0.025em',
+                      fontFamily: "'Momo Trust Display', sans-serif",
+                      letterSpacing: '1px',
                     textShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                  }}>
+                    }}
+                  >
                     CCDC
                   </span>
                 </a>
@@ -562,7 +630,7 @@ export default function JobPortal() {
                   }}
                   onMouseEnter={(e) => {
                     e.target.style.backgroundColor = '#ffffff';
-                    e.target.style.color = '#0575E6';
+                    e.target.style.color = '#0033ff';
                     e.target.style.borderColor = '#ffffff';
                     e.target.style.transform = 'translateY(-2px)';
                     e.target.style.boxShadow = '0 4px 12px rgba(255, 255, 255, 0.3)';
@@ -582,8 +650,11 @@ export default function JobPortal() {
           </div>
 
           {/* Mobile Menu Dropdown */}
+          <AnimatePresence>
           {mobileMenuOpen && (
-            <div className="d-lg-none" style={{
+              <motion.div 
+                className="d-lg-none" 
+                style={{
               position: 'absolute',
               top: '100%',
               left: '0',
@@ -596,99 +667,99 @@ export default function JobPortal() {
               padding: '20px'
             }}>
               <div className="d-flex flex-column gap-3">
-                <a 
-                  href="/" 
-                  className="text-white text-decoration-none p-3 rounded"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    border: '2px solid transparent',
-                    transition: 'all 0.3s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    minHeight: '50px',
-                    fontSize: '1.1rem',
-                    fontWeight: '500'
-                  }}
-                  onClick={() => setMobileMenuOpen(false)}
-                  onMouseEnter={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
-                    e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-                    e.target.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                    e.target.style.borderColor = 'transparent';
-                    e.target.style.transform = 'translateY(0)';
-                  }}
-                >
-                  Home
-                </a>
-                <button 
-                  onClick={() => {
-                    scrollToJobs();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="btn text-white text-start p-3 rounded border-0 d-flex align-items-center"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    border: '2px solid transparent',
-                    transition: 'all 0.3s ease',
-                    minHeight: '50px',
-                    fontSize: '1.1rem',
-                    fontWeight: '500'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
-                    e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-                    e.target.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                    e.target.style.borderColor = 'transparent';
-                    e.target.style.transform = 'translateY(0)';
-                  }}
-                >
-                  Browse Jobs
-                </button>
-                {isLoggedIn && userRole === 'Applicant' && hasOnboardingAccess && (
-                  <button 
-                    onClick={() => {
-                      handleOnboardingClick();
-                      setMobileMenuOpen(false);
-                    }}
-                    className="btn text-white text-start p-3 rounded border-0 d-flex align-items-center"
-                    style={{
-                      backgroundColor: 'rgba(255,255,255,0.1)',
-                      border: '2px solid transparent',
-                      transition: 'all 0.3s ease',
-                      minHeight: '50px',
-                      fontSize: '1.1rem',
-                      fontWeight: '500'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
-                      e.target.style.borderColor = 'rgba(255,255,255,0.5)';
-                      e.target.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                      e.target.style.borderColor = 'transparent';
-                      e.target.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    <i className="bi bi-person-check me-2"></i>My Onboarding
-                  </button>
-                )}
-                <hr style={{ borderColor: 'rgba(255,255,255,0.3)', margin: '10px 0' }} />
-                {isLoggedIn ? (
-                  <div className="d-flex flex-column gap-2">
-                    <div className="text-white p-2 d-flex align-items-center">
-                      <div style={{
-                        width: '8px', height: '8px', backgroundColor: '#48bb78',
-                        borderRadius: '50%', marginRight: '10px'
-                      }}></div>
-                      Logged in as {userRole || 'User'}
-                    </div>
+                 <a 
+                   href="/" 
+                   className="text-white text-decoration-none p-3 rounded"
+                   style={{
+                     backgroundColor: 'rgba(255,255,255,0.1)',
+                     border: '2px solid transparent',
+                     transition: 'all 0.3s ease',
+                     display: 'flex',
+                     alignItems: 'center',
+                     minHeight: '50px',
+                     fontSize: '1.1rem',
+                     fontWeight: '500'
+                   }}
+                   onClick={() => setMobileMenuOpen(false)}
+                   onMouseEnter={(e) => {
+                     e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                     e.target.style.borderColor = 'rgba(255,255,255,0.5)';
+                     e.target.style.transform = 'translateY(-1px)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                     e.target.style.borderColor = 'transparent';
+                     e.target.style.transform = 'translateY(0)';
+                   }}
+                 >
+                   Home
+                 </a>
+                 <button 
+                   onClick={() => {
+                     scrollToJobs();
+                     setMobileMenuOpen(false);
+                   }}
+                   className="btn text-white text-start p-3 rounded border-0 d-flex align-items-center"
+                   style={{
+                     backgroundColor: 'rgba(255,255,255,0.1)',
+                     border: '2px solid transparent',
+                     transition: 'all 0.3s ease',
+                     minHeight: '50px',
+                     fontSize: '1.1rem',
+                     fontWeight: '500'
+                   }}
+                   onMouseEnter={(e) => {
+                     e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                     e.target.style.borderColor = 'rgba(255,255,255,0.5)';
+                     e.target.style.transform = 'translateY(-1px)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                     e.target.style.borderColor = 'transparent';
+                     e.target.style.transform = 'translateY(0)';
+                   }}
+                 >
+                   Browse Jobs
+                 </button>
+                 {isLoggedIn && userRole === 'Applicant' && hasOnboardingAccess && (
+                   <button 
+                     onClick={() => {
+                       handleOnboardingClick();
+                       setMobileMenuOpen(false);
+                     }}
+                     className="btn text-white text-start p-3 rounded border-0 d-flex align-items-center"
+                     style={{
+                       backgroundColor: 'rgba(255,255,255,0.1)',
+                       border: '2px solid transparent',
+                       transition: 'all 0.3s ease',
+                       minHeight: '50px',
+                       fontSize: '1.1rem',
+                       fontWeight: '500'
+                     }}
+                     onMouseEnter={(e) => {
+                       e.target.style.backgroundColor = 'rgba(255,255,255,0.2)';
+                       e.target.style.borderColor = 'rgba(255,255,255,0.5)';
+                       e.target.style.transform = 'translateY(-1px)';
+                     }}
+                     onMouseLeave={(e) => {
+                       e.target.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                       e.target.style.borderColor = 'transparent';
+                       e.target.style.transform = 'translateY(0)';
+                     }}
+                   >
+                     <i className="bi bi-person-check me-2"></i>My Onboarding
+                   </button>
+                 )}
+                 <hr style={{ borderColor: 'rgba(255,255,255,0.3)', margin: '10px 0' }} />
+                 {isLoggedIn ? (
+                   <div className="d-flex flex-column gap-2">
+                     <div className="text-white p-2 d-flex align-items-center">
+                       <div style={{
+                         width: '8px', height: '8px', backgroundColor: '#48bb78',
+                         borderRadius: '50%', marginRight: '10px'
+                       }}></div>
+                       Logged in as {userRole || 'User'}
+                     </div>
                     <button 
                       onClick={() => {
                         handleLogoutClick();
@@ -721,37 +792,46 @@ export default function JobPortal() {
                       handleLoginClick();
                       setMobileMenuOpen(false);
                     }}
-                    className="btn text-white text-start p-4 rounded border-0 d-flex align-items-center justify-content-center"
-                    style={{
-                      backgroundColor: '#0575E6',
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      transition: 'all 0.3s ease',
-                      minHeight: '55px',
-                      fontSize: '1.1rem',
-                      fontWeight: '600',
-                      boxShadow: '0 2px 8px rgba(5, 117, 230, 0.3)'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.backgroundColor = '#ffffff';
-                      e.target.style.color = '#0575E6';
-                      e.target.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.backgroundColor = '#0575E6';
-                      e.target.style.color = '#ffffff';
-                      e.target.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    Log In
-                  </button>
+                     className="btn text-white text-start p-4 rounded border-0 d-flex align-items-center justify-content-center"
+                     style={{
+                       backgroundColor: '#0575E6',
+                       border: '2px solid rgba(255,255,255,0.3)',
+                       transition: 'all 0.3s ease',
+                       minHeight: '55px',
+                       fontSize: '1.1rem',
+                       fontWeight: '600',
+                       boxShadow: '0 2px 8px rgba(5, 117, 230, 0.3)'
+                     }}
+                     onMouseEnter={(e) => {
+                       e.target.style.backgroundColor = '#ffffff';
+                       e.target.style.color = '#0575E6';
+                       e.target.style.transform = 'translateY(-1px)';
+                     }}
+                     onMouseLeave={(e) => {
+                       e.target.style.backgroundColor = '#0575E6';
+                       e.target.style.color = '#ffffff';
+                       e.target.style.transform = 'translateY(0)';
+                     }}
+                   >
+                     Log In
+                   </button>
                 )}
               </div>
-            </div>
+              </motion.div>
           )}
+          </AnimatePresence>
         </div>
 
         {/* Custom Styles */}
         <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=Momo+Trust+Display&display=swap');
+          
+          /* Default font for all text */
+          body, .navbar, .nav-link, button, a, p, span, div, label, input, textarea, select {
+            font-family: 'Noto Sans', sans-serif;
+          }
+          
           /* Job Portal Hamburger Override */
           .job-portal-hamburger {
             position: static !important;
@@ -849,9 +929,10 @@ export default function JobPortal() {
 
       {/* Intro Section */}
       <section
+        ref={introSectionRef}
         style={{
           minHeight: "100vh",
-          backgroundColor: "#1e2a38",
+          backgroundColor: "#00033d",
           color: "#fff",
           display: "flex",
           flexDirection: "column",
@@ -862,87 +943,90 @@ export default function JobPortal() {
         }}
         className="px-3 px-md-5"
       >
-        {/* Light Circle Background */}
-        <div className="light-circle"></div>
-        <div className="light-circle2"></div>
+        {/* Interactive Glowing Light that follows cursor */}
+        <motion.div
+          style={{
+            position: "absolute",
+            left: smoothX,
+            top: smoothY,
+            width: "200px",
+            height: "200px",
+            borderRadius: "50%",
+            background: "#0033ff",
+            pointerEvents: "none",
+            x: "-50%",
+            y: "-50%",
+            zIndex: 1,
+            mixBlendMode: "difference",
+          }}
+          animate={{
+            scale: isHoveringText ? 1.2 : 0.15,
+            opacity: isHoveringText ? 0.8 : 0.8,
+          }}
+          transition={{
+            duration: 0.3,
+            ease: "easeOut",
+          }}
+        />
 
+        {/* Text Content with dynamic color based on cursor position */}
         <div style={{ maxWidth: "650px", position: "relative", zIndex: 2 }}>
-          <h1
+          <motion.h1
             style={{
               fontSize: "clamp(2rem, 5vw, 3rem)",
               fontWeight: "800",
               marginBottom: "1rem",
               lineHeight: "1.2",
               animation: "fadeInDown 1.2s ease-out",
+              fontFamily: "'Momo Trust Display', sans-serif",
+              letterSpacing: '1px',
+              color: "#ffffff",
             }}
           >
             Welcome, <strong>{userName || 'Applicant'}</strong>
-          </h1>
-          <h3
+          </motion.h1>
+          <motion.h3
             style={{
               fontWeight: "500",
               fontSize: "clamp(1.2rem, 3vw, 1.5rem)",
               marginBottom: "0.5rem",
               animation: "fadeIn 1.5s ease-out",
+              fontFamily: "'Noto Sans', sans-serif",
+              letterSpacing: '0.5px',
+              color: "#ffffff",
             }}
           >
             Are you ready to join our team?
-          </h3>
-          <p
+          </motion.h3>
+          <motion.p
             style={{
               fontSize: "clamp(1rem, 2.5vw, 1.1rem)",
-              color: "#dcdcdc",
+              color: "#ffffff",
               marginBottom: "1.5rem",
               animation: "fadeIn 1.8s ease-out",
+              fontFamily: "'Noto Sans', sans-serif",
             }}
           >
             Cabuyao Concrete Development Corporation is seeking talented and
             motivated individuals to contribute to our growing success. We
             value professionalism, dedication, and a passion for excellence.
-          </p>
-          <p
+          </motion.p>
+          <motion.p
             style={{
               fontSize: "clamp(0.9rem, 2vw, 1rem)",
-              color: "#c0c0c0",
+              color: "#ffffff",
               marginBottom: "2rem",
               animation: "fadeIn 2.1s ease-out",
+              fontFamily: "'Noto Sans', sans-serif",
             }}
           >
             Review the job details below and take the first step towards
             building your career with us.
-          </p>
+          </motion.p>
         </div>
 
         <style>
           {`
-            .light-circle, .light-circle2 {
-              position: absolute;
-              border-radius: 50%;
-              background: radial-gradient(circle, rgba(173, 216, 230, 0.4) 0%, transparent 70%);
-              filter: blur(50px);
-              animation: moveCircle 10s ease-in-out infinite alternate;
-            }
-
-            .light-circle {
-              width: 400px;
-              height: 400px;
-              top: -100px;
-              left: -150px;
-            }
-
-            .light-circle2 {
-              width: 300px;
-              height: 300px;
-              bottom: -100px;
-              right: -150px;
-              animation-delay: 3s;
-            }
-
-            @keyframes moveCircle {
-              0% { transform: translate(0, 0) scale(1); opacity: 0.7; }
-              100% { transform: translate(50px, 30px) scale(1.2); opacity: 0.9; }
-            }
-
             @keyframes fadeInDown {
               from { opacity: 0; transform: translateY(-20px); }
               to { opacity: 1; transform: translateY(0); }
@@ -956,59 +1040,109 @@ export default function JobPortal() {
       </section>
 
       {/* Hero Section */}
-      <section
+      <motion.section
         id="jobs-section"
         className="d-flex align-items-center text-white"
         style={{
-          background: "linear-gradient(45deg, #0575E6, #021B79)",
+          background: "#0033ff",
           minHeight: "350px",
           padding: "2rem 1rem",
         }}
+        initial={{ opacity: 0, scale: 0.95 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.8 }}
       >
-        <div className="container d-flex justify-content-center align-items-center mx-auto">
-          <div className="text-center">
-            <h1 className="fw-bold display-5">Find your Dream Job</h1>
-            <p className="lead">
+        <motion.div 
+          className="container d-flex justify-content-center align-items-center mx-auto"
+          initial={{ y: 30 }}
+          whileInView={{ y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6, delay: 0.2 }}
+        >
+          <motion.div 
+            className="text-center"
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+          >
+            <motion.h1 
+              className="fw-bold display-5" 
+              style={{ fontFamily: "'Momo Trust Display', sans-serif", letterSpacing: '1px' }}
+              animate={{ 
+                textShadow: [
+                  '0 0 0px rgba(255,255,255,0)',
+                  '0 0 30px rgba(255,255,255,0.4)',
+                  '0 0 0px rgba(255,255,255,0)'
+                ]
+              }}
+              transition={{ 
+                duration: 3,
+                repeat: Infinity,
+                repeatDelay: 2
+              }}
+            >
+              Find your Dream Job
+            </motion.h1>
+            <motion.p 
+              className="lead" 
+              style={{ fontFamily: "'Noto Sans', sans-serif" }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.6 }}
+            >
               Be a part of a company that invests in your growth and
               development.
-            </p>
-          </div>
-        </div>
-      </section>
+            </motion.p>
+          </motion.div>
+        </motion.div>
+      </motion.section>
 
 
       {/* Job Listing */}
       <section className="bg-light py-5">
         <div className="container">
           <div className="d-flex justify-content-between align-items-center mb-4">
-            <h3 className="fw-bold">Job Listings</h3>
+            <h3 className="fw-bold" style={{ fontFamily: "'Momo Trust Display', sans-serif", letterSpacing: '1px', color: '#00033d' }}>Job Listings</h3>
           </div>
 
           {jobs.length === 0 ? (
-            <div className="text-center py-5">
+            <motion.div 
+              className="text-center py-5"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+            >
               <h5 className="text-muted">No job postings available</h5>
               <p className="text-muted">Check back later for new opportunities!</p>
-            </div>
+            </motion.div>
           ) : (
-            jobs.map((job) => (
-              <div
+            jobs.map((job, index) => (
+              <motion.div
                 key={job.id}
                 className="bg-white rounded-3 shadow-sm border-0 mb-4 job-listing-card overflow-hidden"
                 style={{ 
                   cursor: 'pointer', 
-                  transition: 'all 0.3s ease',
                   border: '1px solid #e9ecef'
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-3px)';
-                  e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.12)';
-                  e.currentTarget.style.borderColor = '#0575E6';
+                initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ 
+                  duration: 0.5,
+                  delay: index * 0.1,
+                  type: "spring",
+                  stiffness: 100
                 }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
-                  e.currentTarget.style.borderColor = '#e9ecef';
+                whileHover={{ 
+                  y: -8,
+                  scale: 1.02,
+                  boxShadow: '0 12px 40px rgba(5, 117, 230, 0.2)',
+                  borderColor: '#0575E6',
+                  transition: { duration: 0.3 }
                 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => handleJobCardClick(job.id)}
               >
                 {/* Header Section */}
@@ -1104,15 +1238,34 @@ export default function JobPortal() {
                 </div>
 
                 {/* Expanded Content Section */}
+                <AnimatePresence>
                 {expandedJobId === job.id && (
-        <div
+                    <motion.div
           className="expanded-content"
           style={{
             backgroundColor: '#f8f9fa',
             borderTop: '1px solid #e9ecef',
-            animation: 'slideDown 0.3s ease-out',
             maxHeight: 'none',
             overflow: 'visible'
+          }}
+                      initial={{ 
+                        opacity: 0, 
+                        height: 0,
+                        y: -20
+                      }}
+                      animate={{ 
+                        opacity: 1, 
+                        height: 'auto',
+                        y: 0
+                      }}
+                      exit={{ 
+                        opacity: 0, 
+                        height: 0,
+                        y: -20
+                      }}
+                      transition={{ 
+                        duration: 0.4,
+                        ease: "easeInOut"
           }}
         >
                     <div className="p-4">
@@ -1159,19 +1312,43 @@ export default function JobPortal() {
                         {/* Apply button removed from expanded dropdown */}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
-              </div>
+                </AnimatePresence>
+              </motion.div>
             ))
           )}
         </div>
       </section>
 
       {/* Application Modal */}
+      <AnimatePresence>
       {showApplicationModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div className="modal-content">
+          <motion.div 
+            className="modal show d-block" 
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div 
+              className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+              initial={{ opacity: 0, scale: 0.8, y: 50 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 50 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 300,
+                damping: 30
+              }}
+            >
+              <motion.div 
+                className="modal-content"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
               <div className="modal-header bg-primary text-white">
                 <h5 className="modal-title">Job Application</h5>
                 <button 
@@ -1253,10 +1430,11 @@ export default function JobPortal() {
                   )}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        </motion.div>
+        )}
+      </AnimatePresence>
 
 
       {/* Job Details Modal */}
@@ -1402,10 +1580,37 @@ export default function JobPortal() {
       )}
 
       {/* Application Success Modal */}
+      <AnimatePresence>
       {showSuccessModal && (
-        <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999 }}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg">
+          <motion.div 
+            className="modal show d-block" 
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div 
+              className="modal-dialog modal-dialog-centered"
+              initial={{ opacity: 0, scale: 0.5, rotate: -10 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.5, rotate: 10 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 200,
+                damping: 20
+              }}
+            >
+              <motion.div 
+                className="modal-content border-0 shadow-lg"
+                animate={{ 
+                  scale: [1, 1.02, 1],
+                }}
+                transition={{ 
+                  duration: 0.5,
+                  repeat: Infinity,
+                  repeatDelay: 2
+                }}
+              >
               <div className="modal-header border-0 text-center" style={{
                 background: 'linear-gradient(135deg, #28a745 0%, #20c997 100%)',
                 borderRadius: '0.5rem 0.5rem 0 0'
@@ -1494,10 +1699,11 @@ export default function JobPortal() {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Duplicate Application Modal */}
       {showDuplicateApplicationModal && duplicateApplicationInfo && (

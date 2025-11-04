@@ -196,6 +196,9 @@ public function store(Request $request)
         'emergency_contact_edit_count' => 0,
     ]);
 
+    // Clear the employees cache when a new employee is created
+    Cache::forget('employees_list');
+
     return response()->json(['message' => 'Employee created successfully'], 201);
 }
 
@@ -353,12 +356,10 @@ public function update(Request $request, $id)
         }
         
         $user->employeeProfile->update($profileData);
-        
-        // Clear the employees cache when status changes
-        if (isset($validated['status'])) {
-            Cache::forget('employees_list');
-        }
     }
+
+    // Clear the employees cache whenever employee data is updated
+    Cache::forget('employees_list');
 
     return response()->json(['message' => 'Employee updated successfully']);
 }
@@ -375,6 +376,9 @@ public function update(Request $request, $id)
         }
 
         $user->delete();
+
+        // Clear the employees cache when an employee is deleted
+        Cache::forget('employees_list');
 
         return response()->json(['message' => 'Employee deleted successfully']);
     }

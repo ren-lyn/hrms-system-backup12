@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -9,6 +10,60 @@ const Login = () => {
   const [role, setRole] = useState('Admin');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const welcomePanelRef = useRef(null);
+  const [isHoveringText, setIsHoveringText] = useState(false);
+  
+  // Smooth cursor tracking for glowing light
+  const cursorX = useMotionValue(0);
+  const cursorY = useMotionValue(0);
+  const smoothX = useSpring(cursorX, { stiffness: 150, damping: 15 });
+  const smoothY = useSpring(cursorY, { stiffness: 150, damping: 15 });
+
+  // Handle mouse movement for interactive glow effect
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (welcomePanelRef.current) {
+        const rect = welcomePanelRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        cursorX.set(x);
+        cursorY.set(y);
+        
+        // Check if cursor is over text elements
+        const textElements = welcomePanelRef.current.querySelectorAll('h2');
+        let hoveringAnyText = false;
+        
+        textElements.forEach((element) => {
+          const elementRect = element.getBoundingClientRect();
+          const elementLeft = elementRect.left;
+          const elementTop = elementRect.top;
+          const elementRight = elementRect.right;
+          const elementBottom = elementRect.bottom;
+          
+          // Check if cursor is within element bounds with some padding for glow radius
+          if (
+            e.clientX >= elementLeft - 100 &&
+            e.clientX <= elementRight + 100 &&
+            e.clientY >= elementTop - 100 &&
+            e.clientY <= elementBottom + 100
+          ) {
+            hoveringAnyText = true;
+          }
+        });
+        
+        setIsHoveringText(hoveringAnyText);
+      }
+    };
+    
+    const welcomePanel = welcomePanelRef.current;
+    if (welcomePanel) {
+      welcomePanel.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        welcomePanel.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [cursorX, cursorY]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -59,7 +114,7 @@ const Login = () => {
         minHeight: '100vh',
         width: '100%',
         background:
-          'linear-gradient(135deg, #ccdff8ff 0%, rgba(128, 169, 219, 1) 40%, #557aafff 100%)',
+          'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 25%, #7dd3fc 50%, #3b82f6 75%, #1e40af 100%)',
         padding: '40px 20px',
         display: 'flex',
         justifyContent: 'center',
@@ -68,7 +123,8 @@ const Login = () => {
       }}
     >
       <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Momo+Trust+Display&display=swap');
 
         html, body, #root {
           height: 100%;
@@ -80,7 +136,7 @@ const Login = () => {
           min-height: 100vh;
           width: 100vw;
           overflow-y: auto;
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-family: 'Noto Sans', sans-serif;
           color: #3f454eff; 
         }
         * { box-sizing: border-box; }
@@ -95,23 +151,27 @@ const Login = () => {
 
         .login-card {
           background: #ffffff;
-          border-radius: 20px;
-          box-shadow: 0 15px 40px rgba(0, 0, 0, 0.32);
+          border-radius: 24px;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 25px rgba(0, 0, 0, 0.1);
           width: 100%;
           max-width: 1000px;
           min-height: 650px;
           display: grid;
           grid-template-columns: 1fr 1fr;
+          overflow: hidden;
         }
 
         .welcome-panel {
-          background: linear-gradient(135deg, #45c2f3ff, #1e40af);
+          background: linear-gradient(135deg, #3b82f6, #1e40af);
           color: white;
           padding: 60px 40px;
           display: flex;
           flex-direction: column;
           justify-content: center;
+          align-items: center;
           position: relative;
+          border-radius: 24px 0 0 24px;
+          overflow: hidden;
         }
 
         /* Back to Home button */
@@ -149,6 +209,7 @@ const Login = () => {
           display: none; /* text hidden by default */
           margin-left: 8px;
           color: white;
+          font-family: 'Noto Sans', sans-serif;
           font-weight: 600;
           font-size: 0.9rem;
         }
@@ -166,35 +227,27 @@ const Login = () => {
           }
         }
 
-        .welcome-content h6 {
-          font-family: 'Inter', sans-serif;          
-          font-size: clamp(0.75rem, 1vw, 0.875rem);
-          font-weight: 500;
-          margin-bottom: 16px;                       
-          opacity: 0.85;
-          letter-spacing: 0.08em;                    
-          text-transform: uppercase;                 
-          color: rgba(255, 255, 255, 0.87);
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); 
+        .welcome-content {
+          text-align: center;
+          display: flex;
+          flex-direction: column;
         }
 
         .welcome-content h2 {
-          font-family: 'Poppins', sans-serif;        
+          font-family: 'Momo Trust Display', sans-serif;        
           font-size: clamp(1.5rem, 4vw, 2.75rem);                        
           font-weight: 800;                          
-          line-height: 1.1;                          
-          margin-bottom: 20px;
-          letter-spacing: -0.02em;                   
-          background: linear-gradient(135deg, #fcfeffff 0%, rgba(224, 235, 255, 0.95) 30%, rgba(191, 200, 255, 0.95) 100%); 
-          -webkit-background-clip: text;             
-          -webkit-text-fill-color: transparent;      
-          background-clip: text;
-          text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); 
-          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1)); 
+          line-height: 1.2;                          
+          margin-bottom: 0;
+          margin-top: 0px;
+          letter-spacing: 1px;                   
+          color: #ffffff;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+          text-align: center;
         }
 
         .welcome-content h5 {
-          font-family: 'Inter', sans-serif;          
+          font-family: 'Noto Sans', sans-serif;          
           font-size: clamp(0.9rem, 2vw, 1.125rem);
           font-weight: 400;
           opacity: 0.8;
@@ -206,25 +259,31 @@ const Login = () => {
 
         .form-panel {
           padding: 50px 45px;
-          background: #fff;
+          background: #ffffff;
           display: flex;
           flex-direction: column;
           justify-content: center;
+          border-radius: 0 24px 24px 0;
         }
 
         .form-header { 
-          text-align: center; 
-          margin-bottom: 35px; 
+          text-align: left; 
+          margin-bottom: 40px; 
         }
         .form-header h3 {
-          font-size: clamp(1.2rem, 3vw, 1.6rem);
+          font-family: 'Noto Sans', sans-serif;
+          font-size: clamp(1.5rem, 3vw, 2rem);
           font-weight: 700;
-          margin-bottom: 8px;
-          color: #19396dff;
+          margin-bottom: 12px;
+          color: #1e293b;
+          letter-spacing: -0.5px;
         }
         .form-header p {
-          font-size: clamp(0.85rem, 2vw, 0.95rem);
+          font-family: 'Noto Sans', sans-serif;
+          font-size: clamp(0.9rem, 2vw, 1rem);
           color: #64748b;
+          margin: 0;
+          line-height: 1.5;
         }
 
         .role-selector { 
@@ -240,6 +299,7 @@ const Login = () => {
           border: 2px solid #3171d6ff;
           background: transparent;
           border-radius: 25px;
+          font-family: 'Noto Sans', sans-serif;
           font-weight: 600;
           font-size: 14px;
           text-transform: uppercase;
@@ -264,6 +324,7 @@ const Login = () => {
         .form-label { 
           display: block; 
           margin-bottom: 6px; 
+          font-family: 'Noto Sans', sans-serif;
           font-weight: 600; 
           font-size: 0.95rem;
           color: #1e293b;
@@ -278,6 +339,7 @@ const Login = () => {
           padding: 15px 18px 15px 50px;
           border: 2px solid #e2e8f0;
           border-radius: 12px;
+          font-family: 'Noto Sans', sans-serif;
           font-size: 15px;
           background: #f8fafc;
           transition: all 0.3s ease;
@@ -294,20 +356,31 @@ const Login = () => {
           background: linear-gradient(135deg, #3b82f6, #1e40af);
           color: white;
           border: none;
-          padding: 16px;
+          padding: 18px 24px;
           border-radius: 12px;
-          font-size: 16px;
-          font-weight: 600;
+          font-family: 'Noto Sans', sans-serif;
+          font-size: 18px;
+          font-weight: 700;
           text-transform: uppercase;
+          letter-spacing: 1px;
           cursor: pointer;
           display: block;
-          margin: 25px auto 0 auto;
-          width: 60%;
+          margin: 30px auto 0 auto;
+          width: 100%;
+          max-width: 400px;
           text-align: center;
+          box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+          transition: all 0.3s ease;
         }
         .login-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 10px 25px rgba(30, 41, 59, 0.3);
+          transform: translateY(-3px);
+          box-shadow: 0 12px 30px rgba(59, 130, 246, 0.4);
+          background: linear-gradient(135deg, #2563eb, #1e3a8a);
+        }
+        
+        .login-button:active {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
         }
 
         .error-alert {
@@ -317,16 +390,20 @@ const Login = () => {
           border-radius: 10px;
           margin-bottom: 20px;
           text-align: center;
+          font-family: 'Noto Sans', sans-serif;
           font-size: 0.95rem;
         }
 
         .register-link { 
           text-align: center; 
-          margin-top: 20px; 
-          font-size: 0.95rem;
+          margin-top: 25px; 
+          font-family: 'Noto Sans', sans-serif;
+          font-size: 0.875rem;
+          color: #64748b;
         }
         .register-link button {
           color: #1e293b;
+          font-family: 'Noto Sans', sans-serif;
           font-weight: 600;
           border: none;
           background: transparent;
@@ -337,12 +414,34 @@ const Login = () => {
         }
 
         @media (max-width: 1024px) {
-          .login-card { grid-template-columns: 1fr; max-width: 500px; }
-          .welcome-panel, .form-panel { padding: 35px 25px; text-align: center; }
+          .login-card { 
+            grid-template-columns: 1fr; 
+            max-width: 500px;
+            border-radius: 24px;
+          }
+          .welcome-panel { 
+            padding: 40px 30px; 
+            text-align: center;
+            border-radius: 24px 24px 0 0;
+          }
+          .form-panel { 
+            padding: 35px 25px; 
+            border-radius: 0 0 24px 24px;
+          }
         }
         @media (max-width: 768px) {
-          .login-card { border-radius: 15px; min-height: auto; }
-          .welcome-panel, .form-panel { padding: 30px 20px; }
+          .login-card { 
+            border-radius: 20px; 
+            min-height: auto; 
+          }
+          .welcome-panel { 
+            padding: 35px 25px; 
+            border-radius: 20px 20px 0 0;
+          }
+          .form-panel { 
+            padding: 30px 20px; 
+            border-radius: 0 0 20px 20px;
+          }
           .role-selector { flex-direction: column; gap: 10px; }
           .login-button { width: 80%; }
         }
@@ -353,58 +452,132 @@ const Login = () => {
       `}</style>
 
       <div className="login-wrapper">
-        <div className="login-card">
+        <motion.div 
+          className="login-card"
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
           {/* Left welcome panel */}
-          <div className="welcome-panel">
+          <motion.div 
+            ref={welcomePanelRef}
+            className="welcome-panel"
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
+          >
+            {/* Interactive Glowing Light that follows cursor */}
+            <motion.div
+              style={{
+                position: "absolute",
+                left: smoothX,
+                top: smoothY,
+                width: "150px",
+                height: "150px",
+                borderRadius: "50%",
+                background: "white",
+                pointerEvents: "none",
+                x: "-50%",
+                y: "-50%",
+                zIndex: 1,
+              }}
+              animate={{
+                scale: isHoveringText ? 1.3 : 0.2,
+              }}
+              transition={{
+                duration: 0.3,
+                ease: "easeOut",
+              }}
+            />
+
             {/* Back to Home button */}
-            <button
+            <motion.button
               className="back-home-btn"
               onClick={() => navigate('/')}
               type="button"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              style={{ zIndex: 10 }}
             >
               <svg viewBox="0 0 24 24">
                 <path d="M3 9.5L12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1V9.5z" />
               </svg>
               <span>Back to Home</span>
-            </button>
+            </motion.button>
 
-            <div className="welcome-content">
-              <h6>Welcome to</h6>
+            <motion.div 
+              className="welcome-content"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4, ease: "easeOut" }}
+              style={{ position: "relative", zIndex: 2 }}
+            >
               <h2>
                 Cabuyao Concrete
                 <br /> Development Corporation
               </h2>
-              <h5>Human Resource Management System</h5>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
           {/* Right form panel */}
-          <div className="form-panel">
-            <div className="form-header">
+          <motion.div 
+            className="form-panel"
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
+          >
+            <motion.div 
+              className="form-header"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+            >
               <h3>Login to Your Account</h3>
               <p>Please enter your credentials to continue</p>
-            </div>
+            </motion.div>
 
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.div 
+                  className="error-alert"
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            {error && <div className="error-alert">{error}</div>}
-
-            <form onSubmit={handleLogin}>
-              <div className="form-group">
+            <form onSubmit={handleLogin} autoComplete="off">
+              <motion.div 
+                className="form-group"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.6 }}
+              >
                 <label className="form-label">Email Address</label>
                 <div className="input-wrapper">
                   <i className="bi bi-envelope-fill input-icon"></i>
                   <input
                     type="email"
                     className="form-input"
-                    placeholder="Enter your email address"
+                    placeholder="example@gmail.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="off"
                     required
                   />
                 </div>
-              </div>
+              </motion.div>
 
-              <div className="form-group">
+              <motion.div 
+                className="form-group"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.7 }}
+              >
                 <label className="form-label">Password</label>
                 <div className="input-wrapper">
                   <i className="bi bi-lock-fill input-icon"></i>
@@ -414,31 +587,50 @@ const Login = () => {
                     placeholder="Enter your Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="off"
                     required
                   />
-                  <button
+                  <motion.button
                     type="button"
                     className="toggle-password-btn"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((v) => !v)}
                     title={showPassword ? 'Hide password' : 'Show password'}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                   >
                     <i className={`bi ${showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
-                  </button>
+                  </motion.button>
                 </div>
-              </div>
+              </motion.div>
 
-              <button type="submit" className="login-button">
-                Login
-              </button>
+              <motion.button 
+                type="submit" 
+                className="login-button"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.8 }}
+                whileHover={{ 
+                  scale: 1.02,
+                  boxShadow: "0 12px 30px rgba(59, 130, 246, 0.4)"
+                }}
+                whileTap={{ scale: 0.98 }}
+              >
+                LOGIN
+              </motion.button>
             </form>
 
-            <div className="register-link">
+            <motion.div 
+              className="register-link"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5, delay: 0.9 }}
+            >
               <span>Creating an account? </span>
               <button onClick={() => navigate('/register')}>Register Now</button>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
   );

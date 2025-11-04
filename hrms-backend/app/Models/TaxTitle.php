@@ -65,10 +65,6 @@ class TaxTitle extends Model
      */
     public function getFormattedRate(): string
     {
-        if ($this->isPercentage()) {
-            return $this->rate . '%';
-        }
-        
         return '₱' . number_format($this->rate, 2);
     }
 

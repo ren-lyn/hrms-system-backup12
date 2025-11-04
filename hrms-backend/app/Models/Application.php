@@ -21,8 +21,8 @@ class Application extends Model
         return $this->belongsTo(Applicant::class);
     }
 
-    public function onboardingRecord()
+    public function jobOffer()
     {
-        return $this->hasOne(OnboardingRecord::class, 'application_id');
+        return $this->hasOne(JobOffer::class);
     }
 }

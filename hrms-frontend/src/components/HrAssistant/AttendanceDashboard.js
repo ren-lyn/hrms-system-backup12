@@ -30,8 +30,10 @@ import {
 import { format } from 'date-fns';
 import axios from '../../axios';
 import { useDebounce } from '../../utils/debounce';
+import { toast } from 'react-toastify';
 
 const AttendanceDashboard = () => {
+    
     // Get current month start and end dates
     const getCurrentMonthDates = () => {
         const now = new Date();
@@ -306,13 +308,13 @@ const AttendanceDashboard = () => {
                 fetchAttendanceData(); // Also refresh dashboard stats
                 setShowEditModal(false);
                 // Show success message
-                alert('Attendance record updated successfully');
+                toast.success('Attendance record updated successfully');
             } else {
                 throw new Error(response.data.message || 'Failed to update record');
             }
         } catch (error) {
             console.error('Error updating attendance record:', error);
-            alert(error.response?.data?.message || 'Failed to update attendance record');
+            toast.error(error.response?.data?.message || 'Failed to update attendance record');
         } finally {
             setIsSaving(false);
         }
@@ -388,7 +390,7 @@ const AttendanceDashboard = () => {
             link.remove();
             window.URL.revokeObjectURL(url);
         } catch (error) {
-            alert('Failed to export attendance: ' + (error.response?.data?.message || error.message));
+            toast.error('Failed to export attendance: ' + (error.response?.data?.message || error.message));
         }
     };
 
@@ -399,7 +401,7 @@ const AttendanceDashboard = () => {
         const allowedTypes = ['.xlsx', '.xls', '.csv'];
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
         if (!allowedTypes.includes(fileExtension)) {
-            alert('Please upload an Excel (.xlsx, .xls) or CSV (.csv) file');
+            toast.warn('Please upload an Excel (.xlsx, .xls) or CSV (.csv) file');
             return;
         }
 
@@ -422,11 +424,11 @@ const AttendanceDashboard = () => {
                     setValidationWarning(response.data.data.warning);
                 }
             } else {
-                alert(response.data.message || 'Validation failed');
+                toast.error(response.data.message || 'Validation failed');
                 setSelectedFile(null);
             }
         } catch (error) {
-            alert('Validation failed: ' + (error.response?.data?.message || error.message));
+            toast.error('Validation failed: ' + (error.response?.data?.message || error.message));
             setSelectedFile(null);
         } finally {
             setUploadLoading(false);
@@ -458,31 +460,47 @@ const AttendanceDashboard = () => {
             });
             
             if (response.data.success) {
-                const absentMarked = response.data.data.absent_marked || 0;
-                let message = `Import completed successfully!\n\nImported: ${response.data.data.imported}\nFailed: ${response.data.data.failed}\nSkipped: ${response.data.data.skipped}`;
-                if (absentMarked > 0) {
-                    message += `\nMarked as Absent: ${absentMarked}`;
-                }
-                alert(message);
-                fetchAttendanceData();
-                fetchAllAttendanceRecords(1); // Refresh the records table
+                const { imported, failed, skipped, absent_marked: absentMarked = 0 } = response.data.data || {};
+                const successMessage = `Import completed successfully!\nImported: ${imported || 0} | Failed: ${failed || 0} | Skipped: ${skipped || 0}${absentMarked > 0 ? ` | Marked as Absent: ${absentMarked}` : ''}`;
+                
+                // Close modal first, then show toast
                 setShowImportModal(false);
                 setSelectedFile(null);
                 setDetectedPeriod(null);
                 setValidationWarning('');
+                
+                // Small delay to ensure modal closes before toast
+                setTimeout(() => {
+                    toast.success(successMessage, { 
+                        autoClose: 7000
+                    });
+                }, 100);
+                
+                fetchAttendanceData();
+                fetchAllAttendanceRecords(1); // Refresh the records table
             } else {
                 let errorMsg = 'Import failed: ' + (response.data.message || 'Unknown error');
                 if (response.data.errors && response.data.errors.length > 0) {
-                    errorMsg += '\n\nErrors:\n' + response.data.errors.slice(0, 5).join('\n');
+                    errorMsg += ' | ' + response.data.errors.slice(0, 3).join(' | ');
                 }
-                alert(errorMsg);
+                setShowImportModal(false);
+                setTimeout(() => {
+                    toast.error(errorMsg, { 
+                        autoClose: 7000
+                    });
+                }, 100);
             }
         } catch (error) {
             let errorMsg = 'Import failed: ' + (error.response?.data?.message || error.message);
             if (error.response?.data?.errors) {
-                errorMsg += '\n\nErrors:\n' + JSON.stringify(error.response.data.errors);
+                errorMsg += ' | ' + JSON.stringify(error.response.data.errors);
             }
-            alert(errorMsg);
+            setShowImportModal(false);
+            setTimeout(() => {
+                toast.error(errorMsg, { 
+                    autoClose: 7000
+                });
+            }, 100);
         } finally {
             setUploadLoading(false);
         }
@@ -525,7 +543,7 @@ const AttendanceDashboard = () => {
             link.click();
             link.remove();
         } catch (error) {
-            alert('Failed to download template: ' + error.message);
+            toast.error('Failed to download template: ' + error.message);
         }
     };
 
@@ -543,6 +561,7 @@ const AttendanceDashboard = () => {
     }
 
     return (
+        <>
         <Container fluid className="py-4">
             {/* Header */}
             <div className="d-flex justify-content-between align-items-center mb-4">
@@ -1308,8 +1327,11 @@ const AttendanceDashboard = () => {
                     </Button>
                 </Modal.Footer>
             </Modal>
+            
         </Container>
+        </>
     );
 };
+
 
 export default AttendanceDashboard;
