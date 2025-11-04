@@ -20,6 +20,7 @@ use App\Http\Controllers\HRDisciplinaryController;
 use App\Http\Controllers\EmployeeDisciplinaryController;
 use App\Http\Controllers\Api\ManagerController;
 use App\Http\Controllers\Api\holidayController;
+use App\Http\Controllers\Api\HolidayController as ApiHolidayController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollPeriodController;
 use App\Http\Controllers\Api\AttendanceController;
@@ -28,6 +29,14 @@ use App\Http\Controllers\Api\DeductionTitleController;
 use App\Http\Controllers\Api\EmployeeLeaveLimitController;
 use App\Http\Controllers\Api\OvertimeRequestController;
 use App\Http\Controllers\InterviewController;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\PositionController;
+use App\Http\Controllers\Api\SecuritySettingsController;
+use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\PasswordChangeRequestController;
+use App\Http\Controllers\Api\SecurityAlertController;
 use App\Http\Controllers\Api\ReportController;
 
 
@@ -103,6 +112,8 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/register', [ApplicantController::class, 'register']);
+// Password change request (public or authenticated)
+Route::post('/password-change-requests', [PasswordChangeRequestController::class, 'store']);
 
 
 // Debug routes for manager evaluation (temporary)
@@ -211,17 +222,17 @@ Route::get('/cash-advances/stats', [CashAdvanceController::class, 'stats']); // 
 Route::get('/cash-advances/{id}', [CashAdvanceController::class, 'show']); // view specific request
 Route::put('/cash-advances/{id}/approve', [CashAdvanceController::class, 'approve']); // approve
 Route::put('/cash-advances/{id}/reject', [CashAdvanceController::class, 'reject']); // reject
-
+Route::put('/cash-advances/{id}/money-received-status', [CashAdvanceController::class, 'updateMoneyReceivedStatus']); // update money received status
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
     Route::get('/leave-requests', [LeaveRequestController::class, 'index']); // hr assistant
     Route::get('/leave-requests/stats', [LeaveRequestController::class, 'getStats']); // hr stats
     Route::get('/leave-requests/{id}', [LeaveRequestController::class, 'show']); // view specific leave
+    Route::get('/leave-requests/{id}/attachment', [LeaveRequestController::class, 'serveAttachment']); // serve attachment file
     Route::put('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']); // hr approve
     Route::put('/leave-requests/{id}/reject', [LeaveRequestController::class, 'reject']); // hr reject
     Route::put('/leave-requests/{id}/confirm-rejection', [LeaveRequestController::class, 'confirmManagerRejection']); // hr confirm manager rejection
-
     Route::put('/leave-requests/{id}/terms', [LeaveRequestController::class, 'updateTermsAndCategory']); // hr set terms/category
     
     // Manager-specific routes
@@ -325,6 +336,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
 		Route::put('/{id}', [HolidayController::class, 'update']);
 		Route::delete('/{id}', [HolidayController::class, 'destroy']);
     });
+
+     // Public Holidays from Google (read-only, available to all authenticated users)
+    Route::get('/holidays/google', [ApiHolidayController::class, 'google']);
+
 
     // OT Management Routes
     Route::prefix('ot-requests')->middleware('auth:sanctum')->group(function () {
@@ -526,4 +541,37 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/request-edit', [AttendanceController::class, 'requestEdit']); // Submit edit request
         Route::get('/my-edit-requests', [AttendanceController::class, 'myEditRequests']); // Get own edit requests
     });
+
+    // Admin Routes
+Route::middleware(['auth:sanctum', 'role:Admin'])->group(function () {
+    // User Management
+    Route::apiResource('users', UserController::class);
+    Route::put('/users/{id}/reset-password', [UserController::class, 'resetPassword']);
+    
+    // Role Management
+    Route::apiResource('roles', RoleController::class);
+    
+    // Department Management
+    Route::apiResource('departments', DepartmentController::class);
+    
+    // Position Management
+    Route::apiResource('positions', PositionController::class);
+    
+    // Security Settings
+    Route::get('/security-settings', [SecuritySettingsController::class, 'index']);
+    Route::put('/security-settings', [SecuritySettingsController::class, 'update']);
+    
+    // Audit Logs
+    Route::get('/audit-logs', [AuditLogController::class, 'index']);
+
+    // Security Alerts feature removed (routes disabled)
+    
+    // Employee Profiles (Admin access)
+    Route::get('/employee-profiles', [EmployeeController::class, 'index']);
+    Route::post('/employee-profiles', [EmployeeController::class, 'store']);
+    Route::get('/employee-profiles/{id}', [EmployeeController::class, 'show']);
+    Route::put('/employee-profiles/{id}', [EmployeeController::class, 'update']);
+    Route::delete('/employee-profiles/{id}', [EmployeeController::class, 'destroy']);
+});
+
 });

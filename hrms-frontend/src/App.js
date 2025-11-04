@@ -13,6 +13,7 @@ const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
 const JobPortal = lazy(() => import('./components/JobPortal'));
 const HrStaffDashboard = lazy(() => import('./pages/HrStaffDashboard'));
 const ManagerDashboard = lazy(() => import('./pages/ManagerDashboard'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const ApplicantDashboard = lazy(() => import('./pages/ApplicantDashboard'));
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'));
 const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
@@ -21,6 +22,7 @@ const EmployeeRecords = lazy(() => import('./pages/HrAssistant/EmployeeRecords')
 const LeaveManagement = lazy(() => import('./components/HrAssistant/LeaveManagement'));
 const LeaveTracker = lazy(() => import('./components/HrAssistant/LeaveTracker'));
 const CashAdvanceManagement = lazy(() => import('./components/HrAssistant/CashAdvanceManagement'));
+const ReceivingCashMonitoring = lazy(() => import('./components/HrAssistant/ReceivingCashMonitoring'));
 const LeaveApplicationForm = lazy(() => import('./components/Employee/LeaveApplicationForm'));
 const MyCalendar = lazy(() => import('./components/HrAssistant/MyCalendar'));
 const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/DisciplinaryManagement'));
@@ -103,6 +105,7 @@ function App() {
           <Route path="leave/tracker" element={<LeaveTracker />} />
           <Route path="my-calendar" element={<MyCalendar />} />
           <Route path="cash-advances" element={<CashAdvanceManagement />} />
+          <Route path="cash-advances/receiving-cash" element={<ReceivingCashMonitoring />} />
           <Route path="evaluation" element={<EmployeeEvaluationList />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
@@ -139,6 +142,17 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* Admin */}
+        <Route
+          path="/dashboard/admin"
+          element={
+            <ProtectedRoute role="Admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+
 
         {/* Applicant */}
         <Route

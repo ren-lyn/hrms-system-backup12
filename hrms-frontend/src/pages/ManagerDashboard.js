@@ -25,6 +25,8 @@ import ManagerCalendar from '../components/Manager/ManagerCalendar';
 import ManagerViewAttendanceRecords from '../components/Manager/ManagerViewAttendanceRecords';
 import ManagerOTManagement from '../components/Manager/ManagerOTManagement';
 import Bell from '../components/Notifications/Bell';
+import EmbeddedLeaveForm from '../components/Employee/EmbeddedLeaveForm';
+
 
 
 const ManagerDashboard = () => {
@@ -135,6 +137,8 @@ const ManagerDashboard = () => {
         return <ManagerLeaveManagement viewType="status" />;
       case 'leave-tracker':
         return <ManagerLeaveManagement viewType="tracker" />;
+      case 'leave-form':
+        return <EmbeddedLeaveForm />;
       case 'attendance-records':
         return <ManagerViewAttendanceRecords />;
       case 'ot-management':
@@ -276,7 +280,7 @@ const ManagerDashboard = () => {
               <div key={idx}>
                 <button
                   className={`hrms-unified-nav-link ${
-                    (link.view === 'leave-request' && (activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker')) ||
+                    (link.view === 'leave-request' && (activeView === 'leave-overview' || activeView === 'leave-tracker' || activeView === 'leave-form')) ||
                     (link.view === 'attendance-management' && (activeView === 'attendance-records' || activeView === 'ot-management')) ||
                     activeView === link.view ? 'hrms-unified-active' : ''
                   }`}
@@ -315,6 +319,21 @@ const ManagerDashboard = () => {
                     marginBottom: '4px'
                   }}>
                     <button
+                      className={`hrms-unified-nav-link ${activeView === 'leave-form' ? 'hrms-unified-active' : ''}`}
+                      onClick={() => {
+                        setActiveView('leave-form');
+                        if (isMobile) closeSidebar();
+                      }}
+                      style={{
+                        fontSize: '0.9rem',
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
+                      }}
+                    >
+                      <FileText size={16} />
+                      <span>Leave Form</span>
+                    </button>
+                    <button
                       className={`hrms-unified-nav-link ${activeView === 'leave-overview' ? 'hrms-unified-active' : ''}`}
                       onClick={() => {
                         setActiveView('leave-overview');
@@ -328,21 +347,6 @@ const ManagerDashboard = () => {
                     >
                       <Eye size={16} />
                       <span>Leave Overview</span>
-                    </button>
-                    <button
-                      className={`hrms-unified-nav-link ${activeView === 'leave-status' ? 'hrms-unified-active' : ''}`}
-                      onClick={() => {
-                        setActiveView('leave-status');
-                        if (isMobile) closeSidebar();
-                      }}
-                      style={{
-                        fontSize: '0.9rem',
-                        padding: '10px 15px',
-                        justifyContent: 'flex-start'
-                      }}
-                    >
-                      <CheckCircle size={16} />
-                      <span>Leave Status</span>
                     </button>
                     <button
                       className={`hrms-unified-nav-link ${activeView === 'leave-tracker' ? 'hrms-unified-active' : ''}`}
@@ -411,14 +415,14 @@ const ManagerDashboard = () => {
             <img src="https://i.pravatar.cc/40" alt="profile" style={styles.avatar} />
             <div>
               <div>{loading ? 'Loading...' : userProfile?.name || 'Manager'}</div>
-              <small>{loading ? 'Please wait...' : userProfile?.role || 'HR Manager'}</small>
+              <small>{loading ? 'Please wait...' : userProfile?.rawRole || 'Manager'}</small>
             </div>
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'leave-overview' || activeView === 'leave-status' || activeView === 'leave-tracker' || activeView === 'attendance-records' || activeView === 'ot-management' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
-          {activeView !== 'leave-request' && activeView !== 'leave-overview' && activeView !== 'leave-status' && activeView !== 'leave-tracker' && activeView !== 'attendance-records' && activeView !== 'ot-management' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
+        <div className="hrms-main-content hrms-scrollable-main-content" style={(activeView === 'leave-request' || activeView === 'leave-overview' || activeView === 'leave-tracker' || activeView === 'leave-form' || activeView === 'attendance-records' || activeView === 'ot-management' || activeView === 'calendar' || activeView === 'evaluations' || activeView === 'disciplinary' || activeView === 'profile') ? {...styles.main, backgroundColor: '#f8f9fa', padding: '0'} : styles.main}>
+          {activeView !== 'leave-request' && activeView !== 'leave-overview' && activeView !== 'leave-tracker' && activeView !== 'leave-form' && activeView !== 'attendance-records' && activeView !== 'ot-management' && activeView !== 'calendar' && activeView !== 'evaluations' && activeView !== 'disciplinary' && activeView !== 'profile' && (
             <>
               {/* Header */}
               <div style={styles.header}>
