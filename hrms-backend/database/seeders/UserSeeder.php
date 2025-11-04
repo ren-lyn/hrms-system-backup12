@@ -44,7 +44,7 @@ class UserSeeder extends Seeder
             ['user_id' => $hrUser->id],
             [
             // Personal Information
-            'employee_id' => 'EM1001',
+            'employee_id' => 'EM1002',
             'first_name' => 'Renelyn',
             'last_name' => 'Concina',
             'nickname' => 'Renelyn',

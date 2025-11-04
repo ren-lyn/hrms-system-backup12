@@ -43,10 +43,13 @@ class AttendanceController extends Controller
             $hasImports = AttendanceImport::query()->exists();
 
             // Employee-centric view to include employees with no records in the range (only active employees)
+            // Get Applicant role ID dynamically to avoid hardcoding
+            $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+            
             $employeesQuery = EmployeeProfile::query()
                 ->select('employee_profiles.id', 'employee_profiles.employee_id', 'employee_profiles.first_name', 'employee_profiles.last_name', 'employee_profiles.position', 'employee_profiles.department')
                 ->join('users', 'users.id', '=', 'employee_profiles.user_id')
-                ->where('users.role_id', '!=', 5) // Exclude Applicants
+                ->where('users.role_id', '!=', $applicantRoleId) // Exclude Applicants
                 ->where(function($q) {
                     $q->whereNull('employee_profiles.status')
                       ->orWhere('employee_profiles.status', 'active');
@@ -166,7 +169,10 @@ class AttendanceController extends Controller
 
             // Attendance summary statistics - count only active employees (not terminated or resigned)
             // Get all active employees (excluding applicants, terminated, and resigned)
-            $activeEmployees = User::where('role_id', '!=', 5)
+            // Get Applicant role ID dynamically to avoid hardcoding
+            $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+            
+            $activeEmployees = User::where('role_id', '!=', $applicantRoleId)
                 ->whereHas('employeeProfile', function($query) {
                     $query->where(function($q) {
                         $q->whereNull('employee_profiles.status')

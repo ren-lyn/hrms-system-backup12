@@ -20,9 +20,12 @@ class EmployeeController extends Controller
         
         // Cache employees data for 10 minutes
         $employees = Cache::remember('employees_list', 600, function () {
+            // Get Applicant role ID dynamically
+            $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+            
             return User::with(['employeeProfile', 'role:id,name'])
                 ->select('id', 'first_name', 'last_name', 'email', 'role_id')
-                ->where('role_id', '!=', 5) // Exclude Applicants
+                ->where('role_id', '!=', $applicantRoleId) // Exclude Applicants
                 ->whereHas('employeeProfile') // Must have an employee profile
                 ->get();
         });
@@ -33,7 +36,10 @@ class EmployeeController extends Controller
     // GET /employees/missing-profiles
     public function missingProfiles()
     {
-        $users = User::where('role_id', '!=', 5)
+        // Get Applicant role ID dynamically to avoid hardcoding
+        $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+        
+        $users = User::where('role_id', '!=', $applicantRoleId)
             ->doesntHave('employeeProfile')
             ->get(['id', 'first_name', 'last_name', 'email', 'role_id']);
 
@@ -46,7 +52,10 @@ class EmployeeController extends Controller
     // POST /employees/fix-missing-profiles
     public function fixMissingProfiles()
     {
-        $missingUsers = User::where('role_id', '!=', 5)
+        // Get Applicant role ID dynamically to avoid hardcoding
+        $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+        
+        $missingUsers = User::where('role_id', '!=', $applicantRoleId)
             ->doesntHave('employeeProfile')
             ->get();
 
