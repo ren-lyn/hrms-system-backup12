@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Applicant;
+use App\Models\Role;
 use Illuminate\Support\Facades\Hash;
 
 class ApplicantController extends Controller
@@ -44,13 +45,22 @@ class ApplicantController extends Controller
             ], 422);
         }
 
-        // Create the user
+        // Get the Applicant role ID dynamically
+        $applicantRole = Role::where('name', 'Applicant')->first();
+        if (!$applicantRole) {
+            return response()->json([
+                'message' => 'Applicant role not found. Please contact system administrator.',
+                'errors' => ['system' => ['System configuration error']]
+            ], 500);
+        }
+
+        // Create the user with Applicant role
         $user = User::create([
             'first_name' => $request->first_name,
             'last_name'  => $request->last_name,
             'email'      => $request->email,
             'password'   => Hash::make($request->password),
-            'role_id'    => 5, // Assuming 5 = Applicant
+            'role_id'    => $applicantRole->id, // Dynamically get Applicant role ID
         ]);
 
         // Create the applicant profile
