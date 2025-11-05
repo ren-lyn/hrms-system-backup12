@@ -250,7 +250,7 @@ const Login = () => {
         }
 
         .welcome-panel {
-          background: linear-gradient(135deg, #3b82f6, #1e40af);
+          background: #0033ff;
           color: white;
           padding: 60px 40px;
           display: flex;
@@ -355,15 +355,20 @@ const Login = () => {
         }
 
         .form-header { 
+<<<<<<< Updated upstream
           text-align: left; 
           margin-bottom: 28px; 
+=======
+          text-align: center; 
+          margin-bottom: 40px; 
+>>>>>>> Stashed changes
         }
         .form-header h3 {
           font-family: 'Noto Sans', sans-serif;
           font-size: clamp(1.5rem, 3vw, 2rem);
           font-weight: 700;
           margin-bottom: 12px;
-          color: #1e293b;
+          color: #00033d;
           letter-spacing: -0.5px;
         }
         .form-header p {
@@ -412,7 +417,7 @@ const Login = () => {
         .form-input.password-field { padding-right: 48px; }
 
         .login-button {
-          background: linear-gradient(135deg, #3b82f6, #1e40af);
+          background: #0033ff;
           color: white;
           border: none;
           padding: 18px 24px;
@@ -428,18 +433,18 @@ const Login = () => {
           width: 100%;
           max-width: 400px;
           text-align: center;
-          box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 4px 15px rgba(0, 51, 255, 0.3);
           transition: all 0.3s ease;
         }
         .login-button:hover {
           transform: translateY(-3px);
-          box-shadow: 0 12px 30px rgba(59, 130, 246, 0.4);
-          background: linear-gradient(135deg, #2563eb, #1e3a8a);
+          box-shadow: 0 12px 30px rgba(0, 51, 255, 0.4);
+          background: #0028cc;
         }
         
         .login-button:active {
           transform: translateY(-1px);
-          box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 6px 20px rgba(0, 51, 255, 0.3);
         }
 
         .error-alert {
@@ -660,7 +665,7 @@ const Login = () => {
                 width: "150px",
                 height: "150px",
                 borderRadius: "50%",
-                background: "white",
+                background: "#00033d",
                 pointerEvents: "none",
                 x: "-50%",
                 y: "-50%",
@@ -717,8 +722,8 @@ const Login = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
             >
-              <h3>Login to Your Account</h3>
-              <p>Please enter your credentials to continue</p>
+              <h3>Login Account</h3>
+              <p>Please enter your email and password</p>
             </motion.div>
 
             <AnimatePresence mode="wait">
@@ -813,7 +818,7 @@ const Login = () => {
                 transition={{ duration: 0.5, delay: 0.8 }}
                 whileHover={{ 
                   scale: 1.02,
-                  boxShadow: "0 12px 30px rgba(59, 130, 246, 0.4)"
+                  boxShadow: "0 12px 30px rgba(0, 51, 255, 0.4)"
                 }}
                 whileTap={{ scale: 0.98 }}
               >

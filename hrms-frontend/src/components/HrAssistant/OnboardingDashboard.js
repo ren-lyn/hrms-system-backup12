@@ -1236,9 +1236,9 @@ const OnboardingDashboard = () => {
 
       // Validate required fields
 
-      if (!interviewData.interview_date || !interviewData.interview_time || !interviewData.location || !interviewData.interviewer) {
+      if (!interviewData.interview_date || !interviewData.interview_time || !interviewData.end_time || !interviewData.location || !interviewData.interviewer) {
 
-        alert('Please fill in all required fields: Date, Time, Location, and Interviewer');
+        alert('Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer');
 
         return;
 
@@ -1286,7 +1286,12 @@ const OnboardingDashboard = () => {
 
 
 
-      alert('Interview invitation sent successfully!');
+      // Show appropriate message based on whether it was created or updated
+      if (response.data?.updated) {
+        alert('Interview invite updated successfully! The applicant\'s existing invite has been updated with new details.');
+      } else {
+        alert('Interview invitation sent successfully!');
+      }
 
       
 
@@ -1306,14 +1311,14 @@ const OnboardingDashboard = () => {
 
       console.error('Error scheduling interview:', error);
 
-      if (error?.response?.status === 409) {
-
-        alert('An interview has already been scheduled for this applicant. Duplicates are not allowed.');
-
+      if (error?.response?.status === 403) {
+        alert(error?.response?.data?.message || 'You don\'t have permission to schedule interviews. Only HR Staff and HR Assistants can schedule interviews.');
+      } else if (error?.response?.status === 401) {
+        alert('Authentication required. Please log in again.');
+      } else if (error?.response?.data?.message) {
+        alert(error.response.data.message);
       } else {
-
         alert('Failed to schedule interview. Please try again.');
-
       }
 
     }
@@ -1460,9 +1465,9 @@ const OnboardingDashboard = () => {
 
       // Validate required fields
 
-      if (!batchInterviewData.interview_date || !batchInterviewData.interview_time || !batchInterviewData.location || !batchInterviewData.interviewer) {
+      if (!batchInterviewData.interview_date || !batchInterviewData.interview_time || !batchInterviewData.end_time || !batchInterviewData.location || !batchInterviewData.interviewer) {
 
-        alert('Please fill in all required fields: Date, Time, Location, and Interviewer');
+        alert('Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer');
 
         return;
 
@@ -1594,15 +1599,21 @@ const OnboardingDashboard = () => {
 
     if (resumeUrl) {
 
-      // Construct full URL if needed
-
-      const fullUrl = resumeUrl.startsWith('http') 
-
-        ? resumeUrl 
-
-        : `http://localhost:8000/storage/${resumeUrl}`;
-
+      // Construct full URL dynamically for online accessibility
+      let fullUrl;
       
+      if (resumeUrl.startsWith('http')) {
+        // Already a full URL, use as is
+        fullUrl = resumeUrl;
+      } else {
+        // Construct URL using current host for online accessibility
+        const currentHost = window.location.hostname;
+        const protocol = window.location.protocol;
+        
+        // Use the same protocol and hostname as the current page
+        // Point to backend on port 8000 for storage
+        fullUrl = `${protocol}//${currentHost}:8000/storage/${resumeUrl}`;
+      }
 
       console.log('✅ [View Resume] Opening URL:', fullUrl);
 
@@ -2460,15 +2471,21 @@ const OnboardingDashboard = () => {
 
                                 style={{ 
 
-                                  padding: '0.15rem 0.4rem', 
+                                  padding: '15px 10px', 
 
-                                  fontSize: '0.65rem', 
+                                  fontSize: '15px', 
 
                                   whiteSpace: 'nowrap',
 
-                                  height: '28px',
+                                  height: '35px',
 
-                                  minWidth: '60px'
+                                  minWidth: '90px',
+
+                                  display: 'flex',
+
+                                  alignItems: 'center',
+
+                                  justifyContent: 'center'
 
                                 }}
 

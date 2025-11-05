@@ -36,6 +36,17 @@ class NotificationController extends Controller
                     'employee_id' => $n->data['employee_id'] ?? null,
                     'employee_name' => $n->data['employee_name'] ?? null,
                     'department' => $n->data['department'] ?? null,
+                    // Interview-specific fields
+                    'interview_id' => $n->data['interview_id'] ?? null,
+                    'applicant_user_id' => $n->data['applicant_user_id'] ?? null,
+                    'interview_date' => $n->data['interview_date'] ?? null,
+                    'interview_time' => $n->data['interview_time'] ?? null,
+                    'end_time' => $n->data['end_time'] ?? null,
+                    'interview_type' => $n->data['interview_type'] ?? null,
+                    'location' => $n->data['location'] ?? null,
+                    'interviewer' => $n->data['interviewer'] ?? null,
+                    'notes' => $n->data['notes'] ?? null,
+                    'position' => $n->data['position'] ?? null,
                     'read_at' => $n->read_at,
                     'created_at' => $n->created_at,
                 ];
@@ -120,6 +131,8 @@ class NotificationController extends Controller
                 return 'Job Application Status Updated';
             case 'job_posting_created':
                 return 'New Job Posting Created';
+            case 'interview_scheduled':
+                return 'Interview Scheduled';
             default:
                 return $data['title'] ?? 'Notification';
         }
@@ -195,6 +208,9 @@ class NotificationController extends Controller
             
             case 'disciplinary_report_submitted_to_manager':
                 return $data['message'] ?? 'A disciplinary report has been submitted to a manager and requires your attention.';
+            
+            case 'interview_scheduled':
+                return $data['message'] ?? 'An interview has been scheduled for your application. Check your Interview tab for details.';
             
             default:
                 return $data['message'] ?? 'You have a new notification.';

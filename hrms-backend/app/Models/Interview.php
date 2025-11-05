@@ -12,9 +12,10 @@ class Interview extends Model
 
     protected $fillable = [
         'application_id',
+        'applicant_user_id',
         'interview_date',
         'interview_time',
-        'duration',
+        'end_time', // May not exist if migration hasn't run
         'interview_type',
         'location',
         'interviewer',
@@ -26,7 +27,8 @@ class Interview extends Model
 
     protected $casts = [
         'interview_date' => 'date',
-        'interview_time' => 'datetime:H:i',
+        'interview_time' => 'string', // Store as HH:MM format string
+        'end_time' => 'string', // Store as HH:MM format string
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -70,7 +72,10 @@ class Interview extends Model
     public function getFormattedDateTimeAttribute()
     {
         $date = Carbon::parse($this->interview_date)->format('M d, Y');
-        $time = Carbon::parse($this->interview_time)->format('g:i A');
+        // Handle interview_time as string (HH:MM format) or datetime
+        $time = is_string($this->interview_time) 
+            ? Carbon::parse("2000-01-01 {$this->interview_time}")->format('g:i A')
+            : Carbon::parse($this->interview_time)->format('g:i A');
         return "{$date} at {$time}";
     }
 

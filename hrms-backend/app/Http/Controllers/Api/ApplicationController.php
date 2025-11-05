@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ApplicationController extends Controller
 {
@@ -282,6 +283,25 @@ class ApplicationController extends Controller
     public function scheduleInterview(Request $request, $id)
     {
         try {
+            // Validate HR role
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            $userRole = $user->role->name ?? '';
+            $isHRStaff = in_array($userRole, ['HR Staff', 'HR Assistant']);
+            
+            if (!$isHRStaff) {
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'Only HR Staff and HR Assistants can schedule interviews'
+                ], 403);
+            }
+
             $request->validate([
                 'interview_date' => 'required|date|after_or_equal:yesterday',
                 'interview_time' => 'required',
@@ -292,36 +312,146 @@ class ApplicationController extends Controller
                 'notes' => 'nullable|string'
             ]);
 
-            $application = Application::findOrFail($id);
+            $application = Application::with('applicant')->findOrFail($id);
+            
+            // Get applicant's user_id to tie the invite to their account
+            if (!$application->applicant || !$application->applicant->user_id) {
+                return response()->json([
+                    'error' => 'Invalid application',
+                    'message' => 'Application does not have a valid applicant account'
+                ], 400);
+            }
+
+            $applicantUserId = $application->applicant->user_id;
             
             // Update application status to On going Interview
             if ($application->status !== 'On going Interview') {
                 $application->update(['status' => 'On going Interview']);
             }
 
-            // Prevent duplicate interview for this application
-            $alreadyScheduled = \App\Models\Interview::where('application_id', $id)->exists();
-            if ($alreadyScheduled) {
-                return response()->json([
-                    'error' => 'Interview already scheduled for this application'
-                ], 409);
+            // Check for existing active interview invite for this applicant (by user_id)
+            // If exists, update it; otherwise create new
+            // This ensures each applicant has only one active interview invite at a time
+            // Check if applicant_user_id column exists (migration may not have run yet)
+            $hasApplicantUserIdColumn = Schema::hasColumn('interviews', 'applicant_user_id');
+            
+            if ($hasApplicantUserIdColumn) {
+                // Use applicant_user_id column if it exists
+                $existingInterview = \App\Models\Interview::where('applicant_user_id', $applicantUserId)
+                    ->where('status', 'scheduled')
+                    ->first();
+            } else {
+                // Fallback: Find interviews through application relationship
+                $userApplications = Application::whereHas('applicant', function($query) use ($applicantUserId) {
+                    $query->where('user_id', $applicantUserId);
+                })->pluck('id');
+                
+                $existingInterview = \App\Models\Interview::whereIn('application_id', $userApplications)
+                    ->where('status', 'scheduled')
+                    ->first();
             }
+            
+            $isUpdate = $existingInterview !== null;
 
-            // Create interview record
-            $interview = \App\Models\Interview::create([
-                'application_id' => $id,
-                'interview_date' => $request->interview_date,
-                'interview_time' => $request->interview_time,
-                // end_time is accepted from client but not persisted here to avoid DB schema issues
-                'interview_type' => $request->interview_type,
-                'location' => $request->location,
-                'interviewer' => $request->interviewer,
-                'notes' => $request->notes ?? '',
-                'status' => 'scheduled'
-            ]);
+            if ($existingInterview) {
+                // Update existing interview invite
+                // Check if end_time column exists (migration may not have run yet)
+                $hasEndTimeColumn = Schema::hasColumn('interviews', 'end_time');
+                
+                $updateData = [
+                    'application_id' => $id,
+                    'interview_date' => $request->interview_date,
+                    'interview_time' => $request->interview_time,
+                    'interview_type' => $request->interview_type,
+                    'location' => $request->location,
+                    'interviewer' => $request->interviewer,
+                    'notes' => $request->notes ?? '',
+                    'status' => 'scheduled',
+                    'updated_at' => now()
+                ];
+                
+                // Add end_time only if column exists
+                if ($hasEndTimeColumn) {
+                    $updateData['end_time'] = $request->end_time;
+                }
+                
+                // Add applicant_user_id only if column exists
+                if ($hasApplicantUserIdColumn) {
+                    $updateData['applicant_user_id'] = $applicantUserId;
+                }
+                
+                $existingInterview->update($updateData);
 
-            // Attach end_time to the response object (not persisted)
-            $interview->end_time = $request->end_time;
+                $interview = $existingInterview;
+                
+                Log::info('Interview invite updated for applicant', [
+                    'interview_id' => $interview->id,
+                    'applicant_user_id' => $applicantUserId,
+                    'application_id' => $id,
+                    'updated_by_hr_user_id' => $user->id
+                ]);
+                
+                // Send notification about the update
+                try {
+                    $application->load(['jobPosting', 'applicant']);
+                    if ($application->applicant && $application->applicant->user) {
+                        $application->applicant->user->notify(new \App\Notifications\InterviewScheduled($interview, $application));
+                    }
+                    Log::info('Interview update notification sent', [
+                        'application_id' => $application->id,
+                        'interview_id' => $interview->id,
+                        'applicant_id' => $application->applicant_id
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to send interview update notification', [
+                        'application_id' => $application->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            } else {
+                // Create new interview record with all interview details
+                // Check if columns exist (migrations may not have run yet)
+                $hasEndTimeColumn = Schema::hasColumn('interviews', 'end_time');
+                // Note: $hasApplicantUserIdColumn is already defined above in the function scope
+                
+                $interviewData = [
+                    'application_id' => $id,
+                    'interview_date' => $request->interview_date,
+                    'interview_time' => $request->interview_time,
+                    'interview_type' => $request->interview_type,
+                    'location' => $request->location,
+                    'interviewer' => $request->interviewer,
+                    'notes' => $request->notes ?? '',
+                    'status' => 'scheduled'
+                ];
+                
+                // Add end_time only if column exists
+                if ($hasEndTimeColumn) {
+                    $interviewData['end_time'] = $request->end_time;
+                }
+                
+                // Add applicant_user_id only if column exists
+                if ($hasApplicantUserIdColumn) {
+                    $interviewData['applicant_user_id'] = $applicantUserId;
+                }
+                
+                $interview = \App\Models\Interview::create($interviewData);
+                
+                Log::info('Interview created (fallback mode if columns missing)', [
+                    'interview_id' => $interview->id,
+                    'application_id' => $id,
+                    'has_end_time_column' => $hasEndTimeColumn,
+                    'has_applicant_user_id_column' => $hasApplicantUserIdColumn,
+                    'applicant_user_id' => $applicantUserId
+                ]);
+
+                Log::info('New interview invite created for applicant', [
+                    'interview_id' => $interview->id,
+                    'applicant_user_id' => $applicantUserId,
+                    'application_id' => $id,
+                    'created_by_hr_user_id' => $user->id
+                ]);
+            }
 
             // Load interview with application data
             $interview->load('application.jobPosting', 'application.applicant');
@@ -347,9 +477,10 @@ class ApplicationController extends Controller
             }
 
             return response()->json([
-                'message' => 'Interview scheduled successfully.',
+                'message' => $isUpdate ? 'Interview invite updated successfully.' : 'Interview scheduled successfully.',
                 'interview' => $interview,
-                'application' => $application->load(['jobPosting', 'applicant'])
+                'application' => $application->load(['jobPosting', 'applicant']),
+                'updated' => $isUpdate
             ]);
         } catch (\Exception $e) {
             Log::error('Error scheduling interview', [
@@ -369,6 +500,25 @@ class ApplicationController extends Controller
     public function scheduleBatchInterviews(Request $request)
     {
         try {
+            // Validate HR role
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+
+            $userRole = $user->role->name ?? '';
+            $isHRStaff = in_array($userRole, ['HR Staff', 'HR Assistant']);
+            
+            if (!$isHRStaff) {
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'Only HR Staff and HR Assistants can schedule interviews'
+                ], 403);
+            }
+
             $request->validate([
                 'application_ids' => 'required|array|min:1',
                 'application_ids.*' => 'required|integer|exists:applications,id',
@@ -394,37 +544,98 @@ class ApplicationController extends Controller
 
             foreach ($applicationIds as $applicationId) {
                 try {
-                    $application = Application::findOrFail($applicationId);
+                    $application = Application::with('applicant')->findOrFail($applicationId);
                     
                     // Update application status to On going Interview
                     if ($application->status !== 'On going Interview') {
                         $application->update(['status' => 'On going Interview']);
                     }
 
-                    // Skip if interview already exists for this application
-                    if (\App\Models\Interview::where('application_id', $applicationId)->exists()) {
+                    // Get applicant's user_id to tie the invite to their account
+                    $applicantUserId = $application->applicant->user_id ?? null;
+                    
+                    if (!$applicantUserId) {
                         $failedInterviews[] = [
                             'application_id' => $applicationId,
-                            'reason' => 'Interview already scheduled for this application'
+                            'error' => 'Application does not have a valid applicant account'
                         ];
                         continue;
                     }
 
-                    // Create interview record
-                    $interview = \App\Models\Interview::create([
-                        'application_id' => $applicationId,
-                        'interview_date' => $interviewData['interview_date'],
-                        'interview_time' => $interviewData['interview_time'],
-                        // end_time is accepted from client but not persisted here to avoid DB schema issues
-                        'interview_type' => $interviewData['interview_type'],
-                        'location' => $interviewData['location'],
-                        'interviewer' => $interviewData['interviewer'],
-                        'notes' => $interviewData['notes'] ?? '',
-                        'status' => 'scheduled'
-                    ]);
+                    // Check for existing active interview invite for this applicant
+                    // Check if applicant_user_id column exists (migration may not have run yet)
+                    $hasApplicantUserIdColumn = Schema::hasColumn('interviews', 'applicant_user_id');
+                    
+                    if ($hasApplicantUserIdColumn) {
+                        // Use applicant_user_id column if it exists
+                        $existingInterview = \App\Models\Interview::where('applicant_user_id', $applicantUserId)
+                            ->where('status', 'scheduled')
+                            ->first();
+                    } else {
+                        // Fallback: Find interviews through application relationship
+                        $userApplications = Application::whereHas('applicant', function($query) use ($applicantUserId) {
+                            $query->where('user_id', $applicantUserId);
+                        })->pluck('id');
+                        
+                        $existingInterview = \App\Models\Interview::whereIn('application_id', $userApplications)
+                            ->where('status', 'scheduled')
+                            ->first();
+                    }
 
-                    // Attach end_time to the response object (not persisted)
-                    $interview->end_time = $interviewData['end_time'] ?? null;
+                    // Check if end_time column exists (migration may not have run yet)
+                    $hasEndTimeColumn = Schema::hasColumn('interviews', 'end_time');
+                    
+                    if ($existingInterview) {
+                        // Update existing interview invite
+                        $updateData = [
+                            'application_id' => $applicationId,
+                            'interview_date' => $interviewData['interview_date'],
+                            'interview_time' => $interviewData['interview_time'],
+                            'interview_type' => $interviewData['interview_type'],
+                            'location' => $interviewData['location'],
+                            'interviewer' => $interviewData['interviewer'],
+                            'notes' => $interviewData['notes'] ?? '',
+                            'status' => 'scheduled',
+                            'updated_at' => now()
+                        ];
+                        
+                        // Add end_time only if column exists
+                        if ($hasEndTimeColumn) {
+                            $updateData['end_time'] = $interviewData['end_time'] ?? null;
+                        }
+                        
+                        // Add applicant_user_id only if column exists
+                        if ($hasApplicantUserIdColumn) {
+                            $updateData['applicant_user_id'] = $applicantUserId;
+                        }
+                        
+                        $existingInterview->update($updateData);
+                        $interview = $existingInterview;
+                    } else {
+                        // Create interview record with all interview details
+                        $createData = [
+                            'application_id' => $applicationId,
+                            'interview_date' => $interviewData['interview_date'],
+                            'interview_time' => $interviewData['interview_time'],
+                            'interview_type' => $interviewData['interview_type'],
+                            'location' => $interviewData['location'],
+                            'interviewer' => $interviewData['interviewer'],
+                            'notes' => $interviewData['notes'] ?? '',
+                            'status' => 'scheduled'
+                        ];
+                        
+                        // Add end_time only if column exists
+                        if ($hasEndTimeColumn) {
+                            $createData['end_time'] = $interviewData['end_time'] ?? null;
+                        }
+                        
+                        // Add applicant_user_id only if column exists
+                        if ($hasApplicantUserIdColumn) {
+                            $createData['applicant_user_id'] = $applicantUserId;
+                        }
+                        
+                        $interview = \App\Models\Interview::create($createData);
+                    }
 
                     // Load interview with application data
                     $interview->load('application.jobPosting', 'application.applicant');

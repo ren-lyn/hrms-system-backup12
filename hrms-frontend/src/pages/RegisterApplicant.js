@@ -185,22 +185,30 @@ const RegisterApplicant = () => {
           position: absolute;
           top: 18px;
           left: 18px;
-          background: rgba(59,130,246,0.10);
-          color: #1e40af;
+          background: rgba(59, 130, 246, 0.15);
           border: none;
-          border-radius: 8px;
-          padding: 7px 16px;
-          font-weight: 600;
-          font-size: 0.95rem;
+          border-radius: 50%;
+          width: 44px;
+          height: 44px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           cursor: pointer;
-          letter-spacing: 0.03em;
-          box-shadow: 0 2px 8px rgba(30,64,175,0.08);
-          transition: background 0.2s, color 0.2s;
+          box-shadow: 0 2px 8px rgba(30, 64, 175, 0.2);
+          transition: background 0.2s, transform 0.2s;
           z-index: 10;
         }
         .back-home-btn:hover {
-          background: rgba(59,130,246,0.18);
-          color: #2563eb;
+          background: rgba(59, 130, 246, 0.25);
+          transform: scale(1.05);
+        }
+
+        .back-home-btn svg {
+          width: 22px;
+          height: 22px;
+          stroke: #1e40af;
+          stroke-width: 2.5;
+          fill: none;
         }
 
         .header-icon {
@@ -283,7 +291,7 @@ const RegisterApplicant = () => {
         }
 
         .register-button {
-          background: linear-gradient(135deg, #3b82f6, #1e40af);
+          background: #0033ff;
           color: white;
           border: none;
           padding: 20px;
@@ -300,7 +308,8 @@ const RegisterApplicant = () => {
 
         .register-button:hover {
           transform: translateY(-2px);
-          box-shadow: 0 12px 35px rgba(59, 130, 246, 0.4);
+          box-shadow: 0 12px 35px rgba(0, 51, 255, 0.4);
+          background: #0028cc;
         }
 
         .alert {
@@ -530,27 +539,21 @@ const RegisterApplicant = () => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              ← Home
+              <svg viewBox="0 0 24 24">
+                <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </motion.button>
-            <motion.div 
-              className="header-icon"
-              initial={{ opacity: 0, scale: 0.8, rotate: -180 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              transition={{ duration: 0.6, delay: 0.3, type: "spring" }}
-            >
-              <i className="bi bi-person-plus-fill text-white" style={{ fontSize: '2.2rem' }}></i>
-            </motion.div>
             <motion.h2 
               style={{
                 fontFamily: "'Momo Trust Display', sans-serif",
                 fontWeight: '700',
-                color: '#1f2937',
+                color: '#00033d',
                 marginBottom: '10px',
                 fontSize: '1.8rem'
               }}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
             >
               Applicant Registration
             </motion.h2>
@@ -907,7 +910,7 @@ const RegisterApplicant = () => {
                 transition={{ duration: 0.4, delay: 1.9 }}
                 whileHover={termsAccepted ? { 
                   scale: 1.02,
-                  boxShadow: "0 12px 35px rgba(59, 130, 246, 0.4)"
+                  boxShadow: "0 12px 35px rgba(0, 51, 255, 0.4)"
                 } : {}}
                 whileTap={termsAccepted ? { scale: 0.98 } : {}}
               >

@@ -1612,11 +1612,10 @@ export default function JobPortal() {
                 }}
               >
               <div className="modal-header border-0 text-center" style={{
-                background: 'linear-gradient(135deg, #28a745 0%, #20c997 100%)',
+                background: '#0033ff',
                 borderRadius: '0.5rem 0.5rem 0 0'
               }}>
                 <div className="w-100 text-center">
-                  <div className="mb-2" style={{ fontSize: '3rem' }}>🎉</div>
                   <h4 className="modal-title fw-bold text-white mb-0">
                     Application Submitted Successfully!
                   </h4>
@@ -1631,7 +1630,6 @@ export default function JobPortal() {
                 <div className="mb-4">
                   <div className="alert alert-success border-0" style={{ backgroundColor: '#d4edda' }}>
                     <h5 className="text-success mb-2">
-                      <i className="bi bi-check-circle-fill me-2"></i>
                       Thank you for applying!
                     </h5>
                     <p className="mb-0 text-success-emphasis">
@@ -1646,21 +1644,18 @@ export default function JobPortal() {
                     <div className="row">
                       <div className="col-md-4 mb-3">
                         <div className="p-3 bg-light rounded">
-                          <div className="text-primary mb-2" style={{ fontSize: '2rem' }}>📋</div>
                           <h6 className="fw-semibold">Review</h6>
                           <small className="text-muted">HR will review your application</small>
                         </div>
                       </div>
                       <div className="col-md-4 mb-3">
                         <div className="p-3 bg-light rounded">
-                          <div className="text-info mb-2" style={{ fontSize: '2rem' }}>📞</div>
                           <h6 className="fw-semibold">Contact</h6>
                           <small className="text-muted">We'll contact you if shortlisted</small>
                         </div>
                       </div>
                       <div className="col-md-4 mb-3">
                         <div className="p-3 bg-light rounded">
-                          <div className="text-success mb-2" style={{ fontSize: '2rem' }}>🤝</div>
                           <h6 className="fw-semibold">Interview</h6>
                           <small className="text-muted">Schedule interview if selected</small>
                         </div>
@@ -1681,11 +1676,19 @@ export default function JobPortal() {
                 <div className="d-flex gap-2 w-100">
                   <button 
                     type="button" 
-                    className="btn btn-success flex-fill fw-semibold"
+                    className="btn flex-fill fw-semibold text-white"
+                    style={{ backgroundColor: '#0033ff', borderColor: '#0033ff' }}
                     onClick={() => setShowSuccessModal(false)}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = '#0028cc';
+                      e.target.style.borderColor = '#0028cc';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = '#0033ff';
+                      e.target.style.borderColor = '#0033ff';
+                    }}
                   >
-                    <i className="bi bi-check-lg me-1"></i>
-                    Got it, Thanks!
+                    Okay
                   </button>
                   <button 
                     type="button" 
@@ -1694,7 +1697,6 @@ export default function JobPortal() {
                       setShowSuccessModal(false);
                     }}
                   >
-                    <i className="bi bi-eye me-1"></i>
                     View Status
                   </button>
                 </div>

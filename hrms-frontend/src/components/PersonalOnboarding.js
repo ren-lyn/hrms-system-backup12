@@ -469,73 +469,57 @@ const PersonalOnboarding = () => {
         return;
       }
 
-      // Get user info first
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      console.log('👤 [PersonalOnboarding] Current user:', user);
-
-      // Try multiple approaches to get interviews
-      let allInterviews = [];
-      
-      // Approach 1: Try to get user's applications first
+      // Get authenticated user from API (ensures we use the correct user_id from authenticated session)
+      let authenticatedUserId = null;
       try {
-        console.log('📋 [PersonalOnboarding] Approach 1: Getting user applications...');
-        const applications = userApplications.length > 0 ? userApplications : await fetchUserApplications();
+        const userResponse = await axios.get('http://localhost:8000/api/auth/user', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         
-        console.log('📋 [PersonalOnboarding] User applications:', applications);
-        console.log('📋 [PersonalOnboarding] User applications length:', applications ? applications.length : 0);
-        
-        if (applications && applications.length > 0) {
-          const applicationIds = applications.map(app => app.id);
-          console.log('📤 [PersonalOnboarding] Fetching interviews for application IDs:', applicationIds);
-          
-          const response = await axios.get('http://localhost:8000/api/user-interviews', {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { application_ids: applicationIds }
-          });
-          
-          allInterviews = response.data || [];
-          console.log('📥 [PersonalOnboarding] Received interview data via application IDs:', allInterviews);
-
-          // Enrich with local end time if present
-          allInterviews = enrichInterviewsWithLocalEndTime(allInterviews);
-          
-          if (allInterviews.length > 0) {
-            console.log('✅ [PersonalOnboarding] Successfully found interviews via applications:', allInterviews.length);
-            setInterviewData(allInterviews);
-            return;
-          }
+        if (userResponse.data && userResponse.data.id) {
+          authenticatedUserId = userResponse.data.id;
+          console.log('👤 [PersonalOnboarding] Authenticated user ID from API:', authenticatedUserId);
         }
       } catch (error) {
-        console.log('⚠️ [PersonalOnboarding] Approach 1 failed:', error.message);
+        console.log('⚠️ [PersonalOnboarding] Failed to get authenticated user from API, trying localStorage:', error.message);
+        // Fallback to localStorage
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        authenticatedUserId = user.id;
       }
-      
-      // Approach 2: Try direct user ID lookup
-      if (user.id) {
-        try {
-          console.log(`🌐 [PersonalOnboarding] Approach 2: Trying direct user API: http://localhost:8000/api/interviews/user/${user.id}`);
-          const response = await axios.get(`http://localhost:8000/api/interviews/user/${user.id}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          
-          allInterviews = response.data || [];
-          console.log('📥 [PersonalOnboarding] Received interview data via direct user ID:', allInterviews);
 
-          // Enrich with local end time if present
-          allInterviews = enrichInterviewsWithLocalEndTime(allInterviews);
-          
-          if (allInterviews.length > 0) {
-            console.log('✅ [PersonalOnboarding] Found interviews via direct user approach:', allInterviews.length);
-            setInterviewData(allInterviews);
-            return;
-          }
-        } catch (error) {
-          console.log('⚠️ [PersonalOnboarding] Approach 2 failed:', error.message);
-        }
+      if (!authenticatedUserId) {
+        console.log('❌ [PersonalOnboarding] No user ID available for fetching interviews');
+        setInterviewData([]);
+        return;
       }
-      
-      // If no backend data found, keep interview list empty
-      console.log('❌ [PersonalOnboarding] No interviews found from backend');
-      setInterviewData([]);
+
+      // Fetch interviews using the authenticated user's ID
+      // The backend will ensure the user can only see their own interviews
+      try {
+        console.log(`🌐 [PersonalOnboarding] Fetching interviews for authenticated user ID: ${authenticatedUserId}`);
+        const response = await axios.get(`http://localhost:8000/api/interviews/user/${authenticatedUserId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        const allInterviews = response.data || [];
+        console.log('📥 [PersonalOnboarding] Received interview data:', allInterviews);
+        
+        if (allInterviews.length > 0) {
+          console.log('✅ [PersonalOnboarding] Found interviews:', allInterviews.length);
+          setInterviewData(allInterviews);
+        } else {
+          console.log('ℹ️ [PersonalOnboarding] No interviews found for this user');
+          setInterviewData([]);
+        }
+      } catch (error) {
+        console.error('❌ [PersonalOnboarding] Error fetching interview data:', error);
+        if (error?.response?.status === 401) {
+          console.log('⚠️ [PersonalOnboarding] Authentication expired, please log in again');
+        } else if (error?.response?.status === 403) {
+          console.log('⚠️ [PersonalOnboarding] Access forbidden');
+        }
+        setInterviewData([]);
+      }
       
     } catch (error) {
       console.error('❌ [PersonalOnboarding] Error fetching interview data:', error);
@@ -682,6 +666,8 @@ const PersonalOnboarding = () => {
       case 'interview_scheduled':
       case 'meeting_invitation':
           targetTab = 'interview';
+          // Fetch fresh interview data when navigating to interview tab from notification
+          fetchInterviewData();
           break;
       
       case 'job_offer_received':

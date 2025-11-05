@@ -10,6 +10,7 @@ use App\Notifications\InterviewScheduled;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
 
@@ -29,7 +30,6 @@ class InterviewController extends Controller
                 'application_id' => 'required|exists:applications,id',
                 'interview_date' => 'required|date|after_or_equal:today',
                 'interview_time' => 'required|date_format:H:i',
-                'duration' => 'nullable|integer|min:15|max:480', // 15 minutes to 8 hours
                 'interview_type' => 'required|in:in-person,video,phone,online',
                 'location' => 'required|string|max:255',
                 'interviewer' => 'required|string|max:255',
@@ -60,7 +60,6 @@ class InterviewController extends Controller
                 'application_id' => $validatedData['application_id'],
                 'interview_date' => $validatedData['interview_date'],
                 'interview_time' => $validatedData['interview_time'],
-                'duration' => $validatedData['duration'] ?? 30,
                 'interview_type' => $validatedData['interview_type'],
                 'location' => $validatedData['location'],
                 'interviewer' => $validatedData['interviewer'],
@@ -202,11 +201,25 @@ class InterviewController extends Controller
 
     /**
      * Get interviews for a specific user (applicant) by application IDs
+     * Only returns interviews for applications belonging to the authenticated user
      */
     public function getUserInterviews(Request $request): JsonResponse
     {
         try {
-            Log::info('InterviewController: Getting user interviews', $request->all());
+            // Get authenticated user
+            $authenticatedUser = $request->user();
+            
+            if (!$authenticatedUser) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+            
+            Log::info('InterviewController: Getting user interviews', [
+                'authenticated_user_id' => $authenticatedUser->id,
+                'request_data' => $request->all()
+            ]);
             
             $query = Interview::with(['application.jobPosting', 'application.applicant']);
             
@@ -230,7 +243,37 @@ class InterviewController extends Controller
                 return response()->json([], 200);
             }
             
-            $query->whereIn('application_id', $userApplications);
+            // Security: Verify that all requested application IDs belong to the authenticated user
+            // Allow HR staff/assistants to access any application's interviews
+            $userRole = $authenticatedUser->role->name ?? '';
+            $isHRStaff = in_array($userRole, ['HR Staff', 'HR Assistant']);
+            
+            if (!$isHRStaff) {
+                // For applicants, verify ownership of applications
+                $userOwnedApplications = Application::where('applicant_id', $authenticatedUser->id)
+                    ->whereIn('id', $userApplications)
+                    ->pluck('id')
+                    ->toArray();
+                
+                if (count($userOwnedApplications) !== count($userApplications)) {
+                    Log::warning('InterviewController: Unauthorized access attempt to applications', [
+                        'authenticated_user_id' => $authenticatedUser->id,
+                        'requested_application_ids' => $userApplications,
+                        'owned_application_ids' => $userOwnedApplications
+                    ]);
+                    
+                    return response()->json([
+                        'error' => 'Forbidden',
+                        'message' => 'You can only access interviews for your own applications'
+                    ], 403);
+                }
+                
+                // Only query for user-owned applications
+                $query->whereIn('application_id', $userOwnedApplications);
+            } else {
+                // HR staff can access any application
+                $query->whereIn('application_id', $userApplications);
+            }
             
             // Filter by status if provided
             if ($request->has('status')) {
@@ -247,13 +290,21 @@ class InterviewController extends Controller
                               ->get();
 
             // Transform the data for better frontend consumption
-            $transformedInterviews = $interviews->map(function ($interview) {
-                return [
+            $hasEndTimeColumn = Schema::hasColumn('interviews', 'end_time');
+            $hasApplicantUserIdColumn = Schema::hasColumn('interviews', 'applicant_user_id');
+            
+            $transformedInterviews = $interviews->map(function ($interview) use ($hasEndTimeColumn, $hasApplicantUserIdColumn) {
+                $transformed = [
                     'id' => $interview->id,
                     'application_id' => $interview->application_id,
-                    'interview_date' => $interview->interview_date,
-                    'interview_time' => $interview->interview_time,
-                    'duration' => $interview->duration,
+                    // Ensure interview_date is returned as YYYY-MM-DD string format (as received from HR)
+                    'interview_date' => $interview->interview_date instanceof \Carbon\Carbon 
+                        ? $interview->interview_date->format('Y-m-d')
+                        : (is_string($interview->interview_date) ? $interview->interview_date : $interview->interview_date),
+                    // Ensure interview_time is returned as HH:MM string format (as received from HR)
+                    'interview_time' => is_string($interview->interview_time) 
+                        ? $interview->interview_time 
+                        : (isset($interview->interview_time) ? date('H:i', strtotime($interview->interview_time)) : null),
                     'interview_type' => $interview->interview_type,
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
@@ -280,6 +331,23 @@ class InterviewController extends Controller
                         ] : null,
                     ]
                 ];
+                
+                // Add end_time only if column exists
+                // Ensure end_time is returned as HH:MM string format (as received from HR)
+                if ($hasEndTimeColumn) {
+                    $transformed['end_time'] = is_string($interview->end_time) 
+                        ? $interview->end_time 
+                        : (isset($interview->end_time) ? date('H:i', strtotime($interview->end_time)) : null);
+                } else {
+                    $transformed['end_time'] = null;
+                }
+                
+                // Add applicant_user_id only if column exists
+                if ($hasApplicantUserIdColumn) {
+                    $transformed['applicant_user_id'] = $interview->applicant_user_id;
+                }
+                
+                return $transformed;
             });
 
             Log::info('InterviewController: Found interviews', [
@@ -304,19 +372,53 @@ class InterviewController extends Controller
 
     /**
      * Get interviews for a specific user by user ID
+     * Only the authenticated user can access their own interviews for privacy
      */
-    public function getUserInterviewsByUserId(Request $request): JsonResponse
+    public function getUserInterviewsByUserId(Request $request, $user_id = null): JsonResponse
     {
         try {
-            Log::info('InterviewController: Getting user interviews by user ID', $request->all());
+            // Get authenticated user
+            $authenticatedUser = $request->user();
             
-            $userId = $request->get('user_id');
+            if (!$authenticatedUser) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Authentication required'
+                ], 401);
+            }
+            
+            // Get user_id from route parameter or request
+            $userId = $user_id ?? $request->get('user_id');
             
             if (!$userId) {
                 return response()->json([
                     'error' => 'User ID is required'
                 ], 400);
             }
+            
+            // Security: Ensure the authenticated user can only access their own interviews
+            // Allow HR staff/assistants to access any user's interviews, but applicants can only see their own
+            $userRole = $authenticatedUser->role->name ?? '';
+            $isHRStaff = in_array($userRole, ['HR Staff', 'HR Assistant']);
+            
+            if (!$isHRStaff && $authenticatedUser->id != $userId) {
+                Log::warning('InterviewController: Unauthorized access attempt', [
+                    'authenticated_user_id' => $authenticatedUser->id,
+                    'requested_user_id' => $userId,
+                    'role' => $userRole
+                ]);
+                
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'You can only access your own interview information'
+                ], 403);
+            }
+            
+            Log::info('InterviewController: Getting user interviews by user ID', [
+                'requested_user_id' => $userId,
+                'authenticated_user_id' => $authenticatedUser->id,
+                'role' => $userRole
+            ]);
             
             // Verify user exists
             $user = User::find($userId);
@@ -326,32 +428,57 @@ class InterviewController extends Controller
                 ], 404);
             }
             
-            // Get all applications for this user
-            $applications = Application::where('applicant_id', $userId)->pluck('id');
+            // Get interviews directly by applicant_user_id (more efficient and ensures privacy)
+            // Check if applicant_user_id column exists (migration may not have run yet)
+            $hasApplicantUserIdColumn = Schema::hasColumn('interviews', 'applicant_user_id');
             
-            if ($applications->isEmpty()) {
-                Log::info('InterviewController: No applications found for user', ['user_id' => $userId]);
-                return response()->json([], 200);
+            if ($hasApplicantUserIdColumn) {
+                // Use applicant_user_id column if it exists
+                $interviews = Interview::with([
+                    'application.jobPosting', 
+                    'application.applicant'
+                ])
+                ->where('applicant_user_id', $userId)
+                ->orderBy('interview_date', 'asc')
+                ->orderBy('interview_time', 'asc')
+                ->get();
+            } else {
+                // Fallback: Find interviews through application relationship
+                $userApplications = Application::whereHas('applicant', function($query) use ($userId) {
+                    $query->where('user_id', $userId);
+                })->pluck('id');
+                
+                $interviews = Interview::with([
+                    'application.jobPosting', 
+                    'application.applicant'
+                ])
+                ->whereIn('application_id', $userApplications)
+                ->orderBy('interview_date', 'asc')
+                ->orderBy('interview_time', 'asc')
+                ->get();
             }
             
-            // Get interviews for these applications with proper relationships
-            $interviews = Interview::with([
-                'application.jobPosting', 
-                'application.applicant'
-            ])
-            ->whereIn('application_id', $applications)
-            ->orderBy('interview_date', 'asc')
-            ->orderBy('interview_time', 'asc')
-            ->get();
+            if ($interviews->isEmpty()) {
+                Log::info('InterviewController: No interviews found for user', ['user_id' => $userId]);
+                return response()->json([], 200);
+            }
 
             // Transform the data for better frontend consumption
-            $transformedInterviews = $interviews->map(function ($interview) {
-                return [
+            $hasEndTimeColumn = Schema::hasColumn('interviews', 'end_time');
+            $hasApplicantUserIdColumn = Schema::hasColumn('interviews', 'applicant_user_id');
+            
+            $transformedInterviews = $interviews->map(function ($interview) use ($hasEndTimeColumn, $hasApplicantUserIdColumn) {
+                $transformed = [
                     'id' => $interview->id,
                     'application_id' => $interview->application_id,
-                    'interview_date' => $interview->interview_date,
-                    'interview_time' => $interview->interview_time,
-                    'duration' => $interview->duration,
+                    // Ensure interview_date is returned as YYYY-MM-DD string format (as received from HR)
+                    'interview_date' => $interview->interview_date instanceof \Carbon\Carbon 
+                        ? $interview->interview_date->format('Y-m-d')
+                        : (is_string($interview->interview_date) ? $interview->interview_date : $interview->interview_date),
+                    // Ensure interview_time is returned as HH:MM string format (as received from HR)
+                    'interview_time' => is_string($interview->interview_time) 
+                        ? $interview->interview_time 
+                        : (isset($interview->interview_time) ? date('H:i', strtotime($interview->interview_time)) : null),
                     'interview_type' => $interview->interview_type,
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
@@ -378,6 +505,23 @@ class InterviewController extends Controller
                         ] : null,
                     ]
                 ];
+                
+                // Add end_time only if column exists
+                // Ensure end_time is returned as HH:MM string format (as received from HR)
+                if ($hasEndTimeColumn) {
+                    $transformed['end_time'] = is_string($interview->end_time) 
+                        ? $interview->end_time 
+                        : (isset($interview->end_time) ? date('H:i', strtotime($interview->end_time)) : null);
+                } else {
+                    $transformed['end_time'] = null;
+                }
+                
+                // Add applicant_user_id only if column exists
+                if ($hasApplicantUserIdColumn) {
+                    $transformed['applicant_user_id'] = $interview->applicant_user_id;
+                }
+                
+                return $transformed;
             });
 
             Log::info('InterviewController: Found interviews for user', [
@@ -440,7 +584,6 @@ class InterviewController extends Controller
             $validatedData = $request->validate([
                 'interview_date' => 'nullable|date|after_or_equal:today',
                 'interview_time' => 'nullable|date_format:H:i',
-                'duration' => 'nullable|integer|min:15|max:480',
                 'interview_type' => 'nullable|in:in-person,video,phone,online',
                 'location' => 'nullable|string|max:255',
                 'interviewer' => 'nullable|string|max:255',
@@ -538,7 +681,6 @@ class InterviewController extends Controller
                 'id' => 999,
                 'interview_date' => '2024-12-25',
                 'interview_time' => '10:00:00',
-                'duration' => 30,
                 'interview_type' => 'in-person',
                 'location' => 'Test Location',
                 'interviewer' => 'Test Interviewer',
