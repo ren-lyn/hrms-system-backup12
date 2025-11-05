@@ -283,8 +283,11 @@ class DeductionTitleController extends Controller
             ->pluck('employee_id');
 
         // Get all employees except those already assigned
-        $employees = EmployeeProfile::whereHas('user', function($query) {
-                $query->where('role_id', '!=', 5); // Exclude applicants
+        // Get Applicant role ID dynamically to avoid hardcoding
+        $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+        
+        $employees = EmployeeProfile::whereHas('user', function($query) use ($applicantRoleId) {
+                $query->where('role_id', '!=', $applicantRoleId); // Exclude applicants
             })
             ->whereNotIn('id', $assignedEmployeeIds)
             ->with('user')

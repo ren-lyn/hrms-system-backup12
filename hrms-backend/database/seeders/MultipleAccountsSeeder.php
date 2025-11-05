@@ -47,7 +47,7 @@ class MultipleAccountsSeeder extends Seeder
             ['first_name' => 'Aaron', 'last_name' => 'Sagan', 'email' => 'aaron.sagan@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Accounting Department', 'salary' => 13520],
 
             // Employees - Production   
-            ['first_name' => 'Arthur', 'last_name' => 'Regondola', 'email' => 'rey. @company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Arthur', 'last_name' => 'Regondola', 'email' => 'arthur.regondola@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Hans Axle', 'last_name' => 'Consuelo', 'email' => 'hans.consuelo@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Mark Vincent', 'last_name' => 'Aguado', 'email' => 'mark.aguado@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
 
@@ -68,7 +68,7 @@ class MultipleAccountsSeeder extends Seeder
 
     private function createFixedUsers(array $users): array
     {
-        $employeeCounter = 1005; // Start from EM1005 (after DefaultAccountsSeeder uses EM1001-EM1003)
+        $employeeCounter = 1006; // Start from EM1006 (after DefaultAccountsSeeder uses EM1001-EM1005)
         $createdUsers = [];
         
         foreach ($users as $u) {
@@ -96,6 +96,7 @@ class MultipleAccountsSeeder extends Seeder
                     'employment_status' => 'Full Time',
                     'hire_date' => now()->subDays(120)->toDateString(),
                     'salary' => $u['salary'] ?? 13520, // Use provided salary or default to 13520
+                    'status' => 'active', // Explicitly set status to active
                 ]);
                 $createdUsers[] = $user;
                 $employeeCounter++;

@@ -31,7 +31,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $hrStaff->employeeProfile()->updateOrCreate([], [
-            'employee_id' => 'EM1002',
+            'employee_id' => 'EM1003',
             'first_name' => 'Crystal Anne',
             'last_name' => 'Barayang',
             'email' => 'hrstaff@company.com',
@@ -40,6 +40,7 @@ class DefaultAccountsSeeder extends Seeder
             'employment_status' => 'Full Time',
             'salary' => 13520,
             'hire_date' => now()->subYears(1)->toDateString(),
+            'status' => 'active', // Explicitly set status to active
         ]);
 
         // Manager
@@ -53,7 +54,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $manager->employeeProfile()->updateOrCreate([], [
-            'employee_id' => 'EM1003',
+            'employee_id' => 'EM1004',
             'first_name' => 'Shariel',
             'last_name' => 'Osias',
             'email' => 'manager@company.com',
@@ -62,6 +63,7 @@ class DefaultAccountsSeeder extends Seeder
             'employment_status' => 'Full Time',
             'salary' => 13520,
             'hire_date' => now()->subYears(2)->toDateString(),
+            'status' => 'active', // Explicitly set status to active
         ]);
 
         // Employee
@@ -75,7 +77,7 @@ class DefaultAccountsSeeder extends Seeder
             ]
         );
         $employee->employeeProfile()->updateOrCreate([], [
-            'employee_id' => 'EM1004',
+            'employee_id' => 'EM1005',
             'first_name' => 'Donna Mae',
             'last_name' => 'Cabuyao',
             'email' => 'employee@company.com',
@@ -84,6 +86,7 @@ class DefaultAccountsSeeder extends Seeder
             'employment_status' => 'Full Time',
             'salary' => 13520,
             'hire_date' => now()->subMonths(6)->toDateString(),
+            'status' => 'active', // Explicitly set status to active
         ]);
 
         // Applicant

@@ -38,6 +38,8 @@ const PayrollDashboard = () => {
   const [assignmentCustomAmount, setAssignmentCustomAmount] = useState('');
   const [expandedDeduction, setExpandedDeduction] = useState(null);
   const [assignedEmployees, setAssignedEmployees] = useState({});
+  const [deductionEmployeeSearch, setDeductionEmployeeSearch] = useState('');
+  const [selectAllDeduction, setSelectAllDeduction] = useState(false);
 
   // Taxes state
   const [taxTitles, setTaxTitles] = useState([]);
@@ -51,6 +53,8 @@ const PayrollDashboard = () => {
   const [assignmentCustomRate, setAssignmentCustomRate] = useState('');
   const [expandedTax, setExpandedTax] = useState(null);
   const [assignedEmployeesTax, setAssignedEmployeesTax] = useState({});
+  const [taxEmployeeSearch, setTaxEmployeeSearch] = useState('');
+  const [selectAllTax, setSelectAllTax] = useState(false);
 
   useEffect(() => {
     fetchEmployees();
@@ -243,6 +247,8 @@ const PayrollDashboard = () => {
     setSelectedDeduction(deduction);
     setSelectedEmployeesForAssignment([]);
     setAssignmentCustomAmount('');
+    setDeductionEmployeeSearch('');
+    setSelectAllDeduction(false);
     
     try {
       // Fetch available employees
@@ -274,6 +280,8 @@ const PayrollDashboard = () => {
         setSelectedDeduction(null);
         setSelectedEmployeesForAssignment([]);
         setAssignmentCustomAmount('');
+        setDeductionEmployeeSearch('');
+        setSelectAllDeduction(false);
         fetchDeductionTitles();
         if (expandedDeduction === selectedDeduction.id) {
           fetchAssignedEmployees(selectedDeduction.id);
@@ -416,6 +424,8 @@ const PayrollDashboard = () => {
     setSelectedTax(tax);
     setSelectedEmployeesForTaxAssignment([]);
     setAssignmentCustomRate('');
+    setTaxEmployeeSearch('');
+    setSelectAllTax(false);
     
     try {
       // Fetch available employees
@@ -447,6 +457,8 @@ const PayrollDashboard = () => {
         setSelectedTax(null);
         setSelectedEmployeesForTaxAssignment([]);
         setAssignmentCustomRate('');
+        setTaxEmployeeSearch('');
+        setSelectAllTax(false);
         fetchTaxTitles();
         if (expandedTax === selectedTax.id) {
           fetchAssignedEmployeesTax(selectedTax.id);
@@ -520,6 +532,69 @@ const PayrollDashboard = () => {
       await fetchAssignedEmployeesTax(taxId);
     }
   };
+
+  // Helper function to get employee name
+  const getEmployeeName = (employee) => {
+    if (employee?.user) {
+      return `${employee.user.first_name || ''} ${employee.user.last_name || ''}`.trim();
+    } else if (employee?.first_name && employee?.last_name) {
+      return `${employee.first_name} ${employee.last_name}`;
+    }
+    return employee?.employee_id || 'Unknown Employee';
+  };
+
+  // Filter employees based on search for deductions
+  const filteredEmployeesForDeduction = availableEmployees.filter((employee) => {
+    const name = getEmployeeName(employee).toLowerCase();
+    return name.includes(deductionEmployeeSearch.toLowerCase());
+  });
+
+  // Filter employees based on search for taxes
+  const filteredEmployeesForTax = availableEmployeesForTax.filter((employee) => {
+    const name = getEmployeeName(employee).toLowerCase();
+    return name.includes(taxEmployeeSearch.toLowerCase());
+  });
+
+  // Handle select all for deductions
+  const handleSelectAllDeduction = (checked) => {
+    setSelectAllDeduction(checked);
+    if (checked) {
+      const allIds = filteredEmployeesForDeduction.map(emp => emp.id);
+      setSelectedEmployeesForAssignment(allIds);
+    } else {
+      setSelectedEmployeesForAssignment([]);
+    }
+  };
+
+  // Handle select all for taxes
+  const handleSelectAllTax = (checked) => {
+    setSelectAllTax(checked);
+    if (checked) {
+      const allIds = filteredEmployeesForTax.map(emp => emp.id);
+      setSelectedEmployeesForTaxAssignment(allIds);
+    } else {
+      setSelectedEmployeesForTaxAssignment([]);
+    }
+  };
+
+  // Update select all state when individual selections change
+  useEffect(() => {
+    if (filteredEmployeesForDeduction.length > 0) {
+      const allSelected = filteredEmployeesForDeduction.every(emp => 
+        selectedEmployeesForAssignment.includes(emp.id)
+      );
+      setSelectAllDeduction(allSelected);
+    }
+  }, [selectedEmployeesForAssignment, filteredEmployeesForDeduction]);
+
+  useEffect(() => {
+    if (filteredEmployeesForTax.length > 0) {
+      const allSelected = filteredEmployeesForTax.every(emp => 
+        selectedEmployeesForTaxAssignment.includes(emp.id)
+      );
+      setSelectAllTax(allSelected);
+    }
+  }, [selectedEmployeesForTaxAssignment, filteredEmployeesForTax]);
 
   return (
     <Container fluid className="py-4">
@@ -1348,6 +1423,8 @@ const PayrollDashboard = () => {
         setSelectedTax(null);
         setSelectedEmployeesForTaxAssignment([]);
         setAssignmentCustomRate('');
+        setTaxEmployeeSearch('');
+        setSelectAllTax(false);
       }} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Assign Tax: {selectedTax?.name}</Modal.Title>
@@ -1383,33 +1460,52 @@ const PayrollDashboard = () => {
                 {availableEmployeesForTax.length === 0 ? (
                   <p className="text-muted">All employees are already assigned to this tax.</p>
                 ) : (
-                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.25rem', padding: '10px' }}>
-                    {availableEmployeesForTax.map((employee) => {
-                      const employeeName = employee?.user
-                        ? `${employee.user.first_name || ''} ${employee.user.last_name || ''}`.trim()
-                        : employee?.first_name && employee?.last_name
-                          ? `${employee.first_name} ${employee.last_name}`
-                          : employee?.employee_id || 'Unknown Employee';
-                      
-                      return (
-                        <Form.Check
-                          key={employee.id}
-                          type="checkbox"
-                          id={`employee-tax-${employee.id}`}
-                          label={employeeName}
-                          checked={selectedEmployeesForTaxAssignment.includes(employee.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedEmployeesForTaxAssignment([...selectedEmployeesForTaxAssignment, employee.id]);
-                            } else {
-                              setSelectedEmployeesForTaxAssignment(selectedEmployeesForTaxAssignment.filter(id => id !== employee.id));
-                            }
-                          }}
-                          className="mb-2"
-                        />
-                      );
-                    })}
-                  </div>
+                  <>
+                    <Form.Control
+                      type="text"
+                      placeholder="Search employees by name..."
+                      value={taxEmployeeSearch}
+                      onChange={(e) => setTaxEmployeeSearch(e.target.value)}
+                      className="mb-2"
+                    />
+                    {filteredEmployeesForTax.length > 0 && (
+                      <Form.Check
+                        type="checkbox"
+                        id="select-all-tax"
+                        label="Select All"
+                        checked={selectAllTax}
+                        onChange={(e) => handleSelectAllTax(e.target.checked)}
+                        className="mb-2 fw-bold"
+                      />
+                    )}
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.25rem', padding: '10px' }}>
+                      {filteredEmployeesForTax.length === 0 ? (
+                        <p className="text-muted text-center py-3">No employees found matching your search.</p>
+                      ) : (
+                        filteredEmployeesForTax.map((employee) => {
+                          const employeeName = getEmployeeName(employee);
+                          
+                          return (
+                            <Form.Check
+                              key={employee.id}
+                              type="checkbox"
+                              id={`employee-tax-${employee.id}`}
+                              label={employeeName}
+                              checked={selectedEmployeesForTaxAssignment.includes(employee.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedEmployeesForTaxAssignment([...selectedEmployeesForTaxAssignment, employee.id]);
+                                } else {
+                                  setSelectedEmployeesForTaxAssignment(selectedEmployeesForTaxAssignment.filter(id => id !== employee.id));
+                                }
+                              }}
+                              className="mb-2"
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
                 )}
               </Form.Group>
             </>
@@ -1421,6 +1517,8 @@ const PayrollDashboard = () => {
             setSelectedTax(null);
             setSelectedEmployeesForTaxAssignment([]);
             setAssignmentCustomRate('');
+            setTaxEmployeeSearch('');
+            setSelectAllTax(false);
           }}>
             Cancel
           </Button>
@@ -1588,6 +1686,8 @@ const PayrollDashboard = () => {
         setSelectedDeduction(null);
         setSelectedEmployeesForAssignment([]);
         setAssignmentCustomAmount('');
+        setDeductionEmployeeSearch('');
+        setSelectAllDeduction(false);
       }} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Assign Deduction: {selectedDeduction?.name}</Modal.Title>
@@ -1642,33 +1742,52 @@ const PayrollDashboard = () => {
                 {availableEmployees.length === 0 ? (
                   <p className="text-muted">All employees are already assigned to this deduction.</p>
                 ) : (
-                  <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.25rem', padding: '10px' }}>
-                    {availableEmployees.map((employee) => {
-                      const employeeName = employee?.user
-                        ? `${employee.user.first_name || ''} ${employee.user.last_name || ''}`.trim()
-                        : employee?.first_name && employee?.last_name
-                          ? `${employee.first_name} ${employee.last_name}`
-                          : employee?.employee_id || 'Unknown Employee';
-                      
-                      return (
-                        <Form.Check
-                          key={employee.id}
-                          type="checkbox"
-                          id={`employee-${employee.id}`}
-                          label={employeeName}
-                          checked={selectedEmployeesForAssignment.includes(employee.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedEmployeesForAssignment([...selectedEmployeesForAssignment, employee.id]);
-                            } else {
-                              setSelectedEmployeesForAssignment(selectedEmployeesForAssignment.filter(id => id !== employee.id));
-                            }
-                          }}
-                          className="mb-2"
-                        />
-                      );
-                    })}
-                  </div>
+                  <>
+                    <Form.Control
+                      type="text"
+                      placeholder="Search employees by name..."
+                      value={deductionEmployeeSearch}
+                      onChange={(e) => setDeductionEmployeeSearch(e.target.value)}
+                      className="mb-2"
+                    />
+                    {filteredEmployeesForDeduction.length > 0 && (
+                      <Form.Check
+                        type="checkbox"
+                        id="select-all-deduction"
+                        label="Select All"
+                        checked={selectAllDeduction}
+                        onChange={(e) => handleSelectAllDeduction(e.target.checked)}
+                        className="mb-2 fw-bold"
+                      />
+                    )}
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.25rem', padding: '10px' }}>
+                      {filteredEmployeesForDeduction.length === 0 ? (
+                        <p className="text-muted text-center py-3">No employees found matching your search.</p>
+                      ) : (
+                        filteredEmployeesForDeduction.map((employee) => {
+                          const employeeName = getEmployeeName(employee);
+                          
+                          return (
+                            <Form.Check
+                              key={employee.id}
+                              type="checkbox"
+                              id={`employee-${employee.id}`}
+                              label={employeeName}
+                              checked={selectedEmployeesForAssignment.includes(employee.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedEmployeesForAssignment([...selectedEmployeesForAssignment, employee.id]);
+                                } else {
+                                  setSelectedEmployeesForAssignment(selectedEmployeesForAssignment.filter(id => id !== employee.id));
+                                }
+                              }}
+                              className="mb-2"
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
                 )}
               </Form.Group>
             </>
@@ -1680,6 +1799,8 @@ const PayrollDashboard = () => {
             setSelectedDeduction(null);
             setSelectedEmployeesForAssignment([]);
             setAssignmentCustomAmount('');
+            setDeductionEmployeeSearch('');
+            setSelectAllDeduction(false);
           }}>
             Cancel
           </Button>
@@ -1715,6 +1836,11 @@ const PayrollDashboard = () => {
                 </Col>
                 <Col md={6}>
                   <strong>Overtime Pay:</strong> {formatCurrency(selectedPayroll.overtime_pay)}
+                </Col>
+              </Row>
+              <Row className="mb-3">
+                <Col md={6}>
+                  <strong>Holiday Pay:</strong> {formatCurrency(selectedPayroll.holiday_pay || 0)}
                 </Col>
               </Row>
               <Row className="mb-3">

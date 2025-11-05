@@ -84,8 +84,11 @@ class PayrollController extends Controller
             $payrollPeriodId = $validated['payroll_period_id'] ?? null;
 
             // Get all active employees
-            $employees = EmployeeProfile::whereHas('user', function($q) {
-                $q->where('role_id', '!=', 5);
+            // Get Applicant role ID dynamically to avoid hardcoding
+            $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
+            
+            $employees = EmployeeProfile::whereHas('user', function($q) use ($applicantRoleId) {
+                $q->where('role_id', '!=', $applicantRoleId);
             })->with('user')->get();
 
             $generatedPayrolls = [];
@@ -115,6 +118,7 @@ class PayrollController extends Controller
                         'basic_salary' => 0, // Will be calculated based on actual attendance
                         'overtime_pay' => 0,
                         'allowances' => 0,
+                        'holiday_pay' => 0,
                         'gross_pay' => 0,
                         'sss_deduction' => 0,
                         'philhealth_deduction' => 0,
@@ -194,14 +198,16 @@ class PayrollController extends Controller
         }
 
         // Count actual days worked from attendance records
-        // Exclude: Absent, Holiday (No Work), On Leave
-        // Include: Present, Late, Undertime, Overtime, Late (Undertime), Late (Overtime), Holiday (Worked)
+        // Exclude: Absent, Holiday (No Work), On Leave, Holiday (Worked)
+        // Include: Present, Late, Undertime, Overtime, Late (Undertime), Late (Overtime)
+        // Note: Holiday (Worked) days are excluded from basic salary and calculated separately in holiday pay
         // An attendance record with clock_in or clock_out indicates the employee was present
         $actualDaysWorked = $attendances->filter(function($attendance) {
             $status = $attendance->status ?? 'Absent';
             // Count if status indicates work was done OR if there's a clock in/out record
             $hasWorkRecord = !empty($attendance->clock_in) || !empty($attendance->clock_out);
-            $isWorkStatus = !in_array($status, ['Absent', 'Holiday (No Work)', 'On Leave']);
+            // Exclude Holiday (Worked) - these are paid separately as holiday pay
+            $isWorkStatus = !in_array($status, ['Absent', 'Holiday (No Work)', 'On Leave', 'Holiday (Worked)']);
             
             return $isWorkStatus && $hasWorkRecord;
         })->count();
@@ -249,10 +255,14 @@ class PayrollController extends Controller
         // Formula: OVERTIME_PAY_PER_HOUR (₱65.00) * approved_ot_hours
         $overtimePay = $this->calculateOvertimePay($employee, $periodStart, $periodEnd, $dailyRate);
 
-        // Calculate late deduction with 15-minute grace period (automatically calculated for all employees)
+        // Calculate holiday pay for days with "Holiday (Worked)" status
+        // Holiday pay is typically double the daily rate
+        $holidayPay = $this->calculateHolidayPay($employee, $attendances, $dailyRate);
+
+        // Calculate late deduction with 15-minute grace period (only if employee is assigned to Late Penalty)
         $lateDeduction = $this->calculateLateDeduction($employee, $attendances);
 
-        // Calculate undertime deduction based on clock out time (automatically calculated for all employees)
+        // Calculate undertime deduction based on clock out time (only if employee is assigned to Undertime Penalty)
         $undertimeDeduction = $this->calculateUndertimeDeduction($employee, $attendances);
 
         // Calculate leave without pay (deduction)
@@ -262,7 +272,8 @@ class PayrollController extends Controller
 
         // Gross pay
         // Basic salary already includes days worked + approved leave with pay days
-        $grossPay = $basicSalary + $overtimePay + ($payroll->allowances ?? 0) - $leaveWithoutPayDeduction;
+        // Holiday pay is additional (typically double pay for working on holidays)
+        $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0) - $leaveWithoutPayDeduction;
 
         // Calculate tax deductions from assigned taxes
         $taxDeductions = $this->calculateAssignedTaxes($employee);
@@ -280,7 +291,7 @@ class PayrollController extends Controller
         $cashAdvanceDeduction = $this->calculateCashAdvanceDeduction($userId);
 
         // Calculate other deductions (late, undertime, cash advance, assigned deductions)
-        // Note: Late and undertime are now automatically calculated for all employees
+        // Note: Late and undertime are calculated only if employee is assigned to those deductions
         $otherDeductions = $lateDeduction + $undertimeDeduction + $cashAdvanceDeduction + $assignedDeductions;
 
         // Calculate total deductions (taxes + other deductions)
@@ -308,6 +319,7 @@ class PayrollController extends Controller
             'basic_salary' => round($basicSalary, 2),
             'gross_pay' => round($grossPay, 2),
             'overtime_pay' => round($overtimePay, 2),
+            'holiday_pay' => round($holidayPay, 2),
             'sss_deduction' => $sssDed,
             'philhealth_deduction' => $philhealthDed,
             'pagibig_deduction' => $pagibigDed,
@@ -345,24 +357,52 @@ class PayrollController extends Controller
 
     /**
      * Calculate late deduction from attendance with 15-minute grace period
-     * Late penalties are automatically calculated for all employees based on attendance
+     * Late penalties are calculated only if employee is assigned to Late Penalty deduction
+     * Returns 0 if employee is not assigned or has no late occurrences
      * Grace period: 8:00 AM - 8:15 AM (no penalty)
      * Penalty starts from 8:16 AM onwards at 8.67 per minute
      */
     private function calculateLateDeduction(EmployeeProfile $employee, $attendances): float
     {
-        // Late penalties are automatically calculated for all employees based on attendance
-        // No need to check for assignment - this is a standard deduction
+        // Late penalties are calculated only if employee is assigned to Late Penalty deduction
+        // Check if employee has an active Late Penalty deduction assignment
+        $hasLatePenaltyAssignment = EmployeeDeductionAssignment::where('employee_id', $employee->id)
+            ->where('is_active', true)
+            ->whereHas('deductionTitle', function($query) {
+                $query->whereRaw('LOWER(name) = ?', ['late penalty'])
+                      ->where('is_active', true);
+            })
+            ->exists();
+        
+        // If employee is not assigned to Late Penalty deduction, return 0
+        if (!$hasLatePenaltyAssignment) {
+            return 0;
+        }
 
         $totalDeduction = 0;
         $totalMinutesLate = 0;
         $gracePeriodMinutes = 15;
-        $standardClockIn = Carbon::createFromTimeString(self::STANDARD_CLOCK_IN); // 8:00 AM
-        $gracePeriodEnd = $standardClockIn->copy()->addMinutes($gracePeriodMinutes); // 8:15 AM
+        
+        // Use employee's shift time if available, otherwise use default
+        $employee->load('shift');
+        if ($employee->shift && $employee->shift->start_time) {
+            $shiftStartTime = Carbon::parse($employee->shift->start_time)->format('H:i:s');
+        } else {
+            $shiftStartTime = self::STANDARD_CLOCK_IN;
+        }
+        
+        $standardClockIn = Carbon::createFromTimeString($shiftStartTime);
+        $gracePeriodEnd = $standardClockIn->copy()->addMinutes($gracePeriodMinutes);
 
         foreach ($attendances as $attendance) {
             // Only calculate for days with clock in
             if (empty($attendance->clock_in)) {
+                continue;
+            }
+            
+            // Skip holidays and leave days - no penalties apply
+            $status = $attendance->status ?? '';
+            if (in_array($status, ['Holiday (No Work)', 'Holiday (Worked)', 'On Leave'])) {
                 continue;
             }
 
@@ -390,12 +430,26 @@ class PayrollController extends Controller
                 // Parse time string to Carbon instance for comparison
                 $clockIn = Carbon::createFromTimeString($timeString);
                 
-                // Check if clocked in after the grace period (after 8:15 AM)
+                // Check if clocked in after the grace period
+                // Use greater than (not >=) so exactly 08:15:00 is not considered late
+                // Only count if clocked in after 08:15:00 (not including 08:15:00)
                 if ($clockIn->gt($gracePeriodEnd)) {
-                    // Calculate minutes late beyond grace period
-                    // If clock in is at 8:16 AM, that's 1 minute late (8:16 - 8:15 = 1 minute)
-                    $minutesLate = $gracePeriodEnd->diffInMinutes($clockIn);
-                    $totalMinutesLate += $minutesLate;
+                    // Calculate minutes late (ignore seconds, only count minutes)
+                    // Extract only hour and minute, ignore seconds for calculation
+                    $clockInHour = (int) $clockIn->format('H');
+                    $clockInMinute = (int) $clockIn->format('i');
+                    $gracePeriodEndHour = (int) $gracePeriodEnd->format('H');
+                    $gracePeriodEndMinute = (int) $gracePeriodEnd->format('i');
+                    
+                    // Calculate difference in minutes only (ignoring seconds)
+                    $clockInMinutes = ($clockInHour * 60) + $clockInMinute;
+                    $gracePeriodEndMinutes = ($gracePeriodEndHour * 60) + $gracePeriodEndMinute;
+                    $minutesLate = $clockInMinutes - $gracePeriodEndMinutes;
+                    
+                    // Only add if there's at least 1 full minute late
+                    if ($minutesLate > 0) {
+                        $totalMinutesLate += $minutesLate;
+                    }
                 }
             } catch (\Exception $e) {
                 // Skip invalid time format
@@ -411,22 +465,57 @@ class PayrollController extends Controller
 
     /**
      * Calculate undertime deduction from attendance based on clock out time
-     * Undertime penalties are automatically calculated for all employees based on attendance
-     * If employee clocks out before 5:00 PM, calculate minutes early and deduct at 8.67 per minute
+     * Undertime penalties are calculated only if employee is assigned to Undertime Penalty deduction
+     * Returns 0 if employee is not assigned or has no undertime occurrences
+     * If employee clocks out before standard end time, calculate minutes early and deduct at 8.67 per minute
      */
     private function calculateUndertimeDeduction(EmployeeProfile $employee, $attendances): float
     {
-        // Undertime penalties are automatically calculated for all employees based on attendance
-        // No need to check for assignment - this is a standard deduction
+        // Undertime penalties are calculated only if employee is assigned to Undertime Penalty deduction
+        // Check if employee has an active Undertime Penalty deduction assignment
+        $hasUndertimePenaltyAssignment = EmployeeDeductionAssignment::where('employee_id', $employee->id)
+            ->where('is_active', true)
+            ->whereHas('deductionTitle', function($query) {
+                $query->whereRaw('LOWER(name) = ?', ['undertime penalty'])
+                      ->where('is_active', true);
+            })
+            ->exists();
+        
+        // If employee is not assigned to Undertime Penalty deduction, return 0
+        if (!$hasUndertimePenaltyAssignment) {
+            return 0;
+        }
 
         $totalDeduction = 0;
         $totalMinutesEarly = 0;
-        $standardClockOut = Carbon::parse(self::STANDARD_CLOCK_OUT); // 5:00 PM (17:00:00)
+        
+        // Use employee's shift time if available, otherwise use default
+        $employee->load('shift');
+        if ($employee->shift && $employee->shift->end_time) {
+            $shiftEndTime = Carbon::parse($employee->shift->end_time)->format('H:i:s');
+        } else {
+            $shiftEndTime = self::STANDARD_CLOCK_OUT;
+        }
+        
+        $standardClockOut = Carbon::createFromTimeString($shiftEndTime);
 
         foreach ($attendances as $attendance) {
             // Only calculate undertime for days with actual clock out (not absent days)
             if (empty($attendance->clock_out)) {
                 continue; // Skip days without clock out records
+            }
+            
+            // Skip holidays and leave days - no penalties apply
+            $status = $attendance->status ?? '';
+            if (in_array($status, ['Holiday (No Work)', 'Holiday (Worked)', 'On Leave', 'Absent'])) {
+                continue;
+            }
+            
+            // Only calculate undertime for days with "Undertime" status
+            // Don't count undertime for days with "Late" status - those are late penalties, not undertime
+            // Only count pure undertime days (status = "Undertime" or "Late (Undertime)")
+            if ($status !== 'Undertime' && $status !== 'Late (Undertime)') {
+                continue;
             }
 
             // Parse clock_out time - extract time portion from datetime cast
@@ -453,17 +542,27 @@ class PayrollController extends Controller
                 // Parse time string to Carbon instance for comparison
                 $clockOut = Carbon::createFromTimeString($timeString);
                 
-                // Create standard clock out time for comparison (17:00:00 = 5:00 PM)
-                $standardOut = Carbon::createFromTimeString(self::STANDARD_CLOCK_OUT);
+                // Create standard clock out time for comparison
+                $standardOut = Carbon::createFromTimeString($shiftEndTime);
                 
-                // Check if clocked out before 5:00 PM
+                // Check if clocked out before standard end time
                 if ($clockOut->lt($standardOut)) {
-                    // Calculate minutes early (how many minutes before 5:00 PM)
-                    // Example: If clocked out at 4:44 PM (16:44), that's 16 minutes early
-                    // Example: If clocked out at 4:08 PM (16:08), that's 52 minutes early
-                    // Example: If clocked out at 4:04 PM (16:04), that's 56 minutes early
-                    $minutesEarly = $standardOut->diffInMinutes($clockOut);
-                    $totalMinutesEarly += $minutesEarly;
+                    // Calculate minutes early (ignore seconds, only count minutes)
+                    // Extract only hour and minute, ignore seconds for calculation
+                    $clockOutHour = (int) $clockOut->format('H');
+                    $clockOutMinute = (int) $clockOut->format('i');
+                    $standardOutHour = (int) $standardOut->format('H');
+                    $standardOutMinute = (int) $standardOut->format('i');
+                    
+                    // Calculate difference in minutes only (ignoring seconds)
+                    $clockOutMinutes = ($clockOutHour * 60) + $clockOutMinute;
+                    $standardOutMinutes = ($standardOutHour * 60) + $standardOutMinute;
+                    $minutesEarly = $standardOutMinutes - $clockOutMinutes;
+                    
+                    // Only add if there's at least 1 full minute early
+                    if ($minutesEarly > 0) {
+                        $totalMinutesEarly += $minutesEarly;
+                    }
                 }
             } catch (\Exception $e) {
                 // Skip invalid time format
@@ -690,6 +789,63 @@ class PayrollController extends Controller
         }
 
         return round($totalOvertimePay, 2);
+    }
+
+    /**
+     * Calculate holiday pay for days with "Holiday (Worked)" status
+     * Different rates apply based on holiday type:
+     * - Regular Holidays: 200% (Daily Rate × 2)
+     * - Special Holidays: 130% (Daily Rate × 1.3)
+     * Note: Holiday (Worked) days are excluded from basic salary calculation
+     */
+    private function calculateHolidayPay(EmployeeProfile $employee, $attendances, $dailyRate): float
+    {
+        $totalHolidayPay = 0;
+
+        foreach ($attendances as $attendance) {
+            $status = $attendance->status ?? '';
+            
+            // Only calculate for days with "Holiday (Worked)" status
+            if ($status !== 'Holiday (Worked)') {
+                continue;
+            }
+
+            // Check if this date is a holiday and get its type
+            // First check the holidays table
+            $holiday = \App\Models\Holiday::isHolidayDate($attendance->date);
+            $isSpecialHoliday = false;
+            
+            if ($holiday) {
+                // If found in holidays table, use the type from there
+                $isSpecialHoliday = ($holiday->type === 'Special');
+            } else {
+                // If not found in holidays table, check the remarks field
+                // Holiday type from import is stored in remarks field
+                $remarks = strtolower($attendance->remarks ?? '');
+                
+                // Check if remarks contains "special" (case-insensitive)
+                // Examples: "Special Holiday", "Special Non-Working Holiday", "SH", etc.
+                if (stripos($remarks, 'special') !== false) {
+                    $isSpecialHoliday = true;
+                } else {
+                    // Default to Regular Holiday if not specified
+                    $isSpecialHoliday = false;
+                }
+            }
+            
+            // Calculate holiday pay based on type
+            if ($isSpecialHoliday) {
+                // Special Holidays: 130% (Daily Rate × 1.3)
+                $holidayPay = $dailyRate * 1.3;
+            } else {
+                // Regular Holidays: 200% (double pay)
+                $holidayPay = $dailyRate * 2;
+            }
+
+            $totalHolidayPay += $holidayPay;
+        }
+
+        return round($totalHolidayPay, 2);
     }
 
     /**
