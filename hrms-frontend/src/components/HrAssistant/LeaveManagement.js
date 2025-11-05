@@ -155,10 +155,29 @@ const LeaveManagement = () => {
       console.log('Loaded leave requests:', requestsResponse.data);
       console.log('Loaded stats:', statsResponse.data);
       
+      // Get current year for filtering
+      const currentYear = new Date().getFullYear();
+      
       // Show all requests that HR needs to see: pending HR action, approved, and rejected
-      const hrRequests = requestsResponse.data.filter(request => 
-        request.status === 'manager_approved' || request.status === 'manager_rejected' || request.status === 'approved' || request.status === 'rejected'
-      );
+      // Filter approved/rejected by current year for yearly reset, but show all pending/manager_approved/manager_rejected
+      const hrRequests = requestsResponse.data.filter(request => {
+        const matchesStatus = request.status === 'manager_approved' || request.status === 'manager_rejected' || request.status === 'approved' || request.status === 'rejected';
+        
+        if (!matchesStatus) return false;
+        
+        // For pending requests (manager_approved, manager_rejected), show all regardless of year
+        if (request.status === 'manager_approved' || request.status === 'manager_rejected') {
+          return true;
+        }
+        
+        // For approved/rejected, filter by current year to show yearly reset
+        if (request.status === 'approved' || request.status === 'rejected') {
+          const requestYear = request.from ? new Date(request.from).getFullYear() : new Date(request.created_at).getFullYear();
+          return requestYear === currentYear;
+        }
+        
+        return true;
+      });
       
       setLeaveRequests(hrRequests || []);
       setStats(statsResponse.data || {

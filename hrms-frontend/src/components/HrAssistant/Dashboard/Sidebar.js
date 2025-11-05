@@ -8,7 +8,7 @@ import {
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
   FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
   FaEye, FaChartBar, FaFileAlt, FaClock, FaChevronDown, FaChevronRight, FaEdit,
-  FaCheckCircle, FaCog
+  FaCheckCircle, FaCog, FaHistory
   
 } from "react-icons/fa";
 
@@ -146,11 +146,24 @@ const Sidebar = () => {
             </NavLink>
             
             <NavLink
-              to="leave/settings"
+              to="leave/tracker"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsLeaveDropdownOpen(false)}
+              style={{
+                padding: '12px 16px',
+                margin: '2px 8px',
+                borderRadius: '6px'
+              }}
+            >
+              <FaChartLine /> <span>Leave Tracker</span>
+            </NavLink>
+            
+            <NavLink
+              to="leave/history"
               className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
               onClick={() => setIsLeaveDropdownOpen(false)}
             >
-              <FaCog /> <span>Leave Settings</span>
+              <FaHistory /> <span>Leave History</span>
             </NavLink>
           </div>
         </div>

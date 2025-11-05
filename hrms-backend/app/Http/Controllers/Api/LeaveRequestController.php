@@ -85,6 +85,8 @@ class LeaveRequestController extends Controller
     }
 
     public function index() {
+        // Return all leave requests - filtering by year will be done on frontend
+        // This ensures pending requests from any year are still accessible
         return LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->latest()->get();
     }
 
@@ -577,16 +579,32 @@ class LeaveRequestController extends Controller
 
     public function getStats()
     {
+        // Get current year for filtering
+        $currentYear = Carbon::now()->year;
+        
+        // Filter stats by current year to ensure yearly reset
         $stats = [
-            'requested' => LeaveRequest::count(),
-            'approved' => LeaveRequest::where('status', 'approved')->count(),
-            'rejected' => LeaveRequest::where('status', 'rejected')->count(),
-            'pending' => LeaveRequest::where('status', 'pending')->count(),
-            'manager_approved' => LeaveRequest::where('status', 'manager_approved')->count(),
-            'manager_rejected' => LeaveRequest::where('status', 'manager_rejected')->count(),
+            'requested' => LeaveRequest::whereYear('from', $currentYear)->count(),
+            'approved' => LeaveRequest::where('status', 'approved')
+                ->whereYear('from', $currentYear)
+                ->count(),
+            'rejected' => LeaveRequest::where('status', 'rejected')
+                ->whereYear('from', $currentYear)
+                ->count(),
+            'pending' => LeaveRequest::where('status', 'pending')
+                ->whereYear('from', $currentYear)
+                ->count(),
+            'manager_approved' => LeaveRequest::where('status', 'manager_approved')
+                ->whereYear('from', $currentYear)
+                ->count(),
+            'manager_rejected' => LeaveRequest::where('status', 'manager_rejected')
+                ->whereYear('from', $currentYear)
+                ->count(),
         ];
 
+        // Type stats filtered by current year
         $typeStats = LeaveRequest::selectRaw('type, COUNT(*) as count')
+            ->whereYear('from', $currentYear)
             ->groupBy('type')
             ->get()
             ->pluck('count', 'type')
@@ -594,7 +612,8 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'approval_stats' => $stats,
-            'type_stats' => $typeStats
+            'type_stats' => $typeStats,
+            'year' => $currentYear // Include year in response for reference
         ]);
     }
 

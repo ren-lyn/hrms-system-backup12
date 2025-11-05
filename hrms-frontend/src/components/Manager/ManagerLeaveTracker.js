@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Form, InputGroup, Alert, Spinner, Modal } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3 } from 'lucide-react';
+import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchEmployeeLeaveTracker, exportLeaveTrackerData } from '../../api/leave';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -21,6 +21,7 @@ const ManagerLeaveTracker = () => {
     averageLeaveDays: 0
   });
   const [showStatsModal, setShowStatsModal] = useState(null); // 'employees', 'withLeave', 'totalDays', 'average'
+  const [expandedLeaveTypes, setExpandedLeaveTypes] = useState({}); // Track expanded leave types per employee
 
   useEffect(() => {
     loadLeaveTrackerData();
@@ -419,6 +420,29 @@ const ManagerLeaveTracker = () => {
                       } else {
                         balanceStatus = { color: 'danger', icon: <XCircle size={16} /> };
                       }
+
+                      // Group leave periods by leave type
+                      const leaveTypeGroups = {};
+                      if (employee.leavePeriods && employee.leavePeriods.length > 0) {
+                        employee.leavePeriods.forEach((period, index) => {
+                          const leaveType = period.leaveType || 'Unknown';
+                          if (!leaveTypeGroups[leaveType]) {
+                            leaveTypeGroups[leaveType] = [];
+                          }
+                          leaveTypeGroups[leaveType].push({ ...period, originalIndex: index });
+                        });
+                      }
+
+                      // Create unique key for this employee's expanded state
+                      const employeeExpandedKey = `${employee.id}`;
+                      
+                      const toggleLeaveType = (leaveType) => {
+                        const key = `${employeeExpandedKey}-${leaveType}`;
+                        setExpandedLeaveTypes(prev => ({
+                          ...prev,
+                          [key]: !prev[key]
+                        }));
+                      };
                       
                       return (
                         <tr key={employee.id}>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Form, InputGroup, Alert, Spinner, Modal } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3 } from 'lucide-react';
+import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchEmployeeLeaveTracker, exportLeaveTrackerData } from '../../api/leave';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -21,6 +21,7 @@ const LeaveTracker = () => {
     averageLeaveDays: 0
   });
   const [showStatsModal, setShowStatsModal] = useState(null); // 'employees', 'withLeave', 'totalDays', 'average'
+  const [expandedLeaveTypes, setExpandedLeaveTypes] = useState({}); // Track expanded leave types per employee
 
   useEffect(() => {
     loadLeaveTrackerData();
@@ -221,6 +222,276 @@ const LeaveTracker = () => {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
+  // Render modals based on which stat was clicked
+  const renderStatsModal = () => {
+    if (!showStatsModal) return null;
+
+    const modalConfig = {
+      employees: {
+        title: 'Total Employees Overview',
+        icon: <Users size={24} />,
+        content: renderEmployeesModal()
+      },
+      withLeave: {
+        title: 'Employees Currently on Leave',
+        icon: <UserCheck size={24} />,
+        content: renderWithLeaveModal()
+      },
+      totalDays: {
+        title: 'Total Leave Days Breakdown',
+        icon: <BarChart3 size={24} />,
+        content: renderTotalDaysModal()
+      }
+    };
+
+    const config = modalConfig[showStatsModal];
+    if (!config) return null;
+
+    return (
+      <Modal 
+        show={true} 
+        onHide={() => setShowStatsModal(null)} 
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton style={{ background: '#f8fafc', borderBottom: '1px solid #e1e8ed' }}>
+          <Modal.Title style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.125rem', fontWeight: '600', color: '#1a202c' }}>
+            <div style={{ 
+              width: '40px', 
+              height: '40px', 
+              borderRadius: '8px', 
+              background: '#f1f5f9', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              color: '#3b82f6'
+            }}>
+              {config.icon}
+            </div>
+            {config.title}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ padding: '24px' }}>
+          {config.content}
+        </Modal.Body>
+        <Modal.Footer style={{ background: '#f8fafc', borderTop: '1px solid #e1e8ed' }}>
+          <Button variant="secondary" onClick={() => setShowStatsModal(null)} style={{ background: '#e2e8f0', color: '#475569', border: 'none' }}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    );
+  };
+
+  const renderEmployeesModal = () => {
+    const departmentBreakdown = {};
+    filteredData.forEach(emp => {
+      const dept = emp.department || 'Unknown';
+      if (!departmentBreakdown[dept]) {
+        departmentBreakdown[dept] = { count: 0, withLeave: 0 };
+      }
+      departmentBreakdown[dept].count++;
+      if (emp.totalLeaveDays > 0) {
+        departmentBreakdown[dept].withLeave++;
+      }
+    });
+
+    return (
+      <div>
+        <div style={{ marginBottom: '24px' }}>
+          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Department Breakdown</h6>
+          <Table hover style={{ fontSize: '0.9375rem' }}>
+            <thead style={{ background: '#f8fafc' }}>
+              <tr>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600' }}>Department</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Total Employees</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>With Leave</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(departmentBreakdown).map(([dept, data]) => (
+                <tr key={dept}>
+                  <td style={{ padding: '12px', color: '#1a202c', fontWeight: '500' }}>{dept}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.count}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.withLeave}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>
+                    {((data.count / filteredData.length) * 100).toFixed(1)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Tracked Employees:</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{stats.totalEmployees}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Active Departments:</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{Object.keys(departmentBreakdown).length}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderWithLeaveModal = () => {
+    const employeesOnLeave = filteredData.filter(emp => emp.leavePeriods && emp.leavePeriods.length > 0);
+    
+    const leaveTypeBreakdown = {};
+    employeesOnLeave.forEach(emp => {
+      emp.leavePeriods.forEach(period => {
+        const type = period.leaveType || 'Unknown';
+        if (!leaveTypeBreakdown[type]) {
+          leaveTypeBreakdown[type] = 0;
+        }
+        leaveTypeBreakdown[type]++;
+      });
+    });
+
+    return (
+      <div>
+        <div style={{ marginBottom: '24px' }}>
+          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leave Type Distribution</h6>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            {Object.entries(leaveTypeBreakdown).map(([type, count]) => (
+              <div key={type} style={{ 
+                background: '#f8fafc', 
+                padding: '12px 16px', 
+                borderRadius: '6px', 
+                border: '1px solid #e1e8ed',
+                borderLeft: '3px solid #3b82f6'
+              }}>
+                <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '4px' }}>{type}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c' }}>{count} {count === 1 ? 'employee' : 'employees'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: '16px' }}>
+          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Employees Currently on Leave</h6>
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {employeesOnLeave.map(emp => (
+              <div key={emp.id} style={{ 
+                background: '#ffffff', 
+                padding: '12px', 
+                marginBottom: '8px', 
+                borderRadius: '6px', 
+                border: '1px solid #e1e8ed' 
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '0.9375rem', fontWeight: '600', color: '#1a202c' }}>{emp.name}</div>
+                    <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>{emp.department} • {emp.position}</div>
+                  </div>
+                  <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#475569' }}>
+                    {emp.leavePeriods.length} {emp.leavePeriods.length === 1 ? 'leave' : 'leaves'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Employees with Active Leave:</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{employeesOnLeave.length} of {stats.totalEmployees}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTotalDaysModal = () => {
+    const leaveTypeStats = {};
+    const departmentStats = {};
+    
+    filteredData.forEach(emp => {
+      const dept = emp.department || 'Unknown';
+      if (!departmentStats[dept]) {
+        departmentStats[dept] = { total: 0, paid: 0, unpaid: 0 };
+      }
+      departmentStats[dept].total += emp.totalLeaveDays || 0;
+      departmentStats[dept].paid += emp.paidLeaveDays || 0;
+      departmentStats[dept].unpaid += emp.unpaidLeaveDays || 0;
+
+      if (emp.leavePeriods) {
+        emp.leavePeriods.forEach(period => {
+          const type = period.leaveType || 'Unknown';
+          if (!leaveTypeStats[type]) {
+            leaveTypeStats[type] = 0;
+          }
+          const days = Math.ceil((new Date(period.endDate) - new Date(period.startDate)) / (1000 * 60 * 60 * 24)) + 1;
+          leaveTypeStats[type] += days;
+        });
+      }
+    });
+
+    return (
+      <div>
+        <div style={{ marginBottom: '24px' }}>
+          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Department Leave Days</h6>
+          <Table hover style={{ fontSize: '0.9375rem' }}>
+            <thead style={{ background: '#f8fafc' }}>
+              <tr>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600' }}>Department</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Total Days</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Paid Days</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Unpaid Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(departmentStats).map(([dept, data]) => (
+                <tr key={dept}>
+                  <td style={{ padding: '12px', color: '#1a202c', fontWeight: '500' }}>{dept}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.total}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{data.paid}</td>
+                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{data.unpaid}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+        <div style={{ marginBottom: '24px' }}>
+          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leave Type Distribution</h6>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            {Object.entries(leaveTypeStats).map(([type, days]) => (
+              <div key={type} style={{ 
+                background: '#f8fafc', 
+                padding: '12px 16px', 
+                borderRadius: '6px', 
+                border: '1px solid #e1e8ed' 
+              }}>
+                <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '4px' }}>{type}</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c' }}>{days} days</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Leave Days ({selectedYear}):</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{stats.totalLeaveDays} days</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Paid Leave Days:</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>
+              {filteredData.reduce((sum, emp) => sum + (emp.paidLeaveDays || 0), 0)} days
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Unpaid Leave Days:</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>
+              {filteredData.reduce((sum, emp) => sum + (emp.unpaidLeaveDays || 0), 0)} days
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Container fluid className="leave-tracker">
       <div className="page-header mb-4">
@@ -419,6 +690,29 @@ const LeaveTracker = () => {
                       } else {
                         balanceStatus = { color: 'danger', icon: <XCircle size={16} /> };
                       }
+
+                      // Group leave periods by leave type
+                      const leaveTypeGroups = {};
+                      if (employee.leavePeriods && employee.leavePeriods.length > 0) {
+                        employee.leavePeriods.forEach((period, index) => {
+                          const leaveType = period.leaveType || 'Unknown';
+                          if (!leaveTypeGroups[leaveType]) {
+                            leaveTypeGroups[leaveType] = [];
+                          }
+                          leaveTypeGroups[leaveType].push({ ...period, originalIndex: index });
+                        });
+                      }
+
+                      // Create unique key for this employee's expanded state
+                      const employeeExpandedKey = `${employee.id}`;
+                      
+                      const toggleLeaveType = (leaveType) => {
+                        const key = `${employeeExpandedKey}-${leaveType}`;
+                        setExpandedLeaveTypes(prev => ({
+                          ...prev,
+                          [key]: !prev[key]
+                        }));
+                      };
                       
                       return (
                         <tr key={employee.id}>
@@ -494,276 +788,6 @@ const LeaveTracker = () => {
       {renderStatsModal()}
     </Container>
   );
-
-  // Render modals based on which stat was clicked
-  function renderStatsModal() {
-    if (!showStatsModal) return null;
-
-    const modalConfig = {
-      employees: {
-        title: 'Total Employees Overview',
-        icon: <Users size={24} />,
-        content: renderEmployeesModal()
-      },
-      withLeave: {
-        title: 'Employees Currently on Leave',
-        icon: <UserCheck size={24} />,
-        content: renderWithLeaveModal()
-      },
-      totalDays: {
-        title: 'Total Leave Days Breakdown',
-        icon: <BarChart3 size={24} />,
-        content: renderTotalDaysModal()
-      }
-    };
-
-    const config = modalConfig[showStatsModal];
-    if (!config) return null;
-
-    return (
-      <Modal 
-        show={true} 
-        onHide={() => setShowStatsModal(null)} 
-        size="lg"
-        centered
-      >
-        <Modal.Header closeButton style={{ background: '#f8fafc', borderBottom: '1px solid #e1e8ed' }}>
-          <Modal.Title style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.125rem', fontWeight: '600', color: '#1a202c' }}>
-            <div style={{ 
-              width: '40px', 
-              height: '40px', 
-              borderRadius: '8px', 
-              background: '#f1f5f9', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              color: '#3b82f6'
-            }}>
-              {config.icon}
-            </div>
-            {config.title}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body style={{ padding: '24px' }}>
-          {config.content}
-        </Modal.Body>
-        <Modal.Footer style={{ background: '#f8fafc', borderTop: '1px solid #e1e8ed' }}>
-          <Button variant="secondary" onClick={() => setShowStatsModal(null)} style={{ background: '#e2e8f0', color: '#475569', border: 'none' }}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    );
-  }
-
-  function renderEmployeesModal() {
-    const departmentBreakdown = {};
-    filteredData.forEach(emp => {
-      const dept = emp.department || 'Unknown';
-      if (!departmentBreakdown[dept]) {
-        departmentBreakdown[dept] = { count: 0, withLeave: 0 };
-      }
-      departmentBreakdown[dept].count++;
-      if (emp.totalLeaveDays > 0) {
-        departmentBreakdown[dept].withLeave++;
-      }
-    });
-
-    return (
-      <div>
-        <div style={{ marginBottom: '24px' }}>
-          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Department Breakdown</h6>
-          <Table hover style={{ fontSize: '0.9375rem' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600' }}>Department</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Total Employees</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>With Leave</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Percentage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(departmentBreakdown).map(([dept, data]) => (
-                <tr key={dept}>
-                  <td style={{ padding: '12px', color: '#1a202c', fontWeight: '500' }}>{dept}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.count}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.withLeave}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>
-                    {((data.count / filteredData.length) * 100).toFixed(1)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Tracked Employees:</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{stats.totalEmployees}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Active Departments:</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{Object.keys(departmentBreakdown).length}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function renderWithLeaveModal() {
-    const employeesOnLeave = filteredData.filter(emp => emp.leavePeriods && emp.leavePeriods.length > 0);
-    
-    const leaveTypeBreakdown = {};
-    employeesOnLeave.forEach(emp => {
-      emp.leavePeriods.forEach(period => {
-        const type = period.leaveType || 'Unknown';
-        if (!leaveTypeBreakdown[type]) {
-          leaveTypeBreakdown[type] = 0;
-        }
-        leaveTypeBreakdown[type]++;
-      });
-    });
-
-    return (
-      <div>
-        <div style={{ marginBottom: '24px' }}>
-          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leave Type Distribution</h6>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
-            {Object.entries(leaveTypeBreakdown).map(([type, count]) => (
-              <div key={type} style={{ 
-                background: '#f8fafc', 
-                padding: '12px 16px', 
-                borderRadius: '6px', 
-                border: '1px solid #e1e8ed',
-                borderLeft: '3px solid #3b82f6'
-              }}>
-                <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '4px' }}>{type}</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c' }}>{count} {count === 1 ? 'employee' : 'employees'}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginBottom: '16px' }}>
-          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Employees Currently on Leave</h6>
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {employeesOnLeave.map(emp => (
-              <div key={emp.id} style={{ 
-                background: '#ffffff', 
-                padding: '12px', 
-                marginBottom: '8px', 
-                borderRadius: '6px', 
-                border: '1px solid #e1e8ed' 
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '0.9375rem', fontWeight: '600', color: '#1a202c' }}>{emp.name}</div>
-                    <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>{emp.department} • {emp.position}</div>
-                  </div>
-                  <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#475569' }}>
-                    {emp.leavePeriods.length} {emp.leavePeriods.length === 1 ? 'leave' : 'leaves'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Employees with Active Leave:</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{employeesOnLeave.length} of {stats.totalEmployees}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function renderTotalDaysModal() {
-    const leaveTypeStats = {};
-    const departmentStats = {};
-    
-    filteredData.forEach(emp => {
-      const dept = emp.department || 'Unknown';
-      if (!departmentStats[dept]) {
-        departmentStats[dept] = { total: 0, paid: 0, unpaid: 0 };
-      }
-      departmentStats[dept].total += emp.totalLeaveDays || 0;
-      departmentStats[dept].paid += emp.paidLeaveDays || 0;
-      departmentStats[dept].unpaid += emp.unpaidLeaveDays || 0;
-
-      if (emp.leavePeriods) {
-        emp.leavePeriods.forEach(period => {
-          const type = period.leaveType || 'Unknown';
-          if (!leaveTypeStats[type]) {
-            leaveTypeStats[type] = 0;
-          }
-          const days = Math.ceil((new Date(period.endDate) - new Date(period.startDate)) / (1000 * 60 * 60 * 24)) + 1;
-          leaveTypeStats[type] += days;
-        });
-      }
-    });
-
-    return (
-      <div>
-        <div style={{ marginBottom: '24px' }}>
-          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Department Leave Days</h6>
-          <Table hover style={{ fontSize: '0.9375rem' }}>
-            <thead style={{ background: '#f8fafc' }}>
-              <tr>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600' }}>Department</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Total Days</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Paid Days</th>
-                <th style={{ padding: '12px', borderBottom: '2px solid #e1e8ed', color: '#475569', fontWeight: '600', textAlign: 'center' }}>Unpaid Days</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(departmentStats).map(([dept, data]) => (
-                <tr key={dept}>
-                  <td style={{ padding: '12px', color: '#1a202c', fontWeight: '500' }}>{dept}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569' }}>{data.total}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{data.paid}</td>
-                  <td style={{ padding: '12px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{data.unpaid}</td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-        <div style={{ marginBottom: '24px' }}>
-          <h6 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', marginBottom: '12px' }}>Leave Type Distribution</h6>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-            {Object.entries(leaveTypeStats).map(([type, days]) => (
-              <div key={type} style={{ 
-                background: '#f8fafc', 
-                padding: '12px 16px', 
-                borderRadius: '6px', 
-                border: '1px solid #e1e8ed' 
-              }}>
-                <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '4px' }}>{type}</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c' }}>{days} days</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e1e8ed' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Total Leave Days ({selectedYear}):</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>{stats.totalLeaveDays} days</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Paid Leave Days:</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>
-              {filteredData.reduce((sum, emp) => sum + (emp.paidLeaveDays || 0), 0)} days
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>Unpaid Leave Days:</span>
-            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1a202c' }}>
-              {filteredData.reduce((sum, emp) => sum + (emp.unpaidLeaveDays || 0), 0)} days
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
 };
 
