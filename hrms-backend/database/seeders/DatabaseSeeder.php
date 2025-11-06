@@ -28,7 +28,7 @@ class DatabaseSeeder extends Seeder
             // EvaluationResultsSeeder::class, // Disabled - evaluations created in DefaultAccountsSeeder and MultipleAccountsSeeder
             CashAdvanceSeeder::class,
             // ApplicationSeeder::class,
-            // AttendanceSeeder::class,
+            AttendanceRecordSeeder::class,
             // PayrollSeeder::class,
             // LeaveRequestSeeder::class,
             // EvaluationSeeder::class,
@@ -39,6 +39,8 @@ class DatabaseSeeder extends Seeder
             // ResignationFlagSeeder::class,
             SecuritySettingsSeeder::class,
             Holiday2025To2050Seeder::class,
+            ApprovedLeaveRequestSeeder::class,
+            ApprovedOvertimeRequestSeeder::class,
         ]);
     }
 }

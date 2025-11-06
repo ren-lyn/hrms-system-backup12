@@ -116,8 +116,8 @@ class OvertimeRequestController extends Controller
             ]);
 
             // Calculate actual OT hours from attendance
-            // OT starts at 6 PM (18:00) - one hour after the 5 PM shift ends
-            // Any time worked after 6 PM counts as 1 hour, then rounds up
+            // OT starts at 6 PM (18:00) - one hour after standard clock out time (5 PM)
+            // Only time worked after 6 PM counts as OT, rounded UP to full hours
             $actualOTHours = 0;
             
             if ($attendance->clock_out) {
@@ -137,14 +137,14 @@ class OvertimeRequestController extends Controller
                     'ot_start_readable' => date('Y-m-d H:i:s', $otStartTime)
                 ]);
                 
-                // If clocked out after 6 PM, calculate OT hours
-                if ($clockOutTime > $otStartTime) {
+                // If clocked out at or after 6 PM, calculate OT hours
+                if ($clockOutTime >= $otStartTime) {
                     $secondsWorked = $clockOutTime - $otStartTime;
                     $hoursWorked = $secondsWorked / 3600;
                     
-                    // Round UP to full hours (any time after 6 PM = at least 1 hour)
-                    // Example: 6:25 PM = 1 hour, 7:15 PM = 2 hours, 8:01 PM = 3 hours
-                    $actualOTHours = ceil($hoursWorked);
+                    // Round UP to full hours, minimum 1 hour if clocked out at or after 6 PM
+                    // Example: 6:00 PM = 1 hour, 6:15 PM = 1 hour, 7:01 PM = 2 hours, 8:00 PM = 2 hours
+                    $actualOTHours = max(1, ceil($hoursWorked));
                     
                     \Log::info('OT Hours Calculated', [
                         'seconds_worked' => $secondsWorked,
@@ -236,8 +236,8 @@ class OvertimeRequestController extends Controller
             }
 
             // Calculate actual OT hours
-            // OT starts at 6 PM (18:00) - one hour after the 5 PM shift ends
-            // Any time worked after 6 PM counts as 1 hour, then rounds up
+            // OT starts at 6 PM (18:00) - one hour after standard clock out time (5 PM)
+            // Only time worked after 6 PM counts as OT, rounded UP to full hours
             $actualOTHours = 0;
             
             if ($attendance->clock_out) {
@@ -248,14 +248,14 @@ class OvertimeRequestController extends Controller
                 $clockOutTime = strtotime($request->ot_date . ' ' . $clockOutTimeOnly);
                 $otStartTime = strtotime($request->ot_date . ' 18:00:00'); // 6 PM
                 
-                // If clocked out after 6 PM, calculate OT hours
-                if ($clockOutTime > $otStartTime) {
+                // If clocked out at or after 6 PM, calculate OT hours
+                if ($clockOutTime >= $otStartTime) {
                     $secondsWorked = $clockOutTime - $otStartTime;
                     $hoursWorked = $secondsWorked / 3600;
                     
-                    // Round UP to full hours (any time after 6 PM = at least 1 hour)
-                    // Example: 6:25 PM = 1 hour, 7:15 PM = 2 hours, 8:01 PM = 3 hours
-                    $actualOTHours = ceil($hoursWorked);
+                    // Round UP to full hours, minimum 1 hour if clocked out at or after 6 PM
+                    // Example: 6:00 PM = 1 hour, 6:15 PM = 1 hour, 7:01 PM = 2 hours, 8:00 PM = 2 hours
+                    $actualOTHours = max(1, ceil($hoursWorked));
                 }
             }
 
