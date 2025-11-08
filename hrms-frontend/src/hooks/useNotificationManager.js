@@ -34,18 +34,18 @@ class NotificationManager {
 
     const token = localStorage.getItem('token');
     if (!token) {
-      console.log('No token found for SSE');
+      // Silent fail - no token means not authenticated
       return;
     }
 
     this.isConnecting = true;
     const url = `http://localhost:8000/api/notifications/stream?token=${encodeURIComponent(token)}`;
-    console.log('NotificationManager: Connecting to SSE:', url);
+    // Removed verbose logging to reduce console noise
 
     this.eventSource = new EventSource(url, { withCredentials: false });
 
     this.eventSource.onopen = () => {
-      console.log('NotificationManager: SSE connection opened');
+      // Only log connection issues, not successful connections
       this.isConnecting = false;
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
@@ -54,16 +54,18 @@ class NotificationManager {
     };
 
     this.eventSource.onerror = (e) => {
-      console.log('NotificationManager: SSE error:', e);
+      // Only log errors if connection was actually established
+      if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
+        // Connection closed - will attempt reconnect with backoff
+      }
       this.isConnecting = false;
       this.disconnect();
 
-      // Implement exponential backoff for reconnection
+      // Implement exponential backoff for reconnection with longer initial delay
       if (this.listeners.size > 0) {
-        const delay = Math.min(5000 + Math.random() * 5000, 30000); // 5-10 seconds with jitter
+        const delay = Math.min(15000 + Math.random() * 10000, 60000); // 15-25 seconds with jitter, max 60s
         this.reconnectTimeout = setTimeout(() => {
           if (this.listeners.size > 0) {
-            console.log('NotificationManager: Attempting to reconnect SSE...');
             this.connect();
           }
         }, delay);
@@ -73,7 +75,7 @@ class NotificationManager {
     this.eventSource.addEventListener('notification', (e) => {
       try {
         const data = JSON.parse(e.data);
-        console.log('NotificationManager: Received notification:', data);
+        // Removed verbose logging - notifications are handled silently
         this.lastNotificationId = data.id;
         
         // Notify all listeners
@@ -81,11 +83,15 @@ class NotificationManager {
           try {
             callback(data);
           } catch (error) {
+            // Only log actual errors, not normal operation
             console.error('NotificationManager: Error in listener callback:', error);
           }
         });
       } catch (err) {
-        console.log('NotificationManager: Error parsing notification:', err);
+        // Only log parsing errors - silent otherwise
+        if (process.env.NODE_ENV === 'development') {
+          console.error('NotificationManager: Error parsing notification:', err);
+        }
       }
     });
   }
@@ -97,7 +103,7 @@ class NotificationManager {
     }
 
     if (this.eventSource) {
-      console.log('NotificationManager: Closing SSE connection');
+      // Silent disconnect - no logging needed
       this.eventSource.close();
       this.eventSource = null;
     }

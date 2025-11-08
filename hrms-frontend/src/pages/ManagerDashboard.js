@@ -360,10 +360,8 @@ const ManagerDashboard = () => {
                       }}
                       style={{
                         fontSize: '0.9rem',
-                        padding: '12px 16px',
-                        justifyContent: 'flex-start',
-                        margin: '2px 8px',
-                        borderRadius: '6px'
+                        padding: '10px 15px',
+                        justifyContent: 'flex-start'
                       }}
                     >
                       <BarChart2 size={16} />

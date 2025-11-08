@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -20,7 +21,7 @@ class NotificationStreamController extends Controller
                 if ($accessToken) {
                     $user = $accessToken->tokenable;
                     // Set the authenticated user for this request
-                    auth()->setUser($user);
+                    Auth::setUser($user);
                 }
             }
         }
@@ -52,8 +53,9 @@ class NotificationStreamController extends Controller
             flush();
 
             while (true) {
-                // Break after 60 seconds to prevent long-running connections
-                if (time() - $start > 60) {
+                // Break after 3600 seconds (1 hour) to prevent truly long-running connections
+                // This prevents the constant reconnection that was causing excessive logging
+                if (time() - $start > 3600) {
                     echo ": Connection timeout\n\n";
                     flush();
                     break;

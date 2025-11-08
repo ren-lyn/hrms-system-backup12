@@ -18,15 +18,16 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
 
   const load = async () => {
     try {
-      console.log('Loading notifications...');
+      // Reduced logging - only log errors in development
       const res = await fetchNotifications();
-      console.log('Notifications response:', res.data);
       const list = res.data.data || [];
       setItems(list);
       setUnread(list.filter(n => !n.read_at).length);
-      console.log('Set items:', list.length, 'unread:', list.filter(n => !n.read_at).length);
     } catch (e) {
-      console.log('Error loading notifications:', e);
+      // Only log actual errors
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error loading notifications:', e);
+      }
     }
   };
 
@@ -83,7 +84,7 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
       
       // Use the enhanced notification action handler
       const notificationAction = getNotificationAction(n);
-      console.log('Notification action:', notificationAction);
+      // Removed verbose logging
       
       switch (notificationAction.action) {
         case 'OPEN_EVALUATION':
@@ -122,7 +123,8 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
           }
           break;
         default:
-          console.log('No specific action for notification type:', n.type);
+          // Silent handling - no action needed for this notification type
+          break;
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -229,7 +231,8 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
 export default Bell;
 
 // Tiny polling component for real-time updates
-const Poller = ({ tick, interval = 60000 }) => { // Increased from 5s to 60s
+// Note: Polling is now primarily handled by SSE, this is just a backup
+const Poller = ({ tick, interval = 300000 }) => { // Increased to 5 minutes (300s) to reduce API calls
   useEffect(() => {
     const id = setInterval(() => tick(), interval);
     return () => clearInterval(id);

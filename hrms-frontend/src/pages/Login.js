@@ -15,10 +15,6 @@ const Login = () => {
   const [isHoveringText, setIsHoveringText] = useState(false);
    const [showForgotModal, setShowForgotModal] = useState(false);
   const [showResetForm, setShowResetForm] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [reason, setReason] = useState('');
   const [fullName, setFullName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -30,8 +26,6 @@ const Login = () => {
   const resetForgotState = () => {
     setShowForgotModal(false);
     setShowResetForm(false);
-    setNewPassword('');
-    setConfirmPassword('');
     setReason('');
     setFullName('');
     setEmployeeId('');
@@ -867,10 +861,6 @@ const Login = () => {
                     toast.error('Please enter a valid email address.', { position: 'top-right' });
                     return;
                   }
-                  if (newPassword !== confirmPassword) {
-                    toast.error('Passwords do not match.', { position: 'top-right' });
-                    return;
-                  }
 
                   // Validate employee details against database
                   try {
@@ -906,8 +896,6 @@ const Login = () => {
                     form.append('department', department);
                     form.append('reason', reason);
                     form.append('email', resetEmail || email);
-                    form.append('new_password', newPassword);
-                    form.append('confirm_password', confirmPassword);
                     // Attach up to 2 selected ID photos if provided
                     if (idPhotos[0]) form.append('id_photo_1', idPhotos[0]);
                     if (idPhotos[1]) form.append('id_photo_2', idPhotos[1]);
@@ -975,52 +963,6 @@ const Login = () => {
                     />
                   </div>
 
-                  <div className="fp-row">
-                    <div className="form-group">
-                      <label className="form-label">New Password</label>
-                      <div className="input-wrapper">
-                        <input
-                          type={showNewPassword ? 'text' : 'password'}
-                          className="form-input password-field"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="Enter new password"
-                          required
-                        />
-                        <button
-                          type="button"
-                          className="toggle-password-btn"
-                          aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                          onClick={() => setShowNewPassword((v) => !v)}
-                          title={showNewPassword ? 'Hide password' : 'Show password'}
-                        >
-                          <i className={`bi ${showNewPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Confirm Password</label>
-                      <div className="input-wrapper">
-                        <input
-                          type={showConfirmPassword ? 'text' : 'password'}
-                          className="form-input password-field"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="Re-enter new password"
-                          required
-                        />
-                        <button
-                          type="button"
-                          className="toggle-password-btn"
-                          aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                          onClick={() => setShowConfirmPassword((v) => !v)}
-                          title={showConfirmPassword ? 'Hide password' : 'Show password'}
-                        >
-                          <i className={`bi ${showConfirmPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                   <div className="form-group">
                     <label className="form-label">Reason for password change</label>
                     <textarea
