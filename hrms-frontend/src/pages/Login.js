@@ -123,13 +123,38 @@ const Login = () => {
 
       const { access_token, user } = response.data;
 
+      const normalizedName = () => {
+        if (!user) return '';
+        const apiFullName = typeof user.full_name === 'string' ? user.full_name.trim() : '';
+        if (apiFullName && apiFullName.toLowerCase() !== 'n/a') {
+          return apiFullName;
+        }
+        const apiName = typeof user.name === 'string' ? user.name.trim() : '';
+        if (apiName && apiName.toLowerCase() !== 'n/a') {
+          return apiName;
+        }
+        const first = typeof user.first_name === 'string' ? user.first_name.trim() : '';
+        const last = typeof user.last_name === 'string' ? user.last_name.trim() : '';
+        return [first, last].filter(Boolean).join(' ').trim();
+      };
+
+      const normalizedUser = {
+        ...user,
+        first_name: (user?.first_name ?? '').trim(),
+        last_name: (user?.last_name ?? '').trim(),
+        full_name: normalizedName(),
+        name: normalizedName(),
+      };
+
+      const roleName = normalizedUser.role?.name || '';
+
       localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('role', user.role.name);
+      localStorage.setItem('user', JSON.stringify(normalizedUser));
+      localStorage.setItem('role', roleName);
 
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
-      switch (user.role.name) {
+      switch (roleName) {
         case 'Admin':
           navigate('/dashboard/admin');
           break;

@@ -166,7 +166,7 @@ class ApplicationController extends Controller
     {
         $request->validate([
             // Canonical statuses used across app and HR dashboards
-            'status' => 'required|in:Pending,Applied,ShortListed,Interview,Offered,Offer Sent,Offer Accepted,Onboarding,Hired,Rejected'
+            'status' => 'required|in:Pending,Applied,ShortListed,Interview,Offered,Offer Sent,Offer Accepted,Onboarding,Document Submission,Orientation Schedule,Starting Date,Benefits Enroll,Profile Creation,Hired,Rejected'
         ]);
 
         $application = Application::findOrFail($id);
@@ -867,11 +867,15 @@ class ApplicationController extends Controller
                 ], 400);
             }
             
-            // Update status to Offer Accepted
-            $application->update(['status' => 'Offer Accepted']);
+            // Update status to Offer Accepted and record acceptance timestamp
+            $application->update([
+                'status' => 'Offer Accepted',
+                'offer_accepted_at' => now()
+            ]);
             
             Log::info('Application status updated to Offer Accepted', [
-                'application_id' => $id
+                'application_id' => $id,
+                'offer_accepted_at' => now()
             ]);
             
             // Check if onboarding record exists

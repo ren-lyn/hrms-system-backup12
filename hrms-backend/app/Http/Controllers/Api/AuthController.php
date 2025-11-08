@@ -88,11 +88,17 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        $fullName = trim($user->first_name . ' ' . $user->last_name);
+
         return response()->json([
             "access_token" => $token,
             "user" => [
                 "id" => $user->id,
                 "email" => $user->email,
+                "first_name" => $user->first_name,
+                "last_name" => $user->last_name,
+                "name" => $fullName,
+                "full_name" => $fullName,
                 "role" => [
                     "id" => $user->role_id ?? null,
                     "name" => $user->role->name ?? null

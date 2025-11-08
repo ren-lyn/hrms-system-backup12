@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\PasswordChangeRequestController;
 use App\Http\Controllers\Api\SecurityAlertController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\DocumentController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -183,6 +184,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/applications/{id}/job-offer', [ApplicationController::class, 'getJobOffer']);
     Route::post('/applications/{id}/accept-offer', [ApplicationController::class, 'acceptOffer']);
     Route::post('/applications/{id}/decline-offer', [ApplicationController::class, 'declineOffer']);
+    
+    // Document Management Routes
+    Route::prefix('applications/{applicationId}/documents')->group(function () {
+        // Document Requirements (HR only)
+        Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
+            Route::get('/requirements', [DocumentController::class, 'getRequirements']);
+            Route::post('/requirements', [DocumentController::class, 'createRequirement']);
+            Route::put('/requirements/{requirementId}', [DocumentController::class, 'updateRequirement']);
+            Route::delete('/requirements/{requirementId}', [DocumentController::class, 'deleteRequirement']);
+        });
+        
+        // Document Submissions
+        Route::get('/submissions', [DocumentController::class, 'getSubmissions']);
+        Route::post('/requirements/{requirementId}/upload', [DocumentController::class, 'uploadSubmission']);
+        Route::post('/submit', [DocumentController::class, 'submitDocuments']);
+        Route::get('/check-approved', [DocumentController::class, 'checkAllApproved']);
+        Route::get('/submissions/{submissionId}/download', [DocumentController::class, 'downloadSubmission']);
+        Route::delete('/submissions/{submissionId}', [DocumentController::class, 'deleteSubmission']);
+        
+        // Review submissions (HR only)
+        Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
+            Route::put('/submissions/{submissionId}/review', [DocumentController::class, 'reviewSubmission']);
+        });
+    });
 });
 
 Route::get('/test', function () {

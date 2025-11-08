@@ -1,11 +1,10 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
-import { Card, Button, Badge, ProgressBar, Alert, Form, InputGroup, Modal } from 'react-bootstrap';
+import { Card, Button, Badge, Alert, Form, Modal } from 'react-bootstrap';
 import { validateDocumentUpload, formatFileSize } from '../utils/OnboardingValidation';
 import OnboardingToast from './OnboardingToast';
 import OnboardingLoading from './OnboardingLoading';
 import OnboardingStatusBadge from './OnboardingStatusBadge';
-import OnboardingProgressBar from './OnboardingProgressBar';
 import '../styles/OnboardingStyles.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -68,10 +67,142 @@ import {
   faRefresh
 } from '@fortawesome/free-solid-svg-icons';
 
+const DOCUMENT_SECTIONS = [
+  {
+    id: 'personal-identification',
+    title: 'Personal Identification & Background',
+    description: 'Please upload clear scanned copies or photos of each requirement.',
+    documents: [
+      {
+        id: 'governmentId',
+        label: 'Valid Government ID',
+        helperText: 'Passport, Driver\'s License, UMID, or National ID',
+        isRequired: true
+      },
+      {
+        id: 'birthCertificate',
+        label: 'Birth Certificate (PSA)',
+        helperText: 'Official PSA-issued certificate for age and identity verification',
+        isRequired: true
+      },
+      {
+        id: 'resume',
+        label: 'Resume / Curriculum Vitae (CV)',
+        helperText: 'Latest copy detailing your education and work experience',
+        isRequired: true
+      },
+      {
+        id: 'diploma',
+        label: 'Diploma / Transcript of Records (TOR)',
+        helperText: 'Proof of educational attainment',
+        isRequired: true
+      },
+      {
+        id: 'photo',
+        label: '2x2 or Passport-size Photo',
+        helperText: 'For company ID and personnel records (plain background preferred)',
+        isRequired: true
+      },
+      {
+        id: 'employmentCertificate',
+        label: 'Certificate of Employment / Recommendation Letters',
+        helperText: 'Proof of past work experience or references',
+        isRequired: false
+      },
+      {
+        id: 'nbiClearance',
+        label: 'NBI or Police Clearance',
+        helperText: 'Issued within the last six (6) months',
+        isRequired: true
+      },
+      {
+        id: 'barangayClearance',
+        label: 'Barangay Clearance',
+        helperText: 'Proof of good moral character and residency',
+        isRequired: true
+      }
+    ]
+  },
+  {
+    id: 'government-benefits',
+    title: 'Government Benefits & Tax Documents',
+    description: 'Upload copies or screenshots showing your official membership numbers.',
+    documents: [
+      {
+        id: 'sssDocument',
+        label: 'SSS Number',
+        helperText: 'Scan or screenshot of your SSS E-1/E-4 form or ID showing the number',
+        isRequired: true
+      },
+      {
+        id: 'philhealthDocument',
+        label: 'PhilHealth Number',
+        helperText: 'Copy of your PhilHealth ID or MDR with visible number',
+        isRequired: true
+      },
+      {
+        id: 'pagibigDocument',
+        label: 'Pag-IBIG MID Number',
+        helperText: 'Document showing your Pag-IBIG MID/RTN number',
+        isRequired: true
+      },
+      {
+        id: 'tinDocument',
+        label: 'TIN (Tax Identification Number)',
+        helperText: 'BIR Form 1902/1905 or any document showing your TIN',
+        isRequired: true
+      }
+    ]
+  },
+  {
+    id: 'medical-health',
+    title: 'Medical & Health',
+    description: 'Ensure documents are clear, legible, and issued by an accredited clinic or health professional.',
+    documents: [
+      {
+        id: 'medicalCertificate',
+        label: 'Medical Certificate / Fit-to-Work Clearance',
+        helperText: 'Issued by a licensed doctor or accredited clinic',
+        isRequired: true
+      },
+      {
+        id: 'vaccinationRecords',
+        label: 'Vaccination Records',
+        helperText: 'If required by the company or job role',
+        isRequired: false
+      }
+    ]
+  }
+];
+
+const DOCUMENT_STATUS_CONFIG = {
+  not_submitted: {
+    label: 'Not Submitted',
+    variant: 'secondary',
+    description: 'Document not uploaded yet'
+  },
+  under_review: {
+    label: 'Under Review',
+    variant: 'warning',
+    description: 'Awaiting HR review'
+  },
+  resubmission_required: {
+    label: 'Resubmit',
+    variant: 'danger',
+    description: 'Please upload a new copy'
+  },
+  approved: {
+    label: 'Approved',
+    variant: 'success',
+    description: 'Document accepted by HR'
+  }
+};
+
+const DOCUMENT_STATUS_STORAGE_KEY = 'personalOnboardingDocumentStatuses';
+
 const PersonalOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingDocumentKey, setUploadingDocumentKey] = useState(null);
   const [jobOfferData, setJobOfferData] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -107,10 +238,83 @@ const PersonalOnboarding = () => {
   
   // New state for multi-page system
   const [currentPage, setCurrentPage] = useState('status');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('documents');
   
   // All tabs are always available
   const availableTabs = ['status', 'interview', 'offer', 'onboarding', 'application-status'];
+
+  const [documentUploads, setDocumentUploads] = useState({});
+  const [documentPreviews, setDocumentPreviews] = useState({});
+  const documentPreviewsRef = useRef({});
+  const [applicantName, setApplicantName] = useState('Applicant');
+  const [followUpMessages, setFollowUpMessages] = useState({});
+  const [showFollowUpInput, setShowFollowUpInput] = useState({});
+  const defaultDocumentStatuses = useMemo(() => {
+    const baseStatuses = {};
+    DOCUMENT_SECTIONS.forEach((section) => {
+      section.documents.forEach((document) => {
+        baseStatuses[document.id] = 'not_submitted';
+      });
+    });
+    return baseStatuses;
+  }, []);
+  const [documentStatuses, setDocumentStatuses] = useState(() => {
+    if (typeof window === 'undefined') return defaultDocumentStatuses;
+    try {
+      const saved = JSON.parse(localStorage.getItem(DOCUMENT_STATUS_STORAGE_KEY) || '{}');
+      return { ...defaultDocumentStatuses, ...saved };
+    } catch (error) {
+      console.error('Error loading document statuses:', error);
+      return defaultDocumentStatuses;
+    }
+  });
+
+  const totalDocumentCount = DOCUMENT_SECTIONS.reduce(
+    (count, section) => count + section.documents.length,
+    0
+  );
+
+  const normalizeNameValue = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'n/a') return '';
+    return trimmed;
+  };
+
+  const normalizeEmailValue = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'n/a') return '';
+    return trimmed;
+  };
+
+  const resolveApplicantDisplayName = (userData = {}, applications = []) => {
+    const first = typeof userData.first_name === 'string' ? userData.first_name.trim() : '';
+    const last = typeof userData.last_name === 'string' ? userData.last_name.trim() : '';
+
+    const candidates = [
+      normalizeNameValue(userData.full_name),
+      normalizeNameValue(userData.name),
+      normalizeNameValue(`${first} ${last}`),
+    ];
+
+    if (Array.isArray(applications) && applications.length > 0) {
+      const primaryApplication = applications[0] ?? {};
+      candidates.push(normalizeNameValue(primaryApplication.applicant_name));
+      if (primaryApplication.applicant) {
+        const appFirst = typeof primaryApplication.applicant.first_name === 'string'
+          ? primaryApplication.applicant.first_name.trim()
+          : '';
+        const appLast = typeof primaryApplication.applicant.last_name === 'string'
+          ? primaryApplication.applicant.last_name.trim()
+          : '';
+        candidates.push(normalizeNameValue(`${appFirst} ${appLast}`));
+      }
+    }
+
+    const validCandidate = candidates.find(Boolean);
+    return validCandidate || '';
+  };
 
   const showToast = (type, title, message) => {
     setToast({ show: true, type, title, message });
@@ -318,6 +522,286 @@ const PersonalOnboarding = () => {
     return `${Math.floor(diffInSeconds / 604800)} weeks ago`;
   };
 
+  const getDocumentLabel = (documentKey) => {
+    for (const section of DOCUMENT_SECTIONS) {
+      const match = section.documents.find((document) => document.id === documentKey);
+      if (match) {
+        return match.label;
+      }
+    }
+    return documentKey;
+  };
+
+  const handleDocumentChange = (documentKey, file) => {
+    if (!file) {
+      return;
+    }
+
+    const { isValid, errors } = validateDocumentUpload(file);
+
+    if (!isValid) {
+      const errorMessage = Object.values(errors).join('. ') || 'Please upload a PDF, JPG, or PNG file under 5MB.';
+
+      setUploadErrors((prev) => ({
+        ...prev,
+        [documentKey]: errorMessage
+      }));
+
+      setDocumentUploads((prev) => {
+        const next = { ...prev };
+        delete next[documentKey];
+        return next;
+      });
+
+      setDocumentPreviews((prev) => {
+        const next = { ...prev };
+        if (next[documentKey]) {
+          URL.revokeObjectURL(next[documentKey]);
+          delete next[documentKey];
+        }
+        return next;
+      });
+      delete documentPreviewsRef.current[documentKey];
+
+    setDocumentStatuses((prev) => ({
+      ...prev,
+      [documentKey]: 'resubmission_required'
+    }));
+
+      showToast('error', 'Invalid File', errorMessage);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+
+    setDocumentUploads((prev) => ({
+      ...prev,
+      [documentKey]: file
+    }));
+
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[documentKey];
+      return next;
+    });
+
+    setDocumentPreviews((prev) => {
+      const next = { ...prev };
+      if (next[documentKey]) {
+        URL.revokeObjectURL(next[documentKey]);
+      }
+      next[documentKey] = previewUrl;
+      return next;
+    });
+    documentPreviewsRef.current[documentKey] = previewUrl;
+
+    setDocumentStatuses((prev) => ({
+      ...prev,
+      [documentKey]: 'under_review'
+    }));
+    showToast('success', 'Document Selected', `${getDocumentLabel(documentKey)} ready for submission.`);
+  };
+
+  const handleRemoveDocument = (documentKey) => {
+    setDocumentUploads((prev) => {
+      const next = { ...prev };
+      delete next[documentKey];
+      return next;
+    });
+
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[documentKey];
+      return next;
+    });
+
+    setDocumentPreviews((prev) => {
+      const next = { ...prev };
+      if (next[documentKey]) {
+        URL.revokeObjectURL(next[documentKey]);
+        delete next[documentKey];
+      }
+      return next;
+    });
+    delete documentPreviewsRef.current[documentKey];
+
+    setDocumentStatuses((prev) => ({
+      ...prev,
+      [documentKey]: 'not_submitted'
+    }));
+    showToast('info', 'Document Removed', `${getDocumentLabel(documentKey)} removed from submission.`);
+  };
+
+  const handlePreviewDocument = (documentKey) => {
+    const previewUrl = documentPreviewsRef.current[documentKey] || documentPreviews[documentKey];
+    if (previewUrl && typeof window !== 'undefined') {
+      window.open(previewUrl, '_blank');
+    }
+  };
+
+  const requiredDocumentKeys = DOCUMENT_SECTIONS.flatMap((section) =>
+    section.documents.filter((document) => document.isRequired).map((document) => document.id)
+  );
+
+  const finalInterviewEntries = useMemo(() => {
+    if (!Array.isArray(interviewData)) return [];
+    return interviewData.filter((interview) => {
+      const stage = (interview.stage || interview.phase || interview.status || '').toString().toLowerCase();
+      const type = (interview.interview_type || interview.type || '').toString().toLowerCase();
+      return stage.includes('final') || type.includes('final');
+    });
+  }, [interviewData]);
+
+  const toggleFollowUpInput = (documentKey) => {
+    setShowFollowUpInput((prev) => ({
+      ...prev,
+      [documentKey]: !prev[documentKey]
+    }));
+  };
+
+  const handleFollowUpMessageChange = (documentKey, message) => {
+    setFollowUpMessages((prev) => ({
+      ...prev,
+      [documentKey]: message
+    }));
+  };
+
+  const handleFollowUpSubmit = async (documentKey, event = null) => {
+    if (event) {
+      event.preventDefault();
+    }
+    const trimmedMessage = (followUpMessages[documentKey] || '').trim();
+    if (!trimmedMessage) {
+      showToast('error', 'Follow-Up Required', 'Please enter a follow-up message before sending.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        showToast('error', 'Authentication Required', 'Please log in to send a follow-up request.');
+        return;
+      }
+
+      // Placeholder for backend follow-up endpoint
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      showToast('success', 'Follow-Up Sent', 'Your follow-up message has been sent to HR.');
+      setShowFollowUpInput((prev) => ({
+        ...prev,
+        [documentKey]: false
+      }));
+      setFollowUpMessages((prev) => ({
+        ...prev,
+        [documentKey]: ''
+      }));
+    } catch (error) {
+      console.error('Error sending follow-up request:', error);
+      showToast('error', 'Follow-Up Failed', 'Unable to send follow-up request. Please try again later.');
+    }
+  };
+
+  const handleSubmitDocument = async (documentKey) => {
+    if (!documentUploads[documentKey]) {
+      showToast('error', 'No File Selected', `Please select a file for ${getDocumentLabel(documentKey)} before submitting.`);
+      return;
+    }
+
+    try {
+      setUploadingDocumentKey(documentKey);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setDocumentStatuses((prev) => ({
+        ...prev,
+        [documentKey]: 'under_review'
+      }));
+      setUploadErrors((prev) => {
+        const next = { ...prev };
+        delete next[documentKey];
+        return next;
+      });
+      showToast('success', 'Document Submitted', `${getDocumentLabel(documentKey)} has been sent for HR review.`);
+    } catch (error) {
+      console.error('Error submitting document:', error);
+      showToast('error', 'Submission Failed', `We were unable to submit ${getDocumentLabel(documentKey)}. Please try again.`);
+    } finally {
+      setUploadingDocumentKey(null);
+    }
+  };
+
+  useEffect(() => {
+    documentPreviewsRef.current = documentPreviews;
+  }, [documentPreviews]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const resolvedName = resolveApplicantDisplayName(storedUser, userApplications);
+      if (resolvedName) {
+        setApplicantName(resolvedName);
+      }
+    } catch (error) {
+      console.error('Error resolving applicant name from storage:', error);
+    }
+  }, [userApplications]);
+
+  useEffect(() => {
+    const syncApplicantProfile = async () => {
+      if (typeof window === 'undefined') return;
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const response = await axios.get('http://localhost:8000/api/auth/user', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response?.data) {
+          const fetchedUser = response.data;
+          const normalizedFullName = normalizeNameValue(fetchedUser.full_name)
+            || normalizeNameValue(`${fetchedUser.first_name ?? ''} ${fetchedUser.last_name ?? ''}`)
+            || `${(fetchedUser.first_name ?? '').trim()} ${(fetchedUser.last_name ?? '').trim()}`.trim();
+
+          const canonicalUser = {
+            ...fetchedUser,
+            first_name: (fetchedUser.first_name ?? '').trim(),
+            last_name: (fetchedUser.last_name ?? '').trim(),
+            full_name: normalizedFullName,
+            name: normalizeNameValue(fetchedUser.name) || normalizedFullName,
+          };
+
+          localStorage.setItem('user', JSON.stringify(canonicalUser));
+
+          const resolvedName = resolveApplicantDisplayName(canonicalUser);
+          if (resolvedName) {
+            setApplicantName(resolvedName);
+          }
+        }
+      } catch (error) {
+        console.error('Error syncing authenticated user profile:', error);
+      }
+    };
+
+    syncApplicantProfile();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(DOCUMENT_STATUS_STORAGE_KEY, JSON.stringify(documentStatuses));
+    } catch (error) {
+      console.error('Error saving document statuses:', error);
+    }
+  }, [documentStatuses]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(documentPreviewsRef.current).forEach((url) => {
+        if (url && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, []);
+
   const handleBellIconClick = () => {
     setShowNotificationDropdown(!showNotificationDropdown);
     if (!showNotificationDropdown) {
@@ -374,34 +858,51 @@ const PersonalOnboarding = () => {
       });
       
       // Get user info from localStorage (from RegisterApplicant.js)
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const storedUserRaw = localStorage.getItem('user') || '{}';
+      const user = JSON.parse(storedUserRaw);
       
-      // Debug: Log user data to console
       console.log('User data from localStorage:', user);
       
-      // Build full name from first_name and last_name (from RegisterApplicant.js)
-      const fullName = user.name || 
-        (user.first_name && user.last_name ? `${user.first_name} ${user.last_name}`.trim() : 'N/A');
+      const constructedFullName = resolveApplicantDisplayName(user) || '';
+      console.log('Full name constructed:', constructedFullName || '[none]');
       
-      console.log('Full name constructed:', fullName);
+      const userEmail = normalizeEmailValue(user.email);
+      console.log('User email:', userEmail || '[none]');
       
-      // Get email from user data
-      const userEmail = user.email || 'N/A';
-      
-      console.log('User email:', userEmail);
-      
-      // If no name found in localStorage, try to get from the first application
-      let finalName = fullName;
+      let finalName = constructedFullName;
       let finalEmail = userEmail;
       
-      if (fullName === 'N/A' && response.data.length > 0) {
+      if (!finalName && response.data.length > 0) {
         const firstApp = response.data[0];
         if (firstApp.applicant_name) {
-          finalName = firstApp.applicant_name;
+          finalName = normalizeNameValue(firstApp.applicant_name) || finalName;
         }
         if (firstApp.applicant_email) {
-          finalEmail = firstApp.applicant_email;
+          finalEmail = normalizeEmailValue(firstApp.applicant_email) || finalEmail;
         }
+        if (!finalEmail && firstApp.applicant && typeof firstApp.applicant.email === 'string') {
+          finalEmail = normalizeEmailValue(firstApp.applicant.email) || finalEmail;
+        }
+      }
+      
+      const safeApplicantName = normalizeNameValue(finalName) || 'Applicant';
+      const safeApplicantEmail = normalizeEmailValue(finalEmail)
+        || normalizeEmailValue(user.email)
+        || 'N/A';
+      
+      try {
+        const existingFirst = typeof user.first_name === 'string' ? user.first_name : '';
+        const existingLast = typeof user.last_name === 'string' ? user.last_name : '';
+        const updatedUserPayload = {
+          ...user,
+          first_name: existingFirst,
+          last_name: existingLast,
+          name: safeApplicantName,
+          full_name: safeApplicantName,
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUserPayload));
+      } catch (storageError) {
+        console.error('Error updating stored user profile:', storageError);
       }
       
       // Filter out invalid applications and enhance application data with user info and proper timezone
@@ -416,8 +917,8 @@ const PersonalOnboarding = () => {
       
       const enhancedApplications = validApplications.map(app => ({
         ...app,
-        applicant_name: finalName,
-        applicant_email: finalEmail,
+        applicant_name: safeApplicantName,
+        applicant_email: safeApplicantEmail,
         job_title: app.job_posting?.title,
         department: app.job_posting?.department,
         position: app.job_posting?.position,
@@ -445,6 +946,9 @@ const PersonalOnboarding = () => {
       }));
       
       console.log('Enhanced applications:', enhancedApplications);
+      if (safeApplicantName) {
+        setApplicantName(safeApplicantName);
+      }
       setUserApplications(enhancedApplications);
       return enhancedApplications;
     } catch (error) {
@@ -1290,6 +1794,9 @@ const PersonalOnboarding = () => {
 
     fetchJobOfferData();
   }, [userApplications]);
+
+  const uploadedDocumentsCount = Object.keys(documentUploads).length;
+  const pendingRequiredDocuments = requiredDocumentKeys.filter((key) => !documentUploads[key]).length;
 
   const NavigationTabs = () => (
     <div className="row mb-4" style={{ 
@@ -2288,6 +2795,21 @@ const PersonalOnboarding = () => {
             {/* Onboarding Sub-Navigation */}
             <div className="onboarding-subnav mb-4">
               <button 
+                className={`subnav-item ${activeTab === 'documents' ? 'active' : ''}`}
+                onClick={() => setActiveTab('documents')}
+              >
+                Document Submission
+              </button>
+              <button 
+                className={`subnav-item ${activeTab === 'final-interview' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('final-interview');
+                  fetchInterviewData();
+                }}
+              >
+                Final Interview
+              </button>
+              <button 
                 className={`subnav-item ${activeTab === 'overview' ? 'active' : ''}`}
                 onClick={() => setActiveTab('overview')}
               >
@@ -2300,18 +2822,6 @@ const PersonalOnboarding = () => {
                 Create Profile
               </button>
               <button 
-                className={`subnav-item ${activeTab === 'documents' ? 'active' : ''}`}
-                onClick={() => setActiveTab('documents')}
-              >
-                Documents
-              </button>
-              <button 
-                className={`subnav-item ${activeTab === 'benefits' ? 'active' : ''}`}
-                onClick={() => setActiveTab('benefits')}
-              >
-                Benefits
-              </button>
-              <button 
                 className={`subnav-item ${activeTab === 'starting-date' ? 'active' : ''}`}
                 onClick={() => setActiveTab('starting-date')}
               >
@@ -2320,6 +2830,100 @@ const PersonalOnboarding = () => {
             </div>
 
             {/* Content based on activeTab */}
+            {activeTab === 'final-interview' && (
+              <div>
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-4">
+                  <h4 className="mb-0">
+                    <FontAwesomeIcon icon={faUserTie} className="me-2 text-primary" />
+                    Final Interview Details
+                  </h4>
+                  <div className="d-flex gap-2">
+                    <button 
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={() => fetchInterviewData()}
+                    >
+                      <FontAwesomeIcon icon={faRefresh} className="me-2" />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                {loadingInterview ? (
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-body py-5 text-center">
+                      <div className="spinner-border text-primary mb-3" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="text-muted mb-0">Fetching final interview information...</p>
+                    </div>
+                  </div>
+                ) : finalInterviewEntries.length > 0 ? (
+                  finalInterviewEntries.map((interview, index) => (
+                    <Card key={interview.id || index} className="mb-3 border-0 shadow-sm">
+                      <Card.Body>
+                        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3">
+                          <div>
+                            <h5 className="mb-1 text-primary fw-semibold">
+                              {interview.application?.job_posting?.title || 'Final Interview'}
+                            </h5>
+                            <p className="text-muted mb-0 small">
+                              {interview.application?.job_posting?.department || 'Department not specified'}
+                            </p>
+                          </div>
+                          <Badge bg="info" className="text-uppercase">
+                            Final Stage
+                          </Badge>
+                        </div>
+                        <div className="row g-3 mt-3">
+                          <div className="col-md-4">
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <label className="text-muted small text-uppercase d-block mb-1">Interview Date</label>
+                              <span className="fw-semibold">{formatInterviewDateSafe(interview.interview_date)}</span>
+                            </div>
+                          </div>
+                          <div className="col-md-4">
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <label className="text-muted small text-uppercase d-block mb-1">Time</label>
+                              <span className="fw-semibold">{formatInterviewTimeSafe(interview.interview_time || interview.interviewTime)}</span>
+                            </div>
+                          </div>
+                          <div className="col-md-4">
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <label className="text-muted small text-uppercase d-block mb-1">Location</label>
+                              <span className="fw-semibold">{interview.location || 'To be announced'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="row g-3 mt-1">
+                          <div className="col-md-6">
+                            <div className="p-3 border rounded-3 h-100">
+                              <label className="text-muted small text-uppercase d-block mb-1">Interviewer</label>
+                              <span className="fw-semibold">{interview.interviewer || 'To be assigned'}</span>
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="p-3 border rounded-3 h-100">
+                              <label className="text-muted small text-uppercase d-block mb-1">Additional Notes</label>
+                              <span className="fw-semibold">{interview.notes || 'No additional notes provided.'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  ))
+                ) : (
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-body py-5 text-center">
+                      <FontAwesomeIcon icon={faInfoCircle} className="text-muted mb-3" style={{ fontSize: '2.5rem' }} />
+                      <h5 className="text-muted mb-2">No Final Interview Scheduled Yet</h5>
+                      <p className="text-muted mb-0">
+                        We will notify you once your final interview has been scheduled. Check back soon or refresh for updates.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'overview' && (
               <>
                 <div className="d-flex justify-content-between align-items-center mb-4">
@@ -2687,29 +3291,298 @@ const PersonalOnboarding = () => {
 
             {activeTab === 'documents' && (
               <div>
-                <h4 className="mb-4">
-                  <FontAwesomeIcon icon={faFileAlt} className="me-2 text-primary" />
-                  Upload Documents
-                </h4>
-                <div className="card">
-                  <div className="card-body">
-                    <p className="text-muted">Document upload interface will be available here.</p>
+                <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
+                  <div>
+                    <h4 className="mb-1">
+                      <FontAwesomeIcon icon={faFileAlt} className="me-2 text-primary" />
+                      Dear {applicantName},
+                    </h4>
+                    <div className="mb-0 text-muted">
+                      <div className="alert alert-warning d-flex align-items-start mb-0 py-3 px-3">
+                        <FontAwesomeIcon icon={faBell} className="me-2 mt-1 text-warning" />
+                        <div>
+                          <strong>Reminder:</strong> Please submit all your pre-employment requirements within ten working days from accepting your job offer. Make sure every document is complete and accurate to prevent any delays in finalizing your employment.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-lg-end">
+                    <Badge bg={pendingRequiredDocuments === 0 ? 'success' : 'warning'} className="rounded-pill px-3 py-2 text-uppercase fw-semibold">
+                      {uploadedDocumentsCount}/{totalDocumentCount} attached
+                    </Badge>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {activeTab === 'benefits' && (
-              <div>
-                <h4 className="mb-4">
-                  <FontAwesomeIcon icon={faGift} className="me-2 text-primary" />
-                  Employee Benefits
-                </h4>
-                <div className="card">
-                  <div className="card-body">
-                    <p className="text-muted">Benefits information will be available here.</p>
+                <Card className="mb-4 border-0 shadow-sm">
+                  <Card.Body className="p-4">
+                    <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-3">
+                      <div>
+                        <h6 className="text-uppercase text-muted fw-bold mb-2">Checklist Status</h6>
+                        <p className="text-muted mb-0 small">
+                          Status colors update automatically as documents move through the review process.
+                        </p>
+                      </div>
+                      <div className="d-flex flex-wrap gap-2">
+                        {Object.entries(DOCUMENT_STATUS_CONFIG).map(([statusKey, statusConfig]) => (
+                          <span
+                            key={statusKey}
+                            className={`badge bg-${statusConfig.variant} status-legend-badge`}
+                            title={statusConfig.description}
+                          >
+                            {statusConfig.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="row g-3">
+                      {DOCUMENT_SECTIONS.map((section) => (
+                        <div key={`${section.id}-status`} className="col-12 col-md-6 col-xl-4">
+                          <div className="status-section-card h-100 p-3 border rounded-3 bg-light bg-opacity-50">
+                            <h6 className="fw-semibold text-primary mb-3">{section.title}</h6>
+                            <ul className="list-unstyled mb-0 d-flex flex-column gap-2">
+                              {section.documents.map((document) => {
+                                const statusKey = documentStatuses[document.id] || 'not_submitted';
+                                const statusConfig = DOCUMENT_STATUS_CONFIG[statusKey] || DOCUMENT_STATUS_CONFIG.not_submitted;
+                                return (
+                                  <li
+                                    key={`${document.id}-status-item`}
+                                    className="d-flex justify-content-between align-items-center status-checklist-item py-2 px-3 bg-white border rounded-3"
+                                  >
+                                    <span className="small">{document.label}</span>
+                                    <Badge bg={statusConfig.variant} className="status-badge">
+                                      {statusConfig.label}
+                                    </Badge>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card.Body>
+                </Card>
+
+                <Form>
+                  {DOCUMENT_SECTIONS.map((section) => (
+                    <Card key={section.id} className="mb-4 border-0 shadow-sm">
+                      <Card.Body className="p-4">
+                        <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                          <div>
+                            <h5 className="mb-1 text-primary fw-semibold">{section.title}</h5>
+                            <p className="mb-0 text-muted small">{section.description}</p>
+                          </div>
+                        </div>
+
+                        <div className="row g-3">
+                          {section.documents.map((document) => {
+                            const statusKey = documentStatuses[document.id] || 'not_submitted';
+                            const statusConfig = DOCUMENT_STATUS_CONFIG[statusKey] || DOCUMENT_STATUS_CONFIG.not_submitted;
+                            const isUploadingThisDocument = uploadingDocumentKey === document.id;
+                            return (
+                              <div key={document.id} className="col-12">
+                              <div className="p-3 border rounded-3 bg-light bg-opacity-50 document-upload-field">
+                                <div className="d-flex flex-column flex-lg-row gap-3">
+                                  <div className="flex-grow-1">
+                                    <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                      <Badge bg={statusConfig.variant} className="status-badge me-1">
+                                        {statusConfig.label}
+                                      </Badge>
+                                      <h6 className="mb-0 fw-semibold">
+                                        {document.label}
+                                        {document.isRequired && <span className="text-danger ms-1">*</span>}
+                                      </h6>
+                                      {!document.isRequired && (
+                                        <Badge bg="secondary" className="rounded-pill text-uppercase small">
+                                          Optional
+                                        </Badge>
+                                      )}
+                                      <Button
+                                        variant="outline-secondary"
+                                        size="sm"
+                                        className="ms-auto d-inline-flex align-items-center"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          toggleFollowUpInput(document.id);
+                                        }}
+                                      >
+                                        <FontAwesomeIcon icon={faEnvelope} className="me-2" />
+                                        Request Follow-Up
+                                      </Button>
+                                    </div>
+                                    <p className="text-muted small mb-3">{document.helperText}</p>
+
+                                    {documentUploads[document.id] ? (
+                                      <div className="p-3 bg-white border rounded-3">
+                                        <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                          <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
+                                            <FontAwesomeIcon
+                                              icon={documentUploads[document.id].type === 'application/pdf' ? faFilePdf : faFileImage}
+                                            />
+                                          </div>
+                                          <div className="flex-grow-1">
+                                            <div className="fw-semibold">
+                                              {documentUploads[document.id].name}
+                                            </div>
+                                            <div className="text-muted small">
+                                              {formatFileSize(documentUploads[document.id].size)} &nbsp;•&nbsp; {documentUploads[document.id].type || 'File'}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {documentPreviews[document.id] && documentUploads[document.id]?.type.startsWith('image/') && (
+                                          <div className="mt-3">
+                                            <img
+                                              src={documentPreviews[document.id]}
+                                              alt={`${document.label} preview`}
+                                              style={{ maxWidth: '180px', borderRadius: '8px', border: '1px solid #dee2e6' }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3">
+                                        <div>
+                                          <label
+                                            htmlFor={`${document.id}-upload`}
+                                            className="btn btn-outline-primary btn-sm d-inline-flex align-items-center"
+                                          >
+                                            <FontAwesomeIcon icon={faUpload} className="me-2" />
+                                            Select File
+                                          </label>
+                                          <Form.Control
+                                            id={`${document.id}-upload`}
+                                            type="file"
+                                            accept=".pdf,.jpg,.jpeg,.png"
+                                            className="d-none"
+                                            onChange={(event) => {
+                                              const input = event.target;
+                                              const selectedFile = input.files && input.files[0] ? input.files[0] : null;
+                                              handleDocumentChange(document.id, selectedFile);
+                                              input.value = '';
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="text-muted small">
+                                          Upload PDF, JPG, JPEG, or PNG &nbsp;•&nbsp; Max 5 MB
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="d-flex flex-wrap gap-2 mt-3">
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          handleSubmitDocument(document.id);
+                                        }}
+                                        disabled={!documentUploads[document.id] || !!uploadingDocumentKey}
+                                      >
+                                        {isUploadingThisDocument ? (
+                                          <>
+                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                            Submitting...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <FontAwesomeIcon icon={faUpload} className="me-2" />
+                                            Submit Document
+                                          </>
+                                        )}
+                                      </Button>
+                                      {documentUploads[document.id] && (
+                                        <>
+                                          <Button
+                                            variant="outline-primary"
+                                            size="sm"
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              handlePreviewDocument(document.id);
+                                            }}
+                                          >
+                                            <FontAwesomeIcon icon={faEye} className="me-2" />
+                                            Preview
+                                          </Button>
+                                          <Button
+                                            variant="outline-danger"
+                                            size="sm"
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              handleRemoveDocument(document.id);
+                                            }}
+                                          >
+                                            <FontAwesomeIcon icon={faTimes} className="me-2" />
+                                            Remove
+                                          </Button>
+                                        </>
+                                      )}
+                                    </div>
+
+                                    {uploadErrors[document.id] && (
+                                      <div className="mt-3">
+                                        <Alert variant="danger" className="mb-0 py-2 px-3">
+                                          {uploadErrors[document.id]}
+                                        </Alert>
+                                      </div>
+                                    )}
+
+                                    {showFollowUpInput[document.id] && (
+                                      <div className="mt-3 follow-up-container">
+                                        <Form.Group controlId={`${document.id}-follow-up`}>
+                                          <Form.Label className="small text-muted">
+                                            Follow-Up Message
+                                          </Form.Label>
+                                          <Form.Control
+                                            as="textarea"
+                                            rows={2}
+                                            placeholder="Enter message..."
+                                            value={followUpMessages[document.id] || ''}
+                                            onChange={(event) => handleFollowUpMessageChange(document.id, event.target.value)}
+                                          />
+                                        </Form.Group>
+                                        <div className="d-flex gap-2 justify-content-end mt-2">
+                                          <Button
+                                            variant="outline-secondary"
+                                            size="sm"
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              toggleFollowUpInput(document.id);
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            variant="primary"
+                                            size="sm"
+                                            type="button"
+                                            className="followup-submit-card-btn"
+                                            onClick={(event) => handleFollowUpSubmit(document.id, event)}
+                                          >
+                                            Submit Follow-Up
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                          })}
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  ))}
+
+                  <div className="text-muted small">
+                    Files are stored securely and reviewed by HR. You can update your submissions anytime before onboarding is finalized.
                   </div>
-                </div>
+                </Form>
               </div>
             )}
 
@@ -3582,6 +4455,55 @@ const PersonalOnboarding = () => {
         .checklist-item-pending {
           background: rgba(248, 249, 250, 0.5);
           border-color: rgba(0, 0, 0, 0.05);
+        }
+
+        .document-upload-field {
+          transition: all 0.3s ease;
+        }
+
+        .document-upload-field:hover {
+          background: rgba(74, 144, 226, 0.08);
+          border-color: rgba(74, 144, 226, 0.3);
+          box-shadow: 0 4px 12px rgba(74, 144, 226, 0.15);
+        }
+
+        .file-icon-wrapper {
+          width: 48px;
+          height: 48px;
+          font-size: 1.1rem;
+        }
+
+        .status-legend-badge {
+          font-size: 0.7rem;
+          font-weight: 600;
+          border-radius: 999px;
+          padding: 0.35rem 0.75rem;
+        }
+
+        .status-section-card {
+          background: rgba(248, 249, 250, 0.65);
+          border: 1px solid rgba(0, 0, 0, 0.05);
+          transition: all 0.3s ease;
+        }
+
+        .status-section-card:hover {
+          border-color: rgba(74, 144, 226, 0.2);
+          box-shadow: 0 6px 18px rgba(74, 144, 226, 0.15);
+        }
+
+        .status-checklist-item {
+          transition: all 0.3s ease;
+        }
+
+        .status-checklist-item:hover {
+          transform: translateX(4px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+          border-color: rgba(74, 144, 226, 0.2);
+        }
+
+        .status-badge {
+          font-size: 0.7rem;
+          letter-spacing: 0.3px;
         }
 
         .checklist-icon {

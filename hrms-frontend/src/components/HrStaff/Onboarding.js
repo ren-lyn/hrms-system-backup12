@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 
-import { Container, Row, Col, Button, Badge, Table } from "react-bootstrap";
+import { Container, Row, Col, Button, Badge, Table, Card, Alert } from "react-bootstrap";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
@@ -22,6 +22,16 @@ import {
   faEllipsisV,
   faPaperclip,
   faHourglassHalf,
+  faChevronDown,
+  faChevronUp,
+  faFilePdf,
+  faDollarSign,
+  faIdCard,
+  faPlus,
+  faTrash,
+  faUpload,
+  faDownload,
+  faSearch,
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
@@ -91,12 +101,277 @@ const Onboarding = () => {
   });
 
   const [onboardingSubtab, setOnboardingSubtab] = useState(
-    "Orientation Schedule"
+    "Document Submission"
   );
+  
+  // Onboarding management tabs
+  const onboardingTabs = [
+    "Document Submission",
+    "Final Interview",
+    "Orientation Schedule",
+    "Profile Creation",
+    "Starting Date"
+  ];
+  
+  const onboardingTabDescriptions = {
+    "Final Interview": "Final interview scheduling and notes will be available here.",
+    "Orientation Schedule": "Orientation scheduling tools will be available here.",
+    "Profile Creation": "Profile creation workflow is coming soon.",
+    "Starting Date": "Starting date coordination will be available here."
+  };
+  
+  // Document management state
+  const [documentRequirements, setDocumentRequirements] = useState([]);
+  const [documentSubmissions, setDocumentSubmissions] = useState([]);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [selectedApplicationForDocs, setSelectedApplicationForDocs] = useState(null);
+  const [documentModalTab, setDocumentModalTab] = useState('Applicant Identification');
+  const documentModalTabs = useMemo(() => [
+    'Applicant Identification',
+    'Government & Tax Documents',
+    'Medical Documents',
+    'Additional Document'
+  ], []);
+
+  const applicantIdentificationDocs = useMemo(() => [
+    {
+      key: 'government-id',
+      title: 'Government ID',
+      description: "Valid Government ID – Passport, Driver's License, UMID, or National ID",
+      keywords: ['government id', 'passport', 'driver', 'umid', 'national id']
+    },
+    {
+      key: 'birth-certificate',
+      title: 'Birth Certificate (PSA)',
+      description: 'Proof of age and identity issued by the Philippine Statistics Authority',
+      keywords: ['birth certificate', 'psa']
+    },
+    {
+      key: 'resume-cv',
+      title: 'Resume / Curriculum Vitae',
+      description: 'Updated resume outlining education, work history, and skills',
+      keywords: ['resume', 'curriculum vitae', 'cv']
+    },
+    {
+      key: 'diploma-tor',
+      title: 'Diploma / Transcript of Records (TOR)',
+      description: 'Proof of educational attainment from your latest degree',
+      keywords: ['diploma', 'transcript', 'tor']
+    },
+    {
+      key: 'id-photo',
+      title: '2x2 or Passport-size Photo',
+      description: 'Professional photo for company ID and personnel records',
+      keywords: ['2x2', 'passport-size', 'photo']
+    },
+    {
+      key: 'employment-cert',
+      title: 'Certificate of Employment / Recommendation Letters',
+      description: 'Proof of past work experience or professional references',
+      keywords: ['certificate of employment', 'recommendation', 'reference letter']
+    },
+    {
+      key: 'nbi-clearance',
+      title: 'NBI or Police Clearance',
+      description: 'Certification that confirms no criminal record',
+      keywords: ['nbi', 'police clearance']
+    },
+    {
+      key: 'barangay-clearance',
+      title: 'Barangay Clearance',
+      description: 'Proof of good moral character and residency from your barangay',
+      keywords: ['barangay clearance']
+    }
+  ], []);
+
+  const governmentTaxDocs = useMemo(() => [
+    {
+      key: 'sss-document',
+      title: 'SSS Document Submission',
+      description: "Provide a copy of your SSS E-1 form or latest SSS contribution statement.",
+      keywords: ['sss', 'social security']
+    },
+    {
+      key: 'philhealth-document',
+      title: 'PhilHealth Document Submission',
+      description: 'Submit your PhilHealth Member Data Record (MDR) or PhilHealth ID.',
+      keywords: ['philhealth']
+    },
+    {
+      key: 'pagibig-document',
+      title: 'Pag-IBIG MID Submission Form',
+      description: "Upload your Pag-IBIG Member's Data Form (MDF) or MID card showing your HDMF number.",
+      keywords: ['pag-ibig', 'pagibig', 'hdmf']
+    },
+    {
+      key: 'tin-document',
+      title: 'TIN Submission Form',
+      description: 'Provide your BIR Form 1902/1905 or any document showing your Tax Identification Number.',
+      keywords: ['tin', 'tax identification', 'bir']
+    }
+  ], []);
+
+  const medicalDocs = useMemo(() => [
+    {
+      key: 'medical-certificate',
+      title: 'Medical Certificate / Fit-to-Work Clearance',
+      description: 'Issued by a licensed doctor or accredited clinic (Received from applicant)',
+      keywords: ['medical certificate', 'fit-to-work', 'fit to work', 'medical clearance']
+    },
+    {
+      key: 'vaccination-records',
+      title: 'Vaccination Records',
+      description: 'If required by the company or job role (Received from applicant)',
+      keywords: ['vaccination', 'immunization', 'vaccine card', 'vaccine records']
+    }
+  ], []);
+
+  const formatApplicantDocDate = useCallback((value) => {
+    if (!value) return null;
+    try {
+      return new Date(value).toLocaleString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return String(value);
+    }
+  }, []);
+
+  const computeApplicantDocStatus = useCallback((doc) => {
+    const keywords = (doc.keywords || []).map((keyword) => keyword.toLowerCase());
+
+    let requirement = null;
+
+    if (doc.requirementId) {
+      requirement = documentRequirements.find((req) => req.id === doc.requirementId);
+    }
+
+    if (!requirement && keywords.length > 0) {
+      requirement = documentRequirements.find((req) => {
+        const name = (req.document_name || '').toLowerCase();
+        return keywords.some((keyword) => keyword && name.includes(keyword));
+      });
+    }
+
+    const submission = requirement
+      ? documentSubmissions.find((sub) => sub.document_requirement_id === requirement.id)
+      : null;
+
+    let statusLabel = requirement ? 'Awaiting submission' : 'No file uploaded';
+    let statusVariant = requirement ? 'pending' : 'neutral';
+
+    if (submission) {
+      if (submission.status === 'approved') {
+        statusLabel = 'Approved';
+        statusVariant = 'approved';
+      } else if (submission.status === 'rejected') {
+        statusLabel = 'Needs resubmission';
+        statusVariant = 'resubmit';
+      } else if (submission.status === 'pending_review' || submission.status === 'uploaded') {
+        statusLabel = 'For review';
+        statusVariant = 'pending';
+      } else {
+        statusLabel = 'Awaiting submission';
+        statusVariant = 'pending';
+      }
+    } else if (requirement) {
+      statusLabel = 'Awaiting submission';
+      statusLabel = 'Awaiting submission';
+      statusVariant = 'pending';
+    }
+
+    const submittedAt = formatApplicantDocDate(
+      submission?.submitted_at || submission?.created_at
+    );
+    const updatedAt = formatApplicantDocDate(
+      submission?.reviewed_at || submission?.updated_at
+    );
+
+    return {
+      requirement,
+      submission,
+      statusLabel,
+      statusVariant,
+      submittedAt,
+      updatedAt,
+      rejectionReason: submission?.rejection_reason || '',
+    };
+  }, [documentRequirements, documentSubmissions, formatApplicantDocDate]);
+
+  const openSubmissionFile = useCallback((submission) => {
+    if (!submission || !selectedApplicationForDocs) return;
+    const token = localStorage.getItem("token");
+    const url = `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/submissions/${submission.id}/download?token=${token}`;
+    window.open(url, "_blank", "noopener");
+  }, [selectedApplicationForDocs]);
+
+  const statusBadgeStyles = useMemo(() => ({
+    approved: { backgroundColor: '#28a745', color: '#fff' },
+    resubmit: { backgroundColor: '#dc3545', color: '#fff' },
+    pending: { backgroundColor: '#f59f00', color: '#fff' },
+    neutral: { backgroundColor: '#adb5bd', color: '#212529' }
+  }), []);
+
+  const additionalRequirementDocs = useMemo(() => {
+    const matchedRequirementIds = new Set();
+
+    const standardDocs = [
+      ...applicantIdentificationDocs,
+      ...governmentTaxDocs,
+      ...(medicalDocs || [])
+    ];
+
+    standardDocs.forEach((doc) => {
+      const keywords = (doc.keywords || []).map((keyword) => keyword.toLowerCase());
+      const requirement = documentRequirements.find((req) => {
+        const name = (req.document_name || '').toLowerCase();
+        return keywords.some((keyword) => keyword && name.includes(keyword));
+      });
+
+      if (requirement?.id) {
+        matchedRequirementIds.add(requirement.id);
+      }
+    });
+
+    return documentRequirements
+      .filter((req) => !matchedRequirementIds.has(req.id))
+      .map((req) => ({
+        key: `custom-${req.id}`,
+        title: req.document_name || 'Additional Requirement',
+        description: req.description || 'No description provided.',
+        keywords: [(req.document_name || '').toLowerCase()],
+        requirementId: req.id,
+        allowDelete: true,
+      }));
+  }, [applicantIdentificationDocs, governmentTaxDocs, medicalDocs, documentRequirements]);
+
+  const [newRequirement, setNewRequirement] = useState({
+    document_name: '',
+    description: '',
+    is_required: true,
+    file_format: '',
+    max_file_size_mb: 5
+  });
+  
+  // Document tab filter and search state
+  const [documentFilter, setDocumentFilter] = useState('All');
+  const [documentSearchTerm, setDocumentSearchTerm] = useState('');
+  const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
+  
+  // Document review state
+  const [rejectingSubmissionId, setRejectingSubmissionId] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [reviewingDocument, setReviewingDocument] = useState(false);
 
   // Batch interview functionality
 
   const [showBatchInterviewModal, setShowBatchInterviewModal] = useState(false);
+
+  const [showStartOnboardingModal, setShowStartOnboardingModal] = useState(false);
 
   const [selectedApplicants, setSelectedApplicants] = useState([]);
 
@@ -188,6 +463,14 @@ const Onboarding = () => {
           "🔍 [Onboarding] Job position:",
           applications[0].jobPosting?.position
         );
+
+        // Debug offer acceptance date
+        if (applications[0].status === "Offer Accepted") {
+          console.log(
+            "🔍 [Onboarding] Offer Accepted - offer_accepted_at:",
+            applications[0].offer_accepted_at
+          );
+        }
       }
 
       setApplicants(applications);
@@ -245,7 +528,7 @@ const Onboarding = () => {
           return status === "Accepted" || status === "Offer Accepted";
 
         case "Onboarding":
-          return status === "Onboarding";
+          return status === "Onboarding" || status === "Document Submission" || status === "Orientation Schedule";
 
         case "Hired":
           return status === "Hired";
@@ -310,9 +593,19 @@ const Onboarding = () => {
     );
   }, [activeTab, applicants, getFilteredApplicants]);
 
-  // Get status badge
+  // Fetch document statuses when Document Submission tab is active
+  useEffect(() => {
+    if (activeTab === "Onboarding" && onboardingSubtab === "Document Submission") {
+      // Small delay to ensure applicants list is refreshed first
+      const timer = setTimeout(() => {
+        fetchAllApplicantsDocumentStatus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, onboardingSubtab, applicants]);
 
-  const getStatusBadge = (status) => {
+  // Get status badge
+  const getStatusBadge = (status, showIcon = true) => {
     const statusConfig = {
       Pending: {
         color: "warning",
@@ -384,7 +677,7 @@ const Onboarding = () => {
         bg={config.color}
         className={`d-flex align-items-center gap-1 status-badge ${config.customClass}`}
       >
-        <FontAwesomeIcon icon={config.icon} size="sm" />
+        {showIcon && <FontAwesomeIcon icon={config.icon} size="sm" />}
 
         {config.text}
       </Badge>
@@ -395,6 +688,12 @@ const Onboarding = () => {
 
   const toggleDropdown = (recordId) => {
     setActiveDropdown(activeDropdown === recordId ? null : recordId);
+  };
+
+  // Get onboarding steps for an applicant
+  const getOnboardingSteps = (applicant) => {
+    // Return empty array - onboarding steps removed
+    return [];
   };
 
   // Handle view details
@@ -492,6 +791,460 @@ const Onboarding = () => {
     } catch (error) {
       console.error("Error updating status:", error);
 
+      alert("Failed to update status. Please try again.");
+    }
+  };
+
+  // Handle start onboarding confirmation
+  const handleConfirmStartOnboarding = async () => {
+    try {
+      const applicantToUpdate = selectedRecord || selectedRecordForStatus;
+      
+      // Update status to "Onboarding" in backend
+      await axios.put(
+        `http://localhost:8000/api/applications/${applicantToUpdate.id}/status`,
+        { status: "Onboarding" },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      const applicantName = applicantToUpdate.applicant
+        ? `${applicantToUpdate.applicant.first_name} ${applicantToUpdate.applicant.last_name}`
+        : "Applicant";
+
+      // Refresh applicants list to get updated status
+      await fetchApplicants();
+      
+      // Close modals
+      setShowStartOnboardingModal(false);
+      setShowModal(false);
+      
+      // Switch to Onboarding tab and Document Submission subtab
+      setActiveTab("Onboarding");
+      setOnboardingSubtab("Document Submission");
+      
+      // Clear selected record
+      setSelectedRecord(null);
+      setSelectedRecordForStatus(null);
+      
+      // Show success message
+      alert(`Onboarding started for ${applicantName}. They have been moved to the Document Submission stage.`);
+    } catch (error) {
+      console.error("Error starting onboarding:", error);
+      alert("Failed to start onboarding. Please try again.");
+    }
+  };
+
+  // Fetch document requirements for an application
+  const fetchDocumentRequirements = async (applicationId) => {
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${applicationId}/documents/requirements`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      if (response.data.success) {
+        setDocumentRequirements(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching document requirements:", error);
+    }
+  };
+
+  // Fetch document submissions for an application
+  const fetchDocumentSubmissions = async (applicationId) => {
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${applicationId}/documents/submissions`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      if (response.data.success) {
+        setDocumentSubmissions(response.data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching document submissions:", error);
+    }
+  };
+
+  // Fetch document status for all applicants in onboarding
+  const fetchAllApplicantsDocumentStatus = async () => {
+    const statusMap = {};
+    const filtered = getFilteredApplicants();
+    const onboardingApplicants = filtered.filter(applicant => 
+      applicant.status === "Onboarding" || 
+      applicant.status === "Document Submission" ||
+      applicant.status === "Orientation Schedule"
+    );
+    
+    for (const applicant of onboardingApplicants) {
+      try {
+        // Fetch requirements
+        const reqResponse = await axios.get(
+          `http://localhost:8000/api/applications/${applicant.id}/documents/requirements`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        
+        // Fetch submissions
+        const subResponse = await axios.get(
+          `http://localhost:8000/api/applications/${applicant.id}/documents/submissions`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        
+        if (reqResponse.data.success && subResponse.data.success) {
+          const requirements = reqResponse.data.data || [];
+          const submissions = subResponse.data.data || [];
+          const requiredDocs = requirements.filter(r => r.is_required);
+          
+          if (requiredDocs.length === 0) {
+            statusMap[applicant.id] = { status: 'Incomplete', date: null };
+          } else {
+            const requiredIds = requiredDocs.map(r => r.id);
+            const approvedSubmissions = submissions.filter(s => 
+              requiredIds.includes(s.document_requirement_id) && s.status === 'approved'
+            );
+            const pendingSubmissions = submissions.filter(s => 
+              requiredIds.includes(s.document_requirement_id) && 
+              (s.status === 'pending_review' || s.status === 'uploaded')
+            );
+            const rejectedSubmissions = submissions.filter(s => 
+              requiredIds.includes(s.document_requirement_id) && s.status === 'rejected'
+            );
+            
+            // Determine overall status
+            let overallStatus = 'Incomplete';
+            let latestDate = null;
+            
+            if (approvedSubmissions.length === requiredIds.length) {
+              overallStatus = 'Approved Documents'; // Changed to match the display text
+              latestDate = approvedSubmissions
+                .map(s => s.reviewed_at || s.submitted_at)
+                .filter(Boolean)
+                .sort()
+                .reverse()[0];
+            } else if (pendingSubmissions.length > 0 || rejectedSubmissions.length > 0) {
+              if (rejectedSubmissions.length > 0) {
+                overallStatus = 'Rejected';
+              } else {
+                overallStatus = 'Pending Review';
+              }
+              const allDates = [...pendingSubmissions, ...rejectedSubmissions]
+                .map(s => s.submitted_at)
+                .filter(Boolean);
+              if (allDates.length > 0) {
+                latestDate = allDates.sort().reverse()[0];
+              }
+            }
+            
+            statusMap[applicant.id] = { status: overallStatus, date: latestDate };
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching document status for applicant ${applicant.id}:`, error);
+        statusMap[applicant.id] = { status: 'Incomplete', date: null };
+      }
+    }
+    
+    setApplicantsDocumentStatus(statusMap);
+  };
+
+  // Create document requirement
+  const createDocumentRequirement = async () => {
+    try {
+      const response = await axios.post(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/requirements`,
+        newRequirement,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (response.data.success) {
+        await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        setNewRequirement({
+          document_name: '',
+          description: '',
+          is_required: true,
+          file_format: '',
+          max_file_size_mb: 5
+        });
+      }
+    } catch (error) {
+      console.error("Error creating document requirement:", error);
+      alert("Failed to create document requirement");
+    }
+  };
+
+  // Delete document requirement
+  const deleteDocumentRequirement = async (requirementId) => {
+    if (!window.confirm("Are you sure you want to delete this requirement?")) return;
+    try {
+      const response = await axios.delete(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/requirements/${requirementId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+      if (response.data.success) {
+        await fetchDocumentRequirements(selectedApplicationForDocs.id);
+      }
+    } catch (error) {
+      console.error("Error deleting document requirement:", error);
+      alert("Failed to delete document requirement");
+    }
+  };
+
+  // Review document submission
+  const reviewDocumentSubmission = async (submissionId, status, reason = '') => {
+    // This function updates document status in database
+    // Status progression: 'pending_review' → 'approved' or 'rejected'
+    // When HR approves/rejects, the applicant's table will auto-update via polling
+    try {
+      setReviewingDocument(true);
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/submissions/${submissionId}/review`,
+        { status, rejection_reason: reason },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (response.data.success) {
+        await fetchDocumentSubmissions(selectedApplicationForDocs.id);
+        await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        
+        // Refresh document statuses for the main table
+        if (activeTab === "Onboarding" && onboardingSubtab === "Document Submission") {
+          fetchAllApplicantsDocumentStatus();
+        }
+        
+        // Refresh applicants list to get updated status
+        await fetchApplicants();
+        
+        setRejectingSubmissionId(null);
+        setRejectionReason('');
+        
+        // Check if all documents are approved
+        if (response.data.all_documents_approved) {
+          // Show success toast
+          const toastMessage = `✅ Documents verified successfully. Employee moved to Orientation stage.`;
+          alert(toastMessage);
+          
+          // Update the selected application's status in the UI
+          if (selectedApplicationForDocs) {
+            setSelectedApplicationForDocs({
+              ...selectedApplicationForDocs,
+              status: response.data.application_status || 'Orientation Schedule'
+            });
+          }
+        } else {
+          alert(status === 'approved' ? 'Document approved successfully!' : 'Document rejected successfully!');
+        }
+      }
+    } catch (error) {
+      console.error("Error reviewing document:", error);
+      alert("Failed to review document. Please try again.");
+    } finally {
+      setReviewingDocument(false);
+    }
+  };
+
+  // Handle approve document
+  const handleApproveDocument = async (submissionId) => {
+    if (window.confirm('Are you sure you want to approve this document?')) {
+      await reviewDocumentSubmission(submissionId, 'approved');
+    }
+  };
+
+  // Handle reject document - show rejection reason input
+  const handleRejectDocument = (submissionId) => {
+    setRejectingSubmissionId(submissionId);
+    setRejectionReason('');
+  };
+
+  // Confirm rejection with reason
+  const confirmRejectDocument = async () => {
+    if (!rejectionReason.trim()) {
+      alert('Please provide a rejection reason.');
+      return;
+    }
+    if (window.confirm('Are you sure you want to reject this document? The employee will be notified to re-upload.')) {
+      await reviewDocumentSubmission(rejectingSubmissionId, 'rejected', rejectionReason);
+    }
+  };
+
+  const renderDocumentCards = useCallback((docs) => (
+    <div className="row gy-3">
+      {docs.map((doc) => {
+        const {
+          requirement,
+          submission,
+          statusLabel,
+          statusVariant,
+          submittedAt,
+          updatedAt,
+          rejectionReason,
+        } = computeApplicantDocStatus(doc);
+
+        const statusStyle = statusBadgeStyles[statusVariant] || statusBadgeStyles.neutral;
+
+        return (
+          <div className="col-12" key={doc.key}>
+            <div className="card border-0 shadow-sm h-100">
+              <div className="card-body">
+                <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
+                  <div>
+                    <h6 className="fw-semibold mb-1">{doc.title}</h6>
+                    <p className="text-muted small mb-2">{doc.description}</p>
+                    <div className="d-flex flex-wrap align-items-center gap-2">
+                      {requirement ? (
+                        <Badge bg={requirement.is_required ? "danger" : "secondary"}>
+                          {requirement.is_required ? "Required" : "Optional"}
+                        </Badge>
+                      ) : null}
+                      {submission?.file_name && (
+                        <span className="text-muted small">{submission.file_name}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-lg-end">
+                    <span
+                      className="badge"
+                      style={{
+                        ...statusStyle,
+                        borderRadius: '999px',
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.75rem',
+                        letterSpacing: '0.3px'
+                      }}
+                    >
+                      {statusLabel}
+                    </span>
+                    {submittedAt && (
+                      <div className="text-muted small mt-2">Submitted {submittedAt}</div>
+                    )}
+                    {updatedAt && updatedAt !== submittedAt && (
+                      <div className="text-muted small">Last update {updatedAt}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                  <div>
+                    {submission ? (
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={() => openSubmissionFile(submission)}
+                      >
+                        View File
+                      </Button>
+                    ) : (
+                      <span className="text-muted small">No file uploaded.</span>
+                    )}
+                  </div>
+                  <div className="ms-lg-auto d-flex gap-2">
+                    <Button
+                      variant="success"
+                      size="sm"
+                      disabled={!submission || submission.status === "approved" || reviewingDocument}
+                      onClick={() => submission && handleApproveDocument(submission.id)}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      disabled={!submission || reviewingDocument}
+                      onClick={() => submission && handleRejectDocument(submission.id)}
+                    >
+                      Resubmit
+                    </Button>
+                    {doc.allowDelete && requirement && (
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        disabled={reviewingDocument}
+                        onClick={() => deleteDocumentRequirement(requirement.id)}
+                      >
+                        <FontAwesomeIcon icon={faTrash} className="me-2" />
+                        Remove Request
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {rejectionReason && (
+                  <Alert variant="warning" className="mt-3 mb-0">
+                    <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
+                    Last rejection note: {rejectionReason}
+                  </Alert>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  ), [computeApplicantDocStatus, deleteDocumentRequirement, handleApproveDocument, handleRejectDocument, openSubmissionFile, reviewingDocument, statusBadgeStyles]);
+
+  // Check if all required documents are approved
+  const allDocumentsApproved = () => {
+    if (!selectedApplicationForDocs || documentRequirements.length === 0) return false;
+    
+    const requiredDocs = documentRequirements.filter(req => req.is_required);
+    if (requiredDocs.length === 0) return true;
+    
+    return requiredDocs.every(req => {
+      const submission = documentSubmissions.find(s => s.document_requirement_id === req.id);
+      return submission && submission.status === 'approved';
+    });
+  };
+
+  // Mark document submission as done and move to next tab
+  const markDocumentSubmissionAsDone = async () => {
+    if (!allDocumentsApproved()) {
+      alert("Please approve all required documents before marking as done.");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to mark document submission as complete? This will move the applicant to the Orientation Schedule step.")) {
+      return;
+    }
+
+    try {
+      await handleStatusUpdate("Orientation Schedule");
+      setShowDocumentModal(false);
+      setSelectedApplicationForDocs(null);
+      setDocumentRequirements([]);
+      setDocumentSubmissions([]);
+      alert("Document submission completed! Applicant moved to Orientation Schedule.");
+    } catch (error) {
+      console.error("Error updating status:", error);
       alert("Failed to update status. Please try again.");
     }
   };
@@ -1493,357 +2246,287 @@ const Onboarding = () => {
       <Row className="mt-3">
         <Col>
           <div className="content-section">
+            {/* Onboarding Management Tabs - Only show when Onboarding tab is active */}
             {activeTab === "Onboarding" && (
-              <div className="mb-3">
-                <div className="d-flex flex-wrap gap-2 mb-3">
-                  {[
-                    "Orientation Schedule",
-                    "Employee Documents",
-                    "Benefits Enrollment",
-                    "Start Date",
-                  ].map((tab) => (
-                    <Button
+              <div className="mb-4">
+                <div className="d-flex flex-wrap gap-2 mb-4" style={{ 
+                  borderBottom: "2px solid #e9ecef", 
+                  paddingBottom: "0",
+                  marginBottom: "24px"
+                }}>
+                  {onboardingTabs.map((tab) => (
+                    <button
                       key={tab}
-                      variant={
-                        onboardingSubtab === tab
-                          ? "primary"
-                          : "outline-secondary"
-                      }
-                      size="sm"
                       onClick={() => setOnboardingSubtab(tab)}
+                      className={`btn ${
+                        onboardingSubtab === tab 
+                          ? "btn-primary" 
+                          : "btn-link text-decoration-none"
+                      }`}
+                      style={{
+                        borderRadius: "0",
+                        borderBottom: onboardingSubtab === tab ? "3px solid #6f42c1" : "3px solid transparent",
+                        padding: "12px 20px",
+                        fontWeight: onboardingSubtab === tab ? 600 : 400,
+                        color: onboardingSubtab === tab ? "#ffffff" : "#6c757d",
+                        backgroundColor: onboardingSubtab === tab ? "#6f42c1" : "transparent",
+                        transition: "all 0.2s ease",
+                        marginBottom: "-2px"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (onboardingSubtab !== tab) {
+                          e.target.style.color = "#0d6efd";
+                          e.target.style.backgroundColor = "rgba(13, 110, 253, 0.05)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (onboardingSubtab !== tab) {
+                          e.target.style.color = "#6c757d";
+                          e.target.style.backgroundColor = "transparent";
+                        } else {
+                          e.target.style.color = "#ffffff";
+                          e.target.style.backgroundColor = "#6f42c1";
+                        }
+                      }}
                     >
                       {tab}
-                    </Button>
+                    </button>
                   ))}
                 </div>
-
-                <div className="card">
-                  <div className="card-body p-0">
-                    {onboardingSubtab === "Orientation Schedule" && (
-                      <div
-                        className="d-flex justify-content-between align-items-center px-3 py-2"
-                        style={{
-                          background: "#e9f2ff",
-                          borderBottom: "1px solid #dbe7ff",
-                        }}
-                      >
-                        <h6
-                          className="mb-0"
-                          style={{ color: "#084298", fontWeight: 600 }}
-                        >
-                          Orientation Schedule
-                        </h6>
-
-                        <Button size="sm" variant="primary">
-                          + Add Schedule
-                        </Button>
-                      </div>
-                    )}
-
-                    <table className="table mb-0">
-                      <thead>
-                        {onboardingSubtab === "Orientation Schedule" && (
-                          <tr style={{ background: "#f3f8ff" }}>
-                            <th>Applicant Name</th>
-
-                            <th>Position</th>
-
-                            <th>Schedule Date</th>
-
-                            <th>Time</th>
-
-                            <th>Location / Link</th>
-
-                            <th>Status</th>
-                          </tr>
-                        )}
-
-                        {onboardingSubtab === "Employee Documents" && (
-                          <>
-                            <tr>
-                              <th className="px-3" colSpan={5}>
-                                <div className="d-flex justify-content-between align-items-center">
-                                  <span className="fw-semibold">
-                                    Employee Documents
-                                  </span>
-
-                                  <div className="d-flex gap-2">
-                                    <Button size="sm" variant="outline-primary">
-                                      Request Document
-                                    </Button>
-
-                                    <Button size="sm" variant="primary">
-                                      Upload Document
-                                    </Button>
-                                  </div>
-                                </div>
-                              </th>
-                            </tr>
-
-                            <tr style={{ background: "#f3f8ff" }}>
-                              <th>Applicant Name</th>
-
-                              <th>Document Type</th>
-
-                              <th>Status</th>
-
-                              <th>Date Submitted</th>
-
-                              <th>Action</th>
-                            </tr>
-                          </>
-                        )}
-
-                        {onboardingSubtab === "Benefits Enrollment" && (
-                          <tr>
-                            <th>Employee</th>
-
-                            <th>Plan</th>
-
-                            <th>Enrollment Status</th>
-
-                            <th>Submitted On</th>
-
-                            <th>Actions</th>
-                          </tr>
-                        )}
-
-                        {onboardingSubtab === "Start Date" && (
-                          <tr>
-                            <th>Employee</th>
-
-                            <th>Position</th>
-
-                            <th>Department</th>
-
-                            <th>Start Date</th>
-
-                            <th>Status</th>
-                          </tr>
-                        )}
-                      </thead>
-
-                      <tbody>
-                        {onboardingSubtab === "Orientation Schedule" &&
-                          (() => {
-                            const rows = applicants.filter(
-                              (a) =>
-                                a.status === "Onboarding" ||
-                                a.status === "Offer Accepted"
-                            );
-
-                            if (rows.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={6} className="text-center py-5">
-                                    <div className="d-flex flex-column align-items-center">
-                                      <FontAwesomeIcon
-                                        icon={faCalendarAlt}
-                                        className="text-muted mb-2"
-                                        size="2x"
-                                      />
-
-                                      <div className="text-muted">
-                                        No orientation schedules found
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            }
-
-                            return rows.slice(0, 20).map((a) => (
-                              <tr
-                                key={`ori-${a.id}`}
-                                style={{ transition: "background 0.15s ease" }}
+                
+                {/* Tab Content */}
+                {onboardingSubtab === "Document Submission" && (
+                  <div>
+                    {/* Filter Bar and Search */}
+                    <div className="card border-0 shadow-sm mb-3">
+                      <div className="card-body p-3">
+                        <div className="d-flex flex-wrap align-items-center gap-3">
+                          {/* Filter Buttons */}
+                          <div className="d-flex gap-2 flex-wrap">
+                            {['All', 'Approved', 'Rejected'].map((filter) => (
+                              <Button
+                                key={filter}
+                                variant={documentFilter === filter ? 'primary' : 'outline-secondary'}
+                                size="sm"
+                                onClick={() => setDocumentFilter(filter)}
+                                style={{
+                                  borderRadius: '6px',
+                                  fontWeight: documentFilter === filter ? 600 : 400
+                                }}
                               >
-                                <td>
-                                  {a.applicant
-                                    ? `${a.applicant.first_name || ""} ${
-                                        a.applicant.last_name || ""
-                                      }`.trim()
-                                    : "N/A"}
-                                </td>
+                                {filter}
+                              </Button>
+                            ))}
+                          </div>
+                          
+                          {/* Search Bar */}
+                          <div className="flex-grow-1" style={{ minWidth: '250px' }}>
+                            <div className="input-group">
+                              <span className="input-group-text bg-white">
+                                <FontAwesomeIcon icon={faSearch} className="text-muted" />
+                              </span>
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Search by employee name..."
+                                value={documentSearchTerm}
+                                onChange={(e) => setDocumentSearchTerm(e.target.value)}
+                                style={{ borderLeft: 'none' }}
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Refresh Button */}
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={fetchAllApplicantsDocumentStatus}
+                            style={{ borderRadius: '6px' }}
+                          >
+                            <FontAwesomeIcon icon={faRefresh} className="me-2" />
+                            Refresh
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
 
-                                <td>
-                                  {a.jobPosting?.position ||
-                                    a.job_posting?.position ||
-                                    "N/A"}
-                                </td>
+                    {/* Documents Table */}
+                    {(() => {
+                      // Filter applicants based on search and document filter
+                      const allFiltered = getFilteredApplicants();
+                      const onboardingApplicants = allFiltered.filter(applicant => 
+                        applicant.status === "Onboarding" || 
+                        applicant.status === "Document Submission" ||
+                        applicant.status === "Orientation Schedule"
+                      );
+                      
+                      const filtered = onboardingApplicants.filter(applicant => {
+                        // Search filter
+                        const name = applicant.applicant
+                          ? `${applicant.applicant.first_name || ""} ${applicant.applicant.last_name || ""}`.trim().toLowerCase()
+                          : "";
+                        const matchesSearch = !documentSearchTerm || name.includes(documentSearchTerm.toLowerCase());
+                        
+                        // Status filter
+                        const docStatus = applicantsDocumentStatus[applicant.id]?.status || 'Incomplete';
+                        let matchesFilter = true;
+                        if (documentFilter === 'Pending') {
+                          matchesFilter = docStatus === 'Pending Review' || docStatus === 'uploaded';
+                        } else if (documentFilter === 'Approved') {
+                          matchesFilter = docStatus === 'Approved' || docStatus === 'Approved Documents';
+                        } else if (documentFilter === 'Rejected') {
+                          matchesFilter = docStatus === 'Rejected';
+                        } else if (documentFilter === 'All') {
+                          matchesFilter = true;
+                        }
+                        
+                        return matchesSearch && matchesFilter;
+                      });
 
-                                <td>-</td>
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="card border-0 shadow-sm">
+                            <div className="card-body text-center py-5">
+                              <h5 className="text-muted mb-2">No Applicants Found</h5>
+                              <p className="text-muted mb-0">
+                                {documentSearchTerm || documentFilter !== 'All'
+                                  ? 'No applicants match your search or filter criteria.'
+                                  : 'Applicants will appear here once onboarding starts.'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
 
-                                <td>-</td>
-
-                                <td>-</td>
-
-                                <td>
-                                  <span className="badge bg-secondary">
-                                    Scheduled
-                                  </span>
-                                </td>
-                              </tr>
-                            ));
-                          })()}
-
-                        {onboardingSubtab === "Employee Documents" &&
-                          (() => {
-                            const rows = applicants.filter(
-                              (a) =>
-                                a.status === "Onboarding" ||
-                                a.status === "Offer Accepted"
-                            );
-
-                            if (rows.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={5} className="text-center py-5">
-                                    <div className="d-flex flex-column align-items-center">
-                                      <FontAwesomeIcon
-                                        icon={faFileAlt}
-                                        className="text-muted mb-2"
-                                        size="2x"
-                                      />
-
-                                      <div className="text-muted">
-                                        No documents found
-                                      </div>
-                                    </div>
-                                  </td>
+                      return (
+                      <div className="card border-0 shadow-sm">
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <Table hover className="mb-0">
+                                <thead style={{ backgroundColor: '#f8f9fa' }}>
+                                  <tr>
+                                    <th style={{ padding: '16px', fontWeight: 600, color: '#495057' }}>Applicant</th>
+                                    <th style={{ padding: '16px', fontWeight: 600, color: '#495057' }}>Department &amp; Position</th>
+                                    <th style={{ padding: '16px', fontWeight: 600, color: '#495057' }}>Documents</th>
                                 </tr>
-                              );
-                            }
+                              </thead>
+                              <tbody>
+                                  {filtered.map((applicant) => {
+                                    const docStatus = applicantsDocumentStatus[applicant.id]?.status || 'Incomplete';
+                                    const submittedDate = applicantsDocumentStatus[applicant.id]?.date;
+                                    
+                                    let statusVariant = '';
+                                    let statusLabel = '';
+                                    
+                                    if (docStatus === 'Approved Documents' || docStatus === 'Approved') {
+                                      statusVariant = 'success';
+                                      statusLabel = 'Approved Documents';
+                                    } else if (docStatus === 'Pending Review' || docStatus === 'uploaded') {
+                                      statusVariant = 'warning';
+                                      statusLabel = 'Pending Review';
+                                    } else if (docStatus === 'Rejected') {
+                                      statusVariant = 'danger';
+                                      statusLabel = 'Rejected';
+                                    } else if (docStatus && docStatus !== 'Incomplete') {
+                                      statusVariant = 'secondary';
+                                      statusLabel = docStatus;
+                                    }
 
-                            return rows.slice(0, 20).map((a) => (
-                              <tr key={`doc-${a.id}`}>
-                                <td>
-                                  {a.applicant
-                                    ? `${a.applicant.first_name || ""} ${
-                                        a.applicant.last_name || ""
-                                      }`.trim()
-                                    : "N/A"}
-                                </td>
+                                    const formattedDate = submittedDate 
+                                      ? new Date(submittedDate).toLocaleDateString('en-US', { 
+                                          month: 'short', 
+                                          day: 'numeric', 
+                                          year: 'numeric' 
+                                        })
+                                      : null;
 
-                                <td>Government ID</td>
-
-                                <td>
-                                  <span className="me-2">
-                                    <FontAwesomeIcon
-                                      icon={faHourglassHalf}
-                                      className="text-warning"
-                                    />
-                                  </span>
-                                  Pending
-                                </td>
-
-                                <td>-</td>
-
-                                <td>
-                                  <Button
-                                    size="sm"
-                                    variant="outline-primary"
-                                    className="me-2"
-                                  >
-                                    <FontAwesomeIcon
-                                      icon={faEye}
-                                      className="me-1"
-                                    />{" "}
-                                    View
-                                  </Button>
-
-                                  <Button size="sm" variant="success">
-                                    <FontAwesomeIcon
-                                      icon={faCheckCircle}
-                                      className="me-1"
-                                    />{" "}
-                                    Verify
-                                  </Button>
-                                </td>
-                              </tr>
-                            ));
-                          })()}
-
-                        {onboardingSubtab === "Benefits Enrollment" &&
-                          applicants
-
-                            .filter(
-                              (a) =>
-                                a.status === "Onboarding" ||
-                                a.status === "Offer Accepted"
-                            )
-
-                            .slice(0, 10)
-
-                            .map((a) => (
-                              <tr key={`ben-${a.id}`}>
-                                <td>
-                                  {a.applicant
-                                    ? `${a.applicant.first_name || ""} ${
-                                        a.applicant.last_name || ""
-                                      }`.trim()
-                                    : "N/A"}
-                                </td>
-
-                                <td>Default</td>
-
-                                <td>Not Enrolled</td>
-
-                                <td>-</td>
-
-                                <td>
-                                  <Button variant="outline-primary" size="sm">
-                                    View
-                                  </Button>
-                                </td>
-                              </tr>
-                            ))}
-
-                        {onboardingSubtab === "Start Date" &&
-                          applicants
-
-                            .filter(
-                              (a) =>
-                                a.status === "Onboarding" ||
-                                a.status === "Offer Accepted"
-                            )
-
-                            .slice(0, 10)
-
-                            .map((a) => (
-                              <tr key={`start-${a.id}`}>
-                                <td>
-                                  {a.applicant
-                                    ? `${a.applicant.first_name || ""} ${
-                                        a.applicant.last_name || ""
-                                      }`.trim()
-                                    : "N/A"}
-                                </td>
-
-                                <td>
-                                  {a.jobPosting?.position ||
-                                    a.job_posting?.position ||
-                                    "N/A"}
-                                </td>
-
-                                <td>
-                                  {a.jobPosting?.department ||
-                                    a.job_posting?.department ||
-                                    "N/A"}
-                                </td>
-
-                                <td>-</td>
-
-                                <td>{a.status}</td>
-                              </tr>
-                            ))}
-                      </tbody>
-                    </table>
+                                    const department = applicant.jobPosting?.department || applicant.job_posting?.department || 'N/A';
+                                    const position = applicant.jobPosting?.position || applicant.job_posting?.position || '';
+                                    
+                                    return (
+                                      <tr key={applicant.id} style={{ borderBottom: '1px solid #e9ecef' }}>
+                                        <td style={{ padding: '16px', verticalAlign: 'middle' }}>
+                                          <div className="fw-semibold" style={{ color: '#212529', marginBottom: '4px' }}>
+                                        {applicant.applicant
+                                              ? `${applicant.applicant.first_name || ''} ${applicant.applicant.last_name || ''}`.trim()
+                                              : 'N/A'}
+                                          </div>
+                                          <div className="small text-muted">
+                                            {applicant.applicant?.email || 'N/A'}
+                                      </div>
+                                    </td>
+                                        <td style={{ padding: '16px', verticalAlign: 'middle' }}>
+                                          <div style={{ color: '#495057', marginBottom: position ? '4px' : '0' }}>
+                                            {department}
+                                      </div>
+                                          {position && (
+                                            <div style={{ color: '#6c757d', fontStyle: 'italic', fontSize: '0.9rem' }}>
+                                              {position}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td style={{ padding: '16px', verticalAlign: 'middle' }}>
+                                          <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                                            {statusLabel && (
+                                              <Badge
+                                                bg={statusVariant}
+                                                className="px-3 py-2"
+                                                style={{ fontSize: '0.8rem', borderRadius: '999px' }}
+                                              >
+                                                {statusLabel}
+                                              </Badge>
+                                            )}
+                                            {formattedDate && (
+                                              <div className="text-muted small">
+                                                {`Submitted ${formattedDate}`}
+                                              </div>
+                                            )}
+                                            <div className="d-flex flex-wrap gap-2">
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={() => {
+                                          setSelectedApplicationForDocs(applicant);
+                                          setShowDocumentModal(true);
+                                                  setDocumentModalTab('Applicant Identification');
+                                          fetchDocumentRequirements(applicant.id);
+                                          fetchDocumentSubmissions(applicant.id);
+                                        }}
+                                                style={{ borderRadius: '6px' }}
+                                      >
+                                                View / Verify Documents
+                                      </Button>
+                                            </div>
+                                          </div>
+                                    </td>
+                                  </tr>
+                                    );
+                                  })}
+                              </tbody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                      );
+                    })()}
                   </div>
-                </div>
+                )}
+
+                {/* Other tabs - Placeholder content */}
+                {onboardingSubtab !== "Document Submission" && (
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-body text-center py-5">
+                      <h5 className="text-muted mb-2">{onboardingSubtab}</h5>
+                      <p className="text-muted mb-0">
+                        {onboardingTabDescriptions[onboardingSubtab] || "This section is coming soon."}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {filteredApplicants.length === 0 ? (
+            {activeTab !== "Onboarding" && filteredApplicants.length === 0 ? (
               <div className="text-center py-5">
                 <FontAwesomeIcon
                   icon={faUsers}
@@ -1859,7 +2542,7 @@ const Onboarding = () => {
                     : `No ${activeTab.toLowerCase()} applications found.`}
                 </p>
               </div>
-            ) : (
+            ) : activeTab !== "Onboarding" && (
               <div
                 className="onboarding-list"
                 style={{ background: "transparent" }}
@@ -2115,7 +2798,7 @@ const Onboarding = () => {
                             </div>
 
                             <div className="status-container">
-                              {getStatusBadge(applicant.status)}
+                              {getStatusBadge(applicant.status, activeTab !== "Accepted Offer")}
                             </div>
                           </div>
 
@@ -2291,11 +2974,46 @@ const Onboarding = () => {
                           </>
                         )}
 
+                        {activeTab === "Accepted Offer" && (
+                          <>
+                            <div
+                              className="vr-sep"
+                              style={{
+                                borderLeft: "1px solid rgba(0,0,0,0.12)",
+                                height: "24px",
+                                marginLeft: "8px",
+                              }}
+                            ></div>
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewDetails(applicant);
+                              }}
+                              className="view-details-btn"
+                              style={{
+                                padding: "8px 16px",
+                                fontSize: "13px",
+                                whiteSpace: "nowrap",
+                                height: "32px",
+                                minWidth: "110px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </>
+                        )}
+
                         {activeTab !== "Overview" &&
                           activeTab !== "Pending" &&
                           activeTab !== "Shortlisted" &&
                           activeTab !== "Interview" &&
-                          activeTab !== "Offered" && (
+                          activeTab !== "Offered" &&
+                          activeTab !== "Accepted Offer" && (
                             <div className="ms-2 position-relative d-flex align-items-center">
                               <Button
                                 variant="outline-secondary"
@@ -2342,10 +3060,13 @@ const Onboarding = () => {
                               )}
                             </div>
                           )}
+
                       </div>
                     </div>
 
+
                     {activeTab !== "Overview" &&
+                      activeTab !== "Onboarding" &&
                       expandedRowId === applicant.id && (
                         <div
                           className="card-expand mt-2 pt-2"
@@ -2520,7 +3241,7 @@ const Onboarding = () => {
                 </div>
               </div>
 
-              {/* Action Buttons - Only show for Pending status */}
+              {/* Action Buttons - Show for Pending and Accepted Offer status */}
 
               {selectedRecord.status === "Pending" && (
                 <div className="modal-footer border-0 pt-0 px-4 pb-4">
@@ -2545,6 +3266,91 @@ const Onboarding = () => {
                   </div>
                 </div>
               )}
+
+              {/* Start Onboarding Button for Accepted Offer */}
+              {(selectedRecord.status === "Offer Accepted" || selectedRecord.status === "Accepted") && (
+                <div className="modal-footer border-0 pt-0 px-4 pb-4">
+                  <div className="d-flex gap-3 w-100">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowModal(false)}
+                      style={{ flex: "0 0 auto" }}
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      variant="success"
+                      className="flex-fill action-btn"
+                      onClick={() => {
+                        setShowStartOnboardingModal(true);
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faUserTie} className="me-2" />
+                      Start Onboarding
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Onboarding Confirmation Modal */}
+      {showStartOnboardingModal && selectedRecord && (
+        <div
+          className="modal show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header border-0 pb-0">
+                <h5 className="modal-title fw-bold">
+                  <FontAwesomeIcon icon={faUserTie} className="me-2 text-primary" />
+                  Start Onboarding
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowStartOnboardingModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body px-4 py-3">
+                <p className="mb-0">
+                  Are you sure you want to start onboarding for{" "}
+                  <strong>
+                    {selectedRecord.applicant
+                      ? `${selectedRecord.applicant.first_name || ""} ${
+                          selectedRecord.applicant.last_name || ""
+                        }`.trim()
+                      : "this applicant"}
+                  </strong>
+                  ?
+                </p>
+                <p className="text-muted small mt-2 mb-0">
+                  This will change their status to "Onboarding" and move them to the Onboarding tab.
+                </p>
+              </div>
+              <div className="modal-footer border-0 pt-0 px-4 pb-4">
+                <div className="d-flex gap-3 w-100">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowStartOnboardingModal(false)}
+                    style={{ flex: "0 0 auto" }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="success"
+                    className="flex-fill action-btn"
+                    onClick={handleConfirmStartOnboarding}
+                  >
+                    <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                    Confirm
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -5094,6 +5900,356 @@ const Onboarding = () => {
                   <FontAwesomeIcon icon={faFileAlt} className="me-2" />
                   Send Offer
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Management Modal */}
+      {showDocumentModal && selectedApplicationForDocs && (
+        <div
+          className="modal show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1050 }}
+        >
+          <div className="modal-dialog modal-xl modal-dialog-centered" style={{ maxWidth: "1200px" }}>
+            <div className="modal-content" style={{ borderRadius: "12px" }}>
+              <div className="modal-header border-0 pb-2" style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", borderRadius: "12px 12px 0 0" }}>
+                <h5 className="modal-title fw-bold text-white">
+                  <FontAwesomeIcon icon={faFilePdf} className="me-2" />
+                  View / Verify Documents - {selectedApplicationForDocs.applicant
+                    ? `${selectedApplicationForDocs.applicant.first_name || ""} ${selectedApplicationForDocs.applicant.last_name || ""}`.trim()
+                    : "Applicant"}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => {
+                    setShowDocumentModal(false);
+                    setSelectedApplicationForDocs(null);
+                    setDocumentRequirements([]);
+                    setDocumentSubmissions([]);
+                  }}
+                ></button>
+              </div>
+              <div className="modal-body p-4">
+                {/* Tabs */}
+                <div className="d-flex flex-wrap gap-2 mb-4 border-bottom">
+                  {documentModalTabs.map((tab) => (
+                  <Button
+                      key={tab}
+                      variant={documentModalTab === tab ? 'primary' : 'outline-secondary'}
+                    size="sm"
+                      onClick={() => setDocumentModalTab(tab)}
+                    style={{ borderRadius: "8px 8px 0 0", borderBottom: "none" }}
+                  >
+                      {tab}
+                  </Button>
+                  ))}
+                </div>
+
+                <div>
+                  {documentModalTab === 'Applicant Identification' ? (
+                    <>
+                          {allDocumentsApproved() && (
+                        <Alert variant="success" className="mb-4">
+                              <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                              <strong>All required documents are approved!</strong> You can now mark this step as complete.
+                            </Alert>
+                          )}
+
+                      {renderDocumentCards(applicantIdentificationDocs)}
+
+                      {rejectingSubmissionId && (
+                        <div
+                          className="modal show d-block"
+                          tabIndex="-1"
+                          style={{ backgroundColor: "rgba(0,0,0,0.3)", zIndex: 1060 }}
+                          onClick={(e) => {
+                            if (e.target === e.currentTarget) {
+                              setRejectingSubmissionId(null);
+                              setRejectionReason("");
+                            }
+                          }}
+                        >
+                          <div className="modal-dialog modal-dialog-centered">
+                            <div className="modal-content" style={{ borderRadius: "12px" }}>
+                              <div className="modal-header border-0">
+                                <h5 className="modal-title fw-bold">
+                                  <FontAwesomeIcon icon={faTimesCircle} className="me-2 text-danger" />
+                                  Reject Document
+                                </h5>
+                                <button
+                                  type="button"
+                                  className="btn-close"
+                                  onClick={() => {
+                                    setRejectingSubmissionId(null);
+                                    setRejectionReason("");
+                                  }}
+                                ></button>
+                              </div>
+                              <div className="modal-body">
+                                <p className="mb-3">
+                                  Please provide a reason for rejecting this document. The employee will be notified to re-upload.
+                                </p>
+                                <label className="form-label fw-semibold">Rejection Reason *</label>
+                                <textarea
+                                  className="form-control"
+                                  rows="3"
+                                  placeholder="e.g., Blurry photo, please re-upload"
+                                  value={rejectionReason}
+                                  onChange={(e) => setRejectionReason(e.target.value)}
+                                  style={{ minHeight: "100px" }}
+                                />
+                              </div>
+                              <div className="modal-footer border-0">
+                                  <Button
+                                  variant="secondary"
+                                    onClick={() => {
+                                    setRejectingSubmissionId(null);
+                                    setRejectionReason("");
+                                    }}
+                                  >
+                                  Cancel
+                                  </Button>
+                                <Button
+                                  variant="danger"
+                                  onClick={confirmRejectDocument}
+                                  disabled={!rejectionReason.trim() || reviewingDocument}
+                                >
+                                  {reviewingDocument ? "Processing..." : "Confirm Rejection"}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                      </div>
+                      )}
+                    </>
+                  ) : documentModalTab === 'Government & Tax Documents' ? (
+                    renderDocumentCards(governmentTaxDocs)
+                  ) : documentModalTab === 'Medical Documents' ? (
+                    renderDocumentCards(medicalDocs)
+                  ) : documentModalTab === 'Additional Document' ? (
+                    <>
+                      <div className="card border-0 shadow-sm mb-4">
+                        <div className="card-body">
+                          <div className="d-flex align-items-center mb-3">
+                            <FontAwesomeIcon icon={faPaperclip} className="text-primary me-2" />
+                            <h6 className="fw-bold mb-0">Request Additional Documents</h6>
+                          </div>
+                          <p className="text-muted small mb-4">
+                            Create a custom requirement to notify the applicant and request the needed document.
+                          </p>
+                          <div className="row g-3">
+                            <div className="col-md-6">
+                              <label className="form-label fw-semibold">
+                                Document Name <span className="text-danger">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={newRequirement.document_name}
+                                onChange={(e) =>
+                                  setNewRequirement((prev) => ({
+                                    ...prev,
+                                    document_name: e.target.value,
+                                  }))
+                                }
+                                placeholder="e.g., Portfolio, Certification, Contract"
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label fw-semibold">File Format / Notes</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={newRequirement.file_format}
+                                onChange={(e) =>
+                                  setNewRequirement((prev) => ({
+                                    ...prev,
+                                    file_format: e.target.value,
+                                  }))
+                                }
+                                placeholder="e.g., PDF, DOCX, JPG"
+                              />
+                            </div>
+                            <div className="col-12">
+                              <label className="form-label fw-semibold">Description / Instructions</label>
+                              <textarea
+                                className="form-control"
+                                rows="3"
+                                value={newRequirement.description}
+                                onChange={(e) =>
+                                  setNewRequirement((prev) => ({
+                                    ...prev,
+                                    description: e.target.value,
+                                  }))
+                                }
+                                placeholder="Provide details or instructions for the applicant."
+                              ></textarea>
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label fw-semibold">Max File Size (MB)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                className="form-control"
+                                value={newRequirement.max_file_size_mb}
+                                onChange={(e) =>
+                                  setNewRequirement((prev) => ({
+                                    ...prev,
+                                    max_file_size_mb: Math.max(1, parseInt(e.target.value, 10) || 1),
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="col-md-8 d-flex align-items-center">
+                              <div className="form-check">
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id="additional-doc-required"
+                                  checked={newRequirement.is_required}
+                                  onChange={(e) =>
+                                    setNewRequirement((prev) => ({
+                                      ...prev,
+                                      is_required: e.target.checked,
+                                    }))
+                                  }
+                                />
+                                <label className="form-check-label" htmlFor="additional-doc-required">
+                                  Mark as required (applicant must upload)
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mt-4 gap-3">
+                            <span className="text-muted small">
+                              The applicant will be notified to upload this document once you send the request.
+                            </span>
+                            <Button
+                              variant="primary"
+                              className="px-3"
+                              onClick={createDocumentRequirement}
+                              disabled={!newRequirement.document_name.trim()}
+                            >
+                              <FontAwesomeIcon icon={faPlus} className="me-2" />
+                              Send Request to Applicant
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      {additionalRequirementDocs.length > 0 ? (
+                        renderDocumentCards(additionalRequirementDocs)
+                      ) : (
+                        <div className="card border-0 shadow-sm">
+                          <div className="card-body text-center py-5">
+                            <FontAwesomeIcon icon={faFileAlt} size="3x" className="text-muted mb-3" />
+                            <h5 className="text-muted mb-2">No additional requests yet</h5>
+                            <p className="text-muted mb-0">
+                              Use the form above to request extra documents from the applicant.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="card border-0 shadow-sm">
+                      <div className="card-body text-center py-5">
+                        <FontAwesomeIcon icon={faFileAlt} size="3x" className="text-muted mb-3" />
+                        <h5 className="text-muted mb-2">{documentModalTab}</h5>
+                        <p className="text-muted mb-0">Documentation management for this category will be available soon.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {documentModalTab !== 'Applicant Identification' && rejectingSubmissionId && (
+                  <div
+                    className="modal show d-block"
+                    tabIndex="-1"
+                    style={{ backgroundColor: "rgba(0,0,0,0.3)", zIndex: 1060 }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        setRejectingSubmissionId(null);
+                        setRejectionReason('');
+                      }
+                    }}
+                  >
+                    <div className="modal-dialog modal-dialog-centered">
+                      <div className="modal-content" style={{ borderRadius: "12px" }}>
+                        <div className="modal-header border-0">
+                          <h5 className="modal-title fw-bold">
+                            <FontAwesomeIcon icon={faTimesCircle} className="me-2 text-danger" />
+                            Reject Document
+                          </h5>
+                          <button
+                            type="button"
+                            className="btn-close"
+                            onClick={() => {
+                              setRejectingSubmissionId(null);
+                              setRejectionReason('');
+                            }}
+                          ></button>
+                        </div>
+                        <div className="modal-body">
+                          <p className="mb-3">Please provide a reason for rejecting this document. The employee will be notified to re-upload.</p>
+                          <label className="form-label fw-semibold">Rejection Reason *</label>
+                          <textarea
+                            className="form-control"
+                            rows="3"
+                            placeholder="e.g., Blurry photo, please re-upload"
+                            value={rejectionReason}
+                            onChange={(e) => setRejectionReason(e.target.value)}
+                            style={{ minHeight: '100px' }}
+                          />
+                        </div>
+                        <div className="modal-footer border-0">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setRejectingSubmissionId(null);
+                              setRejectionReason('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="danger"
+                            onClick={confirmRejectDocument}
+                            disabled={!rejectionReason.trim() || reviewingDocument}
+                          >
+                            {reviewingDocument ? "Processing..." : "Confirm Rejection"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer border-0 d-flex justify-content-between">
+                <div className="d-flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setShowDocumentModal(false);
+                      setSelectedApplicationForDocs(null);
+                      setDocumentRequirements([]);
+                      setDocumentSubmissions([]);
+                    }}
+                  >
+                    Close
+                  </Button>
+                  {allDocumentsApproved() && (
+                    <Button
+                      variant="success"
+                      onClick={markDocumentSubmissionAsDone}
+                    >
+                      <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                      Mark as Done
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
