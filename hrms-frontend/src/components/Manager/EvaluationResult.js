@@ -4,28 +4,26 @@ import {
   XCircle, 
   Download, 
   User, 
-  Calendar, 
   TrendingUp,
   TrendingDown,
   MessageSquare,
   Star,
   Award
 } from 'lucide-react';
+import './EvaluationResult.css';
 
 const EvaluationResult = ({ result, onBack, showBackButton = true, backButtonText = 'Back to Employee List' }) => {
   if (!result) {
-    return (
-      <div style={{ padding: 20 }}>Loading result...</div>
-    );
+    return <div className="evaluation-result__loading">Loading result...</div>;
   }
 
   const { evaluation, scores, analysis } = result || {};
   
-  // Basic guards to avoid runtime errors if API shape varies
   const safeAnalysis = analysis || { strengths: [], weaknesses: [], strengths_count: 0, weaknesses_count: 0 };
   const safeScores = scores || { total_score: 0, average_score: 0, percentage: 0, total_questions: 0, passing_score: 0, is_passed: false };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -35,19 +33,23 @@ const EvaluationResult = ({ result, onBack, showBackButton = true, backButtonTex
     });
   };
 
-  const getScoreColor = (score, total) => {
-    const percentage = (score / total) * 100;
-    if (percentage >= 80) return '#22c55e';
-    if (percentage >= 60) return '#f59e0b';
-    return '#ef4444';
+  const getGradeFromPercentage = (percentage) => {
+    if (percentage >= 90) return { grade: 'A', color: '#2563eb' };
+    if (percentage >= 80) return { grade: 'B', color: '#059669' };
+    if (percentage >= 70) return { grade: 'C', color: '#d97706' };
+    if (percentage >= 60) return { grade: 'D', color: '#ea580c' };
+    return { grade: 'F', color: '#dc2626' };
   };
 
-  const getGradeFromPercentage = (percentage) => {
-    if (percentage >= 90) return { grade: 'A', color: '#22c55e' };
-    if (percentage >= 80) return { grade: 'B', color: '#3b82f6' };
-    if (percentage >= 70) return { grade: 'C', color: '#f59e0b' };
-    if (percentage >= 60) return { grade: 'D', color: '#f97316' };
-    return { grade: 'F', color: '#ef4444' };
+  const getClassificationTone = (classification) => {
+    switch (classification) {
+      case 'Strength':
+        return { background: '#dcfce7', text: '#047857' };
+      case 'Weakness':
+        return { background: '#fee2e2', text: '#b91c1c' };
+      default:
+        return { background: '#fef3c7', text: '#b45309' };
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -71,610 +73,231 @@ const EvaluationResult = ({ result, onBack, showBackButton = true, backButtonTex
     }
   };
 
-  const gradeInfo = getGradeFromPercentage(safeScores.percentage);
+  const gradeInfo = getGradeFromPercentage(Number(safeScores.percentage) || 0);
+  const totalQuestions = safeScores.total_questions || safeScores.question_count || 0;
+  const totalPoints = totalQuestions * 10;
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div style={styles.headerContent}>
-          <div style={styles.headerLeft}>
-            <h1 style={styles.title}>Evaluation Results</h1>
-            <p style={styles.subtitle}>Performance evaluation completed successfully</p>
+    <div className="evaluation-result">
+      <section className="evaluation-card evaluation-card--header">
+        <div>
+          <span className="evaluation-card__eyebrow">Evaluation Summary</span>
+          <h1 className="evaluation-card__title">Evaluation Results</h1>
+          <p className="evaluation-card__subtitle">Performance evaluation completed successfully</p>
           </div>
-          <div style={styles.headerRight}>
-            <button onClick={handleDownloadPDF} style={styles.downloadButton}>
+        <button type="button" className="evaluation-btn evaluation-btn--primary" onClick={handleDownloadPDF}>
               <Download size={16} />
               Download PDF
             </button>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      {/* Overall Score Card */}
-      <div style={styles.scoreCard}>
-        <div style={styles.scoreCardLeft}>
-          <div style={styles.mainScore}>
-            <div 
+      <section className="evaluation-card score-card">
+        <div className="score-card__primary">
+          <div className="score-card__summary">
+            <div
+              className="score-card__grade"
               style={{
-                ...styles.gradeCircle,
-                backgroundColor: gradeInfo.color + '20',
-                borderColor: gradeInfo.color
+                borderColor: gradeInfo.color,
+                color: gradeInfo.color,
+                backgroundColor: `${gradeInfo.color}14`
               }}
             >
-              <span style={{ ...styles.gradeText, color: gradeInfo.color }}>
                 {gradeInfo.grade}
+            </div>
+            <div>
+              <p className="score-card__label">Overall Performance</p>
+              <p className="score-card__value">
+                {safeScores.total_score} / {totalPoints || '—'} points
+              </p>
+            </div>
+          </div>
+          
+          <dl className="score-card__metrics">
+            <div className="score-card__metric">
+              <dt>Score Percentage</dt>
+              <dd>{Number.isFinite(Number(safeScores.percentage)) ? Number(safeScores.percentage).toFixed(2) : '—'}%</dd>
+            </div>
+            <div className="score-card__metric">
+              <dt>Average Rating</dt>
+              <dd>{Number.isFinite(Number(safeScores.average_score)) ? Number(safeScores.average_score).toFixed(2) : '—'}</dd>
+            </div>
+            <div className="score-card__metric">
+              <dt>Questions</dt>
+              <dd>{totalQuestions}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div
+          className={`score-card__status ${safeScores.is_passed ? 'score-card__status--passed' : 'score-card__status--failed'}`}
+          style={{
+            borderColor: safeScores.is_passed ? '#22c55e33' : '#ef444433',
+            backgroundColor: safeScores.is_passed ? '#ecfdf5' : '#fef2f2',
+            color: safeScores.is_passed ? '#047857' : '#b91c1c'
+          }}
+        >
+          {safeScores.is_passed ? <CheckCircle size={22} /> : <XCircle size={22} />}
+              <div>
+            <span className="score-card__status-title">{safeScores.is_passed ? 'Passed' : 'Needs Attention'}</span>
+            <span className="score-card__status-subtitle">
+              {safeScores.is_passed ? 'Exceeded' : 'Below'} minimum score of {safeScores.passing_score || '—'}
+            </span>
+            </div>
+        </div>
+      </section>
+
+      <section className="info-grid">
+        <div className="evaluation-card info-card">
+          <h2 className="section-title">
+            <User size={18} />
+            Employee Information
+          </h2>
+          <div className="info-card__grid">
+            <div className="info-card__item">
+              <span className="info-card__label">Name</span>
+              <span className="info-card__value">
+                {evaluation?.employee?.employee_profile?.first_name && evaluation?.employee?.employee_profile?.last_name
+                ? `${evaluation.employee.employee_profile.first_name} ${evaluation.employee.employee_profile.last_name}`
+                  : evaluation?.employee?.name || 'N/A'}
               </span>
             </div>
-            <div style={styles.scoreDetails}>
-              <div style={styles.scoreTitle}>Overall Performance</div>
-              <div style={styles.scoreSubtitle}>
-                {safeScores.total_score} / {(safeScores.total_questions || safeScores.question_count || 0) * 10} points
-              </div>
+            <div className="info-card__item">
+              <span className="info-card__label">Employee ID</span>
+              <span className="info-card__value">{evaluation?.employee?.employee_profile?.employee_id || 'N/A'}</span>
             </div>
-          </div>
-          
-          <div style={styles.scoreMetrics}>
-            <div style={styles.metric}>
-              <div style={styles.metricValue}>{safeScores.percentage}%</div>
-              <div style={styles.metricLabel}>Score Percentage</div>
+            <div className="info-card__item">
+              <span className="info-card__label">Department</span>
+              <span className="info-card__value">{evaluation?.employee?.employee_profile?.department || 'N/A'}</span>
             </div>
-            <div style={styles.metric}>
-              <div style={styles.metricValue}>{safeScores.average_score}</div>
-              <div style={styles.metricLabel}>Average Rating</div>
+            <div className="info-card__item">
+              <span className="info-card__label">Position</span>
+              <span className="info-card__value">{evaluation?.employee?.employee_profile?.position || 'N/A'}</span>
             </div>
-            <div style={styles.metric}>
-              <div style={styles.metricValue}>{safeScores.total_questions || safeScores.question_count || 0}</div>
-              <div style={styles.metricLabel}>Questions</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={styles.passStatus}>
-          {safeScores.is_passed ? (
-            <div style={styles.passedBadge}>
-              <CheckCircle size={24} />
-              <div>
-                <div style={styles.statusTitle}>PASSED</div>
-                <div style={styles.statusSubtitle}>
-                  Exceeded minimum score of {safeScores.passing_score}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={styles.failedBadge}>
-              <XCircle size={24} />
-              <div>
-                <div style={styles.statusTitle}>NEEDS IMPROVEMENT</div>
-                <div style={styles.statusSubtitle}>
-                  Below minimum score of {safeScores.passing_score}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={styles.contentGrid}>
-        {/* Employee Information */}
-        <div style={styles.infoCard}>
-          <h3 style={styles.cardTitle}>
-            <User size={20} />
-            Employee Information
-          </h3>
-          <div style={styles.infoGrid}>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Name</div>
-              <div style={styles.infoValue}>{(evaluation.employee?.employee_profile?.first_name && evaluation.employee?.employee_profile?.last_name)
-                ? `${evaluation.employee.employee_profile.first_name} ${evaluation.employee.employee_profile.last_name}`
-                : (evaluation.employee?.name || 'N/A')}</div>
-            </div>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Employee ID</div>
-              <div style={styles.infoValue}>
-                {evaluation.employee.employee_profile?.employee_id || 'N/A'}
-              </div>
-            </div>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Department</div>
-              <div style={styles.infoValue}>
-                {evaluation.employee.employee_profile?.department || 'N/A'}
-              </div>
-            </div>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Position</div>
-              <div style={styles.infoValue}>
-                {evaluation.employee.employee_profile?.position || 'N/A'}
-              </div>
-            </div>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Evaluated By</div>
-              <div style={styles.infoValue}>{(evaluation.manager?.employee_profile?.first_name && evaluation.manager?.employee_profile?.last_name)
+            <div className="info-card__item">
+              <span className="info-card__label">Evaluated By</span>
+              <span className="info-card__value">
+                {evaluation?.manager?.employee_profile?.first_name && evaluation?.manager?.employee_profile?.last_name
                 ? `${evaluation.manager.employee_profile.first_name} ${evaluation.manager.employee_profile.last_name}`
-                : (evaluation.manager?.name || evaluation.manager?.email || 'N/A')}</div>
+                  : evaluation?.manager?.name || evaluation?.manager?.email || 'N/A'}
+              </span>
             </div>
-            <div style={styles.infoItem}>
-              <div style={styles.infoLabel}>Evaluation Date</div>
-              <div style={styles.infoValue}>
-                {formatDate(evaluation.submitted_at)}
-              </div>
+            <div className="info-card__item">
+              <span className="info-card__label">Evaluation Date</span>
+              <span className="info-card__value">{formatDate(evaluation?.submitted_at)}</span>
             </div>
           </div>
         </div>
 
-        {/* Performance Analysis */}
-        <div style={styles.analysisCard}>
-          <h3 style={styles.cardTitle}>
-            <Award size={20} />
+        <div className="evaluation-card analysis-card">
+          <h2 className="section-title">
+            <Award size={18} />
             Performance Analysis
-          </h3>
-          
-          <div style={styles.analysisGrid}>
-            <div style={styles.analysisItem}>
-              <div style={styles.analysisHeader}>
-                <TrendingUp size={16} color="#22c55e" />
-                <span style={styles.analysisTitle}>Strengths</span>
-                <span style={styles.analysisCount}>{safeAnalysis.strengths_count}</span>
+          </h2>
+          <div className="analysis-card__grid">
+            <div className="analysis-card__column">
+              <div className="analysis-card__header analysis-card__header--strength">
+                <TrendingUp size={16} />
+                <span>Strengths</span>
+                <span className="analysis-card__count">{safeAnalysis.strengths_count}</span>
               </div>
-              <div style={styles.analysisList}>
+              <ul className="analysis-card__list">
                 {safeAnalysis.strengths.slice(0, 3).map((response, index) => (
-                  <div key={index} style={styles.analysisListItem}>
-                    <Star size={12} color="#22c55e" />
-                    <span>{response.question.category}</span>
-                    <span style={styles.ratingBadge}>{response.rating}/10</span>
-                  </div>
+                  <li key={`strength-${index}`} className="analysis-card__item">
+                    <Star size={14} />
+                    <span>{response?.question?.category || 'Category unavailable'}</span>
+                    <span className="analysis-card__score">{response?.rating ?? '—'}/10</span>
+                  </li>
                 ))}
-              </div>
+                {safeAnalysis.strengths.length === 0 && <li className="analysis-card__empty">No strengths recorded.</li>}
+              </ul>
             </div>
 
-            <div style={styles.analysisItem}>
-              <div style={styles.analysisHeader}>
-                <TrendingDown size={16} color="#ef4444" />
-                <span style={styles.analysisTitle}>Areas for Improvement</span>
-                <span style={styles.analysisCount}>{safeAnalysis.weaknesses_count}</span>
+            <div className="analysis-card__column">
+              <div className="analysis-card__header analysis-card__header--improvement">
+                <TrendingDown size={16} />
+                <span>Areas for Improvement</span>
+                <span className="analysis-card__count">{safeAnalysis.weaknesses_count}</span>
               </div>
-              <div style={styles.analysisList}>
+              <ul className="analysis-card__list">
                 {safeAnalysis.weaknesses.slice(0, 3).map((response, index) => (
-                  <div key={index} style={styles.analysisListItem}>
-                    <Star size={12} color="#ef4444" />
-                    <span>{response.question.category}</span>
-                    <span style={styles.ratingBadge}>{response.rating}/10</span>
-                  </div>
+                  <li key={`weakness-${index}`} className="analysis-card__item">
+                    <Star size={14} />
+                    <span>{response?.question?.category || 'Category unavailable'}</span>
+                    <span className="analysis-card__score">{response?.rating ?? '—'}/10</span>
+                  </li>
                 ))}
-              </div>
+                {safeAnalysis.weaknesses.length === 0 && <li className="analysis-card__empty">No priority improvements found.</li>}
+              </ul>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Detailed Responses */}
-      <div style={styles.responsesCard}>
-        <h3 style={styles.cardTitle}>
-          <MessageSquare size={20} />
+      <section className="evaluation-card responses-card">
+        <h2 className="section-title">
+          <MessageSquare size={18} />
           Detailed Responses
-        </h3>
-        
-        <div style={styles.responsesList}>
-          {evaluation.responses.map((response, index) => (
-            <div key={response.id} style={styles.responseItem}>
-              <div style={styles.responseHeader}>
-                <div style={styles.responseNumber}>{index + 1}</div>
-                <div style={styles.responseQuestion}>
-                  <div style={styles.responseCategory}>{response.question.category}</div>
-                  <div style={styles.responseText}>{response.question.question_text}</div>
-                </div>
-                <div style={styles.responseRating}>
-                  <div style={styles.ratingValue}>{response.rating}</div>
-                  <div style={styles.ratingScale}>/10</div>
+        </h2>
+        <div className="responses-card__list">
+          {evaluation?.responses?.map((response, index) => {
+            const tone = getClassificationTone(response?.classification);
+            return (
+              <article key={response?.id ?? `response-${index}`} className="response-item">
+                <div className="response-item__header">
+                  <div className="response-item__index">{index + 1}</div>
+                  <div className="response-item__content">
+                    <span className="response-item__category">{response?.question?.category || 'Uncategorized'}</span>
+                    <p className="response-item__question">{response?.question?.question_text || 'Question text unavailable.'}</p>
+                  </div>
+                  <div className="response-item__rating">
+                    <span className="response-item__rating-value">{response?.rating ?? '—'}</span>
+                    <span className="response-item__rating-scale">/10</span>
                 </div>
               </div>
               
-              <div style={styles.responseDetails}>
-                <div 
+                <div className="response-item__meta">
+                  <span
+                    className="response-item__classification"
                   style={{
-                    ...styles.classificationBadge,
-                    backgroundColor: 
-                      response.classification === 'Strength' ? '#22c55e20' :
-                      response.classification === 'Weakness' ? '#ef444420' : '#f59e0b20',
-                    color:
-                      response.classification === 'Strength' ? '#22c55e' :
-                      response.classification === 'Weakness' ? '#ef4444' : '#f59e0b'
-                  }}
-                >
-                  {response.classification}
-                </div>
-                
-                {response.manager_comment && (
-                  <div style={styles.responseComment}>
-                    <div style={styles.commentLabel}>Manager Comment:</div>
-                    <div style={styles.commentText}>{response.manager_comment}</div>
+                      backgroundColor: tone.background,
+                      color: tone.text
+                    }}
+                  >
+                    {response?.classification || 'Unclassified'}
+                  </span>
+
+                  {response?.manager_comment && (
+                    <div className="response-item__comment">
+                      <span className="response-item__comment-label">Manager Comment</span>
+                      <p className="response-item__comment-text">{response.manager_comment}</p>
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+              </article>
+            );
+          })}
         </div>
-      </div>
+      </section>
 
-      {/* General Comments */}
-      {evaluation.general_comments && (
-        <div style={styles.generalCommentsCard}>
-          <h3 style={styles.cardTitle}>
-            <MessageSquare size={20} />
+      {evaluation?.general_comments && (
+        <section className="evaluation-card comments-card">
+          <h2 className="section-title">
+            <MessageSquare size={18} />
             General Comments
-          </h3>
-          <div style={styles.generalCommentsText}>
-            {evaluation.general_comments}
-          </div>
-        </div>
+          </h2>
+          <p className="comments-card__text">{evaluation.general_comments}</p>
+        </section>
       )}
 
-      {/* Action Button */}
       {showBackButton && (
-        <div style={styles.actionContainer}>
-          <button onClick={onBack} style={styles.backButton}>
+        <div className="evaluation-result__actions">
+          <button type="button" className="evaluation-btn evaluation-btn--ghost" onClick={onBack}>
             {backButtonText}
           </button>
         </div>
       )}
     </div>
   );
-};
-
-const styles = {
-  container: {
-    maxWidth: '1000px',
-    margin: '0 auto',
-    backgroundColor: '#f8f9fa',
-    minHeight: '100vh',
-    paddingBottom: '40px',
-  },
-  header: {
-    backgroundColor: 'white',
-    padding: '30px',
-    marginBottom: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  headerContent: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerLeft: {},
-  title: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1f2937',
-    margin: 0,
-    marginBottom: '4px',
-  },
-  subtitle: {
-    fontSize: '16px',
-    color: '#6b7280',
-    margin: 0,
-  },
-  headerRight: {},
-  downloadButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '12px 20px',
-    backgroundColor: '#6366f1',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-  },
-  scoreCard: {
-    backgroundColor: 'white',
-    padding: '30px',
-    marginBottom: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  scoreCardLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '40px',
-  },
-  mainScore: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '20px',
-  },
-  gradeCircle: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '50%',
-    border: '4px solid',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gradeText: {
-    fontSize: '32px',
-    fontWeight: '700',
-  },
-  scoreDetails: {},
-  scoreTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '4px',
-  },
-  scoreSubtitle: {
-    fontSize: '14px',
-    color: '#6b7280',
-  },
-  scoreMetrics: {
-    display: 'flex',
-    gap: '30px',
-  },
-  metric: {
-    textAlign: 'center',
-  },
-  metricValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: '4px',
-  },
-  metricLabel: {
-    fontSize: '12px',
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  passStatus: {},
-  passedBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '16px 20px',
-    backgroundColor: '#22c55e20',
-    color: '#22c55e',
-    borderRadius: '12px',
-    border: '2px solid #22c55e40',
-  },
-  failedBadge: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '16px 20px',
-    backgroundColor: '#ef444420',
-    color: '#ef4444',
-    borderRadius: '12px',
-    border: '2px solid #ef444440',
-  },
-  statusTitle: {
-    fontSize: '16px',
-    fontWeight: '700',
-    marginBottom: '2px',
-  },
-  statusSubtitle: {
-    fontSize: '13px',
-    opacity: 0.8,
-  },
-  contentGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginBottom: '20px',
-  },
-  infoCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  analysisCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  cardTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: '20px',
-    margin: '0 0 20px 0',
-  },
-  infoGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '16px',
-  },
-  infoItem: {},
-  infoLabel: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    marginBottom: '4px',
-  },
-  infoValue: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1f2937',
-  },
-  analysisGrid: {
-    display: 'grid',
-    gap: '24px',
-  },
-  analysisItem: {},
-  analysisHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '12px',
-  },
-  analysisTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#1f2937',
-    flex: 1,
-  },
-  analysisCount: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    padding: '4px 8px',
-    borderRadius: '12px',
-  },
-  analysisList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  analysisListItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    fontSize: '13px',
-    color: '#374151',
-  },
-  ratingBadge: {
-    marginLeft: 'auto',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#6b7280',
-    backgroundColor: '#f3f4f6',
-    padding: '2px 6px',
-    borderRadius: '8px',
-  },
-  responsesCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    marginBottom: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  responsesList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  responseItem: {
-    padding: '20px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '12px',
-    border: '1px solid #e5e7eb',
-  },
-  responseHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '16px',
-    marginBottom: '16px',
-  },
-  responseNumber: {
-    width: '32px',
-    height: '32px',
-    backgroundColor: '#6366f1',
-    color: 'white',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '600',
-    flexShrink: 0,
-  },
-  responseQuestion: {
-    flex: 1,
-  },
-  responseCategory: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#6366f1',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    marginBottom: '4px',
-  },
-  responseText: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#1f2937',
-    lineHeight: 1.4,
-  },
-  responseRating: {
-    textAlign: 'right',
-  },
-  ratingValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1f2937',
-  },
-  ratingScale: {
-    fontSize: '14px',
-    color: '#6b7280',
-    marginTop: '-4px',
-  },
-  responseDetails: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  classificationBadge: {
-    padding: '6px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '600',
-  },
-  responseComment: {
-    flex: 1,
-  },
-  commentLabel: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#6b7280',
-    marginBottom: '4px',
-  },
-  commentText: {
-    fontSize: '13px',
-    color: '#374151',
-    lineHeight: 1.4,
-  },
-  generalCommentsCard: {
-    backgroundColor: 'white',
-    padding: '24px',
-    marginBottom: '20px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  },
-  generalCommentsText: {
-    fontSize: '14px',
-    color: '#374151',
-    lineHeight: 1.6,
-    padding: '16px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '8px',
-    border: '1px solid #e5e7eb',
-  },
-  actionContainer: {
-    textAlign: 'center',
-    marginTop: '30px',
-  },
-  backButton: {
-    padding: '12px 32px',
-    backgroundColor: '#6366f1',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-  },
 };
 
 export default EvaluationResult;

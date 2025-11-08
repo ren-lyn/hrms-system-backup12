@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Spinner, Alert, Badge, ProgressBar } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faPlane,
+  faPesoSign,
   faCalendarAlt,
   faClock,
   faCheckCircle,
@@ -14,22 +14,34 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
 
+const LEAVE_TYPE_DISPLAY = [
+  { key: 'sick_leave', label: 'Sick Leave', remainingVariant: 'success' },
+  { key: 'emergency_leave', label: 'Emergency Leave', remainingVariant: 'warning' },
+  { key: 'vacation_leave', label: 'Vacation Leave', remainingVariant: 'primary' }
+];
+
 const LeaveTrackerSection = () => {
   const [loading, setLoading] = useState(true);
   const [leaveData, setLeaveData] = useState({
     leaveBalance: {
       total_balance: 0,
-      vacation_leave: 0,
-      sick_leave: 0,
-      personal_leave: 0,
-      emergency_leave: 0
+      vacation_leave: { remaining: 0, used: 0, entitled: 0 },
+      sick_leave: { remaining: 0, used: 0, entitled: 0 },
+      emergency_leave: { remaining: 0, used: 0, entitled: 0 }
+    },
+    payBalance: {
+      label: 'Without Pay',
+      description: 'With pay eligibility starts after 1 year of service.',
+      remainingWithPayDays: 0,
+      eligible: false
     },
     recentRequests: [],
     yearlyLimit: 3,
     remainingThisYear: 3,
     yearlyUsage: 0,
     nextAvailableDate: null,
-    upcomingLeaves: []
+    upcomingLeaves: [],
+    tenure: null
   });
 
   useEffect(() => {
@@ -40,30 +52,44 @@ const LeaveTrackerSection = () => {
     try {
       setLoading(true);
       
-      // Load leave balance and recent requests
-      const [balanceRes, requestsRes] = await Promise.allSettled([
+      // Load leave balance, recent requests, and payment summary
+      const [balanceRes, requestsRes, summaryRes] = await Promise.allSettled([
         axios.get('/leave-requests/my-balance', {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         }),
         axios.get('/leave-requests/my-requests', {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        }),
+        axios.get('/leave-requests/my-summary', {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         })
       ]);
 
       const balanceData = balanceRes.status === 'fulfilled' ? balanceRes.value.data : {};
       const requestsData = requestsRes.status === 'fulfilled' ? requestsRes.value.data : {};
+      const summaryData = summaryRes.status === 'fulfilled' ? summaryRes.value.data : null;
 
       const requests = requestsData.data || [];
       const leaveBalances = balanceData.leave_balances || {};
       const summary = balanceData.summary || {};
+      const tenureInfo = summaryData?.tenure || null;
+      const tenureMonths = typeof tenureInfo?.months === 'number' ? tenureInfo.months : null;
+      const isEligibleForWithPay = tenureMonths !== null && tenureMonths >= 12;
 
       // Calculate yearly remaining leaves (3 per year limit)
       // Use same logic as leave form: count ALL requests, not just approved ones
       const currentDate = new Date();
       const currentYear = currentDate.getFullYear();
       
-      const currentYearRequestsAll = requests.filter(request => {
-        const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
+      const extractRequestDate = (request) => {
+        const rawDate = request.created_at || request.submitted_at || request.date_filed || request.from;
+        return rawDate ? new Date(rawDate) : new Date(0);
+      };
+
+      const sortedRequests = [...requests].sort((a, b) => extractRequestDate(b) - extractRequestDate(a));
+
+      const currentYearRequestsAll = sortedRequests.filter(request => {
+        const requestDate = extractRequestDate(request);
         return requestDate.getFullYear() === currentYear;
       });
 
@@ -71,10 +97,7 @@ const LeaveTrackerSection = () => {
 
       // Calculate yearly usage
       // Use same logic as leave form: count ALL requests for yearly usage
-      const currentYearRequests = requests.filter(request => {
-        const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
-        return requestDate.getFullYear() === currentYear;
-      });
+      const currentYearRequests = currentYearRequestsAll;
 
       // Get upcoming approved leaves
       const upcomingLeaves = requests
@@ -94,25 +117,99 @@ const LeaveTrackerSection = () => {
       }
 
       // Format leave balance data for display
+      const buildLeaveTypeBalance = (key) => ({
+        remaining: leaveBalances[key]?.remaining ?? 0,
+        used: leaveBalances[key]?.used ?? 0,
+        entitled: leaveBalances[key]?.entitled ?? 0,
+        note: leaveBalances[key]?.note
+      });
+
       const formattedLeaveBalance = {
         total_balance: summary.total_remaining || 0,
-        vacation_leave: leaveBalances.vacation_leave?.remaining || 0,
-        sick_leave: leaveBalances.sick_leave?.remaining || 0,
-        personal_leave: leaveBalances.personal_leave?.remaining || 0,
-        emergency_leave: leaveBalances.emergency_leave?.remaining || 0,
-        maternity_leave: leaveBalances.maternity_leave?.remaining || 0,
-        paternity_leave: leaveBalances.paternity_leave?.remaining || 0,
-        bereavement_leave: leaveBalances.bereavement_leave?.remaining || 0
+        vacation_leave: buildLeaveTypeBalance('vacation_leave'),
+        sick_leave: buildLeaveTypeBalance('sick_leave'),
+        emergency_leave: buildLeaveTypeBalance('emergency_leave')
+      };
+
+      const requestsForPayStatus = [...currentYearRequestsAll].sort(
+        (a, b) => extractRequestDate(a) - extractRequestDate(b)
+      );
+
+      const payStatusLabels = {};
+      const remainingWithPayDays = summaryData?.sil_balance?.remaining_with_pay_days ?? 0;
+      let payBalanceLabel = 'Without Pay';
+      let payBalanceDescription = 'With pay eligibility starts after 1 year of service.';
+
+      if (tenureMonths !== null && tenureMonths < 12) {
+        const monthsRemaining = Math.max(0, 12 - tenureMonths);
+        payBalanceDescription = `With pay eligibility starts after 12 months of service.${monthsRemaining > 0 ? ` ${monthsRemaining} month${monthsRemaining !== 1 ? 's' : ''} to go.` : ''}`;
+      }
+
+      if (isEligibleForWithPay) {
+        if (requestsForPayStatus.length === 0) {
+          if (remainingWithPayDays > 0) {
+            payBalanceLabel = 'With Pay';
+            payBalanceDescription = 'Your first leave request this year is eligible for pay.';
+          } else {
+            payBalanceDescription = 'No paid leave days remain for this year.';
+          }
+        } else {
+          requestsForPayStatus.forEach((request, index) => {
+            const hasPay = (request.with_pay_days ?? 0) > 0 ||
+              (request.terms && String(request.terms).toLowerCase().includes('with'));
+            const label = index === 0 && hasPay ? 'With Pay' : 'Without Pay';
+            payStatusLabels[request.id] = label;
+          });
+
+          const firstRequest = requestsForPayStatus[0];
+          const firstLabel = payStatusLabels[firstRequest.id] || 'Without Pay';
+
+          if (requestsForPayStatus.length > 1) {
+            payBalanceLabel = 'Without Pay';
+            payBalanceDescription = 'Subsequent leaves after the first are without pay.';
+          } else {
+            payBalanceLabel = firstLabel;
+            payBalanceDescription = firstLabel === 'With Pay'
+              ? 'Your first leave this year is covered with pay.'
+              : 'Your first leave this year is without pay.';
+          }
+        }
+      } else {
+        requests.forEach((request) => {
+          payStatusLabels[request.id] = 'Without Pay';
+        });
+      }
+
+      sortedRequests.forEach((request) => {
+        if (!payStatusLabels[request.id]) {
+          const hasPay = (request.with_pay_days ?? 0) > 0 ||
+            (request.terms && String(request.terms).toLowerCase().includes('with'));
+          payStatusLabels[request.id] = hasPay && isEligibleForWithPay ? 'With Pay' : 'Without Pay';
+        }
+      });
+
+      const enrichedRecentRequests = sortedRequests.slice(0, 1).map((request) => ({
+        ...request,
+        payStatusLabel: payStatusLabels[request.id] || 'Without Pay'
+      }));
+
+      const payBalanceData = {
+        label: payBalanceLabel,
+        description: payBalanceDescription,
+        remainingWithPayDays: isEligibleForWithPay ? remainingWithPayDays : 0,
+        eligible: isEligibleForWithPay
       };
 
       setLeaveData({
         leaveBalance: formattedLeaveBalance,
-        recentRequests: requests.slice(0, 3),
+        payBalance: payBalanceData,
+        recentRequests: enrichedRecentRequests,
         yearlyLimit: 3,
         remainingThisYear,
         yearlyUsage: currentYearRequests.length,
         nextAvailableDate,
-        upcomingLeaves
+        upcomingLeaves,
+        tenure: tenureInfo
       });
     } catch (error) {
       console.error('Error loading leave data:', error);
@@ -163,6 +260,8 @@ const LeaveTrackerSection = () => {
     return `${startStr} - ${endStr}`;
   };
 
+  const getUsedBalance = (typeKey) => leaveData.leaveBalance[typeKey]?.used ?? 0;
+
   if (loading) {
     return (
       <div className="text-center py-3">
@@ -180,13 +279,18 @@ const LeaveTrackerSection = () => {
           <Card className="border-0 bg-light h-100">
             <Card.Body className="p-3">
               <div className="d-flex align-items-center mb-2">
-                <FontAwesomeIcon icon={faPlane} className="text-primary me-2" />
-                <h6 className="mb-0">Total Balance</h6>
+                <FontAwesomeIcon icon={faPesoSign} className="text-primary me-2" />
+                <h6 className="mb-0">Pay Balance</h6>
               </div>
-              <h4 className="text-primary mb-0">
-                {leaveData.leaveBalance.total_balance || 0} days
+              <h4 className={`mb-0 ${leaveData.payBalance.label === 'With Pay' ? 'text-success' : 'text-primary'}`}>
+                {leaveData.payBalance.label}
               </h4>
-              <small className="text-muted">Available for use</small>
+              <small className="text-muted">{leaveData.payBalance.description}</small>
+              {leaveData.payBalance.eligible && (
+                <div className="small text-muted mt-1">
+                  Remaining paid days: {leaveData.payBalance.remainingWithPayDays}
+                </div>
+              )}
             </Card.Body>
           </Card>
         </Col>
@@ -231,62 +335,66 @@ const LeaveTrackerSection = () => {
           <FontAwesomeIcon icon={faCalendarCheck} className="me-2" />
           Leave Types
         </h6>
-        <Row>
-          <Col md={6}>
-            <div className="d-flex justify-content-between align-items-center py-1">
-              <span className="small">Vacation Leave</span>
-              <Badge bg="primary">{leaveData.leaveBalance.vacation_leave || 0}</Badge>
+        <div>
+          {LEAVE_TYPE_DISPLAY.map((type) => (
+            <div key={type.key} className="d-flex justify-content-between align-items-center py-1">
+              <span className="small">{type.label}</span>
+              <div className="d-flex align-items-center">
+                <Badge bg={type.remainingVariant}>
+                  {getUsedBalance(type.key) || 1}
+                </Badge>
             </div>
-            <div className="d-flex justify-content-between align-items-center py-1">
-              <span className="small">Sick Leave</span>
-              <Badge bg="success">{leaveData.leaveBalance.sick_leave || 0}</Badge>
             </div>
-          </Col>
-          <Col md={6}>
-            <div className="d-flex justify-content-between align-items-center py-1">
-              <span className="small">Personal Leave</span>
-              <Badge bg="info">{leaveData.leaveBalance.personal_leave || 0}</Badge>
+          ))}
             </div>
-            <div className="d-flex justify-content-between align-items-center py-1">
-              <span className="small">Emergency Leave</span>
-              <Badge bg="warning">{leaveData.leaveBalance.emergency_leave || 0}</Badge>
-            </div>
-          </Col>
-        </Row>
       </div>
 
       {/* Recent Requests */}
       <div className="mb-3">
-        <h6 className="text-secondary mb-2">
-          <FontAwesomeIcon icon={faClock} className="me-2" />
-          Recent Requests
-        </h6>
         {leaveData.recentRequests.length > 0 ? (
-          <div className="list-group list-group-flush">
+          <div className="recent-requests-table">
+            <div className="row g-0 text-muted small fw-semibold pb-2 d-none d-md-flex">
+              <div className="col-3">Leave Type</div>
+              <div className="col-3">Status</div>
+              <div className="col-2">Start Date</div>
+              <div className="col-2">End Date</div>
+              <div className="col-2 text-end">Total Days</div>
+            </div>
             {leaveData.recentRequests.map((request) => (
-              <div key={request.id} className="list-group-item border-0 px-0 py-2">
-                <div className="d-flex justify-content-between align-items-center">
-                  <div className="flex-grow-1">
-                    <div className="d-flex align-items-center mb-1">
-                      <h6 className="mb-0 me-2">{request.leave_type}</h6>
-                      <Badge bg={getStatusColor(request.status)}>
-                        <FontAwesomeIcon icon={getStatusIcon(request.status)} className="me-1" size="sm" />
-                        {getStatusText(request.status)}
-                      </Badge>
-                    </div>
-                    <div className="small text-muted">
-                      {formatDateRange(request.from, request.to)} • {request.total_days} day{request.total_days !== 1 ? 's' : ''}
-                    </div>
+              <div
+                key={request.id}
+                className="border rounded-3 px-3 py-3 mb-2"
+              >
+                <div className="row g-0 align-items-center">
+                  <div className="col-12 col-md-3 mb-2 mb-md-0">
+                    <strong className="d-block text-primary">{request.leave_type}</strong>
+                  </div>
+                  <div className="col-12 col-md-3 mb-2 mb-md-0">
+                    <Badge bg={getStatusColor(request.status)} className="me-2">
+                      <FontAwesomeIcon icon={getStatusIcon(request.status)} className="me-1" size="sm" />
+                      {getStatusText(request.status)}
+                    </Badge>
+                    <Badge bg={request.payStatusLabel === 'With Pay' ? 'success' : 'secondary'}>
+                      {request.payStatusLabel}
+                    </Badge>
+                  </div>
+                  <div className="col-6 col-md-2 mb-2 mb-md-0">
+                    <span className="small text-muted d-block d-md-none">Start Date</span>
+                    <span className="fw-semibold">{formatDate(request.from)}</span>
+                  </div>
+                  <div className="col-6 col-md-2 mb-2 mb-md-0">
+                    <span className="small text-muted d-block d-md-none">End Date</span>
+                    <span className="fw-semibold">{formatDate(request.to)}</span>
+                  </div>
+                  <div className="col-12 col-md-2 text-md-end">
+                    <span className="small text-muted d-block d-md-none">Total Days</span>
+                    <span className="fw-semibold">{request.total_days} day{request.total_days !== 1 ? 's' : ''}</span>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        ) : (
-          <div className="text-center text-muted py-2">
-            <small>No recent requests</small>
-          </div>
-        )}
+        ) : null}
       </div>
 
       {/* Upcoming Leaves */}

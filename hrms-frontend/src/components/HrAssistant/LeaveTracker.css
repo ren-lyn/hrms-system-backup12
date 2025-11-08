@@ -10,6 +10,12 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
 }
 
+.manager-leave-tracker {
+  padding-left: 32px;
+  padding-right: 32px;
+  padding-bottom: 32px;
+}
+
 /* ========================================
    HEADER SECTION
    ======================================== */
@@ -270,6 +276,89 @@
   font-size: 0.8125rem;
 }
 
+.leave-dropdown {
+  max-width: 220px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.leave-dropdown-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.leave-dropdown-toggle:disabled {
+  cursor: default;
+}
+
+.leave-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.leave-dropdown-trigger:hover {
+  background: #eef2ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+}
+
+.leave-dropdown-trigger.is-static {
+  cursor: default;
+  box-shadow: none;
+}
+
+.leave-dropdown-icon {
+  color: #3b82f6;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.leave-dropdown-icon.open {
+  transform: rotate(180deg);
+}
+
+.leave-dropdown-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e1e8ed;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  padding: 12px 10px;
+  z-index: 5;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.leave-dropdown-item {
+  margin-bottom: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.leave-dropdown-item:last-child {
+  margin-bottom: 0;
+}
+
+.leave-dropdown.expanded .leave-dropdown-trigger {
+  background: #eef2ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+}
+
+.leave-dropdown.expanded .leave-dropdown-trigger.is-static {
+  box-shadow: none;
+  background: #f8fafc;
+}
+
 /* ========================================
    BADGES
    ======================================== */
@@ -375,6 +464,13 @@
 /* ========================================
    RESPONSIVE DESIGN
    ======================================== */
+@media (max-width: 992px) {
+  .manager-leave-tracker {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
 @media (max-width: 768px) {
   .page-header {
     padding: 24px 20px;
@@ -417,6 +513,12 @@
 }
 
 @media (max-width: 576px) {
+  .manager-leave-tracker {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 24px;
+  }
+
   .page-header {
     padding: 20px 16px;
   }

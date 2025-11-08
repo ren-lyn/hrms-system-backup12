@@ -79,6 +79,7 @@ const EmployeeDashboard = () => {
   const [dataCache, setDataCache] = useState({
     profile: null,
     evaluations: null,
+    evaluationDetails: {},
     lastFetch: null
   });
 
@@ -93,10 +94,31 @@ const EmployeeDashboard = () => {
         const evalRes = await axios.get(`http://localhost:8000/api/manager-evaluations/employee/${userId}/results`, {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
         });
-        
+        const evaluations = evalRes.data?.data || [];
+        let evaluationDetails = {};
+
+        if (evaluations.length > 0) {
+          const latestId = evaluations[0].id;
+          if (latestId) {
+            try {
+              const detailRes = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${latestId}`, {
+                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+              });
+              const detail = detailRes.data?.data || null;
+              evaluationDetails = { [latestId]: detail };
+            } catch (detailErr) {
+              console.warn('Failed to preload latest evaluation detail', detailErr);
+            }
+          }
+        }
+
         setDataCache(prev => ({
           ...prev,
-          evaluations: evalRes.data?.data || [],
+          evaluations,
+          evaluationDetails: {
+            ...prev.evaluationDetails,
+            ...evaluationDetails
+          },
           lastFetch: Date.now()
         }));
       } catch (e) {
@@ -239,8 +261,6 @@ const EmployeeDashboard = () => {
   const loadEmployeeEvaluations = async (empId) => {
     try {
       setEvalLoading(true);
-      setEvalResults([]);
-      setEvalDetail(null);
       
       // Check cache first
       const cacheAge = Date.now() - (dataCache.lastFetch || 0);
@@ -267,7 +287,31 @@ const EmployeeDashboard = () => {
       
       if (results.length > 0) {
         setSelectedEvalId(results[0].id);
-        await loadEvaluationDetail(results[0].id);
+        const initialId = results[0].id;
+        const cachedDetail = dataCache.evaluationDetails?.[initialId];
+
+        if (cachedDetail) {
+          setEvalDetail(cachedDetail);
+        } else {
+          try {
+            const detailRes = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${initialId}`, {
+              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+            });
+            const detailData = detailRes.data?.data || null;
+            setEvalDetail(detailData);
+            setDataCache(prev => ({
+              ...prev,
+              evaluationDetails: {
+                ...prev.evaluationDetails,
+                [initialId]: detailData
+              }
+            }));
+          } catch (detailErr) {
+            console.error('Failed to load initial evaluation detail', detailErr);
+          }
+        }
+      } else {
+        setEvalDetail(null);
       }
     } catch (e) {
       console.error('Failed to load evaluation results', e);
@@ -279,10 +323,24 @@ const EmployeeDashboard = () => {
   const loadEvaluationDetail = async (evaluationId) => {
     try {
       setEvalLoading(true);
+      const cachedDetail = dataCache.evaluationDetails?.[evaluationId];
+      if (cachedDetail) {
+        setEvalDetail(cachedDetail);
+        return;
+      }
+
       const res = await axios.get(`http://localhost:8000/api/manager-evaluations/result/${evaluationId}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
-      setEvalDetail(res.data?.data || null);
+      const detailData = res.data?.data || null;
+      setEvalDetail(detailData);
+      setDataCache(prev => ({
+        ...prev,
+        evaluationDetails: {
+          ...prev.evaluationDetails,
+          [evaluationId]: detailData
+        }
+      }));
     } catch (e) {
       console.error('Failed to load evaluation detail', e);
     } finally {
@@ -357,7 +415,7 @@ const EmployeeDashboard = () => {
                       View All
                     </Button>
                   </div>
-                  <EvaluationAnalyticsSection />
+                  <EvaluationAnalyticsSection expanded={false} />
                 </div>
               </div>
 

@@ -21,7 +21,7 @@ const LeaveTracker = () => {
     averageLeaveDays: 0
   });
   const [showStatsModal, setShowStatsModal] = useState(null); // 'employees', 'withLeave', 'totalDays', 'average'
-  const [expandedLeaveTypes, setExpandedLeaveTypes] = useState({}); // Track expanded leave types per employee
+  const [expandedEmployees, setExpandedEmployees] = useState({}); // Track expanded leave dropdown per employee
 
   useEffect(() => {
     loadLeaveTrackerData();
@@ -676,7 +676,7 @@ const LeaveTracker = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredData.map((employee) => {
+                    filteredData.map((employee, index) => {
                       // Calculate total leaves (count of leave instances) - max 3
                       const totalLeaves = employee.leavePeriods ? employee.leavePeriods.length : 0;
                       const remainingLeaves = Math.max(0, 3 - totalLeaves);
@@ -691,28 +691,12 @@ const LeaveTracker = () => {
                         balanceStatus = { color: 'danger', icon: <XCircle size={16} /> };
                       }
 
-                      // Group leave periods by leave type
-                      const leaveTypeGroups = {};
-                      if (employee.leavePeriods && employee.leavePeriods.length > 0) {
-                        employee.leavePeriods.forEach((period, index) => {
-                          const leaveType = period.leaveType || 'Unknown';
-                          if (!leaveTypeGroups[leaveType]) {
-                            leaveTypeGroups[leaveType] = [];
-                          }
-                          leaveTypeGroups[leaveType].push({ ...period, originalIndex: index });
-                        });
-                      }
-
-                      // Create unique key for this employee's expanded state
-                      const employeeExpandedKey = `${employee.id}`;
-                      
-                      const toggleLeaveType = (leaveType) => {
-                        const key = `${employeeExpandedKey}-${leaveType}`;
-                        setExpandedLeaveTypes(prev => ({
-                          ...prev,
-                          [key]: !prev[key]
-                        }));
-                      };
+                      const leavePeriods = employee.leavePeriods || [];
+                      const firstPeriod = leavePeriods[0];
+                      const remainingPeriods = leavePeriods.slice(1);
+                      const dropdownKey = employee?.id ?? employee?.email ?? `employee-index-${index}`;
+                      const isExpanded = !!expandedEmployees[dropdownKey];
+                      const hasMultiplePeriods = remainingPeriods.length > 0;
                       
                       return (
                         <tr key={employee.id}>
@@ -732,17 +716,49 @@ const LeaveTracker = () => {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div className="leave-periods">
-                              {employee.leavePeriods && employee.leavePeriods.length > 0 ? (
-                                employee.leavePeriods.map((period, index) => (
-                                  <div key={index} className="leave-period-item">
-                                    <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#1a202c' }}>
-                                      {period.leaveType}
-                                    </span>
-                                    <small className="text-muted d-block" style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                                      {formatDate(period.startDate)} - {formatDate(period.endDate)}
-                                    </small>
-                                  </div>
-                                ))
+                              {leavePeriods.length > 0 ? (
+                                <div className={`leave-dropdown ${isExpanded ? 'expanded' : ''}`}>
+                                  <button
+                                    type="button"
+                                    className="leave-dropdown-toggle"
+                                    onClick={() => hasMultiplePeriods && setExpandedEmployees(prev => ({
+                                      ...prev,
+                                      [dropdownKey]: !isExpanded
+                                    }))}
+                                    disabled={!hasMultiplePeriods}
+                                  >
+                                    <div className={`leave-period-item leave-dropdown-trigger ${!hasMultiplePeriods ? 'is-static' : ''}`}>
+                                      <div>
+                                        <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#1a202c' }}>
+                                          {firstPeriod?.leaveType || 'Leave'}
+                                        </span>
+                                        <small className="text-muted d-block" style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+                                          {firstPeriod ? `${formatDate(firstPeriod.startDate)} - ${formatDate(firstPeriod.endDate)}` : 'No schedule'}
+                                        </small>
+                                      </div>
+                                      {hasMultiplePeriods && (
+                                        <ChevronDown
+                                          size={18}
+                                          className={`leave-dropdown-icon ${isExpanded ? 'open' : ''}`}
+                                        />
+                                      )}
+                                    </div>
+                                  </button>
+                                  {hasMultiplePeriods && isExpanded && (
+                                    <div className="leave-dropdown-list">
+                                      {remainingPeriods.map((period, index) => (
+                                        <div key={index} className="leave-period-item leave-dropdown-item">
+                                          <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#1a202c' }}>
+                                            {period.leaveType}
+                                          </span>
+                                          <small className="text-muted d-block" style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+                                            {formatDate(period.startDate)} - {formatDate(period.endDate)}
+                                          </small>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-muted">No leave taken</span>
                               )}
