@@ -22,7 +22,7 @@ class DocumentController extends Controller
             'description' => 'Document has not been uploaded yet.',
         ],
         'pending' => [
-            'label' => 'Pending Review',
+            'label' => 'Pending',
             'badge' => 'warning',
             'description' => 'Document awaiting HR review.',
         ],
@@ -278,14 +278,22 @@ class DocumentController extends Controller
 
     private function transformSubmission(DocumentSubmission $submission): array
     {
+        $statusMeta = self::STATUS_META[$submission->status] ?? [
+            'label' => ucfirst($submission->status),
+            'description' => null,
+        ];
+
         return [
             'id' => $submission->id,
             'document_requirement_id' => $submission->document_requirement_id,
+            'document_type' => $submission->document_type ?? optional($submission->documentRequirement)->document_key,
             'file_path' => $submission->file_path,
             'file_name' => $submission->file_name,
             'file_type' => $submission->file_type,
             'file_size' => $submission->file_size,
             'status' => $submission->status,
+            'status_label' => $statusMeta['label'] ?? ucfirst($submission->status),
+            'status_description' => $statusMeta['description'] ?? null,
             'rejection_reason' => $submission->rejection_reason,
             'submitted_at' => optional($submission->submitted_at)->toISOString(),
             'reviewed_at' => optional($submission->reviewed_at)->toISOString(),
@@ -295,6 +303,28 @@ class DocumentController extends Controller
                 'name' => $submission->reviewer->name,
             ] : null,
         ];
+    }
+
+    private function shouldLockUploads(?DocumentSubmission $submission, string $status): bool
+    {
+        if (!$submission) {
+            return false;
+        }
+
+        if ($status === 'rejected') {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function getUploadLockReason(string $status): ?string
+    {
+        return match ($status) {
+            'pending' => 'Upload locked while document is pending HR review.',
+            'received' => 'Upload locked because the document is already approved.',
+            default => null,
+        };
     }
 
     private function buildDocumentOverview(Application $application): array
@@ -314,10 +344,12 @@ class DocumentController extends Controller
                 $submission = $requirement->latestSubmission;
                 $status = $submission ? $this->mapStatusForOverview($submission->status) : 'not_submitted';
                 $statusMeta = self::STATUS_META[$status] ?? self::STATUS_META['not_submitted'];
+                $lockUploads = $this->shouldLockUploads($submission, $status);
 
                 return [
                     'requirement_id' => $requirement->id,
                     'document_key' => $documentKey,
+                    'document_type' => $submission ? ($submission->document_type ?? $documentKey) : $documentKey,
                     'document_name' => $requirement->document_name,
                     'description' => $requirement->description,
                     'is_required' => (bool) $requirement->is_required,
@@ -329,6 +361,9 @@ class DocumentController extends Controller
                     'status_badge' => $statusMeta['badge'],
                     'status_description' => $statusMeta['description'],
                     'submission' => $submission ? $this->transformSubmission($submission) : null,
+                    'lock_uploads' => $lockUploads,
+                    'can_upload' => !$lockUploads,
+                    'upload_lock_reason' => $lockUploads ? $this->getUploadLockReason($status) : null,
                 ];
             })
             ->values()
@@ -653,12 +688,18 @@ class DocumentController extends Controller
                 Storage::disk('public')->delete($existingSubmission->file_path);
             }
 
+            $documentType = $requirement->document_key ?? $request->input('document_type');
+            if (!$documentType) {
+                $documentType = 'requirement_' . $requirementId;
+            }
+
             $submission = DocumentSubmission::updateOrCreate(
                 [
                     'application_id' => $applicationId,
                     'document_requirement_id' => $requirementId
                 ],
                 [
+                    'document_type' => $documentType,
                     'file_path' => $filePath,
                     'file_name' => $file->getClientOriginalName(),
                     'file_type' => $file->getClientMimeType(),
@@ -819,12 +860,13 @@ class DocumentController extends Controller
     }
 
     // Review document submission (HR only)
-    public function reviewSubmission(Request $request, $submissionId)
+    public function reviewSubmission(Request $request, $applicationId, $submissionId)
     {
         try {
             $validator = Validator::make($request->all(), [
                 'status' => 'required|in:approved,received,rejected',
-                'rejection_reason' => 'required_if:status,rejected|nullable|string'
+                'rejection_reason' => 'required_if:status,rejected|nullable|string',
+                'document_type' => 'nullable|string'
             ]);
 
             if ($validator->fails()) {
@@ -834,11 +876,28 @@ class DocumentController extends Controller
                 ], 422);
             }
 
-            $submission = DocumentSubmission::findOrFail($submissionId);
+            $submission = DocumentSubmission::where('id', $submissionId)
+                ->where('application_id', $applicationId)
+                ->firstOrFail();
+
             $application = $submission->application;
             $status = $request->status === 'approved' ? 'received' : $request->status;
+
+            $requestedDocumentType = $request->input('document_type');
+            $currentDocumentType = $submission->document_type ?? optional($submission->documentRequirement)->document_key;
+            if ($requestedDocumentType && $currentDocumentType && $requestedDocumentType !== $currentDocumentType) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document type mismatch for the specified submission.',
+                ], 422);
+            }
+
+            if (!$currentDocumentType) {
+                $currentDocumentType = $requestedDocumentType ?: optional($submission->documentRequirement)->document_key ?: 'requirement_' . $submission->document_requirement_id;
+            }
             
             $submission->update([
+                'document_type' => $currentDocumentType,
                 'status' => $status,
                 'rejection_reason' => $request->rejection_reason,
                 'reviewed_at' => now(),
@@ -860,11 +919,11 @@ class DocumentController extends Controller
             // Check if all required documents are approved
             $allApproved = false;
             try {
-                $requiredDocs = DocumentRequirement::where('application_id', $application->id)
+                $requiredDocs = DocumentRequirement::where('application_id', $applicationId)
                     ->where('is_required', true)
                     ->pluck('id');
 
-                $approvedCount = DocumentSubmission::where('application_id', $application->id)
+                $approvedCount = DocumentSubmission::where('application_id', $applicationId)
                     ->whereIn('document_requirement_id', $requiredDocs)
                     ->where('status', 'received')
                     ->count();

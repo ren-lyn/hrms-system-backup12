@@ -13,6 +13,7 @@ class DocumentSubmission extends Model
     protected $fillable = [
         'application_id',
         'document_requirement_id',
+        'document_type',
         'file_path',
         'file_name',
         'file_type',
