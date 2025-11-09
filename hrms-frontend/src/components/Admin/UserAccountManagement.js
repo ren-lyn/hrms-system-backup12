@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSearch, faPlus, faEdit, faTrash, faKey, faToggleOn, faToggleOff,
-  faFilter, faTimes, faEye, faEyeSlash, faSave, faSpinner
+  faFilter, faTimes, faEye, faEyeSlash, faSave, faSpinner, faCircleCheck
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
 import './UserAccountManagement.css';
@@ -36,6 +36,12 @@ const useScrollLock = () => {
 const UncontrolledInput = ({ type, defaultValue, onBlur, required, placeholder, fieldName, ...props }) => {
   const inputRef = useRef(null);
   
+  useEffect(() => {
+    if (inputRef.current && inputRef.current.type !== type) {
+      inputRef.current.type = type;
+    }
+  }, [type]);
+  
   const handleBlur = () => {
     if (onBlur && inputRef.current) {
       onBlur(fieldName, inputRef.current.value);
@@ -68,7 +74,10 @@ const UserAccountManagement = () => {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+  const [showResetSuccess, setShowResetSuccess] = useState(false);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -174,6 +183,9 @@ const UserAccountManagement = () => {
       password: '',
       confirmPassword: ''
     });
+    setShowResetConfirmation(false);
+    setShowResetSuccess(false);
+    setShowResetPassword(false);
     setShowPasswordModal(true);
   };
 
@@ -244,21 +256,31 @@ const UserAccountManagement = () => {
     }
   };
 
-  const handleResetPasswordSubmit = async (e) => {
+  const handleResetPasswordSubmit = (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       alert('Passwords do not match');
       return;
     }
+    setShowResetConfirmation(true);
+  };
+
+  const confirmResetPassword = async () => {
     try {
       setSaving(true);
       await axios.put(`http://localhost:8000/api/users/${selectedUser.id}/reset-password`, {
-        password: formData.password
+        password: formData.password,
+        password_confirmation: formData.confirmPassword
       });
+      await fetchUsers();
+      setShowResetConfirmation(false);
       setShowPasswordModal(false);
+      setShowResetPassword(false);
       setFormData({ password: '', confirmPassword: '' });
+      setShowResetSuccess(true);
     } catch (error) {
       console.error('Error resetting password:', error);
+      alert('Unable to reset password. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -270,7 +292,7 @@ const UserAccountManagement = () => {
         <label>New Password</label>
         <div className="password-input-container">
           <UncontrolledInput
-            type={showPassword ? 'text' : 'password'}
+            type={showResetPassword ? 'text' : 'password'}
             defaultValue={formData.password}
             onBlur={handleInputBlur}
             fieldName="password"
@@ -280,10 +302,10 @@ const UserAccountManagement = () => {
           <button
             type="button"
             className="password-toggle"
-            onClick={() => setShowPassword(!showPassword)}
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            onClick={() => setShowResetPassword((prev) => !prev)}
+            aria-label={showResetPassword ? 'Hide password' : 'Show password'}
           >
-            <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} />
+            <FontAwesomeIcon icon={showResetPassword ? faEyeSlash : faEye} />
           </button>
         </div>
       </div>
@@ -292,7 +314,7 @@ const UserAccountManagement = () => {
         <label>Confirm Password</label>
         <div className="password-input-container">
           <UncontrolledInput
-            type={showPassword ? 'text' : 'password'}
+            type={showResetPassword ? 'text' : 'password'}
             defaultValue={formData.confirmPassword}
             onBlur={handleInputBlur}
             fieldName="confirmPassword"
@@ -318,7 +340,7 @@ const UserAccountManagement = () => {
     </form>
   );
 
-  const Modal = ({ isOpen, onClose, title, children, contentClassName = '' }) => {
+  const Modal = ({ isOpen, onClose, title, children, contentClassName = '', hideHeader = false }) => {
     const { lockScroll, unlockScroll } = useScrollLock();
 
     useEffect(() => {
@@ -337,12 +359,18 @@ const UserAccountManagement = () => {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className={`modal-content ${contentClassName}`} onClick={e => e.stopPropagation()}>
-          <div className="modal-header">
-            <h3>{title}</h3>
-            <button type="button" className="modal-close" onClick={onClose}>
+          {!hideHeader ? (
+            <div className="modal-header">
+              <h3>{title}</h3>
+              <button type="button" className="modal-close" onClick={onClose}>
+                <FontAwesomeIcon icon={faTimes} />
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="modal-close standalone" onClick={onClose}>
               <FontAwesomeIcon icon={faTimes} />
             </button>
-          </div>
+          )}
           {children}
         </div>
       </div>
@@ -624,14 +652,75 @@ const UserAccountManagement = () => {
       {/* Reset Password Modal (new form) */}
       <Modal
         isOpen={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
+        onClose={() => {
+          setShowResetPassword(false);
+          setShowPasswordModal(false);
+          setShowResetConfirmation(false);
+        }}
         title="Reset Password"
         contentClassName="no-scroll"
       >
         <ResetPasswordForm
-          onCancel={() => setShowPasswordModal(false)}
+          onCancel={() => {
+            setShowResetPassword(false);
+            setShowPasswordModal(false);
+            setShowResetConfirmation(false);
+          }}
           onSubmit={handleResetPasswordSubmit}
         />
+      </Modal>
+
+      {/* Reset Password Confirmation Modal */}
+      <Modal
+        isOpen={showResetConfirmation}
+        onClose={() => setShowResetConfirmation(false)}
+        hideHeader
+      >
+        <div className="confirm-reset-content">
+          <h3>Are you sure?</h3>
+          <p>Are you sure you want to reset this employee&apos;s password? This action cannot be undone.</p>
+          <div className="confirm-reset-actions">
+            <button
+              type="button"
+              className="confirm-reset-cancel"
+              onClick={() => setShowResetConfirmation(false)}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="confirm-reset-confirm"
+              onClick={confirmResetPassword}
+              disabled={saving}
+            >
+              {saving ? <FontAwesomeIcon icon={faSpinner} spin /> : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reset Password Success Modal */}
+      <Modal
+        isOpen={showResetSuccess}
+        onClose={() => setShowResetSuccess(false)}
+        contentClassName="success-reset-modal"
+        hideHeader
+      >
+        <div className="success-reset-content">
+          <div className="success-reset-icon">
+            <FontAwesomeIcon icon={faCircleCheck} />
+          </div>
+          <h3>Success!</h3>
+          <p>Password has been successfully reset.</p>
+          <button
+            type="button"
+            className="success-reset-button"
+            onClick={() => setShowResetSuccess(false)}
+          >
+            Okay
+          </button>
+        </div>
       </Modal>
     </div>
   );

@@ -1063,21 +1063,18 @@ class LeaveRequestController extends Controller
         
         // Calculate employee tenure
         $tenureInMonths = LeaveRequest::calculateEmployeeTenure($user->id);
-        $tenureYears = floor($tenureInMonths / 12);
-        $remainingMonths = $tenureInMonths % 12;
+        $tenureMonthsWhole = (int) floor($tenureInMonths);
+        $tenureYears = intdiv($tenureMonthsWhole, 12);
+        $remainingMonths = $tenureMonthsWhole % 12;
         
         // Determine tenure bracket
         $tenureBracket = '';
         $silDays = 0;
         $otherLeavesPaid = false;
         
-        if ($tenureInMonths < 6) {
-            $tenureBracket = 'Less than 6 months';
+        if ($tenureInMonths < 12) {
+            $tenureBracket = 'Less than 1 year';
             $silDays = 0;
-            $otherLeavesPaid = false;
-        } elseif ($tenureInMonths >= 6 && $tenureInMonths < 12) {
-            $tenureBracket = '6 months to 1 year';
-            $silDays = 3;
             $otherLeavesPaid = false;
         } else {
             $tenureBracket = '1 year or more';
@@ -1086,23 +1083,22 @@ class LeaveRequestController extends Controller
         }
         
         // Calculate used SIL days (Sick Leave + Emergency Leave combined)
+        $approvedStatuses = ['approved'];
         $usedSILDays = LeaveRequest::where('employee_id', $user->id)
             ->whereIn('type', ['Sick Leave', 'Emergency Leave'])
             ->whereYear('from', $currentYear)
-            ->whereIn('status', ['approved'])
-            ->where('terms', 'with PAY')
-            ->sum('total_days');
+            ->whereIn('status', $approvedStatuses)
+            ->sum('with_pay_days');
         
         $remainingSILDays = max(0, $silDays - $usedSILDays);
-        
-        // Check for active leave
-        $activeLeavCheck = LeaveRequest::checkActiveLeave($user->id);
-        
+
         // Get all leaves for current year
-        $allLeaves = LeaveRequest::where('employee_id', $user->id)
+        $allLeavesEloquent = LeaveRequest::where('employee_id', $user->id)
             ->whereYear('from', $currentYear)
             ->orderBy('from', 'desc')
-            ->get()
+            ->get();
+
+        $allLeaves = $allLeavesEloquent
             ->map(function ($leave) {
                 return [
                     'id' => $leave->id,
@@ -1111,11 +1107,101 @@ class LeaveRequestController extends Controller
                     'to' => $leave->to->format('Y-m-d'),
                     'total_days' => $leave->total_days,
                     'terms' => $leave->terms,
+                    'with_pay_days' => $leave->with_pay_days,
+                    'without_pay_days' => $leave->without_pay_days,
                     'leave_category' => $leave->leave_category,
                     'status' => $leave->status,
                     'date_filed' => $leave->date_filed ? $leave->date_filed->format('Y-m-d') : null,
                 ];
             });
+
+        $eligibleForPaidLeave = $tenureInMonths >= 12;
+        $withPayDaysConfig = config('leave.with_pay_days', []);
+
+        $usedWithPayByType = [];
+        foreach ($allLeavesEloquent as $leave) {
+            if (!in_array($leave->status, $approvedStatuses)) {
+                continue;
+            }
+            $withPayDays = (int) $leave->with_pay_days;
+            if ($withPayDays <= 0) {
+                continue;
+            }
+            $type = $leave->type;
+            $usedWithPayByType[$type] = ($usedWithPayByType[$type] ?? 0) + $withPayDays;
+        }
+
+        $withPaySummaryByType = [];
+        $silSharedTypes = ['Sick Leave', 'Emergency Leave'];
+        $silSummary = [
+            'entitled' => $eligibleForPaidLeave ? $silDays : 0,
+            'used' => $eligibleForPaidLeave ? $usedSILDays : 0,
+            'remaining' => $eligibleForPaidLeave ? $remainingSILDays : 0,
+            'shared_pool' => true,
+            'shared_types' => $silSharedTypes,
+        ];
+
+        foreach ($silSharedTypes as $type) {
+            $withPaySummaryByType[$type] = $silSummary;
+        }
+
+        if ($eligibleForPaidLeave) {
+            foreach ($withPayDaysConfig as $type => $entitledDays) {
+                if (in_array($type, ['Sick Leave', 'Emergency Leave'])) {
+                    continue;
+                }
+                $used = $usedWithPayByType[$type] ?? 0;
+                $withPaySummaryByType[$type] = [
+                    'entitled' => $entitledDays,
+                    'used' => $used,
+                    'remaining' => max(0, $entitledDays - $used),
+                ];
+            }
+        } else {
+            foreach ($withPayDaysConfig as $type => $entitledDays) {
+                if (in_array($type, ['Sick Leave', 'Emergency Leave'])) {
+                    continue;
+                }
+                $withPaySummaryByType[$type] = [
+                    'entitled' => 0,
+                    'used' => 0,
+                    'remaining' => 0,
+                ];
+            }
+        }
+
+        foreach ($allLeavesEloquent as $leave) {
+            $type = $leave->type;
+            if (isset($withPaySummaryByType[$type])) {
+                continue;
+            }
+
+            $used = $usedWithPayByType[$type] ?? 0;
+            $entitled = $eligibleForPaidLeave ? ($withPayDaysConfig[$type] ?? 0) : 0;
+
+            $withPaySummaryByType[$type] = [
+                'entitled' => $entitled,
+                'used' => $used,
+                'remaining' => $entitled > 0 ? max(0, $entitled - $used) : 0,
+            ];
+        }
+
+        $withPaySummary = [
+            'is_eligible' => $eligibleForPaidLeave,
+            'sil' => [
+                'entitled' => $silSummary['entitled'],
+                'used' => $silSummary['used'],
+                'remaining' => $silSummary['remaining'],
+                'shared_types' => $silSharedTypes,
+            ],
+            'by_type' => $withPaySummaryByType,
+            'next_reset_date' => $eligibleForPaidLeave
+                ? Carbon::create($currentYear + 1, 1, 1)->format('F j, Y')
+                : null,
+        ];
+        
+        // Check for active leave
+        $activeLeavCheck = LeaveRequest::checkActiveLeave($user->id);
         
         // Calculate leave instances (yearly limit tracking) - exclude rejected leaves
         $yearlyRequestCount = LeaveRequest::where('employee_id', $user->id)
@@ -1184,9 +1270,9 @@ class LeaveRequestController extends Controller
                 'years' => $tenureYears,
                 'remaining_months' => $remainingMonths,
                 'bracket' => $tenureBracket,
-                'display' => $tenureYears > 0 
+                'display' => $tenureYears > 0
                     ? "{$tenureYears} year" . ($tenureYears > 1 ? 's' : '') . ($remainingMonths > 0 ? " and {$remainingMonths} month" . ($remainingMonths > 1 ? 's' : '') : '')
-                    : "{$tenureInMonths} month" . ($tenureInMonths > 1 ? 's' : '')
+                    : ($tenureMonthsWhole <= 0 ? 'Less than 1 month' : "{$tenureMonthsWhole} month" . ($tenureMonthsWhole > 1 ? 's' : ''))
             ],
             'sil_balance' => [
                 'max_with_pay_days' => $silDays,
@@ -1195,6 +1281,7 @@ class LeaveRequestController extends Controller
                 'percentage_used' => $silDays > 0 ? round(($usedSILDays / $silDays) * 100, 1) : 0
             ],
             'other_leaves_paid' => $otherLeavesPaid,
+            'with_pay_summary' => $withPaySummary,
             'payment_status' => [
                 'message' => 'Payment status is automatically determined based on your tenure and leave category.',
                 'can_file_leave' => !$activeLeavCheck['has_active_leave'],

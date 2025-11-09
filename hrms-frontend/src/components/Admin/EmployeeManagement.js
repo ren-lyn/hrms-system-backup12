@@ -1,34 +1,123 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faSearch, faPlus, faEdit, faTrash, faEye, faFilter,
+  faSearch, faPlus, faTrash, faEye, faPen,
   faTimes, faSave, faSpinner, faUser, faBuilding, faCalendar,
-  faPhone, faEnvelope, faIdCard, faFileAlt, faUpload, faUserTie, faClock
+  faPhone, faEnvelope, faFileAlt, faUpload, faUserTie, faClock,
+  faCheckCircle, faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
 import './EmployeeManagement.css';
 
+const DEFAULT_FORM_DATA = {
+  // Basic Information
+  employee_id: '',
+  first_name: '',
+  last_name: '',
+  nickname: '',
+  email: '',
+  phone: '',
+  birth_date: '',
+  birth_place: '',
+  age: '',
+  civil_status: '',
+  gender: '',
+  present_address: '',
+
+  // Employment Information
+  job_title: '',
+  position: '',
+  department: '',
+  manager_id: '',
+  supervisor_id: '',
+  employment_status: 'Full Time',
+  salary: '',
+  hire_date: '',
+  tenurity: '',
+
+  // Government IDs
+  sss: '',
+  philhealth: '',
+  pagibig: '',
+  tin_no: '',
+
+  // Contact Information
+  address: '',
+  emergency_contact_name: '',
+  emergency_contact_phone: ''
+};
+
+const sanitizeDateValue = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && value.includes('T')) {
+    return value.split('T')[0];
+  }
+  return value;
+};
+
+const mapEmployeeToFormData = (employee = {}) => ({
+  employee_id: employee.employee_id || '',
+  first_name: employee.first_name || '',
+  last_name: employee.last_name || '',
+  nickname: employee.nickname || '',
+  email: employee.email || '',
+  phone: employee.phone || employee.contact_number || '',
+  birth_date: sanitizeDateValue(employee.birth_date),
+  birth_place: employee.birth_place || employee.place_of_birth || '',
+  age: employee.age != null ? String(employee.age) : '',
+  civil_status: employee.civil_status || '',
+  gender: employee.gender || '',
+  present_address: employee.present_address || employee.address || '',
+
+  job_title: employee.job_title || '',
+  position: employee.position || '',
+  department: employee.department || '',
+  manager_id: employee.manager_id != null ? String(employee.manager_id) : '',
+  supervisor_id: employee.supervisor_id != null ? String(employee.supervisor_id) : '',
+  employment_status: employee.employment_status || 'Full Time',
+  salary: employee.salary != null ? String(employee.salary) : '',
+  hire_date: sanitizeDateValue(employee.hire_date),
+  tenurity: employee.tenurity || '',
+
+  sss: employee.sss || '',
+  philhealth: employee.philhealth || '',
+  pagibig: employee.pagibig || '',
+  tin_no: employee.tin_no || '',
+
+  address: employee.address || employee.present_address || '',
+  emergency_contact_name: employee.emergency_contact_name || '',
+  emergency_contact_phone: employee.emergency_contact_phone || ''
+});
+
 // Scroll lock utility
 const useScrollLock = () => {
-  const lockScroll = () => {
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  const scrollTopRef = useRef(0);
+
+  const lockScroll = useCallback(() => {
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+    scrollTopRef.current = scrollTop;
+
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
     document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollTop}px`;
     document.body.style.width = '100%';
+
     if (scrollbarWidth > 0) {
       document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
-  };
+  }, []);
 
-  const unlockScroll = () => {
-    const scrollTop = document.body.style.top;
+  const unlockScroll = useCallback(() => {
+    const scrollTop = scrollTopRef.current || 0;
+
     document.body.style.position = '';
     document.body.style.top = '';
     document.body.style.width = '';
     document.body.style.paddingRight = '';
-    window.scrollTo(0, parseInt(scrollTop || '0') * -1);
-  };
+
+    window.scrollTo(0, scrollTop);
+  }, []);
 
   return { lockScroll, unlockScroll };
 };
@@ -79,7 +168,7 @@ const UncontrolledInput = ({ type, defaultValue, onBlur, required, placeholder, 
 };
 
 // Completely isolated form component that prevents any re-render interference
-const IsolatedEmployeeForm = ({ formData, onFormDataChange, onSubmit, saving, showAddModal, showEditModal, onClose, photoPreview, onPhotoUpload, onRemovePhoto, departments, positions }) => {
+const IsolatedEmployeeForm = ({ formData, onFormDataChange, onSubmit, saving, onClose, photoPreview, onPhotoUpload, onRemovePhoto, departments, positions }) => {
   const formRef = useRef(null);
   const { lockScroll, unlockScroll } = useScrollLock();
 
@@ -121,7 +210,7 @@ const IsolatedEmployeeForm = ({ formData, onFormDataChange, onSubmit, saving, sh
 
   return (
     <form 
-      key={`employee-form-${showAddModal ? 'add' : 'edit'}`} 
+      key="employee-form" 
       onSubmit={handleSubmit} 
       className="employee-form"
       onClick={handleFormClick}
@@ -517,53 +606,66 @@ const EmployeeManagement = () => {
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [editingEmployee, setEditingEmployee] = useState(null);
   const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'table'
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
+  const [formMode, setFormMode] = useState('create'); // 'create' or 'edit'
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [saveFeedbackMessage, setSaveFeedbackMessage] = useState('');
+  const scrollPositionRef = useRef({ type: 'window', top: 0, node: null });
+  const captureScrollPosition = useCallback(() => {
+    if (typeof document === 'undefined') return;
+
+    const mainContent = document.querySelector('.admin-main-content');
+    const canScrollMain =
+      mainContent && mainContent.scrollHeight - mainContent.clientHeight > 1;
+
+    if (canScrollMain) {
+      scrollPositionRef.current = {
+        type: 'element',
+        top: mainContent.scrollTop || 0,
+        node: mainContent
+      };
+      return;
+    }
+
+    const top = window.scrollY || document.documentElement.scrollTop || 0;
+    scrollPositionRef.current = {
+      type: 'window',
+      top,
+      node: null
+    };
+  }, []);
+
+  const restoreScrollPosition = useCallback(() => {
+    const { type, top, node } = scrollPositionRef.current || {};
+    if (typeof document === 'undefined' || top == null) return;
+
+    if (type === 'element' && node) {
+      node.scrollTop = top;
+      return;
+    }
+
+    window.scrollTo(0, top);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (showAddModal || showEditModal || showViewModal || showDeleteModal) {
+      restoreScrollPosition();
+    }
+  }, [showAddModal, showEditModal, showViewModal, showDeleteModal, restoreScrollPosition]);
 
   // Form states
-  const [formData, setFormData] = useState({
-    // Basic Information
-    employee_id: '',
-    first_name: '',
-    last_name: '',
-    nickname: '',
-    email: '',
-    phone: '',
-    birth_date: '',
-    birth_place: '',
-    age: '',
-    civil_status: '',
-    gender: '',
-    present_address: '',
-    
-    // Employment Information
-    job_title: '',
-    position: '',
-    department: '',
-    manager_id: '',
-    supervisor_id: '',
-    employment_status: 'Full Time',
-    salary: '',
-    hire_date: '',
-    tenurity: '',
-    
-    // Government IDs
-    sss: '',
-    philhealth: '',
-    pagibig: '',
-    tin_no: '',
-    
-    // Contact Information
-    address: '',
-    emergency_contact_name: '',
-    emergency_contact_phone: ''
-  });
+  const [formData, setFormData] = useState(() => ({
+    ...DEFAULT_FORM_DATA
+  }));
 
   const [departments] = useState([
     'HR Department',
@@ -636,81 +738,142 @@ const EmployeeManagement = () => {
     setFormData(updater);
   }, []);
 
-  const handleFormSubmit = useCallback(async () => {
+  const executeSave = useCallback(async () => {
+    setShowSaveConfirm(false);
     try {
       setSaving(true);
-      
+
       const formDataToSend = new FormData();
       Object.keys(formData).forEach(key => {
-        formDataToSend.append(key, formData[key]);
+        formDataToSend.append(key, formData[key] ?? '');
       });
-      
+      formDataToSend.append('contact_number', formData.phone ?? '');
+
       if (photoFile) {
         formDataToSend.append('photo', photoFile);
       }
-      
-      if (showAddModal) {
+
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+      if (formMode === 'edit' && editingEmployee) {
+        formDataToSend.append('_method', 'PUT');
+
+        await axios.post(
+          `http://localhost:8000/api/employee-profiles/${editingEmployee.id}`,
+          formDataToSend,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              ...authHeaders,
+            },
+          }
+        );
+
+        const employeePayload = (() => {
+          const ageValue = formData.age ? parseInt(formData.age, 10) : undefined;
+          const salaryValue = formData.salary ? parseFloat(formData.salary) : undefined;
+          const genderValue =
+            formData.gender && ['Male', 'Female'].includes(formData.gender)
+              ? formData.gender
+              : undefined;
+
+          const payload = {
+            first_name: formData.first_name || undefined,
+            last_name: formData.last_name || undefined,
+            email: formData.email || undefined,
+            nickname: formData.nickname || undefined,
+            civil_status: formData.civil_status || undefined,
+            gender: genderValue,
+            place_of_birth: formData.birth_place || undefined,
+            birth_date: formData.birth_date || undefined,
+            age: Number.isFinite(ageValue) ? ageValue : undefined,
+            contact_number: formData.phone || undefined,
+            emergency_contact_name: formData.emergency_contact_name || undefined,
+            emergency_contact_phone: formData.emergency_contact_phone || undefined,
+            present_address: formData.present_address || formData.address || undefined,
+            address: formData.address || undefined,
+            department: formData.department || undefined,
+            position: formData.position || undefined,
+            employment_status: formData.employment_status || undefined,
+            tenurity: formData.tenurity || undefined,
+            hire_date: formData.hire_date || undefined,
+            salary: Number.isFinite(salaryValue) ? salaryValue : undefined,
+            sss: formData.sss || undefined,
+            philhealth: formData.philhealth || undefined,
+            pagibig: formData.pagibig || undefined,
+            tin_no: formData.tin_no || undefined,
+          };
+
+          return Object.fromEntries(
+            Object.entries(payload).filter(
+              ([, value]) => value !== undefined && value !== ''
+            )
+          );
+        })();
+
+        if (editingEmployee.id && Object.keys(employeePayload).length > 0) {
+          await axios.put(
+            `http://localhost:8000/api/employees/${editingEmployee.id}`,
+            employeePayload,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+              },
+            }
+          );
+        }
+
+        setShowEditModal(false);
+        setEditingEmployee(null);
+        setSaveFeedbackMessage('Employee details updated successfully.');
+      } else {
         await axios.post('http://localhost:8000/api/employee-profiles', formDataToSend, {
           headers: {
             'Content-Type': 'multipart/form-data',
+            ...authHeaders,
           },
         });
-      } else if (showEditModal) {
-        await axios.post(`http://localhost:8000/api/employee-profiles/${selectedEmployee.id}`, formDataToSend, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        });
+
+        setShowAddModal(false);
+        setSaveFeedbackMessage('Employee profile created successfully.');
       }
-      
+
       await fetchEmployees();
-      setShowAddModal(false);
-      setShowEditModal(false);
-      setFormData({
-        // Reset form data
-        employee_id: '',
-        first_name: '',
-        last_name: '',
-        nickname: '',
-        email: '',
-        phone: '',
-        birth_date: '',
-        birth_place: '',
-        age: '',
-        civil_status: '',
-        gender: '',
-        present_address: '',
-        job_title: '',
-        position: '',
-        department: '',
-        manager_id: '',
-        supervisor_id: '',
-        employment_status: 'Full Time',
-        salary: '',
-        hire_date: '',
-        tenurity: '',
-        sss: '',
-        philhealth: '',
-        pagibig: '',
-        tin_no: '',
-        address: '',
-        emergency_contact_name: '',
-        emergency_contact_phone: ''
-      });
+      setFormData({ ...DEFAULT_FORM_DATA });
       setPhotoPreview(null);
       setPhotoFile(null);
+      setFormMode('create');
+      setShowSaveSuccess(true);
     } catch (error) {
       console.error('Error saving employee:', error);
+      if (typeof window !== 'undefined') {
+        window.alert('An error occurred while saving the employee. Please try again.');
+      }
     } finally {
       setSaving(false);
     }
-  }, [formData, photoFile, showAddModal, showEditModal, selectedEmployee]);
+  }, [formData, photoFile, formMode, editingEmployee, fetchEmployees]);
+
+  const handleFormSubmit = useCallback(() => {
+    if (saving) return;
+    setSaveFeedbackMessage('');
+    setShowSaveSuccess(false);
+    setShowSaveConfirm(true);
+  }, [saving]);
 
   const handleModalClose = useCallback(() => {
     setShowAddModal(false);
     setShowEditModal(false);
+    setShowSaveConfirm(false);
+    setShowSaveSuccess(false);
     setPhotoPreview(null);
     setPhotoFile(null);
+    setEditingEmployee(null);
+    setFormMode('create');
+    setSaveFeedbackMessage('');
+    setFormData({ ...DEFAULT_FORM_DATA });
   }, []);
 
   const handleSearchChange = useCallback((e) => {
@@ -730,80 +893,33 @@ const EmployeeManagement = () => {
   }, []);
 
   const handleAddEmployee = () => {
-    setFormData({
-      employee_id: '',
-      first_name: '',
-      last_name: '',
-      email: '',
-      position: '',
-      department: '',
-      employment_status: 'Full Time',
-      salary: '',
-      hire_date: '',
-      phone: '',
-      address: '',
-      emergency_contact: '',
-      emergency_phone: '',
-      sss_number: '',
-      philhealth_number: '',
-      pagibig_number: '',
-      tin_number: ''
-    });
+    captureScrollPosition();
+    setFormMode('create');
+    setEditingEmployee(null);
+    setFormData({ ...DEFAULT_FORM_DATA });
     setPhotoPreview(null);
     setPhotoFile(null);
     setShowAddModal(true);
   };
 
   const handleViewEmployee = (employee) => {
+    captureScrollPosition();
     setSelectedEmployee(employee);
     setShowViewModal(true);
   };
 
   const handleEditEmployee = (employee) => {
-    setSelectedEmployee(employee);
-    setFormData({
-      // Basic Information
-      employee_id: employee.employee_id || '',
-      first_name: employee.first_name || '',
-      last_name: employee.last_name || '',
-      nickname: employee.nickname || '',
-      email: employee.email || '',
-      phone: employee.phone || '',
-      birth_date: employee.birth_date || '',
-      birth_place: employee.birth_place || '',
-      age: employee.age || '',
-      civil_status: employee.civil_status || '',
-      gender: employee.gender || '',
-      present_address: employee.present_address || '',
-      
-      // Employment Information
-      job_title: employee.job_title || '',
-      position: employee.position || '',
-      department: employee.department || '',
-      manager_id: employee.manager_id || '',
-      supervisor_id: employee.supervisor_id || '',
-      employment_status: employee.employment_status || 'Full Time',
-      salary: employee.salary || '',
-      hire_date: employee.hire_date || '',
-      tenurity: employee.tenurity || '',
-      
-      // Government IDs
-      sss: employee.sss || '',
-      philhealth: employee.philhealth || '',
-      pagibig: employee.pagibig || '',
-      tin_no: employee.tin_no || '',
-      
-      // Contact Information
-      address: employee.address || '',
-      emergency_contact_name: employee.emergency_contact_name || '',
-      emergency_contact_phone: employee.emergency_contact_phone || ''
-    });
+    captureScrollPosition();
+    setFormMode('edit');
+    setEditingEmployee(employee);
+    setFormData(mapEmployeeToFormData(employee));
     setPhotoPreview(employee.photo_url || null);
     setPhotoFile(null);
     setShowEditModal(true);
   };
 
   const handleDeleteEmployee = (employee) => {
+    captureScrollPosition();
     setSelectedEmployee(employee);
     setShowDeleteModal(true);
   };
@@ -1032,9 +1148,9 @@ const EmployeeManagement = () => {
                   type="button"
                   className="action-btn edit-btn"
                   onClick={() => handleEditEmployee(employee)}
-                  title="Edit Employee"
+                  title="Edit Profile"
                 >
-                  <FontAwesomeIcon icon={faEdit} />
+                  <FontAwesomeIcon icon={faPen} />
                 </button>
                 <button
                   type="button"
@@ -1104,9 +1220,9 @@ const EmployeeManagement = () => {
                         type="button"
                         className="action-btn edit-btn"
                         onClick={() => handleEditEmployee(employee)}
-                        title="Edit Employee"
+                        title="Edit Profile"
                       >
-                        <FontAwesomeIcon icon={faEdit} />
+                        <FontAwesomeIcon icon={faPen} />
                       </button>
                       <button
                         type="button"
@@ -1125,12 +1241,12 @@ const EmployeeManagement = () => {
         </div>
       )}
 
-      {/* Add/Edit Employee Modal */}
+      {/* Add Employee Modal */}
       <Modal
-        key={showAddModal ? 'add-modal' : 'edit-modal'}
-        isOpen={showAddModal || showEditModal}
+        key="add-modal"
+        isOpen={showAddModal}
         onClose={handleModalClose}
-        title={showAddModal ? 'Add New Employee' : 'Edit Employee'}
+        title="Add New Employee"
         size="large"
       >
         <IsolatedEmployeeForm
@@ -1138,8 +1254,29 @@ const EmployeeManagement = () => {
           onFormDataChange={handleFormDataChange}
           onSubmit={handleFormSubmit}
           saving={saving}
-          showAddModal={showAddModal}
-          showEditModal={showEditModal}
+          onClose={handleModalClose}
+          photoPreview={photoPreview}
+          onPhotoUpload={handlePhotoUpload}
+          onRemovePhoto={removePhoto}
+          departments={departments}
+          positions={positions}
+        />
+      </Modal>
+
+      {/* Edit Employee Modal */}
+      <Modal
+        key={editingEmployee ? `edit-modal-${editingEmployee.id}` : 'edit-modal'}
+        isOpen={showEditModal}
+        onClose={handleModalClose}
+        title="Edit Employee"
+        size="large"
+      >
+        <IsolatedEmployeeForm
+          key={editingEmployee ? `edit-form-${editingEmployee.id}` : 'edit-form'}
+          formData={formData}
+          onFormDataChange={handleFormDataChange}
+          onSubmit={handleFormSubmit}
+          saving={saving}
           onClose={handleModalClose}
           photoPreview={photoPreview}
           onPhotoUpload={handlePhotoUpload}
@@ -1293,6 +1430,68 @@ const EmployeeManagement = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Save Confirmation Modal */}
+      <Modal
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        title="Confirm Save"
+        size="small"
+      >
+        <div className="confirmation-modal-content">
+          <div className="confirmation-icon warning">
+            <FontAwesomeIcon icon={faExclamationTriangle} />
+          </div>
+          <p>
+            {formMode === 'edit'
+              ? 'Are you sure you want to save these changes to the employee profile?'
+              : 'Are you sure you want to save this employee record?'}
+          </p>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => setShowSaveConfirm(false)}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="save-btn"
+              onClick={executeSave}
+              disabled={saving}
+            >
+              {saving ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faSave} />}
+              {saving ? 'Saving...' : 'Yes, Save'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Save Success Modal */}
+      <Modal
+        isOpen={showSaveSuccess}
+        onClose={() => setShowSaveSuccess(false)}
+        title="Success"
+        size="small"
+      >
+        <div className="confirmation-modal-content success">
+          <div className="confirmation-icon success">
+            <FontAwesomeIcon icon={faCheckCircle} />
+          </div>
+          <p>{saveFeedbackMessage || 'Employee details were saved successfully.'}</p>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="save-btn"
+              onClick={() => setShowSaveSuccess(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Delete Confirmation Modal */}

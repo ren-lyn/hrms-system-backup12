@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Row, Col, Form, Button, Modal } from 'react-bootstrap';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import DatePicker from 'react-datepicker';
@@ -10,6 +10,9 @@ import useValidationModal from '../../hooks/useValidationModal';
 import './EmbeddedLeaveForm.css';
 
 const EmbeddedLeaveForm = () => {
+  const SIL_LEAVE_TYPES = ['Sick Leave', 'Emergency Leave'];
+  const pluralizeDays = (value) => `${value} day${value === 1 ? '' : 's'}`;
+
   const [activeTab, setActiveTab] = useState('form'); // 'form', 'details', 'history'
   const { modalState, showSuccess, showError, showWarning, hideModal } = useValidationModal();
   const [formData, setFormData] = useState({
@@ -41,6 +44,121 @@ const EmbeddedLeaveForm = () => {
   const [loadingLeaveSummary, setLoadingLeaveSummary] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentBreakdown, setPaymentBreakdown] = useState(null);
+
+  const paidLeaveIndicator = useMemo(() => {
+    const leaveType = formData.leaveType;
+
+    if (!leaveSummary || !leaveType) {
+      return {
+        statusClass: 'status-yellow',
+        icon: '⏳',
+        headline: 'Loading paid leave info',
+        segments: ['Please wait while we calculate your remaining paid days.']
+      };
+    }
+
+    const tenureMonthsRaw = leaveSummary.tenure?.months;
+    const tenureMonths = typeof tenureMonthsRaw === 'number' ? tenureMonthsRaw : null;
+    const withPaySummary = leaveSummary.with_pay_summary;
+    const tenureDisplay = leaveSummary?.tenure ? formatTenureDisplay(leaveSummary.tenure) : null;
+
+    if (tenureMonths === null || !withPaySummary) {
+      return {
+        statusClass: 'status-yellow',
+        icon: 'ℹ',
+        headline: 'Paid leave unavailable',
+        segments: ['We could not determine your paid leave balance. Please contact HR for assistance.']
+      };
+    }
+
+    if (tenureMonths < 12 || !withPaySummary.is_eligible) {
+      const monthsRemaining = Math.max(0, Math.ceil(12 - tenureMonths));
+      const segments = ['Your leave request is without pay until you complete 12 months of service.'];
+
+      if (monthsRemaining > 0) {
+        segments.push(`Complete ${monthsRemaining} more month${monthsRemaining === 1 ? '' : 's'} to unlock paid leave days.`);
+      }
+
+      if (tenureDisplay) {
+        segments.push(`Current tenure: ${tenureDisplay}.`);
+      }
+
+      return {
+        statusClass: 'status-yellow',
+        icon: 'ℹ',
+        headline: 'Without Pay',
+        segments
+      };
+    }
+
+    const typeSummary = SIL_LEAVE_TYPES.includes(leaveType)
+      ? (withPaySummary.sil ?? withPaySummary.by_type?.[leaveType])
+      : withPaySummary.by_type?.[leaveType];
+
+    if (!typeSummary) {
+      return {
+        statusClass: 'status-yellow',
+        icon: 'ℹ',
+        headline: 'Paid days not configured',
+        segments: [`No paid allowance configured for ${leaveType}. This request will be without pay.`]
+      };
+    }
+
+    const entitled = Number(typeSummary.entitled ?? 0);
+    const used = Number(typeSummary.used ?? 0);
+    const remaining = Number(
+      typeSummary.remaining ?? Math.max(0, entitled - used)
+    );
+
+    if (entitled <= 0) {
+      return {
+        statusClass: 'status-red',
+        icon: '✕',
+        headline: 'Without Pay',
+        segments: [`Paid days are not available for ${leaveType}.`]
+      };
+    }
+
+    const lowThreshold = Math.max(1, Math.ceil(entitled * 0.25));
+    let statusClass = 'status-green';
+    let icon = '✓';
+
+    if (remaining === 0) {
+      statusClass = 'status-red';
+      icon = '✕';
+    } else if (remaining <= lowThreshold) {
+      statusClass = 'status-yellow';
+      icon = '⚠';
+    }
+
+    const segments = [];
+    const isSilType = SIL_LEAVE_TYPES.includes(leaveType);
+
+    if (remaining > 0) {
+      if (!isSilType) {
+        segments.push(`for ${leaveType}.`);
+      }
+    } else {
+      segments.push('Your next leave request will be without pay.');
+    }
+
+    if (!isSilType) {
+      segments.push(`Used ${pluralizeDays(used)} of ${pluralizeDays(entitled)}.`);
+
+      if (remaining === 0 && withPaySummary.next_reset_date) {
+        segments.push(`Paid leave resets on ${withPaySummary.next_reset_date}.`);
+      }
+    } else if (remaining === 0 && withPaySummary.next_reset_date) {
+      segments.push(`Paid leave resets on ${withPaySummary.next_reset_date}.`);
+    }
+
+    return {
+      statusClass,
+      icon,
+      headline: remaining > 0 ? `${pluralizeDays(remaining)} with pay remaining` : 'No paid days remaining',
+      segments
+    };
+  }, [leaveSummary, formData.leaveType]);
 
   // Load employee data function (optimized with caching)
   const loadEmployeeData = async () => {
@@ -198,6 +316,17 @@ const EmbeddedLeaveForm = () => {
           next_leave_will_be: 'with PAY (up to 7 days)',
           message: 'Your first leave of the year will be paid (up to 7 days).',
           can_file_leave: true
+        },
+        with_pay_summary: {
+          is_eligible: false,
+          sil: {
+            entitled: 0,
+            used: 0,
+            remaining: 0,
+            shared_types: SIL_LEAVE_TYPES
+          },
+          by_type: {},
+          next_reset_date: null
         },
         rules: {}
       });
@@ -646,7 +775,7 @@ const EmbeddedLeaveForm = () => {
     await calculateAndShowPaymentBreakdown();
   };
 
-  const formatTenureDisplay = (tenure) => {
+  function formatTenureDisplay(tenure) {
     // Ensure tenure is always displayed as a whole number (no decimals)
     if (!tenure) return 'Unknown';
     
@@ -685,7 +814,7 @@ const EmbeddedLeaveForm = () => {
     } else {
       return monthsRounded + (monthsRounded > 1 ? ' months' : ' month');
     }
-  };
+  }
 
   const calculateAndShowPaymentBreakdown = async () => {
     console.log('Calculating payment breakdown...');
@@ -1273,52 +1402,21 @@ const EmbeddedLeaveForm = () => {
       {/* Content based on active tab */}
       {activeTab === 'form' && (
         <>
-          {/* Leave Usage Indicator */}
-          <div className={`leave-usage-indicator ${
-            leaveSummary?.leave_instances?.used === 0 || leaveSummary?.leave_instances?.used === 1 
-              ? 'status-green' 
-              : leaveSummary?.leave_instances?.used === 2 
-              ? 'status-yellow' 
-              : 'status-red'
-          }`}>
+          {/* Paid Leave Indicator */}
+          <div className={`leave-usage-indicator ${paidLeaveIndicator.statusClass}`}>
             <div className="usage-icon-minimal">
-              {leaveSummary?.leave_instances?.used === 0 || leaveSummary?.leave_instances?.used === 1 ? '✓' : 
-               leaveSummary?.leave_instances?.used === 2 ? '⚠' : '✕'}
+              {paidLeaveIndicator.icon}
             </div>
             <div className="usage-info-minimal">
               <span className="usage-count-minimal">
-                <strong>{leaveSummary?.leave_instances?.used || 0}/{leaveSummary?.leave_instances?.total_allowed || 3}</strong> Leave Requests Used
+                <strong>{paidLeaveIndicator.headline}</strong>
               </span>
-              {leaveSummary?.leave_instances?.remaining > 1 && !leaveSummary?.leave_instances?.rejection_note && (
-                <>
+              {paidLeaveIndicator.segments && paidLeaveIndicator.segments.length > 0 && paidLeaveIndicator.segments.map((text, index) => (
+                <React.Fragment key={index}>
                   <span className="usage-divider">•</span>
-                  <span className="status-text-minimal">{leaveSummary.leave_instances.remaining} remaining</span>
-                </>
-              )}
-              {leaveSummary?.leave_instances?.remaining === 1 && !leaveSummary?.leave_instances?.rejection_note && (
-                <>
-                  <span className="usage-divider">•</span>
-                  <span className="status-text-minimal">1 remaining</span>
-                </>
-              )}
-              {leaveSummary?.leave_instances?.remaining === 0 && leaveSummary?.leave_instances?.next_available_date && !leaveSummary?.leave_instances?.rejection_note && (
-                <>
-                  <span className="usage-divider">•</span>
-                  <span className="status-text-minimal">Try again on <strong>{leaveSummary.leave_instances.next_available_date}</strong></span>
-                </>
-              )}
-              {leaveSummary?.leave_instances?.remaining === 0 && !leaveSummary?.leave_instances?.next_available_date && !leaveSummary?.leave_instances?.rejection_note && (
-                <>
-                  <span className="usage-divider">•</span>
-                  <span className="status-text-minimal">All used</span>
-                </>
-              )}
-              {leaveSummary?.leave_instances?.rejection_note && leaveSummary?.leave_instances?.next_available_date && (
-                <>
-                  <span className="usage-divider">•</span>
-                  <span className="status-text-minimal">Try again on <strong>{leaveSummary.leave_instances.next_available_date}</strong></span>
-                </>
-              )}
+                  <span className="status-text-minimal">{text}</span>
+                </React.Fragment>
+              ))}
             </div>
           </div>
 
