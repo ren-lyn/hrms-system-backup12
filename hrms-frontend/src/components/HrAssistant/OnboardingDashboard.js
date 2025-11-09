@@ -61,7 +61,13 @@ import {
 
   faTrash,
 
-  faUpload
+  faUpload,
+
+  faReply,
+
+  faCheck,
+
+  faExternalLinkAlt
 
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -120,6 +126,9 @@ const OnboardingDashboard = () => {
   // Document management state
   const [documentRequirements, setDocumentRequirements] = useState([]);
   const [documentSubmissions, setDocumentSubmissions] = useState([]);
+  const [followUpRequests, setFollowUpRequests] = useState([]);
+  const [loadingFollowUpRequests, setLoadingFollowUpRequests] = useState(false);
+  const [followUpRequestsError, setFollowUpRequestsError] = useState('');
   const [documentFilter, setDocumentFilter] = useState('All');
   const [documentSearchTerm, setDocumentSearchTerm] = useState('');
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
@@ -130,7 +139,8 @@ const OnboardingDashboard = () => {
     'Applicant Identification',
     'Government & Tax Documents',
     'Medical Documents',
-    'Additional Document'
+    'Additional Document',
+    'Follow-Up Requests'
   ], []);
 
   const applicantIdentificationDocs = useMemo(() => [
@@ -316,6 +326,26 @@ const OnboardingDashboard = () => {
     neutral: { backgroundColor: '#adb5bd', color: '#212529' }
   }), []);
 
+  const formatDateTime = useCallback((value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, []);
+
+  const getFollowUpStatusVariant = useCallback((status) => {
+    const normalized = (status || '').toString().toLowerCase();
+    if (normalized === 'resolved') return 'success';
+    if (normalized === 'expired') return 'secondary';
+    return 'warning';
+  }, []);
+
   const additionalRequirementDocs = useMemo(() => {
     const matchedRequirementIds = new Set();
 
@@ -357,7 +387,7 @@ const OnboardingDashboard = () => {
     document_name: '',
     description: '',
     is_required: true,
-    file_format: '',
+    file_format: 'JPEG, JPG, PNG, PDF',
     max_file_size_mb: 5
   });
 
@@ -1018,6 +1048,97 @@ const OnboardingDashboard = () => {
     }
   };
 
+  const fetchFollowUpRequests = useCallback(async (applicationId) => {
+    if (!applicationId) return;
+    setLoadingFollowUpRequests(true);
+    setFollowUpRequestsError('');
+    setFollowUpRequests([]);
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${applicationId}/documents/follow-ups`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+        }
+      );
+      const payload = response?.data;
+      let records = [];
+      if (payload?.success && Array.isArray(payload?.data)) {
+        records = payload.data;
+      } else if (Array.isArray(payload)) {
+        records = payload;
+      } else if (Array.isArray(payload?.requests)) {
+        records = payload.requests;
+      }
+      const normalized = records.map((item, index) => ({
+        id: item.id ?? item.follow_up_id ?? `followup-${index}`,
+        applicantName:
+          item.applicant_name ||
+          `${item.applicant?.first_name || ''} ${item.applicant?.last_name || ''}`.trim() ||
+          'Applicant',
+        documentType: item.document_type || item.document_name || 'Document',
+        message: item.message || item.note || '',
+        sentAt: item.sent_at || item.created_at || item.updated_at || item.submitted_at || null,
+        attachmentUrl:
+          item.attachment_url || item.file_url || item.document_url || item.attachment || null,
+        status: (item.status || 'Pending')?.toString(),
+        raw: item,
+      }));
+      setFollowUpRequests(normalized);
+    } catch (error) {
+      console.error('Error fetching follow-up requests:', error);
+      setFollowUpRequests([]);
+      setFollowUpRequestsError('Failed to load follow-up requests.');
+    } finally {
+      setLoadingFollowUpRequests(false);
+    }
+  }, []);
+
+  const handleViewFollowUpRequest = useCallback((request) => {
+    if (!request) return;
+    const details = [
+      `Applicant: ${request.applicantName || 'N/A'}`,
+      `Document: ${request.documentType || 'N/A'}`,
+      `Status: ${request.status || 'Pending'}`,
+      '',
+      request.message ? request.message : 'No message provided.',
+    ].join('\n');
+    alert(details);
+  }, []);
+
+  const handleReplyToFollowUpRequest = useCallback((request) => {
+    if (!request) return;
+    const reply = window.prompt(
+      `Reply to ${request.applicantName || 'the applicant'} regarding ${request.documentType || 'the document'}:`,
+      ''
+    );
+    if (!reply) return;
+    alert('Reply sent (integration pending).');
+  }, []);
+
+  const handleMarkFollowUpResolved = useCallback((requestId) => {
+    if (!requestId) return;
+    setFollowUpRequests((prev) =>
+      prev.map((request) =>
+        request.id === requestId
+          ? {
+              ...request,
+              status: 'Resolved',
+            }
+          : request
+      )
+    );
+  }, []);
+
+  const handleOpenFollowUpAttachment = useCallback((request) => {
+    if (!request?.attachmentUrl) {
+      alert('No attachment provided for this follow-up request.');
+      return;
+    }
+    window.open(request.attachmentUrl, '_blank', 'noopener');
+  }, []);
+
   // Fetch document status for all applicants in onboarding
   const fetchAllApplicantsDocumentStatus = async () => {
     const statusMap = {};
@@ -1141,7 +1262,7 @@ const OnboardingDashboard = () => {
           document_name: '',
           description: '',
           is_required: true,
-          file_format: '',
+          file_format: 'JPEG, JPG, PNG, PDF',
           max_file_size_mb: 5
         });
       }
@@ -1390,6 +1511,8 @@ const OnboardingDashboard = () => {
       setSelectedApplicationForDocs(null);
       setDocumentRequirements([]);
       setDocumentSubmissions([]);
+      setFollowUpRequests([]);
+      setFollowUpRequestsError('');
       alert('Document submission completed! Applicant moved to Orientation Schedule.');
     } catch (error) {
       console.error('Error updating status:', error);
@@ -2899,6 +3022,7 @@ const OnboardingDashboard = () => {
                                                   setDocumentModalTab('Applicant Identification');
                                           fetchDocumentRequirements(applicant.id);
                                           fetchDocumentSubmissions(applicant.id);
+                                          fetchFollowUpRequests(applicant.id);
                                         }}
                                         style={{ borderRadius: '6px' }}
                                       >
@@ -6609,6 +6733,8 @@ const OnboardingDashboard = () => {
                     setSelectedApplicationForDocs(null);
                     setDocumentRequirements([]);
                     setDocumentSubmissions([]);
+                      setFollowUpRequests([]);
+                      setFollowUpRequestsError('');
                   }}
                 ></button>
               </div>
@@ -6673,18 +6799,13 @@ const OnboardingDashboard = () => {
                               />
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label fw-semibold">File Format / Notes</label>
+                              <label className="form-label fw-semibold">File Format</label>
                               <input
                                 type="text"
                                 className="form-control"
                                 value={newRequirement.file_format}
-                                onChange={(e) =>
-                                  setNewRequirement((prev) => ({
-                                    ...prev,
-                                    file_format: e.target.value,
-                                  }))
-                                }
-                                placeholder="e.g., PDF, DOCX, JPG"
+                                readOnly
+                                style={{ backgroundColor: '#f8f9fa', cursor: 'not-allowed' }}
                               />
                             </div>
                             <div className="col-12">
@@ -6709,12 +6830,8 @@ const OnboardingDashboard = () => {
                                 min="1"
                                 className="form-control"
                                 value={newRequirement.max_file_size_mb}
-                                onChange={(e) =>
-                                  setNewRequirement((prev) => ({
-                                    ...prev,
-                                    max_file_size_mb: Math.max(1, parseInt(e.target.value, 10) || 1),
-                                  }))
-                                }
+                                readOnly
+                                style={{ backgroundColor: '#f8f9fa', cursor: 'not-allowed' }}
                               />
                             </div>
                             <div className="col-md-8 d-flex align-items-center">
@@ -6753,19 +6870,131 @@ const OnboardingDashboard = () => {
                           </div>
                         </div>
                       </div>
-                      {additionalRequirementDocs.length > 0 ? (
-                        renderDocumentCards(additionalRequirementDocs)
-                      ) : (
-                        <div className="card border-0 shadow-sm">
-                          <div className="card-body text-center py-5">
-                            <FontAwesomeIcon icon={faFileAlt} size="3x" className="text-muted mb-3" />
-                            <h5 className="text-muted mb-2">No additional requests yet</h5>
-                            <p className="text-muted mb-0">
-                              Use the form above to request extra documents from the applicant.
-                            </p>
+                      {additionalRequirementDocs.length > 0 ? renderDocumentCards(additionalRequirementDocs) : null}
+                    </>
+                  ) : documentModalTab === 'Follow-Up Requests' ? (
+                    <>
+                      <div className="card border-0 shadow-sm mb-4">
+                        <div className="card-body">
+                          <div className="d-flex align-items-center mb-3">
+                            <FontAwesomeIcon icon={faEnvelope} className="text-primary me-2" />
+                            <h6 className="fw-bold mb-0">Follow-Up Requests</h6>
                           </div>
+                          <p className="text-muted small mb-4">
+                            Review follow-up messages and supporting files sent by applicants after their initial submissions.
+                          </p>
+                          {followUpRequestsError ? (
+                            <Alert variant="danger" className="mb-3">
+                              {followUpRequestsError}
+                            </Alert>
+                          ) : null}
+                          {loadingFollowUpRequests ? (
+                            <div className="text-center text-muted py-5">
+                              Loading follow-up requests...
+                            </div>
+                          ) : followUpRequests.length > 0 ? (
+                            <div className="table-responsive">
+                              <Table hover className="align-middle">
+                                <thead className="table-light">
+                                  <tr>
+                                    <th>Applicant Name</th>
+                                    <th>Document Type</th>
+                                    <th style={{ minWidth: '220px' }}>Message / Note</th>
+                                    <th>Date &amp; Time Sent</th>
+                                    <th>Attached File</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {followUpRequests.map((request) => {
+                                    const statusVariant = getFollowUpStatusVariant(request.status);
+                                    return (
+                                      <tr key={request.id}>
+                                        <td>
+                                          <div className="fw-semibold">{request.applicantName || 'Applicant'}</div>
+                                        </td>
+                                        <td>{request.documentType || '—'}</td>
+                                        <td>
+                                          <div
+                                            className="text-muted"
+                                            style={{
+                                              maxWidth: '260px',
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                            }}
+                                            title={request.message || ''}
+                                          >
+                                            {request.message || '—'}
+                                          </div>
+                                        </td>
+                                        <td>{formatDateTime(request.sentAt)}</td>
+                                        <td>
+                                          {request.attachmentUrl ? (
+                                            <Badge bg="info" text="dark">
+                                              Attachment
+                                            </Badge>
+                                          ) : (
+                                            <span className="text-muted small">None</span>
+                                          )}
+                                        </td>
+                                        <td>
+                                          <Badge bg={statusVariant}>{request.status || 'Pending'}</Badge>
+                                        </td>
+                                        <td>
+                                          <div className="d-flex flex-wrap gap-2">
+                                            <Button
+                                              variant="outline-primary"
+                                              size="sm"
+                                              onClick={() => handleViewFollowUpRequest(request)}
+                                            >
+                                              <FontAwesomeIcon icon={faEye} className="me-2" />
+                                              View
+                                            </Button>
+                                            <Button
+                                              variant="outline-secondary"
+                                              size="sm"
+                                              onClick={() => handleReplyToFollowUpRequest(request)}
+                                            >
+                                              <FontAwesomeIcon icon={faReply} className="me-2" />
+                                              Reply
+                                            </Button>
+                                            <Button
+                                              variant="outline-success"
+                                              size="sm"
+                                              onClick={() => handleMarkFollowUpResolved(request.id)}
+                                              disabled={(request.status || '').toLowerCase() === 'resolved'}
+                                            >
+                                              <FontAwesomeIcon icon={faCheck} className="me-2" />
+                                              Mark as Resolved
+                                            </Button>
+                                            <Button
+                                              variant="outline-dark"
+                                              size="sm"
+                                              onClick={() => handleOpenFollowUpAttachment(request)}
+                                              disabled={!request.attachmentUrl}
+                                            >
+                                              <FontAwesomeIcon icon={faExternalLinkAlt} className="me-2" />
+                                              Open Document
+                                            </Button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </Table>
+                            </div>
+                          ) : (
+                            <div className="text-center text-muted py-5">
+                              <FontAwesomeIcon icon={faEnvelope} size="3x" className="mb-3" />
+                              <h5 className="fw-semibold">No follow-up requests yet</h5>
+                              <p className="mb-0 small">Applicants can submit follow-ups when they need to clarify or update their documents.</p>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </>
                   ) : (
                     <div className="card border-0 shadow-sm">

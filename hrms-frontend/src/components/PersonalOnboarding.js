@@ -262,7 +262,11 @@ const PersonalOnboarding = () => {
     if (typeof window === 'undefined') return defaultDocumentStatuses;
     try {
       const saved = JSON.parse(localStorage.getItem(DOCUMENT_STATUS_STORAGE_KEY) || '{}');
-      return { ...defaultDocumentStatuses, ...saved };
+    const sanitizedStatuses = { ...defaultDocumentStatuses, ...saved };
+    if (sanitizedStatuses.resume === 'under_review') {
+      sanitizedStatuses.resume = 'not_submitted';
+    }
+    return sanitizedStatuses;
     } catch (error) {
       console.error('Error loading document statuses:', error);
       return defaultDocumentStatuses;
