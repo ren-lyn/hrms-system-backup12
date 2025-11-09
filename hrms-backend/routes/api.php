@@ -196,6 +196,8 @@ Route::middleware('auth:sanctum')->group(function () {
         });
         
         // Document Submissions
+        Route::get('/requirements/by-key/{documentKey}', [DocumentController::class, 'resolveRequirementByKey']);
+        Route::get('/overview', [DocumentController::class, 'getOverview']);
         Route::get('/submissions', [DocumentController::class, 'getSubmissions']);
         Route::post('/requirements/{requirementId}/upload', [DocumentController::class, 'uploadSubmission']);
         Route::post('/submit', [DocumentController::class, 'submitDocuments']);

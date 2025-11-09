@@ -233,6 +233,49 @@ const Onboarding = () => {
     }
   ], []);
 
+  const applyDocumentOverview = useCallback((overview) => {
+    if (!overview) {
+      return null;
+    }
+
+    const documents = Array.isArray(overview.documents) ? overview.documents : [];
+
+    const requirements = documents.map((doc) => ({
+      id: doc.requirement_id,
+      document_key: doc.document_key,
+      document_name: doc.document_name,
+      description: doc.description,
+      is_required: doc.is_required,
+      file_format: doc.file_format,
+      max_file_size_mb: doc.max_file_size_mb,
+      order: doc.order,
+      status: doc.status,
+      status_label: doc.status_label,
+      status_badge: doc.status_badge,
+      status_description: doc.status_description,
+    }));
+
+    const submissions = documents
+      .map((doc) => {
+        if (!doc.submission) return null;
+        return {
+          ...doc.submission,
+          document_requirement_id: doc.submission.document_requirement_id ?? doc.requirement_id,
+          document_key: doc.document_key,
+        };
+      })
+      .filter(Boolean);
+
+    setDocumentRequirements(requirements);
+    setDocumentSubmissions(submissions);
+
+    return {
+      overview,
+      requirements,
+      submissions,
+    };
+  }, []);
+
   const formatApplicantDocDate = useCallback((value) => {
     if (!value) return null;
     try {
@@ -270,23 +313,22 @@ const Onboarding = () => {
 
     let statusLabel = requirement ? 'Awaiting submission' : 'No file uploaded';
     let statusVariant = requirement ? 'pending' : 'neutral';
+    let submissionStatus = null;
 
     if (submission) {
-      if (submission.status === 'approved') {
+      const normalizedStatus = (submission.status || '').toLowerCase();
+      submissionStatus = normalizedStatus;
+      if (normalizedStatus === 'received' || normalizedStatus === 'approved') {
         statusLabel = 'Approved';
         statusVariant = 'approved';
-      } else if (submission.status === 'rejected') {
+      } else if (normalizedStatus === 'rejected') {
         statusLabel = 'Needs resubmission';
         statusVariant = 'resubmit';
-      } else if (submission.status === 'pending_review' || submission.status === 'uploaded') {
-        statusLabel = 'For review';
-        statusVariant = 'pending';
       } else {
-        statusLabel = 'Awaiting submission';
+        statusLabel = 'Submitted';
         statusVariant = 'pending';
       }
     } else if (requirement) {
-      statusLabel = 'Awaiting submission';
       statusLabel = 'Awaiting submission';
       statusVariant = 'pending';
     }
@@ -306,14 +348,51 @@ const Onboarding = () => {
       submittedAt,
       updatedAt,
       rejectionReason: submission?.rejection_reason || '',
+      submissionStatus,
     };
   }, [documentRequirements, documentSubmissions, formatApplicantDocDate]);
 
-  const openSubmissionFile = useCallback((submission) => {
+  const openSubmissionFile = useCallback(async (submission) => {
     if (!submission || !selectedApplicationForDocs) return;
+
     const token = localStorage.getItem("token");
-    const url = `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/submissions/${submission.id}/download?token=${token}`;
-    window.open(url, "_blank", "noopener");
+    if (!token) {
+      alert("Your session has expired. Please log in again to view the file.");
+      return;
+    }
+
+    const downloadUrl = `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/submissions/${submission.id}/download`;
+
+    try {
+      const response = await axios.get(downloadUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        responseType: "blob",
+      });
+
+      const blob = new Blob([response.data], {
+        type: response.headers["content-type"] || "application/octet-stream",
+      });
+      const objectUrl = window.URL.createObjectURL(blob);
+
+      const newWindow = window.open(objectUrl, "_blank", "noopener");
+      if (!newWindow) {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = submission.file_name || "document";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+      }
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(objectUrl);
+      }, 30000);
+    } catch (error) {
+      console.error("Error opening submission file:", error);
+      alert("We could not open the submitted file. Please try again.");
+    }
   }, [selectedApplicationForDocs]);
 
   const statusBadgeStyles = useMemo(() => ({
@@ -870,38 +949,25 @@ const Onboarding = () => {
   const fetchDocumentRequirements = async (applicationId) => {
     try {
       const response = await axios.get(
-        `http://localhost:8000/api/applications/${applicationId}/documents/requirements`,
+        `http://localhost:8000/api/applications/${applicationId}/documents/overview`,
         {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
         }
       );
-      if (response.data.success) {
-        setDocumentRequirements(response.data.data);
+      if (response.data?.success) {
+        return applyDocumentOverview(response.data.data);
       }
     } catch (error) {
-      console.error("Error fetching document requirements:", error);
+      console.error("Error fetching document overview:", error);
     }
+    return null;
   };
 
   // Fetch document submissions for an application
   const fetchDocumentSubmissions = async (applicationId) => {
-    try {
-      const response = await axios.get(
-        `http://localhost:8000/api/applications/${applicationId}/documents/submissions`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
-      );
-      if (response.data.success) {
-        setDocumentSubmissions(response.data.data);
-      }
-    } catch (error) {
-      console.error("Error fetching document submissions:", error);
-    }
+    return fetchDocumentRequirements(applicationId);
   };
 
   const fetchFollowUpRequests = useCallback(async (applicationId) => {
@@ -1037,11 +1103,11 @@ const Onboarding = () => {
           } else {
             const requiredIds = requiredDocs.map(r => r.id);
             const approvedSubmissions = submissions.filter(s => 
-              requiredIds.includes(s.document_requirement_id) && s.status === 'approved'
+              requiredIds.includes(s.document_requirement_id) && (s.status === 'received' || s.status === 'approved')
             );
             const pendingSubmissions = submissions.filter(s => 
               requiredIds.includes(s.document_requirement_id) && 
-              (s.status === 'pending_review' || s.status === 'uploaded')
+              (s.status === 'pending' || s.status === 'pending_review' || s.status === 'uploaded')
             );
             const rejectedSubmissions = submissions.filter(s => 
               requiredIds.includes(s.document_requirement_id) && s.status === 'rejected'
@@ -1136,9 +1202,6 @@ const Onboarding = () => {
 
   // Review document submission
   const reviewDocumentSubmission = async (submissionId, status, reason = '') => {
-    // This function updates document status in database
-    // Status progression: 'pending_review' → 'approved' or 'rejected'
-    // When HR approves/rejects, the applicant's table will auto-update via polling
     try {
       setReviewingDocument(true);
       const response = await axios.put(
@@ -1152,8 +1215,12 @@ const Onboarding = () => {
         }
       );
       if (response.data.success) {
-        await fetchDocumentSubmissions(selectedApplicationForDocs.id);
-        await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        if (response.data.overview) {
+          applyDocumentOverview(response.data.overview);
+        } else {
+          await fetchDocumentSubmissions(selectedApplicationForDocs.id);
+          await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        }
         
         // Refresh document statuses for the main table
         if (activeTab === "Onboarding" && onboardingSubtab === "Document Submission") {
@@ -1180,7 +1247,7 @@ const Onboarding = () => {
             });
           }
         } else {
-          alert(status === 'approved' ? 'Document approved successfully!' : 'Document rejected successfully!');
+          alert(status === 'received' ? 'Document approved successfully!' : 'Document rejected successfully!');
         }
       }
     } catch (error) {
@@ -1194,7 +1261,7 @@ const Onboarding = () => {
   // Handle approve document
   const handleApproveDocument = async (submissionId) => {
     if (window.confirm('Are you sure you want to approve this document?')) {
-      await reviewDocumentSubmission(submissionId, 'approved');
+      await reviewDocumentSubmission(submissionId, 'received');
     }
   };
 
@@ -1226,9 +1293,21 @@ const Onboarding = () => {
           submittedAt,
           updatedAt,
           rejectionReason,
+          submissionStatus,
         } = computeApplicantDocStatus(doc);
 
         const statusStyle = statusBadgeStyles[statusVariant] || statusBadgeStyles.neutral;
+        const isApproved = submissionStatus === 'received' || submissionStatus === 'approved';
+        const requirementBadgeLabel = submission
+          ? (isApproved ? 'Approved' : 'Submitted')
+          : requirement
+            ? (requirement.is_required ? 'Required' : 'Optional')
+            : '';
+        const requirementBadgeVariant = submission
+          ? (isApproved ? 'success' : 'info')
+          : requirement
+            ? (requirement.is_required ? 'danger' : 'secondary')
+            : 'secondary';
 
         return (
           <div className="col-12" key={doc.key}>
@@ -1239,11 +1318,11 @@ const Onboarding = () => {
                     <h6 className="fw-semibold mb-1">{doc.title}</h6>
                     <p className="text-muted small mb-2">{doc.description}</p>
                     <div className="d-flex flex-wrap align-items-center gap-2">
-                      {requirement ? (
-                        <Badge bg={requirement.is_required ? "danger" : "secondary"}>
-                          {requirement.is_required ? "Required" : "Optional"}
-                        </Badge>
-                      ) : null}
+                    {requirementBadgeLabel ? (
+                      <Badge bg={requirementBadgeVariant}>
+                        {requirementBadgeLabel}
+                      </Badge>
+                    ) : null}
                       {submission?.file_name && (
                         <span className="text-muted small">{submission.file_name}</span>
                       )}
@@ -1289,7 +1368,7 @@ const Onboarding = () => {
                     <Button
                       variant="success"
                       size="sm"
-                      disabled={!submission || submission.status === "approved" || reviewingDocument}
+                      disabled={!submission || isApproved || reviewingDocument}
                       onClick={() => submission && handleApproveDocument(submission.id)}
                     >
                       Approve
@@ -1297,7 +1376,7 @@ const Onboarding = () => {
                     <Button
                       variant="outline-danger"
                       size="sm"
-                      disabled={!submission || reviewingDocument}
+                      disabled={!submission || reviewingDocument || isApproved}
                       onClick={() => submission && handleRejectDocument(submission.id)}
                     >
                       Resubmit

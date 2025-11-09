@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { Card, Button, Badge, Alert, Form, Modal } from 'react-bootstrap';
 import { validateDocumentUpload, formatFileSize } from '../utils/OnboardingValidation';
@@ -246,9 +246,69 @@ const PersonalOnboarding = () => {
   const [documentUploads, setDocumentUploads] = useState({});
   const [documentPreviews, setDocumentPreviews] = useState({});
   const documentPreviewsRef = useRef({});
+  const [documentOverview, setDocumentOverview] = useState({
+    documents: [],
+    status_counts: {},
+    last_updated_at: null,
+  });
+  const [documentOverviewMeta, setDocumentOverviewMeta] = useState({
+    statusCounts: {
+      approved: 0,
+      pending: 0,
+      rejected: 0,
+      not_submitted: 0,
+    },
+    lastUpdatedAt: null,
+  });
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [documentError, setDocumentError] = useState('');
   const [applicantName, setApplicantName] = useState('Applicant');
   const [followUpMessages, setFollowUpMessages] = useState({});
   const [showFollowUpInput, setShowFollowUpInput] = useState({});
+  const overviewStatusBadges = useMemo(() => ([
+    { key: 'approved', label: 'Received', variant: 'success' },
+    { key: 'pending', label: 'Pending', variant: 'warning' },
+    { key: 'rejected', label: 'Rejected', variant: 'danger' },
+    { key: 'not_submitted', label: 'Not Submitted', variant: 'secondary' },
+  ]), []);
+
+  const normalizeDocumentLabel = useCallback((value) => {
+    if (!value || typeof value !== 'string') return '';
+    return value.toLowerCase().replace(/\s+/g, ' ').trim();
+  }, []);
+
+  const standardDocumentLabelMap = useMemo(() => {
+    const map = {};
+    DOCUMENT_SECTIONS.forEach((section) => {
+      section.documents.forEach((document) => {
+        const normalized = normalizeDocumentLabel(document.label || document.id);
+        if (normalized && document.id) {
+          map[normalized] = document.id;
+        }
+      });
+    });
+    return map;
+  }, [normalizeDocumentLabel]);
+
+  const resolveStandardDocumentKey = useCallback(
+    (label) => {
+      const normalized = normalizeDocumentLabel(label);
+      if (!normalized) return null;
+
+      if (standardDocumentLabelMap[normalized]) {
+        return standardDocumentLabelMap[normalized];
+      }
+
+      const partialMatch = Object.entries(standardDocumentLabelMap).find(([knownLabel]) =>
+        knownLabel === normalized ||
+        normalized.includes(knownLabel) ||
+        knownLabel.includes(normalized)
+      );
+
+      return partialMatch ? partialMatch[1] : null;
+    },
+    [normalizeDocumentLabel, standardDocumentLabelMap]
+  );
   const defaultDocumentStatuses = useMemo(() => {
     const baseStatuses = {};
     DOCUMENT_SECTIONS.forEach((section) => {
@@ -320,13 +380,13 @@ const PersonalOnboarding = () => {
     return validCandidate || '';
   };
 
-  const showToast = (type, title, message) => {
+  const showToast = useCallback((type, title, message) => {
     setToast({ show: true, type, title, message });
-  };
+  }, []);
 
-  const hideToast = () => {
+  const hideToast = useCallback(() => {
     setToast({ show: false, type: 'success', title: '', message: '' });
-  };
+  }, []);
 
   const handleAcceptOffer = () => {
     // Prevent double-clicks
@@ -599,12 +659,12 @@ const PersonalOnboarding = () => {
     });
     documentPreviewsRef.current[documentKey] = previewUrl;
 
-    setDocumentStatuses((prev) => ({
-      ...prev,
-      [documentKey]: 'under_review'
-    }));
     showToast('success', 'Document Selected', `${getDocumentLabel(documentKey)} ready for submission.`);
   };
+
+  const activeApplicationId = useMemo(() => (
+    userApplications && userApplications.length > 0 ? userApplications[0].id : null
+  ), [userApplications]);
 
   const handleRemoveDocument = (documentKey) => {
     setDocumentUploads((prev) => {
@@ -629,23 +689,198 @@ const PersonalOnboarding = () => {
     });
     delete documentPreviewsRef.current[documentKey];
 
-    setDocumentStatuses((prev) => ({
-      ...prev,
-      [documentKey]: 'not_submitted'
-    }));
     showToast('info', 'Document Removed', `${getDocumentLabel(documentKey)} removed from submission.`);
   };
+
+  const openRemoteSubmission = useCallback(async (submissionId, fileName = 'document') => {
+    if (!submissionId || !activeApplicationId) {
+      return false;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('error', 'Authentication Required', 'Please log in again to preview this document.');
+      return false;
+    }
+
+    try {
+      const downloadUrl = `http://localhost:8000/api/applications/${activeApplicationId}/documents/submissions/${submissionId}/download`;
+      const response = await axios.get(downloadUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], {
+        type: response.headers['content-type'] || 'application/octet-stream',
+      });
+      const objectUrl = window.URL.createObjectURL(blob);
+
+      const newWindow = window.open(objectUrl, '_blank');
+      if (!newWindow) {
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = fileName || 'document';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+      }
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(objectUrl);
+      }, 30000);
+
+      return true;
+    } catch (error) {
+      console.error('Error opening submitted document:', error);
+      showToast('error', 'Preview Failed', 'We could not open that document. Please try again later.');
+      return false;
+    }
+  }, [activeApplicationId, showToast]);
 
   const handlePreviewDocument = (documentKey) => {
     const previewUrl = documentPreviewsRef.current[documentKey] || documentPreviews[documentKey];
     if (previewUrl && typeof window !== 'undefined') {
       window.open(previewUrl, '_blank');
+      return;
     }
+
+    const remoteSubmission = documentDataMap[documentKey]?.submission;
+    if (remoteSubmission && typeof window !== 'undefined') {
+      openRemoteSubmission(remoteSubmission.id, remoteSubmission.file_name || `${documentKey}.pdf`);
+      return;
+    }
+
+    showToast('info', 'No Preview Available', `Please upload ${getDocumentLabel(documentKey)} before attempting to preview it.`);
   };
 
   const requiredDocumentKeys = DOCUMENT_SECTIONS.flatMap((section) =>
     section.documents.filter((document) => document.isRequired).map((document) => document.id)
   );
+
+  const documentDataMap = useMemo(() => {
+    const map = {};
+    (documentOverview.documents || []).forEach((doc) => {
+      if (doc.document_key) {
+        map[doc.document_key] = doc;
+      }
+    });
+    return map;
+  }, [documentOverview]);
+
+  const requirementIdsByDocumentKey = useMemo(() => {
+    const map = {};
+    Object.values(documentDataMap).forEach((doc) => {
+      if (doc.document_key && doc.requirement_id) {
+        map[doc.document_key] = doc.requirement_id;
+      }
+    });
+    return map;
+  }, [documentDataMap]);
+
+  const mapStatusToLocal = useCallback((status) => {
+    switch (status) {
+      case 'pending':
+        return 'under_review';
+      case 'received':
+        return 'approved';
+      case 'rejected':
+        return 'resubmission_required';
+      default:
+        return 'not_submitted';
+    }
+  }, []);
+
+  const applyDocumentOverview = useCallback((overview) => {
+    if (!overview) {
+      return null;
+    }
+
+    setDocumentOverview(overview);
+
+    const newStatuses = { ...defaultDocumentStatuses };
+    (overview.documents || []).forEach((doc) => {
+      if (doc.document_key) {
+        newStatuses[doc.document_key] = mapStatusToLocal(doc.status);
+      }
+    });
+    setDocumentStatuses(newStatuses);
+
+    const statusCounts = {
+      approved: overview.status_counts?.received ?? 0,
+      pending: overview.status_counts?.pending ?? 0,
+      rejected: overview.status_counts?.rejected ?? 0,
+      not_submitted: overview.status_counts?.not_submitted ?? 0,
+    };
+
+    setDocumentOverviewMeta({
+      statusCounts,
+      lastUpdatedAt: overview.last_updated_at || null,
+    });
+
+    setDocumentError('');
+    return overview;
+  }, [defaultDocumentStatuses, mapStatusToLocal]);
+
+  const resolveRequirementViaApi = useCallback(async (documentKey) => {
+    if (!documentKey || !activeApplicationId) {
+      return null;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('error', 'Authentication Required', 'Please log in again to continue.');
+      return null;
+    }
+
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${activeApplicationId}/documents/requirements/by-key/${documentKey}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const resolvedRequirement =
+        response.data?.requirement ??
+        response.data?.data?.requirement ??
+        null;
+      const overviewPayload =
+        response.data?.overview ??
+        response.data?.data?.overview ??
+        null;
+
+      if (overviewPayload) {
+        applyDocumentOverview(overviewPayload);
+      }
+
+      return resolvedRequirement ?? null;
+    } catch (error) {
+      console.error('Error resolving requirement via API:', error);
+      const message =
+        error.response?.data?.message ??
+        'Unable to prepare this document requirement right now. Please try again shortly.';
+      showToast('error', 'Document Not Ready', message);
+      return null;
+    }
+  }, [activeApplicationId, applyDocumentOverview, showToast]);
+
+  const formatTimestampForDisplay = useCallback((value) => {
+    if (!value) return '';
+    try {
+      return new Date(value).toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return String(value);
+    }
+  }, []);
 
   const finalInterviewEntries = useMemo(() => {
     if (!Array.isArray(interviewData)) return [];
@@ -705,28 +940,122 @@ const PersonalOnboarding = () => {
     }
   };
 
+  const fetchDocumentOverview = useCallback(async () => {
+    if (!activeApplicationId) {
+      return null;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setDocumentError('Please log in to manage your onboarding documents.');
+      return null;
+    }
+
+    try {
+      setDocumentLoading(true);
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${activeApplicationId}/documents/overview`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const overviewData = response.data?.data ?? null;
+      return applyDocumentOverview(overviewData);
+    } catch (error) {
+      console.error('Error fetching document overview:', error);
+      const message =
+        error.response?.data?.message ||
+        'Failed to load document requirements. Please try again.';
+      setDocumentError(message);
+      return null;
+    } finally {
+      setDocumentLoading(false);
+    }
+  }, [activeApplicationId, applyDocumentOverview]);
+
   const handleSubmitDocument = async (documentKey) => {
-    if (!documentUploads[documentKey]) {
+    const selectedFile = documentUploads[documentKey];
+    if (!selectedFile) {
       showToast('error', 'No File Selected', `Please select a file for ${getDocumentLabel(documentKey)} before submitting.`);
       return;
     }
 
+    if (!activeApplicationId) {
+      showToast('error', 'No Application Found', 'We could not determine your application. Please refresh and try again.');
+      return;
+    }
+
+    let requirementId = requirementIdsByDocumentKey[documentKey];
+    if (!requirementId) {
+      const resolvedRequirement = await resolveRequirementViaApi(documentKey);
+      if (resolvedRequirement?.id) {
+        requirementId = resolvedRequirement.id;
+      } else {
+        return;
+      }
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('error', 'Authentication Required', 'Please log in again to continue.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
     try {
       setUploadingDocumentKey(documentKey);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setDocumentStatuses((prev) => ({
-        ...prev,
-        [documentKey]: 'under_review'
-      }));
+      const uploadUrl = `http://localhost:8000/api/applications/${activeApplicationId}/documents/requirements/${requirementId}/upload`;
+      const response = await axios.post(uploadUrl, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
       setUploadErrors((prev) => {
         const next = { ...prev };
         delete next[documentKey];
         return next;
       });
-      showToast('success', 'Document Submitted', `${getDocumentLabel(documentKey)} has been sent for HR review.`);
+
+      setDocumentUploads((prev) => {
+        const next = { ...prev };
+        delete next[documentKey];
+        return next;
+      });
+
+      setDocumentPreviews((prev) => {
+        const next = { ...prev };
+        if (next[documentKey]) {
+          URL.revokeObjectURL(next[documentKey]);
+          delete next[documentKey];
+        }
+        return next;
+      });
+      delete documentPreviewsRef.current[documentKey];
+
+      if (response.data?.overview) {
+        applyDocumentOverview(response.data.overview);
+      } else {
+        await fetchDocumentOverview();
+      }
+
+      showToast('success', 'Submission Successful', `${getDocumentLabel(documentKey)} successfully sent to HR.`);
     } catch (error) {
       console.error('Error submitting document:', error);
-      showToast('error', 'Submission Failed', `We were unable to submit ${getDocumentLabel(documentKey)}. Please try again.`);
+      const errorMessage = error.response?.data?.errors
+        ? Object.values(error.response.data.errors).flat().join(' ')
+        : error.response?.data?.message || 'We were unable to submit this document. Please try again.';
+
+      setUploadErrors((prev) => ({
+        ...prev,
+        [documentKey]: errorMessage
+      }));
+
+      showToast('error', 'Submission Failed', errorMessage);
     } finally {
       setUploadingDocumentKey(null);
     }
@@ -735,6 +1064,21 @@ const PersonalOnboarding = () => {
   useEffect(() => {
     documentPreviewsRef.current = documentPreviews;
   }, [documentPreviews]);
+
+  useEffect(() => {
+    if (!activeApplicationId) return;
+    fetchDocumentOverview();
+  }, [activeApplicationId, fetchDocumentOverview]);
+
+  useEffect(() => {
+    if (currentPage !== 'onboarding' || activeTab !== 'documents' || !activeApplicationId) {
+      return;
+    }
+
+    fetchDocumentOverview();
+    const interval = setInterval(fetchDocumentOverview, 30000);
+    return () => clearInterval(interval);
+  }, [currentPage, activeTab, activeApplicationId, fetchDocumentOverview]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -3317,26 +3661,42 @@ const PersonalOnboarding = () => {
                   </div>
                 </div>
 
+                {documentError && (
+                  <Alert variant="danger" className="mb-3">
+                    {documentError}
+                  </Alert>
+                )}
+
+                {documentLoading && (
+                  <div className="mb-3">
+                    <OnboardingLoading message="Loading document requirements..." size="small" />
+                  </div>
+                )}
+
                 <Card className="mb-4 border-0 shadow-sm">
                   <Card.Body className="p-4">
                     <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-3">
                       <div>
                         <h6 className="text-uppercase text-muted fw-bold mb-2">Checklist Status</h6>
                         <p className="text-muted mb-0 small">
-                          Status colors update automatically as documents move through the review process.
+                          Status updates appear automatically as HR reviews your documents.
                         </p>
                       </div>
                       <div className="d-flex flex-wrap gap-2">
-                        {Object.entries(DOCUMENT_STATUS_CONFIG).map(([statusKey, statusConfig]) => (
-                          <span
-                            key={statusKey}
-                            className={`badge bg-${statusConfig.variant} status-legend-badge`}
-                            title={statusConfig.description}
-                          >
-                            {statusConfig.label}
-                          </span>
-                        ))}
+                        {overviewStatusBadges.map((meta) => {
+                          const count = documentOverviewMeta.statusCounts?.[meta.key] ?? 0;
+                          return (
+                            <Badge key={meta.key} bg={meta.variant} className="px-2 py-1 status-legend-badge">
+                              {meta.label}: {count}
+                            </Badge>
+                          );
+                        })}
                       </div>
+                    </div>
+                    <div className="text-muted small mb-3">
+                      {documentOverviewMeta.lastUpdatedAt
+                        ? `Last synced: ${formatTimestampForDisplay(documentOverviewMeta.lastUpdatedAt)}`
+                        : 'Waiting for first sync...'}
                     </div>
                     <div className="row g-3">
                       {DOCUMENT_SECTIONS.map((section) => (
@@ -3347,6 +3707,8 @@ const PersonalOnboarding = () => {
                               {section.documents.map((document) => {
                                 const statusKey = documentStatuses[document.id] || 'not_submitted';
                                 const statusConfig = DOCUMENT_STATUS_CONFIG[statusKey] || DOCUMENT_STATUS_CONFIG.not_submitted;
+                                const documentData = documentDataMap[document.id] || null;
+                                const displayStatusLabel = documentData?.status_label || statusConfig.label;
                                 return (
                                   <li
                                     key={`${document.id}-status-item`}
@@ -3354,7 +3716,7 @@ const PersonalOnboarding = () => {
                                   >
                                     <span className="small">{document.label}</span>
                                     <Badge bg={statusConfig.variant} className="status-badge">
-                                      {statusConfig.label}
+                                      {displayStatusLabel}
                                     </Badge>
                                   </li>
                                 );
@@ -3382,74 +3744,124 @@ const PersonalOnboarding = () => {
                           {section.documents.map((document) => {
                             const statusKey = documentStatuses[document.id] || 'not_submitted';
                             const statusConfig = DOCUMENT_STATUS_CONFIG[statusKey] || DOCUMENT_STATUS_CONFIG.not_submitted;
+                            const documentData = documentDataMap[document.id] || null;
+                            const remoteSubmission = documentData?.submission;
+                            const displayStatusLabel = documentData?.status_label || statusConfig.label;
                             const isUploadingThisDocument = uploadingDocumentKey === document.id;
+                            const localFile = documentUploads[document.id];
+                            const hasLocalFile = Boolean(localFile);
+                            const hasRemoteFile = Boolean(remoteSubmission);
+                            const isLockedByRemote = hasRemoteFile && statusKey !== 'resubmission_required';
+                            const canSubmitDocument = hasLocalFile && !isUploadingThisDocument && !isLockedByRemote;
+                            const canPreviewDocument = (hasLocalFile || hasRemoteFile) && !isUploadingThisDocument;
+                            const selectButtonClass = `btn btn-outline-primary btn-sm d-inline-flex align-items-center${(isUploadingThisDocument || isLockedByRemote) ? ' disabled opacity-75' : ''}`;
+                            const selectButtonStyle = (isUploadingThisDocument || isLockedByRemote) ? { pointerEvents: 'none' } : undefined;
+
+                            const remoteFileMetaParts = [];
+                            if (remoteSubmission?.file_size) {
+                              remoteFileMetaParts.push(formatFileSize(remoteSubmission.file_size));
+                            }
+                            if (remoteSubmission?.file_type) {
+                              remoteFileMetaParts.push(remoteSubmission.file_type);
+                            }
+                            const remoteFileMeta = remoteFileMetaParts.join(' • ');
+                            const submittedDisplay = formatTimestampForDisplay(remoteSubmission?.submitted_at);
+                            const reviewedDisplay = formatTimestampForDisplay(remoteSubmission?.reviewed_at);
+                            const rejectionReason = remoteSubmission?.rejection_reason;
+
                             return (
                               <div key={document.id} className="col-12">
-                              <div className="p-3 border rounded-3 bg-light bg-opacity-50 document-upload-field">
-                                <div className="d-flex flex-column flex-lg-row gap-3">
-                                  <div className="flex-grow-1">
-                                    <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
-                                      <Badge bg={statusConfig.variant} className="status-badge me-1">
-                                        {statusConfig.label}
-                                      </Badge>
-                                      <h6 className="mb-0 fw-semibold">
-                                        {document.label}
-                                        {document.isRequired && <span className="text-danger ms-1">*</span>}
-                                      </h6>
-                                      {!document.isRequired && (
-                                        <Badge bg="secondary" className="rounded-pill text-uppercase small">
-                                          Optional
+                                <div className="p-3 border rounded-3 bg-light bg-opacity-50 document-upload-field">
+                                  <div className="d-flex flex-column flex-lg-row gap-3">
+                                    <div className="flex-grow-1">
+                                      <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                        <Badge bg={statusConfig.variant} className="status-badge me-1">
+                                          {displayStatusLabel}
                                         </Badge>
-                                      )}
-                                      <Button
-                                        variant="outline-secondary"
-                                        size="sm"
-                                        className="ms-auto d-inline-flex align-items-center"
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          toggleFollowUpInput(document.id);
-                                        }}
-                                      >
-                                        <FontAwesomeIcon icon={faEnvelope} className="me-2" />
-                                        Request Follow-Up
-                                      </Button>
-                                    </div>
-                                    <p className="text-muted small mb-3">{document.helperText}</p>
-
-                                    {documentUploads[document.id] ? (
-                                      <div className="p-3 bg-white border rounded-3">
-                                        <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
-                                          <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
-                                            <FontAwesomeIcon
-                                              icon={documentUploads[document.id].type === 'application/pdf' ? faFilePdf : faFileImage}
-                                            />
-                                          </div>
-                                          <div className="flex-grow-1">
-                                            <div className="fw-semibold">
-                                              {documentUploads[document.id].name}
-                                            </div>
-                                            <div className="text-muted small">
-                                              {formatFileSize(documentUploads[document.id].size)} &nbsp;•&nbsp; {documentUploads[document.id].type || 'File'}
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        {documentPreviews[document.id] && documentUploads[document.id]?.type.startsWith('image/') && (
-                                          <div className="mt-3">
-                                            <img
-                                              src={documentPreviews[document.id]}
-                                              alt={`${document.label} preview`}
-                                              style={{ maxWidth: '180px', borderRadius: '8px', border: '1px solid #dee2e6' }}
-                                            />
-                                          </div>
+                                        <h6 className="mb-0 fw-semibold">
+                                          {document.label}
+                                          {document.isRequired && <span className="text-danger ms-1">*</span>}
+                                        </h6>
+                                        {!document.isRequired && (
+                                          <Badge bg="secondary" className="rounded-pill text-uppercase small">
+                                            Optional
+                                          </Badge>
                                         )}
+                                        <Button
+                                          variant="outline-secondary"
+                                          size="sm"
+                                          className="ms-auto d-inline-flex align-items-center"
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            toggleFollowUpInput(document.id);
+                                          }}
+                                        >
+                                          <FontAwesomeIcon icon={faEnvelope} className="me-2" />
+                                          Request Follow-Up
+                                        </Button>
                                       </div>
-                                    ) : (
-                                      <div className="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3">
+                                      <p className="text-muted small mb-3">{document.helperText}</p>
+
+                                      {hasLocalFile && (
+                                        <div className="p-3 bg-white border rounded-3">
+                                          <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                            <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
+                                              <FontAwesomeIcon icon={localFile.type === 'application/pdf' ? faFilePdf : faFileImage} />
+                                            </div>
+                                            <div className="flex-grow-1">
+                                              <div className="fw-semibold">
+                                                {localFile.name}
+                                              </div>
+                                              <div className="text-muted small">
+                                                {formatFileSize(localFile.size)} &nbsp;•&nbsp; {localFile.type || 'File'}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {documentPreviews[document.id] && localFile?.type?.startsWith('image/') && (
+                                            <div className="mt-3">
+                                              <img
+                                                src={documentPreviews[document.id]}
+                                                alt={`${document.label} preview`}
+                                                style={{ maxWidth: '180px', borderRadius: '8px', border: '1px solid #dee2e6' }}
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {!hasLocalFile && hasRemoteFile && (
+                                        <div className="p-3 bg-white border rounded-3">
+                                          <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
+                                            <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
+                                              <FontAwesomeIcon icon={remoteSubmission.file_type?.toLowerCase().includes('pdf') ? faFilePdf : faFileImage} />
+                                            </div>
+                                            <div className="flex-grow-1">
+                                              <div className="fw-semibold">
+                                                {remoteSubmission.file_name || 'Uploaded Document'}
+                                              </div>
+                                              {remoteFileMeta && (
+                                                <div className="text-muted small">
+                                                  {remoteFileMeta}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                          {(submittedDisplay || reviewedDisplay) && (
+                                            <div className="text-muted small mt-2">
+                                              {submittedDisplay && <div>Submitted: {submittedDisplay}</div>}
+                                              {reviewedDisplay && <div>Reviewed: {reviewedDisplay}</div>}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      <div className="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3 mt-3">
                                         <div>
                                           <label
                                             htmlFor={`${document.id}-upload`}
-                                            className="btn btn-outline-primary btn-sm d-inline-flex align-items-center"
+                                            className={selectButtonClass}
+                                            style={selectButtonStyle}
                                           >
                                             <FontAwesomeIcon icon={faUpload} className="me-2" />
                                             Select File
@@ -3459,6 +3871,7 @@ const PersonalOnboarding = () => {
                                             type="file"
                                             accept=".pdf,.jpg,.jpeg,.png"
                                             className="d-none"
+                                            disabled={isUploadingThisDocument || isLockedByRemote}
                                             onChange={(event) => {
                                               const input = event.target;
                                               const selectedFile = input.files && input.files[0] ? input.files[0] : null;
@@ -3471,112 +3884,133 @@ const PersonalOnboarding = () => {
                                           Upload PDF, JPG, JPEG, or PNG &nbsp;•&nbsp; Max 5 MB
                                         </div>
                                       </div>
-                                    )}
 
-                                    <div className="d-flex flex-wrap gap-2 mt-3">
-                                      <Button
-                                        variant="primary"
-                                        size="sm"
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          handleSubmitDocument(document.id);
-                                        }}
-                                        disabled={!documentUploads[document.id] || !!uploadingDocumentKey}
-                                      >
-                                        {isUploadingThisDocument ? (
-                                          <>
-                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                            Submitting...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <FontAwesomeIcon icon={faUpload} className="me-2" />
-                                            Submit Document
-                                          </>
-                                        )}
-                                      </Button>
-                                      {documentUploads[document.id] && (
-                                        <>
-                                          <Button
-                                            variant="outline-primary"
-                                            size="sm"
-                                            type="button"
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              handlePreviewDocument(document.id);
-                                            }}
-                                          >
-                                            <FontAwesomeIcon icon={faEye} className="me-2" />
-                                            Preview
-                                          </Button>
+                                      <div className="d-flex flex-wrap gap-2 mt-3">
+                                        <Button
+                                          variant="primary"
+                                          size="sm"
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            handleSubmitDocument(document.id);
+                                          }}
+                                          disabled={!canSubmitDocument}
+                                        >
+                                          {isUploadingThisDocument ? (
+                                            <>
+                                              <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                              Submitting...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <FontAwesomeIcon icon={faUpload} className="me-2" />
+                                              Submit Document
+                                            </>
+                                          )}
+                                        </Button>
+
+                                        <Button
+                                          variant="outline-primary"
+                                          size="sm"
+                                          type="button"
+                                          disabled={!canPreviewDocument}
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            if (!canPreviewDocument) return;
+                                            handlePreviewDocument(document.id);
+                                          }}
+                                        >
+                                          <FontAwesomeIcon icon={faEye} className="me-2" />
+                                          Preview
+                                        </Button>
+
+                                        {hasLocalFile && (
                                           <Button
                                             variant="outline-danger"
                                             size="sm"
                                             type="button"
+                                            disabled={isUploadingThisDocument || isLockedByRemote}
                                             onClick={(event) => {
                                               event.preventDefault();
+                                              if (isUploadingThisDocument) return;
                                               handleRemoveDocument(document.id);
                                             }}
                                           >
                                             <FontAwesomeIcon icon={faTimes} className="me-2" />
                                             Remove
                                           </Button>
-                                        </>
+                                        )}
+                                      </div>
+
+                                      {uploadErrors[document.id] && (
+                                        <div className="mt-3">
+                                          <Alert variant="danger" className="mb-0 py-2 px-3">
+                                            {uploadErrors[document.id]}
+                                          </Alert>
+                                        </div>
+                                      )}
+
+                                      {statusKey === 'under_review' && (
+                                        <Alert variant="info" className="mt-3">
+                                          Awaiting HR review. We will notify you once a decision is made.
+                                        </Alert>
+                                      )}
+
+                                      {statusKey === 'approved' && (
+                                        <Alert variant="success" className="mt-3">
+                                          Document approved by HR. No further action required.
+                                        </Alert>
+                                      )}
+
+                                      {statusKey === 'resubmission_required' && (
+                                        <Alert variant="warning" className="mt-3">
+                                          <strong>HR Feedback:</strong> {rejectionReason || 'Please upload a corrected version of this document.'}
+                                        </Alert>
+                                      )}
+
+                                      {showFollowUpInput[document.id] && (
+                                        <div className="mt-3 follow-up-container">
+                                          <Form.Group controlId={`${document.id}-follow-up`}>
+                                            <Form.Label className="small text-muted">
+                                              Follow-Up Message
+                                            </Form.Label>
+                                            <Form.Control
+                                              as="textarea"
+                                              rows={2}
+                                              placeholder="Enter message..."
+                                              value={followUpMessages[document.id] || ''}
+                                              onChange={(event) => handleFollowUpMessageChange(document.id, event.target.value)}
+                                            />
+                                          </Form.Group>
+                                          <div className="d-flex gap-2 justify-content-end mt-2">
+                                            <Button
+                                              variant="outline-secondary"
+                                              size="sm"
+                                              type="button"
+                                              onClick={(event) => {
+                                                event.preventDefault();
+                                                toggleFollowUpInput(document.id);
+                                              }}
+                                            >
+                                              Cancel
+                                            </Button>
+                                            <Button
+                                              variant="primary"
+                                              size="sm"
+                                              type="button"
+                                              className="followup-submit-card-btn"
+                                              onClick={(event) => handleFollowUpSubmit(document.id, event)}
+                                            >
+                                              Submit Follow-Up
+                                            </Button>
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
-
-                                    {uploadErrors[document.id] && (
-                                      <div className="mt-3">
-                                        <Alert variant="danger" className="mb-0 py-2 px-3">
-                                          {uploadErrors[document.id]}
-                                        </Alert>
-                                      </div>
-                                    )}
-
-                                    {showFollowUpInput[document.id] && (
-                                      <div className="mt-3 follow-up-container">
-                                        <Form.Group controlId={`${document.id}-follow-up`}>
-                                          <Form.Label className="small text-muted">
-                                            Follow-Up Message
-                                          </Form.Label>
-                                          <Form.Control
-                                            as="textarea"
-                                            rows={2}
-                                            placeholder="Enter message..."
-                                            value={followUpMessages[document.id] || ''}
-                                            onChange={(event) => handleFollowUpMessageChange(document.id, event.target.value)}
-                                          />
-                                        </Form.Group>
-                                        <div className="d-flex gap-2 justify-content-end mt-2">
-                                          <Button
-                                            variant="outline-secondary"
-                                            size="sm"
-                                            type="button"
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              toggleFollowUpInput(document.id);
-                                            }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                          <Button
-                                            variant="primary"
-                                            size="sm"
-                                            type="button"
-                                            className="followup-submit-card-btn"
-                                            onClick={(event) => handleFollowUpSubmit(document.id, event)}
-                                          >
-                                            Submit Follow-Up
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          );
+                            );
                           })}
                         </div>
                       </Card.Body>

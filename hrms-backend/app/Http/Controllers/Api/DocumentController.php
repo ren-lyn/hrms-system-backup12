@@ -15,10 +15,430 @@ use Illuminate\Support\Facades\Validator;
 
 class DocumentController extends Controller
 {
+    private const STATUS_META = [
+        'not_submitted' => [
+            'label' => 'Not Submitted',
+            'badge' => 'secondary',
+            'description' => 'Document has not been uploaded yet.',
+        ],
+        'pending' => [
+            'label' => 'Pending Review',
+            'badge' => 'warning',
+            'description' => 'Document awaiting HR review.',
+        ],
+        'received' => [
+            'label' => 'Approved',
+            'badge' => 'success',
+            'description' => 'Document approved by HR.',
+        ],
+        'rejected' => [
+            'label' => 'Resubmission Required',
+            'badge' => 'danger',
+            'description' => 'HR requested a resubmission for this document.',
+        ],
+    ];
+
+    private const STANDARD_DOCUMENT_LABELS = [
+        'valid government id' => 'governmentId',
+        'government id' => 'governmentId',
+        'birth certificate (psa)' => 'birthCertificate',
+        'birth certificate' => 'birthCertificate',
+        'resume / curriculum vitae (cv)' => 'resume',
+        'resume' => 'resume',
+        'curriculum vitae' => 'resume',
+        'diploma / transcript of records (tor)' => 'diploma',
+        'diploma' => 'diploma',
+        'transcript of records (tor)' => 'diploma',
+        '2x2 or passport-size photo' => 'photo',
+        'photo' => 'photo',
+        'certificate of employment / recommendation letters' => 'employmentCertificate',
+        'nbi or police clearance' => 'nbiClearance',
+        'barangay clearance' => 'barangayClearance',
+        'sss number' => 'sssDocument',
+        'philhealth number' => 'philhealthDocument',
+        'pag-ibig mid number' => 'pagibigDocument',
+        'tin (tax identification number)' => 'tinDocument',
+        'medical certificate / fit-to-work clearance' => 'medicalCertificate',
+        'medical certificate' => 'medicalCertificate',
+        'fit-to-work clearance' => 'medicalCertificate',
+        'vaccination records' => 'vaccinationRecords',
+    ];
+
+    private const STANDARD_DOCUMENT_DEFINITIONS = [
+        [
+            'document_key' => 'governmentId',
+            'document_name' => 'Valid Government ID',
+            'description' => "Passport, Driver's License, UMID, or National ID",
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'birthCertificate',
+            'document_name' => 'Birth Certificate (PSA)',
+            'description' => 'Official PSA-issued certificate for age and identity verification',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'resume',
+            'document_name' => 'Resume / Curriculum Vitae (CV)',
+            'description' => 'Latest copy detailing education and work experience',
+            'is_required' => true,
+            'file_format' => 'pdf',
+        ],
+        [
+            'document_key' => 'diploma',
+            'document_name' => 'Diploma / Transcript of Records (TOR)',
+            'description' => 'Proof of educational attainment',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'photo',
+            'document_name' => '2x2 or Passport-size Photo',
+            'description' => 'For company ID and personnel records (plain background preferred)',
+            'is_required' => true,
+            'file_format' => 'jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'employmentCertificate',
+            'document_name' => 'Certificate of Employment / Recommendation Letters',
+            'description' => 'Proof of past work experience or references',
+            'is_required' => false,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'nbiClearance',
+            'document_name' => 'NBI or Police Clearance',
+            'description' => 'Issued within the last six (6) months',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'barangayClearance',
+            'document_name' => 'Barangay Clearance',
+            'description' => 'Proof of good moral character and residency',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'sssDocument',
+            'document_name' => 'SSS Number',
+            'description' => 'SSS E-1/E-4 form or ID showing the number',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'philhealthDocument',
+            'document_name' => 'PhilHealth Number',
+            'description' => 'PhilHealth ID or MDR with visible number',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'pagibigDocument',
+            'document_name' => 'Pag-IBIG MID Number',
+            'description' => 'Document showing your Pag-IBIG MID/RTN number',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'tinDocument',
+            'document_name' => 'TIN (Tax Identification Number)',
+            'description' => 'BIR Form 1902/1905 or any document showing your TIN',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'medicalCertificate',
+            'document_name' => 'Medical Certificate / Fit-to-Work Clearance',
+            'description' => 'Issued by a licensed doctor or accredited clinic',
+            'is_required' => true,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+        [
+            'document_key' => 'vaccinationRecords',
+            'document_name' => 'Vaccination Records',
+            'description' => 'If required by the company or job role',
+            'is_required' => false,
+            'file_format' => 'pdf,jpg,jpeg,png',
+        ],
+    ];
+
+    private function ensureStandardRequirements(Application $application): void
+    {
+        $definitions = collect(self::STANDARD_DOCUMENT_DEFINITIONS)->values();
+
+        foreach ($definitions as $index => $definition) {
+            $documentKey = $definition['document_key'];
+            $documentName = $definition['document_name'];
+
+            $existing = DocumentRequirement::where('application_id', $application->id)
+                ->where(function ($query) use ($documentKey, $documentName) {
+                    $query->where('document_key', $documentKey)
+                        ->orWhereRaw('LOWER(document_name) = ?', [strtolower($documentName)]);
+                })
+                ->first();
+
+            if (!$existing) {
+                DocumentRequirement::create([
+                    'application_id' => $application->id,
+                    'document_key' => $documentKey,
+                    'document_name' => $documentName,
+                    'description' => $definition['description'] ?? null,
+                    'is_required' => $definition['is_required'] ?? true,
+                    'file_format' => $definition['file_format'] ?? 'pdf,jpg,jpeg,png',
+                    'max_file_size_mb' => $definition['max_file_size_mb'] ?? 5,
+                    'order' => $definition['order'] ?? ($index + 1),
+                ]);
+            } elseif (!$existing->document_key) {
+                $existing->document_key = $documentKey;
+                $existing->save();
+            }
+        }
+    }
+
+
+    private function userCanAccessApplication($user, Application $application): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Applicant that owns the application
+        if ($application->applicant_id === $user->id) {
+            return true;
+        }
+
+        if ($application->relationLoaded('applicant')) {
+            $applicant = $application->applicant;
+        } else {
+            $applicant = $application->applicant()->first();
+        }
+
+        if ($applicant) {
+            if (method_exists($applicant, 'user') && $applicant->relationLoaded('user')) {
+                $applicantUser = $applicant->user;
+            } elseif (method_exists($applicant, 'user')) {
+                $applicantUser = $applicant->user()->first();
+            } else {
+                $applicantUser = null;
+            }
+
+            if ($applicantUser && $applicantUser->id === $user->id) {
+                return true;
+            }
+
+            if (isset($applicant->user_id) && $applicant->user_id === $user->id) {
+                return true;
+            }
+        }
+
+        // HR roles
+        $roleName = strtolower($user->role->name ?? '');
+        return in_array($roleName, ['hr assistant', 'hr staff', 'hr admin'], true);
+    }
+
+    private function normalizeLabel(?string $value): string
+    {
+        if (!$value) {
+            return '';
+        }
+        return strtolower(trim(preg_replace('/\s+/', ' ', $value)));
+    }
+
+    private function resolveDocumentKey(DocumentRequirement $requirement): ?string
+    {
+        $candidates = [
+            $requirement->document_key ?? null,
+            $requirement->document_name ?? null,
+            $requirement->description ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeLabel($candidate);
+            if ($normalized && isset(self::STANDARD_DOCUMENT_LABELS[$normalized])) {
+                return self::STANDARD_DOCUMENT_LABELS[$normalized];
+            }
+        }
+
+        return $requirement->document_key ?? null;
+    }
+
+    private function mapStatusForOverview(?string $status): string
+    {
+        $normalized = strtolower((string) $status);
+        return match ($normalized) {
+            'received', 'approved' => 'received',
+            'rejected' => 'rejected',
+            'pending', 'pending_review', 'uploaded', 'submitted' => 'pending',
+            default => 'not_submitted',
+        };
+    }
+
+    private function transformSubmission(DocumentSubmission $submission): array
+    {
+        return [
+            'id' => $submission->id,
+            'document_requirement_id' => $submission->document_requirement_id,
+            'file_path' => $submission->file_path,
+            'file_name' => $submission->file_name,
+            'file_type' => $submission->file_type,
+            'file_size' => $submission->file_size,
+            'status' => $submission->status,
+            'rejection_reason' => $submission->rejection_reason,
+            'submitted_at' => optional($submission->submitted_at)->toISOString(),
+            'reviewed_at' => optional($submission->reviewed_at)->toISOString(),
+            'reviewed_by' => $submission->reviewed_by,
+            'reviewer' => $submission->reviewer ? [
+                'id' => $submission->reviewer->id,
+                'name' => $submission->reviewer->name,
+            ] : null,
+        ];
+    }
+
+    private function buildDocumentOverview(Application $application): array
+    {
+        $this->ensureStandardRequirements($application);
+
+        $application->load([
+            'documentRequirements.latestSubmission',
+            'documentRequirements.latestSubmission.reviewer',
+        ]);
+
+        $documents = $application->documentRequirements
+            ->sortBy('order')
+            ->values()
+            ->map(function (DocumentRequirement $requirement) {
+                $documentKey = $this->resolveDocumentKey($requirement);
+                $submission = $requirement->latestSubmission;
+                $status = $submission ? $this->mapStatusForOverview($submission->status) : 'not_submitted';
+                $statusMeta = self::STATUS_META[$status] ?? self::STATUS_META['not_submitted'];
+
+                return [
+                    'requirement_id' => $requirement->id,
+                    'document_key' => $documentKey,
+                    'document_name' => $requirement->document_name,
+                    'description' => $requirement->description,
+                    'is_required' => (bool) $requirement->is_required,
+                    'file_format' => $requirement->file_format,
+                    'max_file_size_mb' => $requirement->max_file_size_mb,
+                    'order' => $requirement->order,
+                    'status' => $status,
+                    'status_label' => $statusMeta['label'],
+                    'status_badge' => $statusMeta['badge'],
+                    'status_description' => $statusMeta['description'],
+                    'submission' => $submission ? $this->transformSubmission($submission) : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $statusCounts = [
+            'not_submitted' => 0,
+            'pending' => 0,
+            'received' => 0,
+            'rejected' => 0,
+        ];
+
+        foreach ($documents as $document) {
+            $status = $document['status'];
+            if (!isset($statusCounts[$status])) {
+                $statusCounts[$status] = 0;
+            }
+            $statusCounts[$status]++;
+        }
+
+        return [
+            'application_id' => $application->id,
+            'documents' => $documents,
+            'status_counts' => $statusCounts,
+            'last_updated_at' => now()->toISOString(),
+        ];
+    }
+
+    public function getOverview(Request $request, $applicationId)
+    {
+        try {
+            $application = Application::with(['applicant.user'])->findOrFail($applicationId);
+
+            if (!$this->userCanAccessApplication($request->user(), $application)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 403);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $this->buildDocumentOverview($application),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching document overview: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch document overview',
+            ], 500);
+        }
+    }
+
+    public function resolveRequirementByKey(Request $request, $applicationId, $documentKey)
+    {
+        try {
+            $application = Application::with(['applicant.user'])->findOrFail($applicationId);
+
+            if (!$this->userCanAccessApplication($request->user(), $application)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 403);
+            }
+
+            $normalizedInput = $this->normalizeLabel($documentKey);
+            $canonicalKey = self::STANDARD_DOCUMENT_LABELS[$normalizedInput] ?? $documentKey;
+
+            $this->ensureStandardRequirements($application);
+
+            $requirement = DocumentRequirement::where('application_id', $applicationId)
+                ->where(function ($query) use ($canonicalKey, $documentKey) {
+                    $query->where('document_key', $canonicalKey)
+                        ->orWhereRaw('LOWER(document_key) = ?', [strtolower($canonicalKey)])
+                        ->orWhereRaw('LOWER(document_name) = ?', [strtolower($documentKey)])
+                        ->orWhereRaw('LOWER(document_name) = ?', [strtolower($canonicalKey)]);
+                })
+                ->first();
+
+            if (!$requirement) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document requirement not found for the specified key.',
+                ], 404);
+            }
+
+            $overview = $this->buildDocumentOverview($application->fresh());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Document requirement resolved successfully.',
+                'requirement' => $requirement,
+                'overview' => $overview,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error resolving document requirement by key: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resolve document requirement.',
+            ], 500);
+        }
+    }
+
     // Get document requirements for an application
     public function getRequirements($applicationId)
     {
         try {
+            $application = Application::findOrFail($applicationId);
+            $this->ensureStandardRequirements($application);
+
             $requirements = DocumentRequirement::where('application_id', $applicationId)
                 ->orderBy('order')
                 ->get();
@@ -192,8 +612,7 @@ class DocumentController extends Controller
             $application = Application::findOrFail($applicationId);
             $requirement = DocumentRequirement::findOrFail($requirementId);
 
-            // Check if user owns this application
-            if ($application->applicant_id !== Auth::id()) {
+            if (!$this->userCanAccessApplication(Auth::user(), $application)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized'
@@ -226,24 +645,14 @@ class DocumentController extends Controller
             $fileName = time() . '_' . $file->getClientOriginalName();
             $filePath = $file->storeAs('document_submissions/' . $applicationId, $fileName, 'public');
 
-            // Check if there's an existing submission (might be rejected)
             $existingSubmission = DocumentSubmission::where('application_id', $applicationId)
                 ->where('document_requirement_id', $requirementId)
                 ->first();
 
-            // When file is confirmed for upload, set status to 'pending_review'
-            // This indicates the file is ready for HR review
-            $newStatus = 'pending_review';
-            
-            // If re-uploading a rejected document, clear submitted_at to allow resubmission
-            $shouldClearSubmittedAt = $existingSubmission && $existingSubmission->status === 'rejected';
-
-            // Delete old file if exists
             if ($existingSubmission && Storage::disk('public')->exists($existingSubmission->file_path)) {
                 Storage::disk('public')->delete($existingSubmission->file_path);
             }
 
-            // Create or update submission
             $submission = DocumentSubmission::updateOrCreate(
                 [
                     'application_id' => $applicationId,
@@ -254,16 +663,21 @@ class DocumentController extends Controller
                     'file_name' => $file->getClientOriginalName(),
                     'file_type' => $file->getClientMimeType(),
                     'file_size' => $file->getSize(),
-                    'status' => $newStatus,
-                    'submitted_at' => $shouldClearSubmittedAt ? null : now(), // Clear if re-uploading rejected, otherwise set timestamp
-                    'rejection_reason' => null // Clear rejection reason on re-upload
+                    'status' => 'pending',
+                    'submitted_at' => now(),
+                    'reviewed_at' => null,
+                    'reviewed_by' => null,
+                    'rejection_reason' => null,
                 ]
             );
+
+            $overview = $this->buildDocumentOverview($application->fresh());
 
             return response()->json([
                 'success' => true,
                 'message' => 'Document uploaded successfully',
-                'data' => $submission->load('documentRequirement')
+                'data' => $submission->load('documentRequirement'),
+                'overview' => $overview,
             ]);
         } catch (\Exception $e) {
             Log::error('Error uploading document: ' . $e->getMessage());
@@ -290,8 +704,7 @@ class DocumentController extends Controller
 
             // Get all uploaded documents that haven't been submitted yet (status is 'pending_review' from upload)
             $uploadedSubmissions = DocumentSubmission::where('application_id', $applicationId)
-                ->where('status', 'pending_review')
-                ->whereNull('submitted_at') // Only documents that haven't been submitted yet
+                ->where('status', 'pending')
                 ->get();
 
             if ($uploadedSubmissions->isEmpty()) {
@@ -326,19 +739,16 @@ class DocumentController extends Controller
             // Update all uploaded documents to 'submitted' status
             // Note: We'll use 'submitted' as a status, but if that doesn't exist in enum, we'll use 'pending_review' with submitted_at set
             DocumentSubmission::where('application_id', $applicationId)
-                ->where('status', 'pending_review')
-                ->whereNull('submitted_at')
+                ->where('status', 'pending')
                 ->update([
-                    'status' => 'pending_review', // Keep as pending_review but mark as submitted
-                    'submitted_at' => now() // This marks them as officially submitted
+                    'submitted_at' => now(),
                 ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Documents submitted successfully for HR review',
                 'data' => DocumentSubmission::where('application_id', $applicationId)
-                    ->where('status', 'pending_review')
-                    ->whereNotNull('submitted_at')
+                    ->where('status', 'pending')
                     ->with('documentRequirement')
                     ->get()
             ]);
@@ -383,7 +793,7 @@ class DocumentController extends Controller
             // Get all approved submissions
             $approvedSubmissions = DocumentSubmission::where('application_id', $applicationId)
                 ->whereIn('document_requirement_id', $requiredIds)
-                ->where('status', 'approved')
+                ->where('status', 'received')
                 ->get();
 
             $approvedIds = $approvedSubmissions->pluck('document_requirement_id')->toArray();
@@ -413,7 +823,7 @@ class DocumentController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'status' => 'required|in:approved,rejected',
+                'status' => 'required|in:approved,received,rejected',
                 'rejection_reason' => 'required_if:status,rejected|nullable|string'
             ]);
 
@@ -426,9 +836,10 @@ class DocumentController extends Controller
 
             $submission = DocumentSubmission::findOrFail($submissionId);
             $application = $submission->application;
+            $status = $request->status === 'approved' ? 'received' : $request->status;
             
             $submission->update([
-                'status' => $request->status,
+                'status' => $status,
                 'rejection_reason' => $request->rejection_reason,
                 'reviewed_at' => now(),
                 'reviewed_by' => Auth::id()
@@ -455,7 +866,7 @@ class DocumentController extends Controller
 
                 $approvedCount = DocumentSubmission::where('application_id', $application->id)
                     ->whereIn('document_requirement_id', $requiredDocs)
-                    ->where('status', 'approved')
+                    ->where('status', 'received')
                     ->count();
 
                 if ($requiredDocs->count() > 0 && $approvedCount === $requiredDocs->count()) {
@@ -478,12 +889,15 @@ class DocumentController extends Controller
                 Log::error('Error checking document approval status: ' . $e->getMessage());
             }
 
+            $overview = $this->buildDocumentOverview($application->fresh());
+
             return response()->json([
                 'success' => true,
                 'message' => 'Document reviewed successfully',
                 'data' => $submission,
                 'all_documents_approved' => $allApproved,
-                'application_status' => $application->status
+                'application_status' => $application->status,
+                'overview' => $overview,
             ]);
         } catch (\Exception $e) {
             Log::error('Error reviewing document: ' . $e->getMessage());

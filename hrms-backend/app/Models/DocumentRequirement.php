@@ -11,6 +11,7 @@ class DocumentRequirement extends Model
 
     protected $fillable = [
         'application_id',
+        'document_key',
         'document_name',
         'description',
         'is_required',
