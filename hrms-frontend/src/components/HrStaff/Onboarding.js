@@ -326,8 +326,7 @@ const Onboarding = () => {
 
         title: "Pag-IBIG MID Submission Form",
 
-        description:
-          "Upload your Pag-IBIG Member's Data Form (MDF) or MID card showing your HDMF number.",
+        description: "Upload your Pag-IBIG Member's Data Form (MDF) or MID card showing your HDMF number.",
 
         keywords: ["pag-ibig", "pagibig", "hdmf"],
 
@@ -339,8 +338,7 @@ const Onboarding = () => {
 
         title: "TIN Submission Form",
 
-        description:
-          "Provide your BIR Form 1902/1905 or any document showing your Tax Identification Number.",
+        description: "Provide your BIR Form 1902/1905 or any document showing your Tax Identification Number.",
 
         keywords: ["tin", "tax identification", "bir"],
 
@@ -741,7 +739,11 @@ const Onboarding = () => {
       );
 
       const requirement = documentRequirements.find((req) => {
-        const name = (req.document_name || "").toLowerCase();
+        if (doc.documentKey && req.document_key && req.document_key === doc.documentKey) {
+          return true;
+        }
+
+        const name = (req.document_name || '').toLowerCase();
 
         return keywords.some((keyword) => keyword && name.includes(keyword));
       });
@@ -753,7 +755,7 @@ const Onboarding = () => {
 
     return documentRequirements
 
-      .filter((req) => !matchedRequirementIds.has(req.id))
+      .filter((req) => !matchedRequirementIds.has(req.id) && req.document_key !== 'tinDocument')
 
       .map((req) => ({
         key: `custom-${req.id}`,
@@ -1719,7 +1721,11 @@ const Onboarding = () => {
       );
 
       if (response.data.success) {
-        await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        if (response.data.overview) {
+          applyDocumentOverview(response.data.overview);
+        } else {
+          await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        }
       }
     } catch (error) {
       console.error("Error deleting document requirement:", error);

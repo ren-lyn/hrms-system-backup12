@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class DocumentController extends Controller
 {
@@ -265,6 +266,57 @@ class DocumentController extends Controller
         return $requirement->document_key ?? null;
     }
 
+    private function generateDocumentKey(string $name, int $applicationId, ?int $ignoreId = null): string
+    {
+        $base = Str::slug($name ?: 'additional-document');
+        if (empty($base)) {
+            $base = 'additional-document';
+        }
+
+        $prefix = 'additional-' . $base;
+        $key = $prefix;
+        $suffix = 1;
+
+        while (
+            DocumentRequirement::where('application_id', $applicationId)
+                ->when($ignoreId, function ($query) use ($ignoreId) {
+                    $query->where('id', '!=', $ignoreId);
+                })
+                ->where('document_key', $key)
+                ->exists()
+        ) {
+            $key = $prefix . '-' . $suffix++;
+        }
+
+        return $key;
+    }
+
+    private function ensureDocumentKey(DocumentRequirement $requirement): string
+    {
+        if ($requirement->document_key) {
+            return $requirement->document_key;
+        }
+
+        $resolved = $this->resolveDocumentKey($requirement);
+        if ($resolved) {
+            $requirement->document_key = $resolved;
+            $requirement->save();
+
+            return $resolved;
+        }
+
+        $generated = $this->generateDocumentKey(
+            $requirement->document_name ?? 'Additional Requirement',
+            $requirement->application_id,
+            $requirement->id
+        );
+
+        $requirement->document_key = $generated;
+        $requirement->save();
+
+        return $generated;
+    }
+
     private function mapStatusForOverview(?string $status): string
     {
         $normalized = strtolower((string) $status);
@@ -340,7 +392,7 @@ class DocumentController extends Controller
             ->sortBy('order')
             ->values()
             ->map(function (DocumentRequirement $requirement) {
-                $documentKey = $this->resolveDocumentKey($requirement);
+                $documentKey = $this->ensureDocumentKey($requirement);
                 $submission = $requirement->latestSubmission;
                 $status = $submission ? $this->mapStatusForOverview($submission->status) : 'not_submitted';
                 $statusMeta = self::STATUS_META[$status] ?? self::STATUS_META['not_submitted'];
@@ -450,6 +502,8 @@ class DocumentController extends Controller
                 ], 404);
             }
 
+            $this->ensureDocumentKey($requirement);
+
             $overview = $this->buildDocumentOverview($application->fresh());
 
             return response()->json([
@@ -476,7 +530,12 @@ class DocumentController extends Controller
 
             $requirements = DocumentRequirement::where('application_id', $applicationId)
                 ->orderBy('order')
-                ->get();
+                ->get()
+                ->map(function (DocumentRequirement $requirement) {
+                    $this->ensureDocumentKey($requirement);
+                    return $requirement;
+                })
+                ->values();
 
             return response()->json([
                 'success' => true,
@@ -512,9 +571,11 @@ class DocumentController extends Controller
             }
 
             $application = Application::findOrFail($applicationId);
+            $documentKey = $this->generateDocumentKey($request->document_name, $applicationId);
 
             $requirement = DocumentRequirement::create([
                 'application_id' => $applicationId,
+                'document_key' => $documentKey,
                 'document_name' => $request->document_name,
                 'description' => $request->description,
                 'is_required' => $request->is_required ?? true,
@@ -579,10 +640,26 @@ class DocumentController extends Controller
     }
 
     // Delete document requirement (HR only)
-    public function deleteRequirement($requirementId)
+    public function deleteRequirement(Request $request, $applicationId, $requirementId)
     {
         try {
-            $requirement = DocumentRequirement::findOrFail($requirementId);
+            $requirement = DocumentRequirement::with(['application', 'submissions'])->findOrFail($requirementId);
+
+            if ((int) $requirement->application_id !== (int) $applicationId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document requirement not found for this application'
+                ], 404);
+            }
+
+            $application = $requirement->application ?: Application::findOrFail($applicationId);
+
+            if (!$this->userCanAccessApplication($request->user(), $application)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
             
             // Delete associated submissions and files
             foreach ($requirement->submissions as $submission) {
@@ -594,9 +671,12 @@ class DocumentController extends Controller
 
             $requirement->delete();
 
+            $overview = $this->buildDocumentOverview($application);
+
             return response()->json([
                 'success' => true,
-                'message' => 'Document requirement deleted successfully'
+                'message' => 'Document requirement deleted successfully',
+                'overview' => $overview
             ]);
         } catch (\Exception $e) {
             Log::error('Error deleting document requirement: ' . $e->getMessage());

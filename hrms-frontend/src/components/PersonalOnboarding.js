@@ -413,6 +413,8 @@ const PersonalOnboarding = () => {
 
   const documentPreviewsRef = useRef({});
 
+  const additionalRequirementsSectionRef = useRef(null);
+
   const [documentOverview, setDocumentOverview] = useState({
     documents: [],
 
@@ -538,6 +540,12 @@ const PersonalOnboarding = () => {
       return defaultDocumentStatuses;
     }
   });
+
+  const [activeAdditionalRequirementKey, setActiveAdditionalRequirementKey] =
+    useState(null);
+
+  const [showAdditionalRequirementModal, setShowAdditionalRequirementModal] =
+    useState(false);
 
   const totalDocumentCount = DOCUMENT_SECTIONS.reduce(
     (count, section) => count + section.documents.length,
@@ -953,6 +961,12 @@ const PersonalOnboarding = () => {
       }
     }
 
+    const additionalDoc = documentDataMap[documentKey];
+
+    if (additionalDoc?.document_name) {
+      return additionalDoc.document_name;
+    }
+
     return documentKey;
   };
 
@@ -1201,8 +1215,13 @@ const PersonalOnboarding = () => {
     const map = {};
 
     (documentOverview.documents || []).forEach((doc) => {
-      if (doc.document_key) {
-        map[doc.document_key] = doc;
+      const derivedKey = doc.document_key || (doc.requirement_id ? `additional-${doc.requirement_id}` : null);
+
+      if (derivedKey) {
+        map[derivedKey] = {
+          ...doc,
+          document_key: derivedKey,
+        };
       }
     });
 
@@ -1221,6 +1240,18 @@ const PersonalOnboarding = () => {
     return map;
   }, [documentDataMap]);
 
+  const standardDocumentKeys = useMemo(() => {
+    const keys = new Set();
+
+    DOCUMENT_SECTIONS.forEach((section) => {
+      section.documents.forEach((document) => {
+        keys.add(document.id);
+      });
+    });
+
+    return keys;
+  }, []);
+
   const mapStatusToLocal = useCallback((status) => {
     switch (status) {
       case "pending":
@@ -1236,6 +1267,130 @@ const PersonalOnboarding = () => {
         return "not_submitted";
     }
   }, []);
+
+  const handleOpenAdditionalRequirementModal = useCallback((documentKey) => {
+    setActiveAdditionalRequirementKey(documentKey);
+    setShowAdditionalRequirementModal(true);
+  }, []);
+
+  const handleCloseAdditionalRequirementModal = useCallback(() => {
+    setShowAdditionalRequirementModal(false);
+    setActiveAdditionalRequirementKey(null);
+  }, []);
+
+  const handleAdditionalRequirementSelection = useCallback(
+    (documentKey) => {
+      if (!documentKey) {
+        return;
+      }
+
+      setCurrentPage("onboarding");
+      setActiveTab("documents");
+      handleOpenAdditionalRequirementModal(documentKey);
+
+      window.setTimeout(() => {
+        const target = additionalRequirementsSectionRef.current;
+
+        if (!target) {
+          return;
+        }
+
+        const mainContent = document.querySelector(".main-content");
+
+        if (mainContent) {
+          const targetRect = target.getBoundingClientRect();
+          const containerRect = mainContent.getBoundingClientRect();
+          const offset =
+            targetRect.top - containerRect.top + mainContent.scrollTop - 24;
+
+          mainContent.scrollTo({
+            top: offset > 0 ? offset : 0,
+            behavior: "smooth",
+          });
+        } else {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 50);
+    },
+    [handleOpenAdditionalRequirementModal]
+  );
+
+  const additionalRequirements = useMemo(() => {
+    const collection = [];
+
+    Object.values(documentDataMap).forEach((doc) => {
+      if (!doc.document_key || !doc.requirement_id) {
+        return;
+      }
+
+      if (standardDocumentKeys.has(doc.document_key)) {
+        return;
+      }
+
+      const overviewStatus = doc.status ?? "not_submitted";
+
+      const localStatusKey = mapStatusToLocal(overviewStatus);
+
+      const statusConfig =
+        DOCUMENT_STATUS_CONFIG[localStatusKey] ??
+        DOCUMENT_STATUS_CONFIG.not_submitted;
+
+      collection.push({
+        documentKey: doc.document_key,
+        requirementId: doc.requirement_id,
+        title: doc.document_name || "Additional Requirement",
+        description: doc.description || "",
+        overviewStatus,
+        statusKey: localStatusKey,
+        statusLabel: doc.status_label || statusConfig.label,
+        statusVariant: doc.status_badge || statusConfig.variant,
+        submission: doc.submission || null,
+        canUpload:
+          typeof doc.can_upload === "boolean" ? doc.can_upload : true,
+        lockUploads:
+          typeof doc.lock_uploads === "boolean" ? doc.lock_uploads : false,
+      });
+    });
+
+    return collection.sort((a, b) => a.title.localeCompare(b.title));
+  }, [documentDataMap, mapStatusToLocal, standardDocumentKeys]);
+
+  const activeAdditionalRequirement = useMemo(() => {
+    if (!activeAdditionalRequirementKey) {
+      return null;
+    }
+
+    return additionalRequirements.find(
+      (req) => req.documentKey === activeAdditionalRequirementKey
+    ) || null;
+  }, [activeAdditionalRequirementKey, additionalRequirements]);
+
+  const activeAdditionalRequirementDoc = useMemo(() => {
+    if (!activeAdditionalRequirementKey) {
+      return null;
+    }
+
+    return documentDataMap[activeAdditionalRequirementKey] || null;
+  }, [activeAdditionalRequirementKey, documentDataMap]);
+
+  useEffect(() => {
+    if (!showAdditionalRequirementModal || !activeAdditionalRequirementKey) {
+      return;
+    }
+
+    const exists = additionalRequirements.some(
+      (req) => req.documentKey === activeAdditionalRequirementKey
+    );
+
+    if (!exists) {
+      setShowAdditionalRequirementModal(false);
+      setActiveAdditionalRequirementKey(null);
+    }
+  }, [
+    showAdditionalRequirementModal,
+    activeAdditionalRequirementKey,
+    additionalRequirements,
+  ]);
 
   const applyDocumentOverview = useCallback(
     (overview) => {
@@ -5959,6 +6114,49 @@ const PersonalOnboarding = () => {
                                     </li>
                                   );
                                 })}
+                                {section.id === "medical-health" &&
+                                  additionalRequirements.length > 0 && (
+                                    <>
+                                      <li className="py-2">
+                                        <div className="fw-semibold text-primary">
+                                          Additional Requirements
+                                        </div>
+                                      </li>
+                                      {additionalRequirements.map((requirement) => (
+                                        <li
+                                          key={`${requirement.documentKey}-status-item`}
+                                          className="d-flex justify-content-between align-items-center status-checklist-item py-2 px-3 bg-white border rounded-3"
+                                          role="button"
+                                          tabIndex={0}
+                                          onClick={() =>
+                                            handleAdditionalRequirementSelection(
+                                              requirement.documentKey
+                                            )
+                                          }
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter" || event.key === " ") {
+                                              event.preventDefault();
+                                              handleAdditionalRequirementSelection(
+                                                requirement.documentKey
+                                              );
+                                            }
+                                          }}
+                                          style={{ cursor: "pointer" }}
+                                        >
+                                          <span className="small">
+                                            {requirement.title || "Additional Requirement"}
+                                          </span>
+
+                                          <Badge
+                                            bg={requirement.statusVariant || "secondary"}
+                                            className="status-badge"
+                                          >
+                                            {requirement.statusLabel || "Pending"}
+                                          </Badge>
+                                        </li>
+                                      ))}
+                                    </>
+                                  )}
                               </ul>
                             </div>
                           </div>
@@ -6103,19 +6301,13 @@ const PersonalOnboarding = () => {
 
                                           <h6 className="mb-0 fw-semibold">
                                             {document.label}
-
                                             {document.isRequired && (
-                                              <span className="text-danger ms-1">
-                                                *
-                                              </span>
+                                              <span className="text-danger ms-1">*</span>
                                             )}
                                           </h6>
 
                                           {!document.isRequired && (
-                                            <Badge
-                                              bg="secondary"
-                                              className="rounded-pill text-uppercase small"
-                                            >
+                                            <Badge bg="secondary" className="rounded-pill text-uppercase small">
                                               Optional
                                             </Badge>
                                           )}
@@ -6126,14 +6318,10 @@ const PersonalOnboarding = () => {
                                             className="ms-auto d-inline-flex align-items-center"
                                             onClick={(event) => {
                                               event.preventDefault();
-
                                               toggleFollowUpInput(document.id);
                                             }}
                                           >
-                                            <FontAwesomeIcon
-                                              icon={faEnvelope}
-                                              className="me-2"
-                                            />
+                                            <FontAwesomeIcon icon={faEnvelope} className="me-2" />
                                             Request Follow-Up
                                           </Button>
                                         </div>
@@ -6145,10 +6333,7 @@ const PersonalOnboarding = () => {
                                         {isLockedByRemote &&
                                           documentData?.upload_lock_reason && (
                                             <div className="alert alert-warning py-2 px-3 mb-3 small">
-                                              <FontAwesomeIcon
-                                                icon={faInfoCircle}
-                                                className="me-2"
-                                              />
+                                              <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
                                               {documentData.upload_lock_reason}
                                             </div>
                                           )}
@@ -6157,48 +6342,32 @@ const PersonalOnboarding = () => {
                                           <div className="p-3 bg-white border rounded-3">
                                             <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
                                               <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
-                                                <FontAwesomeIcon
-                                                  icon={
-                                                    localFile.type ===
-                                                    "application/pdf"
-                                                      ? faFilePdf
-                                                      : faFileImage
-                                                  }
-                                                />
+                                                <FontAwesomeIcon icon={
+                                                  localFile.type === "application/pdf"
+                                                    ? faFilePdf
+                                                    : faFileImage
+                                                } />
                                               </div>
-
                                               <div className="flex-grow-1">
                                                 <div className="fw-semibold">
                                                   {localFile.name}
                                                 </div>
-
                                                 <div className="text-muted small">
-                                                  {formatFileSize(
-                                                    localFile.size
-                                                  )}{" "}
-                                                  &nbsp;•&nbsp;{" "}
-                                                  {localFile.type || "File"}
+                                                  {formatFileSize(localFile.size)} &nbsp;•&nbsp; {localFile.type || "File"}
                                                 </div>
                                               </div>
                                             </div>
 
                                             {documentPreviews[document.id] &&
-                                              localFile?.type?.startsWith(
-                                                "image/"
-                                              ) && (
+                                              localFile?.type?.startsWith("image/") && (
                                                 <div className="mt-3">
                                                   <img
-                                                    src={
-                                                      documentPreviews[
-                                                        document.id
-                                                      ]
-                                                    }
+                                                    src={documentPreviews[document.id]}
                                                     alt={`${document.label} preview`}
                                                     style={{
                                                       maxWidth: "180px",
                                                       borderRadius: "8px",
-                                                      border:
-                                                        "1px solid #dee2e6",
+                                                      border: "1px solid #dee2e6",
                                                     }}
                                                   />
                                                 </div>
@@ -6210,23 +6379,16 @@ const PersonalOnboarding = () => {
                                           <div className="p-3 bg-white border rounded-3">
                                             <div className="d-flex flex-column flex-md-row align-items-md-center gap-3">
                                               <div className="file-icon-wrapper d-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary">
-                                                <FontAwesomeIcon
-                                                  icon={
-                                                    remoteSubmission.file_type
-                                                      ?.toLowerCase()
-                                                      .includes("pdf")
-                                                      ? faFilePdf
-                                                      : faFileImage
-                                                  }
-                                                />
+                                                <FontAwesomeIcon icon={
+                                                  remoteSubmission.file_type?.toLowerCase().includes("pdf")
+                                                    ? faFilePdf
+                                                    : faFileImage
+                                                } />
                                               </div>
-
                                               <div className="flex-grow-1">
                                                 <div className="fw-semibold">
-                                                  {remoteSubmission.file_name ||
-                                                    "Uploaded Document"}
+                                                  {remoteSubmission.file_name || "Uploaded Document"}
                                                 </div>
-
                                                 {remoteFileMeta && (
                                                   <div className="text-muted small">
                                                     {remoteFileMeta}
@@ -6234,21 +6396,13 @@ const PersonalOnboarding = () => {
                                                 )}
                                               </div>
                                             </div>
-
-                                            {(submittedDisplay ||
-                                              reviewedDisplay) && (
+                                            {(submittedDisplay || reviewedDisplay) && (
                                               <div className="text-muted small mt-2">
                                                 {submittedDisplay && (
-                                                  <div>
-                                                    Submitted:{" "}
-                                                    {submittedDisplay}
-                                                  </div>
+                                                  <div>Submitted: {submittedDisplay}</div>
                                                 )}
-
                                                 {reviewedDisplay && (
-                                                  <div>
-                                                    Reviewed: {reviewedDisplay}
-                                                  </div>
+                                                  <div>Reviewed: {reviewedDisplay}</div>
                                                 )}
                                               </div>
                                             )}
@@ -6262,13 +6416,9 @@ const PersonalOnboarding = () => {
                                               className={selectButtonClass}
                                               style={selectButtonStyle}
                                             >
-                                              <FontAwesomeIcon
-                                                icon={faUpload}
-                                                className="me-2"
-                                              />
+                                              <FontAwesomeIcon icon={faUpload} className="me-2" />
                                               Select File
                                             </label>
-
                                             <Form.Control
                                               id={`${document.id}-upload`}
                                               type="file"
@@ -6281,25 +6431,18 @@ const PersonalOnboarding = () => {
                                               }
                                               onChange={(event) => {
                                                 const input = event.target;
-
                                                 const selectedFile =
                                                   input.files && input.files[0]
                                                     ? input.files[0]
                                                     : null;
-
-                                                handleDocumentChange(
-                                                  document.id,
-                                                  selectedFile
-                                                );
-
+                                                handleDocumentChange(document.id, selectedFile);
                                                 input.value = "";
                                               }}
                                             />
                                           </div>
 
                                           <div className="text-muted small">
-                                            Upload PDF, JPG, JPEG, or PNG
-                                            &nbsp;•&nbsp; Max 5 MB
+                                            Upload PDF, JPG, JPEG, or PNG &nbsp;•&nbsp; Max 5 MB
                                           </div>
                                         </div>
 
@@ -6310,7 +6453,6 @@ const PersonalOnboarding = () => {
                                             type="button"
                                             onClick={(event) => {
                                               event.preventDefault();
-
                                               handleSubmitDocument(document.id);
                                             }}
                                             disabled={!canSubmitDocument}
@@ -6326,10 +6468,7 @@ const PersonalOnboarding = () => {
                                               </>
                                             ) : (
                                               <>
-                                                <FontAwesomeIcon
-                                                  icon={faUpload}
-                                                  className="me-2"
-                                                />
+                                                <FontAwesomeIcon icon={faUpload} className="me-2" />
                                                 Submit Document
                                               </>
                                             )}
@@ -6342,18 +6481,11 @@ const PersonalOnboarding = () => {
                                             disabled={!canPreviewDocument}
                                             onClick={(event) => {
                                               event.preventDefault();
-
                                               if (!canPreviewDocument) return;
-
-                                              handlePreviewDocument(
-                                                document.id
-                                              );
+                                              handlePreviewDocument(document.id);
                                             }}
                                           >
-                                            <FontAwesomeIcon
-                                              icon={faEye}
-                                              className="me-2"
-                                            />
+                                            <FontAwesomeIcon icon={faEye} className="me-2" />
                                             Preview
                                           </Button>
 
@@ -6363,24 +6495,15 @@ const PersonalOnboarding = () => {
                                               size="sm"
                                               type="button"
                                               disabled={
-                                                isUploadingThisDocument ||
-                                                isLockedByRemote
+                                                isUploadingThisDocument || isLockedByRemote
                                               }
                                               onClick={(event) => {
                                                 event.preventDefault();
-
-                                                if (isUploadingThisDocument)
-                                                  return;
-
-                                                handleRemoveDocument(
-                                                  document.id
-                                                );
+                                                if (isUploadingThisDocument) return;
+                                                handleRemoveDocument(document.id);
                                               }}
                                             >
-                                              <FontAwesomeIcon
-                                                icon={faTimes}
-                                                className="me-2"
-                                              />
+                                              <FontAwesomeIcon icon={faTimes} className="me-2" />
                                               Remove
                                             </Button>
                                           )}
@@ -6388,65 +6511,41 @@ const PersonalOnboarding = () => {
 
                                         {uploadErrors[document.id] && (
                                           <div className="mt-3">
-                                            <Alert
-                                              variant="danger"
-                                              className="mb-0 py-2 px-3"
-                                            >
+                                            <Alert variant="danger" className="mb-0 py-2 px-3">
                                               {uploadErrors[document.id]}
                                             </Alert>
                                           </div>
                                         )}
 
                                         {statusKey === "under_review" && (
-                                          <Alert
-                                            variant="info"
-                                            className="mt-3"
-                                          >
-                                            Awaiting HR review. We will notify
-                                            you once a decision is made.
+                                          <Alert variant="info" className="mt-3">
+                                            Awaiting HR review. We will notify you once a decision is made.
                                           </Alert>
                                         )}
 
                                         {statusKey === "approved" && (
-                                          <Alert
-                                            variant="success"
-                                            className="mt-3"
-                                          >
-                                            Document approved by HR. No further
-                                            action required.
+                                          <Alert variant="success" className="mt-3">
+                                            Document approved by HR. No further action required.
                                           </Alert>
                                         )}
 
-                                        {statusKey ===
-                                          "resubmission_required" && (
-                                          <Alert
-                                            variant="warning"
-                                            className="mt-3"
-                                          >
-                                            <strong>HR Feedback:</strong>{" "}
-                                            {rejectionReason ||
-                                              "Please upload a corrected version of this document."}
+                                        {statusKey === "resubmission_required" && (
+                                          <Alert variant="warning" className="mt-3">
+                                            <strong>HR Feedback:</strong> {rejectionReason || "Please upload a corrected version of this document."}
                                           </Alert>
                                         )}
 
                                         {showFollowUpInput[document.id] && (
                                           <div className="mt-3 follow-up-container">
-                                            <Form.Group
-                                              controlId={`${document.id}-follow-up`}
-                                            >
+                                            <Form.Group controlId={`${document.id}-follow-up`}>
                                               <Form.Label className="small text-muted">
                                                 Follow-Up Message
                                               </Form.Label>
-
                                               <Form.Control
                                                 as="textarea"
                                                 rows={2}
                                                 placeholder="Enter message..."
-                                                value={
-                                                  followUpMessages[
-                                                    document.id
-                                                  ] || ""
-                                                }
+                                                value={followUpMessages[document.id] || ""}
                                                 onChange={(event) =>
                                                   handleFollowUpMessageChange(
                                                     document.id,
@@ -6455,7 +6554,6 @@ const PersonalOnboarding = () => {
                                                 }
                                               />
                                             </Form.Group>
-
                                             <div className="d-flex gap-2 justify-content-end mt-2">
                                               <Button
                                                 variant="outline-secondary"
@@ -6463,25 +6561,18 @@ const PersonalOnboarding = () => {
                                                 type="button"
                                                 onClick={(event) => {
                                                   event.preventDefault();
-
-                                                  toggleFollowUpInput(
-                                                    document.id
-                                                  );
+                                                  toggleFollowUpInput(document.id);
                                                 }}
                                               >
                                                 Cancel
                                               </Button>
-
                                               <Button
                                                 variant="primary"
                                                 size="sm"
                                                 type="button"
                                                 className="followup-submit-card-btn"
                                                 onClick={(event) =>
-                                                  handleFollowUpSubmit(
-                                                    document.id,
-                                                    event
-                                                  )
+                                                  handleFollowUpSubmit(document.id, event)
                                                 }
                                               >
                                                 Submit Follow-Up
@@ -6496,15 +6587,92 @@ const PersonalOnboarding = () => {
                               );
                             })}
                           </div>
+
+                          {section.id === "medical-health" && (
+                            <div className="mt-4" ref={additionalRequirementsSectionRef}>
+                              <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-3">
+                                <div>
+                                  <h5 className="mb-1 text-primary fw-semibold">
+                                    Additional Requirements
+                                  </h5>
+                                  <p className="mb-0 text-muted small">
+                                    Documents requested by HR will appear here for your submission.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {additionalRequirements.length === 0 ? (
+                                <div className="p-3 bg-light border rounded-3 text-muted small">
+                                  HR hasn't requested any document yet.
+                                </div>
+                              ) : (
+                                <div className="d-flex flex-column gap-3">
+                                  {additionalRequirements.map((requirement) => (
+                                    <div
+                                      key={requirement.documentKey}
+                                      className="p-3 border rounded-3 bg-white shadow-sm"
+                                    >
+                                      <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
+                                        <div>
+                                          <div className="d-flex align-items-center gap-2 mb-2">
+                                            <Badge
+                                              bg={requirement.statusVariant}
+                                              className="status-badge"
+                                            >
+                                              {requirement.statusLabel}
+                                            </Badge>
+                                            <h6 className="mb-0 fw-semibold">
+                                              {requirement.title}
+                                            </h6>
+                                          </div>
+                                          {requirement.description && (
+                                            <p className="mb-2 text-muted small">
+                                              {requirement.description}
+                                            </p>
+                                          )}
+                                          {requirement.submission?.submitted_at && (
+                                            <div className="text-muted small">
+                                              Submitted: {formatTimestampForDisplay(requirement.submission.submitted_at)}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="d-flex flex-column align-items-start align-items-lg-end gap-2">
+                                          <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleOpenAdditionalRequirementModal(
+                                                requirement.documentKey
+                                              )
+                                            }
+                                          >
+                                            {requirement.submission ? "View / Update" : "Upload Document"}
+                                          </Button>
+                                          {requirement.submission && (
+                                            <Button
+                                              variant="outline-secondary"
+                                              size="sm"
+                                              onClick={() =>
+                                                handlePreviewDocument(
+                                                  requirement.documentKey
+                                                )
+                                              }
+                                            >
+                                              <FontAwesomeIcon icon={faEye} className="me-2" />
+                                              Preview
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </Card.Body>
                       </Card>
                     ))}
-
-                    <div className="text-muted small">
-                      Files are stored securely and reviewed by HR. You can
-                      update your submissions anytime before onboarding is
-                      finalized.
-                    </div>
                   </Form>
                 </div>
               )}
