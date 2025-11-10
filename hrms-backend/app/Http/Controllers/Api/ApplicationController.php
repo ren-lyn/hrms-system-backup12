@@ -14,9 +14,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Carbon\Carbon;
 
 class ApplicationController extends Controller
 {
+    private const DOCUMENT_SUBMISSION_WINDOW_DAYS = 10;
+
     // Get all applications for HR staff to view
     public function index(Request $request)
     {
@@ -183,6 +186,10 @@ class ApplicationController extends Controller
             'status' => $request->status,
             'reviewed_at' => now(),
         ]);
+
+        if (in_array($request->status, ['Document Submission', 'Onboarding'], true)) {
+            $this->ensureDocumentSubmissionWindowInitialized($application);
+        }
 
         // If status changed to ShortListed, automatically create onboarding record
         if ($request->status === 'ShortListed') {
@@ -960,6 +967,27 @@ class ApplicationController extends Controller
                 'message' => 'Failed to accept offer. Please try again.',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
+        }
+    }
+
+    private function ensureDocumentSubmissionWindowInitialized(Application $application): void
+    {
+        $updates = [];
+
+        if (!$application->documents_start_date) {
+            $updates['documents_start_date'] = Carbon::now();
+        }
+
+        $startDate = isset($updates['documents_start_date'])
+            ? Carbon::parse($updates['documents_start_date'])
+            : ($application->documents_start_date ? $application->documents_start_date->copy() : null);
+
+        if ($startDate && !$application->documents_deadline) {
+            $updates['documents_deadline'] = $startDate->copy()->addDays(self::DOCUMENT_SUBMISSION_WINDOW_DAYS);
+        }
+
+        if (!empty($updates)) {
+            $application->forceFill($updates)->save();
         }
     }
     

@@ -9,12 +9,26 @@ class Application extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['job_posting_id', 'applicant_id', 'status', 'applied_at', 'resume_path', 'reviewed_at', 'offer_accepted_at'];
+    protected $fillable = [
+        'job_posting_id',
+        'applicant_id',
+        'status',
+        'applied_at',
+        'resume_path',
+        'reviewed_at',
+        'offer_accepted_at',
+        'documents_start_date',
+        'documents_deadline',
+        'documents_locked_at',
+    ];
 
     protected $casts = [
         'applied_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'offer_accepted_at' => 'datetime',
+        'documents_start_date' => 'datetime',
+        'documents_deadline' => 'datetime',
+        'documents_locked_at' => 'datetime',
     ];
 
     public function jobPosting()
@@ -40,5 +54,10 @@ class Application extends Model
     public function documentSubmissions()
     {
         return $this->hasMany(DocumentSubmission::class);
+    }
+
+    public function documentFollowUpRequests()
+    {
+        return $this->hasMany(DocumentFollowUpRequest::class);
     }
 }

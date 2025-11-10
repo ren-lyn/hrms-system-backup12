@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\PasswordChangeRequestController;
 use App\Http\Controllers\Api\SecurityAlertController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\DocumentFollowUpController;
 
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -204,6 +205,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/check-approved', [DocumentController::class, 'checkAllApproved']);
         Route::get('/submissions/{submissionId}/download', [DocumentController::class, 'downloadSubmission']);
         Route::delete('/submissions/{submissionId}', [DocumentController::class, 'deleteSubmission']);
+
+        // Follow-up requests
+        Route::get('/follow-ups', [DocumentFollowUpController::class, 'index']);
+        Route::post('/follow-ups', [DocumentFollowUpController::class, 'store']);
+        Route::get('/follow-ups/{followUpId}/attachment', [DocumentFollowUpController::class, 'downloadAttachment']);
+
+        Route::middleware(['role:HR Assistant,HR Staff,HR Admin'])->group(function () {
+            Route::post('/follow-ups/{followUpId}/accept', [DocumentFollowUpController::class, 'accept']);
+            Route::post('/follow-ups/{followUpId}/reject', [DocumentFollowUpController::class, 'reject']);
+        });
         
         // Review submissions (HR only)
         Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
