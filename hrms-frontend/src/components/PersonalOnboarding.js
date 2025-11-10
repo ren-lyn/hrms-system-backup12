@@ -414,6 +414,7 @@ const PersonalOnboarding = () => {
   const documentPreviewsRef = useRef({});
 
   const additionalRequirementsSectionRef = useRef(null);
+  const documentFieldRefs = useRef({});
 
   const [documentOverview, setDocumentOverview] = useState({
     documents: [],
@@ -435,6 +436,8 @@ const PersonalOnboarding = () => {
     },
 
     lastUpdatedAt: null,
+    submissionWindow: null,
+    submissionLocked: false,
   });
 
   const [documentLoading, setDocumentLoading] = useState(false);
@@ -443,9 +446,17 @@ const PersonalOnboarding = () => {
 
   const [applicantName, setApplicantName] = useState("Applicant");
 
-  const [followUpMessages, setFollowUpMessages] = useState({});
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
-  const [showFollowUpInput, setShowFollowUpInput] = useState({});
+  const [followUpTargetDocument, setFollowUpTargetDocument] = useState(null);
+
+  const [followUpMessage, setFollowUpMessage] = useState("");
+
+  const [followUpAttachment, setFollowUpAttachment] = useState(null);
+
+  const [followUpError, setFollowUpError] = useState("");
+
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
 
   const overviewStatusBadges = useMemo(
     () => [
@@ -1274,8 +1285,106 @@ const PersonalOnboarding = () => {
   }, []);
 
   const handleCloseAdditionalRequirementModal = useCallback(() => {
+    if (activeAdditionalRequirementKey) {
+      const key = activeAdditionalRequirementKey;
+
+      setUploadErrors((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+
+      setDocumentUploads((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+
+      setDocumentPreviews((prev) => {
+        if (!prev[key]) return prev;
+        const next = { ...prev };
+        const previewUrl = next[key];
+        if (previewUrl && typeof previewUrl === "string" && previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        delete next[key];
+        return next;
+      });
+
+      if (documentPreviewsRef.current[key]) {
+        const previewUrl = documentPreviewsRef.current[key];
+        if (previewUrl && typeof previewUrl === "string" && previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        delete documentPreviewsRef.current[key];
+      }
+    }
+
     setShowAdditionalRequirementModal(false);
     setActiveAdditionalRequirementKey(null);
+  }, [activeAdditionalRequirementKey]);
+
+  const handleAdditionalRequirementFileChange = (event) => {
+    if (!activeAdditionalRequirementKey) {
+      return;
+    }
+
+    const file = event.target.files?.[0] || null;
+
+    if (file) {
+      handleDocumentChange(activeAdditionalRequirementKey, file);
+    }
+
+    if (event.target) {
+      event.target.value = "";
+    }
+  };
+
+  const handleAdditionalRequirementSubmit = async (event) => {
+    if (event) {
+      event.preventDefault();
+    }
+
+    if (!activeAdditionalRequirementKey) {
+      showToast(
+        "error",
+        "No Requirement Selected",
+        "Please choose a requirement before submitting."
+      );
+      return;
+    }
+
+    if (!additionalRequirementCanUpload) {
+      showToast(
+        "error",
+        "Uploads Locked",
+        additionalRequirementLockReason ||
+          "Uploads for this requirement are currently locked."
+      );
+      return;
+    }
+
+    const wasSuccessful = await handleSubmitDocument(
+      activeAdditionalRequirementKey
+    );
+
+    if (wasSuccessful) {
+      handleCloseAdditionalRequirementModal();
+    }
+  };
+
+  const setDocumentFieldRef = useCallback((documentKey, node) => {
+    if (!documentKey) {
+      return;
+    }
+
+    if (node) {
+      documentFieldRefs.current[documentKey] = node;
+    } else {
+      delete documentFieldRefs.current[documentKey];
+    }
   }, []);
 
   const handleAdditionalRequirementSelection = useCallback(
@@ -1424,6 +1533,8 @@ const PersonalOnboarding = () => {
         statusCounts,
 
         lastUpdatedAt: overview.last_updated_at || null,
+        submissionWindow: overview.documents_submission_window || null,
+        submissionLocked: Boolean(overview.documents_submission_locked),
       });
 
       setDocumentError("");
@@ -1531,28 +1642,12 @@ const PersonalOnboarding = () => {
     });
   }, [interviewData]);
 
-  const toggleFollowUpInput = (documentKey) => {
-    setShowFollowUpInput((prev) => ({
-      ...prev,
-
-      [documentKey]: !prev[documentKey],
-    }));
-  };
-
-  const handleFollowUpMessageChange = (documentKey, message) => {
-    setFollowUpMessages((prev) => ({
-      ...prev,
-
-      [documentKey]: message,
-    }));
-  };
-
-  const handleFollowUpSubmit = async (documentKey, event = null) => {
+  const handleFollowUpSubmit = async (event = null) => {
     if (event) {
       event.preventDefault();
     }
 
-    const trimmedMessage = (followUpMessages[documentKey] || "").trim();
+    const trimmedMessage = (followUpMessage || "").trim();
 
     if (!trimmedMessage) {
       showToast(
@@ -1563,6 +1658,25 @@ const PersonalOnboarding = () => {
 
       return;
     }
+
+    if (followUpSubmitting) {
+      return;
+    }
+
+    const documentKey = followUpTargetDocument;
+
+    if (!documentKey) {
+      showToast(
+        "error",
+        "No Document Selected",
+        "Please choose a document before sending a follow-up."
+      );
+
+      return;
+    }
+
+    setFollowUpError("");
+    setFollowUpSubmitting(true);
 
     try {
       const token = localStorage.getItem("token");
@@ -1581,23 +1695,19 @@ const PersonalOnboarding = () => {
 
       await new Promise((resolve) => setTimeout(resolve, 500));
 
+      console.log("Follow-up payload", {
+        documentKey,
+        message: trimmedMessage,
+        attachment: followUpAttachment,
+      });
+
       showToast(
         "success",
         "Follow-Up Sent",
         "Your follow-up message has been sent to HR."
       );
 
-      setShowFollowUpInput((prev) => ({
-        ...prev,
-
-        [documentKey]: false,
-      }));
-
-      setFollowUpMessages((prev) => ({
-        ...prev,
-
-        [documentKey]: "",
-      }));
+      handleCloseFollowUpModal();
     } catch (error) {
       console.error("Error sending follow-up request:", error);
 
@@ -1606,7 +1716,44 @@ const PersonalOnboarding = () => {
         "Follow-Up Failed",
         "Unable to send follow-up request. Please try again later."
       );
+    } finally {
+      setFollowUpSubmitting(false);
     }
+  };
+
+  const handleOpenFollowUpModal = (documentKey) => {
+    setFollowUpTargetDocument(documentKey);
+    setFollowUpMessage("");
+    setFollowUpAttachment(null);
+    setFollowUpError("");
+    setShowFollowUpModal(true);
+  };
+
+  const handleCloseFollowUpModal = () => {
+    setShowFollowUpModal(false);
+    setFollowUpTargetDocument(null);
+    setFollowUpMessage("");
+    setFollowUpAttachment(null);
+    setFollowUpError("");
+    setFollowUpSubmitting(false);
+  };
+
+  const handleFollowUpAttachmentChange = (event) => {
+    const file = event.target.files?.[0] || null;
+
+    if (file && file.size > 5 * 1024 * 1024) {
+      setFollowUpError("Attachment must be 5MB or less.");
+      event.target.value = "";
+      return;
+    }
+
+    setFollowUpError("");
+    setFollowUpAttachment(file);
+  };
+
+  const handleRemoveFollowUpAttachment = () => {
+    setFollowUpAttachment(null);
+    setFollowUpError("");
   };
 
   const fetchDocumentOverview = useCallback(async () => {
@@ -1652,6 +1799,7 @@ const PersonalOnboarding = () => {
   }, [activeApplicationId, applyDocumentOverview]);
 
   const handleSubmitDocument = async (documentKey) => {
+    let success = false;
     const selectedFile = documentUploads[documentKey];
 
     if (!selectedFile) {
@@ -1663,7 +1811,7 @@ const PersonalOnboarding = () => {
         )} before submitting.`
       );
 
-      return;
+      return false;
     }
 
     if (!activeApplicationId) {
@@ -1673,7 +1821,7 @@ const PersonalOnboarding = () => {
         "We could not determine your application. Please refresh and try again."
       );
 
-      return;
+      return false;
     }
 
     let requirementId = requirementIdsByDocumentKey[documentKey];
@@ -1684,7 +1832,7 @@ const PersonalOnboarding = () => {
       if (resolvedRequirement?.id) {
         requirementId = resolvedRequirement.id;
       } else {
-        return;
+        return false;
       }
     }
 
@@ -1697,7 +1845,7 @@ const PersonalOnboarding = () => {
         "Please log in again to continue."
       );
 
-      return;
+      return false;
     }
 
     const formData = new FormData();
@@ -1758,6 +1906,8 @@ const PersonalOnboarding = () => {
         "Submission Successful",
         `${getDocumentLabel(documentKey)} successfully sent to HR.`
       );
+
+      success = true;
     } catch (error) {
       console.error("Error submitting document:", error);
 
@@ -1776,6 +1926,8 @@ const PersonalOnboarding = () => {
     } finally {
       setUploadingDocumentKey(null);
     }
+
+    return success;
   };
 
   useEffect(() => {
@@ -3528,6 +3680,154 @@ const PersonalOnboarding = () => {
   const pendingRequiredDocuments = requiredDocumentKeys.filter(
     (key) => !documentUploads[key]
   ).length;
+
+  const submissionWindow = documentOverviewMeta.submissionWindow;
+  const submissionHasStarted = submissionWindow?.has_started ?? false;
+  const submissionDaysRemaining =
+    submissionWindow && typeof submissionWindow.days_remaining === "number"
+      ? submissionWindow.days_remaining
+      : null;
+  const submissionDaysRemainingDisplay =
+    submissionDaysRemaining === null
+      ? null
+      : Math.max(0, Math.floor(submissionDaysRemaining));
+  const submissionTotalDays =
+    submissionWindow && typeof submissionWindow.total_days === "number"
+      ? submissionWindow.total_days
+      : 10;
+  const submissionCountdownVariant =
+    submissionDaysRemainingDisplay === null
+      ? "secondary"
+      : submissionDaysRemainingDisplay <= 3
+      ? "danger"
+      : submissionDaysRemainingDisplay <= 5
+      ? "warning"
+      : "success";
+  const submissionCountdownLabel =
+    submissionHasStarted && submissionDaysRemainingDisplay !== null
+      ? `📅 ${submissionDaysRemainingDisplay} ${
+          submissionDaysRemainingDisplay === 1 ? "day" : "days"
+        } left to submit your forms.`
+      : `📅 Countdown will begin once HR moves you to onboarding. You'll have ${submissionTotalDays}-day window to submit your forms.`;
+  const isSubmissionLocked = documentOverviewMeta.submissionLocked;
+  const submissionLockMessage =
+    submissionWindow?.lock_reason ||
+    "⏰ Submission period has ended. Please contact HR.";
+
+  const followUpDocumentLabel = followUpTargetDocument
+    ? getDocumentLabel(followUpTargetDocument)
+    : "Document";
+
+  const activeAdditionalRequirementTitle =
+    activeAdditionalRequirement?.title ||
+    activeAdditionalRequirementDoc?.document_name ||
+    "Additional Requirement";
+
+  const additionalRequirementDescription =
+    activeAdditionalRequirement?.description ||
+    activeAdditionalRequirementDoc?.description ||
+    "";
+
+  const additionalRequirementStatusLabel =
+    activeAdditionalRequirement?.statusLabel ||
+    activeAdditionalRequirementDoc?.status_label ||
+    DOCUMENT_STATUS_CONFIG.not_submitted.label;
+
+  const additionalRequirementStatusVariant =
+    activeAdditionalRequirement?.statusVariant ||
+    activeAdditionalRequirementDoc?.status_badge ||
+    DOCUMENT_STATUS_CONFIG.not_submitted.variant;
+
+  const additionalRequirementRemoteSubmission =
+    activeAdditionalRequirement?.submission ||
+    activeAdditionalRequirementDoc?.submission ||
+    null;
+
+  const additionalRequirementLocalFile =
+    activeAdditionalRequirementKey &&
+    documentUploads[activeAdditionalRequirementKey]
+      ? documentUploads[activeAdditionalRequirementKey]
+      : null;
+
+  const additionalRequirementLocalPreview =
+    activeAdditionalRequirementKey &&
+    documentPreviews[activeAdditionalRequirementKey]
+      ? documentPreviews[activeAdditionalRequirementKey]
+      : null;
+
+  const additionalRequirementUploadError =
+    activeAdditionalRequirementKey &&
+    uploadErrors[activeAdditionalRequirementKey]
+      ? uploadErrors[activeAdditionalRequirementKey]
+      : "";
+
+  const additionalRequirementUploading =
+    activeAdditionalRequirementKey &&
+    uploadingDocumentKey === activeAdditionalRequirementKey;
+
+  const additionalRequirementAllowedExt = ["pdf", "jpg", "jpeg", "png"];
+
+  const additionalRequirementFileFormats = additionalRequirementAllowedExt
+    .join(",");
+
+  const additionalRequirementMaxSize =
+    activeAdditionalRequirementDoc?.max_file_size_mb || 5;
+
+  const additionalRequirementFileAccept = additionalRequirementAllowedExt
+    .map((ext) => `.${ext}`)
+    .join(",");
+
+  const additionalRequirementUploadsLocked = Boolean(
+    isSubmissionLocked ||
+      activeAdditionalRequirement?.lockUploads ||
+      activeAdditionalRequirementDoc?.lock_uploads
+  );
+
+  const additionalRequirementCanUpload =
+    !additionalRequirementUploadsLocked &&
+    (typeof activeAdditionalRequirement?.canUpload === "boolean"
+      ? activeAdditionalRequirement.canUpload
+      : typeof activeAdditionalRequirementDoc?.can_upload === "boolean"
+      ? activeAdditionalRequirementDoc.can_upload
+      : true);
+
+  const additionalRequirementLockReason =
+    (activeAdditionalRequirementDoc?.upload_lock_reason ||
+      (isSubmissionLocked ? submissionLockMessage : null)) ?? null;
+
+  const scrollToDocumentField = useCallback(
+    (documentKey) => {
+      if (!documentKey) {
+        return;
+      }
+
+      setCurrentPage("onboarding");
+      setActiveTab("documents");
+
+      window.setTimeout(() => {
+        const target = documentFieldRefs.current[documentKey];
+        if (!target) {
+          return;
+        }
+
+        const mainContent = document.querySelector(".main-content");
+        if (mainContent) {
+          const targetRect = target.getBoundingClientRect();
+          const containerRect = mainContent.getBoundingClientRect();
+          const offset =
+            targetRect.top - containerRect.top + mainContent.scrollTop - 24;
+
+          mainContent.scrollTo({
+            top: offset > 0 ? offset : 0,
+            behavior: "smooth",
+          });
+        } else {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
+    },
+    []
+  );
 
   const NavigationTabs = () => (
     <div
@@ -6001,16 +6301,28 @@ const PersonalOnboarding = () => {
                     </div>
 
                     <div className="text-lg-end">
-                      <Badge
-                        bg={
-                          pendingRequiredDocuments === 0 ? "success" : "warning"
-                        }
-                        className="rounded-pill px-3 py-2 text-uppercase fw-semibold"
-                      >
-                        {uploadedDocumentsCount}/{totalDocumentCount} attached
-                      </Badge>
+                      {isSubmissionLocked ? (
+                        <div className="d-inline-flex align-items-center text-danger fw-semibold submission-countdown-expired">
+                          <FontAwesomeIcon icon={faClock} className="me-2" />
+                          <span>{submissionLockMessage}</span>
+                        </div>
+                      ) : (
+                        <Badge
+                          bg={submissionCountdownVariant}
+                          className="rounded-pill px-3 py-2 fw-semibold submission-countdown-badge"
+                        >
+                          {submissionCountdownLabel}
+                        </Badge>
+                      )}
                     </div>
                   </div>
+
+                  {isSubmissionLocked && (
+                    <Alert variant="danger" className="mb-3">
+                      <FontAwesomeIcon icon={faClock} className="me-2" />
+                      {submissionLockMessage}
+                    </Alert>
+                  )}
 
                   {documentError && (
                     <Alert variant="danger" className="mb-3">
@@ -6100,6 +6412,15 @@ const PersonalOnboarding = () => {
                                     <li
                                       key={`${document.id}-status-item`}
                                       className="d-flex justify-content-between align-items-center status-checklist-item py-2 px-3 bg-white border rounded-3"
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => scrollToDocumentField(document.id)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          scrollToDocumentField(document.id);
+                                        }
+                                      }}
                                     >
                                       <span className="small">
                                         {document.label}
@@ -6287,7 +6608,11 @@ const PersonalOnboarding = () => {
                                 remoteSubmission?.rejection_reason;
 
                               return (
-                                <div key={document.id} className="col-12">
+                                <div
+                                  key={document.id}
+                                  className="col-12"
+                                  ref={(node) => setDocumentFieldRef(document.id, node)}
+                                >
                                   <div className="p-3 border rounded-3 bg-light bg-opacity-50 document-upload-field">
                                     <div className="d-flex flex-column flex-lg-row gap-3">
                                       <div className="flex-grow-1">
@@ -6318,7 +6643,9 @@ const PersonalOnboarding = () => {
                                             className="ms-auto d-inline-flex align-items-center"
                                             onClick={(event) => {
                                               event.preventDefault();
-                                              toggleFollowUpInput(document.id);
+                                              handleOpenFollowUpModal(
+                                                document.id
+                                              );
                                             }}
                                           >
                                             <FontAwesomeIcon icon={faEnvelope} className="me-2" />
@@ -6535,51 +6862,6 @@ const PersonalOnboarding = () => {
                                           </Alert>
                                         )}
 
-                                        {showFollowUpInput[document.id] && (
-                                          <div className="mt-3 follow-up-container">
-                                            <Form.Group controlId={`${document.id}-follow-up`}>
-                                              <Form.Label className="small text-muted">
-                                                Follow-Up Message
-                                              </Form.Label>
-                                              <Form.Control
-                                                as="textarea"
-                                                rows={2}
-                                                placeholder="Enter message..."
-                                                value={followUpMessages[document.id] || ""}
-                                                onChange={(event) =>
-                                                  handleFollowUpMessageChange(
-                                                    document.id,
-                                                    event.target.value
-                                                  )
-                                                }
-                                              />
-                                            </Form.Group>
-                                            <div className="d-flex gap-2 justify-content-end mt-2">
-                                              <Button
-                                                variant="outline-secondary"
-                                                size="sm"
-                                                type="button"
-                                                onClick={(event) => {
-                                                  event.preventDefault();
-                                                  toggleFollowUpInput(document.id);
-                                                }}
-                                              >
-                                                Cancel
-                                              </Button>
-                                              <Button
-                                                variant="primary"
-                                                size="sm"
-                                                type="button"
-                                                className="followup-submit-card-btn"
-                                                onClick={(event) =>
-                                                  handleFollowUpSubmit(document.id, event)
-                                                }
-                                              >
-                                                Submit Follow-Up
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -6708,6 +6990,314 @@ const PersonalOnboarding = () => {
             message={toast.message}
             onClose={hideToast}
           />
+
+          {/* Additional Requirement Upload Modal */}
+          <Modal
+            show={showAdditionalRequirementModal}
+            onHide={handleCloseAdditionalRequirementModal}
+            centered
+            size="lg"
+          >
+            <Form onSubmit={handleAdditionalRequirementSubmit}>
+              <Modal.Header closeButton>
+                <Modal.Title className="d-flex flex-column w-100">
+                  <div className="d-flex align-items-center justify-content-between gap-2">
+                    <div className="d-flex align-items-center gap-2">
+                      <FontAwesomeIcon icon={faFileAlt} className="text-primary" />
+                      <span>{activeAdditionalRequirementTitle}</span>
+                    </div>
+                    <Badge bg={additionalRequirementStatusVariant}>
+                      {additionalRequirementStatusLabel}
+                    </Badge>
+                  </div>
+                  {additionalRequirementDescription && (
+                    <small className="text-muted mt-2">
+                      {additionalRequirementDescription}
+                    </small>
+                  )}
+                </Modal.Title>
+              </Modal.Header>
+              <Modal.Body>
+                {additionalRequirementRemoteSubmission && (
+                  <div className="p-3 border rounded bg-light mb-3">
+                    <div className="d-flex flex-column flex-md-row justify-content-between gap-3">
+                      <div>
+                        <div className="fw-semibold">
+                          {additionalRequirementRemoteSubmission.file_name ||
+                            "Previously Submitted Document"}
+                        </div>
+                        <div className="text-muted small">
+                          Status:{" "}
+                          {additionalRequirementRemoteSubmission.status_label ||
+                            additionalRequirementStatusLabel}
+                        </div>
+                        {additionalRequirementRemoteSubmission.submitted_at && (
+                          <div className="text-muted small">
+                            Submitted:{" "}
+                            {formatTimestampForDisplay(
+                              additionalRequirementRemoteSubmission.submitted_at
+                            )}
+                          </div>
+                        )}
+                        {additionalRequirementRemoteSubmission.reviewed_at && (
+                          <div className="text-muted small">
+                            Reviewed:{" "}
+                            {formatTimestampForDisplay(
+                              additionalRequirementRemoteSubmission.reviewed_at
+                            )}
+                          </div>
+                        )}
+                        {additionalRequirementRemoteSubmission.rejection_reason && (
+                          <div className="text-muted small mt-2">
+                            <strong>HR Feedback:</strong>{" "}
+                            {additionalRequirementRemoteSubmission.rejection_reason}
+                          </div>
+                        )}
+                        <div className="text-muted small mt-2">
+                          Uploading a new file will replace the previous submission.
+                        </div>
+                      </div>
+                      <div className="d-flex align-items-start">
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          onClick={() =>
+                            handlePreviewDocument(activeAdditionalRequirementKey)
+                          }
+                        >
+                          <FontAwesomeIcon icon={faEye} className="me-2" />
+                          Preview
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(additionalRequirementUploadsLocked ||
+                  !additionalRequirementCanUpload) &&
+                  (additionalRequirementLockReason || !additionalRequirementCanUpload) && (
+                    <Alert variant="warning" className="mb-3">
+                      <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
+                      {additionalRequirementLockReason ||
+                        "Uploads for this requirement are currently disabled. Please contact HR for assistance."}
+                    </Alert>
+                  )}
+
+                {additionalRequirementUploadError && (
+                  <Alert variant="danger" className="mb-3">
+                    {additionalRequirementUploadError}
+                  </Alert>
+                )}
+
+                <Form.Group controlId="additionalRequirementFile">
+                  <Form.Label className="fw-semibold">
+                    Upload File
+                  </Form.Label>
+                  <Form.Control
+                    type="file"
+                    accept={additionalRequirementFileAccept}
+                    onChange={handleAdditionalRequirementFileChange}
+                    disabled={
+                      additionalRequirementUploading || !additionalRequirementCanUpload
+                    }
+                  />
+                  <Form.Text className="text-muted">
+                    Allowed formats: {additionalRequirementFileFormats}. Maximum size:{" "}
+                    {additionalRequirementMaxSize}MB.
+                  </Form.Text>
+                </Form.Group>
+
+                {additionalRequirementLocalFile && (
+                  <div className="p-3 border rounded mt-3">
+                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+                      <div>
+                        <div className="fw-semibold">
+                          {additionalRequirementLocalFile.name}
+                        </div>
+                        <div className="text-muted small">
+                          {formatFileSize(additionalRequirementLocalFile.size)} •{" "}
+                          {additionalRequirementLocalFile.type || "File"}
+                        </div>
+                      </div>
+                      <div className="d-flex gap-2">
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          type="button"
+                          onClick={() =>
+                            handlePreviewDocument(activeAdditionalRequirementKey)
+                          }
+                          disabled={additionalRequirementUploading}
+                        >
+                          <FontAwesomeIcon icon={faEye} className="me-2" />
+                          Preview
+                        </Button>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          type="button"
+                          onClick={() =>
+                            handleRemoveDocument(activeAdditionalRequirementKey)
+                          }
+                          disabled={additionalRequirementUploading}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                    {additionalRequirementLocalPreview &&
+                      additionalRequirementLocalFile.type?.startsWith("image/") && (
+                        <div className="mt-3">
+                          <img
+                            src={additionalRequirementLocalPreview}
+                            alt="Document preview"
+                            style={{
+                              maxWidth: "220px",
+                              borderRadius: "8px",
+                              border: "1px solid #dee2e6",
+                            }}
+                          />
+                        </div>
+                      )}
+                  </div>
+                )}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button
+                  variant="outline-secondary"
+                  onClick={handleCloseAdditionalRequirementModal}
+                  disabled={additionalRequirementUploading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={
+                    additionalRequirementUploading ||
+                    !additionalRequirementCanUpload ||
+                    !additionalRequirementLocalFile
+                  }
+                >
+                  {additionalRequirementUploading ? (
+                    <>
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      ></span>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faUpload} className="me-2" />
+                      Submit Document
+                    </>
+                  )}
+                </Button>
+              </Modal.Footer>
+            </Form>
+          </Modal>
+
+          {/* Follow-Up Request Modal */}
+          <Modal
+            show={showFollowUpModal}
+            onHide={handleCloseFollowUpModal}
+            centered
+          >
+            <Form onSubmit={handleFollowUpSubmit}>
+              <Modal.Header closeButton>
+                <Modal.Title>
+                  <FontAwesomeIcon icon={faEnvelope} className="me-2 text-primary" />
+                  Request Follow-Up
+                </Modal.Title>
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-muted small mb-3">
+                  Send a follow-up message to HR regarding{" "}
+                  <strong>{followUpDocumentLabel}</strong>. Attach supporting
+                  proof if needed.
+                </p>
+
+                {followUpError && (
+                  <Alert variant="danger" className="py-2">
+                    {followUpError}
+                  </Alert>
+                )}
+
+                <Form.Group controlId="followUpMessage">
+                  <Form.Label className="fw-semibold">Message</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={4}
+                    placeholder="Provide additional details or clarification for HR..."
+                    value={followUpMessage}
+                    onChange={(event) => setFollowUpMessage(event.target.value)}
+                    disabled={followUpSubmitting}
+                  />
+                </Form.Group>
+
+                <Form.Group controlId="followUpAttachment" className="mt-3">
+                  <Form.Label className="fw-semibold">Attachment (optional)</Form.Label>
+                  <Form.Control
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={handleFollowUpAttachmentChange}
+                    disabled={followUpSubmitting}
+                  />
+                  <Form.Text className="text-muted">
+                    Max file size 5MB. Accepted formats: PDF, JPG, JPEG, PNG.
+                  </Form.Text>
+                  {followUpAttachment && (
+                    <div className="d-flex align-items-center justify-content-between mt-2 p-2 border rounded bg-light">
+                      <span className="small text-truncate">
+                        <FontAwesomeIcon icon={faUpload} className="me-2 text-primary" />
+                        {followUpAttachment.name}
+                      </span>
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
+                        onClick={handleRemoveFollowUpAttachment}
+                        disabled={followUpSubmitting}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  )}
+                </Form.Group>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button
+                  variant="outline-secondary"
+                  onClick={handleCloseFollowUpModal}
+                  disabled={followUpSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={followUpSubmitting || !followUpMessage.trim()}
+                >
+                  {followUpSubmitting ? (
+                    <>
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      ></span>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faEnvelope} className="me-2" />
+                      Send Follow-Up
+                    </>
+                  )}
+                </Button>
+              </Modal.Footer>
+            </Form>
+          </Modal>
 
           {/* Decline Offer Confirmation Modal */}
 
@@ -8345,6 +8935,20 @@ const PersonalOnboarding = () => {
 
         }
 
+        .submission-countdown-badge {
+
+          font-size: 0.85rem;
+
+          text-transform: none;
+
+        }
+
+        .submission-countdown-expired {
+
+          font-size: 0.95rem;
+
+        }
+
 
 
         .document-upload-field:hover {
@@ -8410,6 +9014,10 @@ const PersonalOnboarding = () => {
         .status-checklist-item {
 
           transition: all 0.3s ease;
+
+          cursor: pointer;
+
+          user-select: none;
 
         }
 

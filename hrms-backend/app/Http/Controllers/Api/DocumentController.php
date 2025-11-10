@@ -13,9 +13,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class DocumentController extends Controller
 {
+    private const SUBMISSION_WINDOW_DAYS = 10;
+
     private const STATUS_META = [
         'not_submitted' => [
             'label' => 'Not Submitted',
@@ -379,6 +382,68 @@ class DocumentController extends Controller
         };
     }
 
+    private function resolveSubmissionWindow(Application $application): array
+    {
+        $totalDays = config('onboarding.documents_submission_days', self::SUBMISSION_WINDOW_DAYS);
+        $start = $application->documents_start_date;
+
+        if (!$start) {
+            return [
+                'is_active' => false,
+                'has_started' => false,
+                'total_days' => $totalDays,
+                'start_date' => null,
+                'deadline' => null,
+                'days_remaining' => null,
+                'is_locked' => false,
+                'locked_at' => null,
+                'lock_reason' => null,
+            ];
+        }
+
+        $deadline = $application->documents_deadline;
+        $lockedAt = $application->documents_locked_at;
+
+        $updates = [];
+
+        if (!$deadline) {
+            $deadline = $start->copy()->addDays($totalDays);
+            $updates['documents_deadline'] = $deadline;
+        }
+
+        $now = Carbon::now();
+        if ($deadline && $now->greaterThan($deadline) && !$lockedAt) {
+            $lockedAt = $now;
+            $updates['documents_locked_at'] = $lockedAt;
+        }
+
+        if (!empty($updates)) {
+            $application->forceFill($updates)->save();
+            $application->refresh();
+            $start = $application->documents_start_date;
+            $deadline = $application->documents_deadline;
+            $lockedAt = $application->documents_locked_at;
+        }
+
+        $daysRemaining = $lockedAt
+            ? 0
+            : max(0, $now->startOfDay()->diffInDays($deadline->endOfDay(), false));
+
+        return [
+            'is_active' => true,
+            'has_started' => true,
+            'total_days' => $totalDays,
+            'start_date' => $start ? $start->toIso8601String() : null,
+            'deadline' => $deadline ? $deadline->toIso8601String() : null,
+            'days_remaining' => $daysRemaining,
+            'is_locked' => (bool) $lockedAt,
+            'locked_at' => $lockedAt ? $lockedAt->toIso8601String() : null,
+            'lock_reason' => $lockedAt
+                ? 'Document submission period has ended. Please contact HR for assistance.'
+                : null,
+        ];
+    }
+
     private function buildDocumentOverview(Application $application): array
     {
         $this->ensureStandardRequirements($application);
@@ -388,15 +453,21 @@ class DocumentController extends Controller
             'documentRequirements.latestSubmission.reviewer',
         ]);
 
+        $submissionWindow = $this->resolveSubmissionWindow($application);
         $documents = $application->documentRequirements
             ->sortBy('order')
             ->values()
-            ->map(function (DocumentRequirement $requirement) {
+            ->map(function (DocumentRequirement $requirement) use ($submissionWindow) {
                 $documentKey = $this->ensureDocumentKey($requirement);
                 $submission = $requirement->latestSubmission;
                 $status = $submission ? $this->mapStatusForOverview($submission->status) : 'not_submitted';
                 $statusMeta = self::STATUS_META[$status] ?? self::STATUS_META['not_submitted'];
-                $lockUploads = $this->shouldLockUploads($submission, $status);
+
+                $forceLock = (bool)($submissionWindow['is_locked'] ?? false);
+                $lockUploads = $forceLock || $this->shouldLockUploads($submission, $status);
+                $lockReason = $forceLock
+                    ? ($submissionWindow['lock_reason'] ?? 'Document submission window has ended.')
+                    : $this->getUploadLockReason($status);
 
                 return [
                     'requirement_id' => $requirement->id,
@@ -415,7 +486,7 @@ class DocumentController extends Controller
                     'submission' => $submission ? $this->transformSubmission($submission) : null,
                     'lock_uploads' => $lockUploads,
                     'can_upload' => !$lockUploads,
-                    'upload_lock_reason' => $lockUploads ? $this->getUploadLockReason($status) : null,
+                    'upload_lock_reason' => $lockUploads ? $lockReason : null,
                 ];
             })
             ->values()
@@ -440,6 +511,9 @@ class DocumentController extends Controller
             'application_id' => $application->id,
             'documents' => $documents,
             'status_counts' => $statusCounts,
+            'documents_submission_window' => $submissionWindow,
+            'documents_submission_locked' => (bool)($submissionWindow['is_locked'] ?? false),
+            'documents_submission_days_total' => $submissionWindow['total_days'] ?? self::SUBMISSION_WINDOW_DAYS,
             'last_updated_at' => now()->toISOString(),
         ];
     }
@@ -734,14 +808,33 @@ class DocumentController extends Controller
                 ], 403);
             }
 
+        $submissionWindow = $this->resolveSubmissionWindow($application);
+        if ($submissionWindow['is_locked'] ?? false) {
+            return response()->json([
+                'success' => false,
+                'message' => $submissionWindow['lock_reason']
+                    ?? 'Document submission period has ended. Please contact HR.',
+            ], 403);
+        }
+
             // Validate file format if specified
             if ($requirement->file_format) {
-                $allowedFormats = explode(',', $requirement->file_format);
-                $fileExtension = $request->file('file')->getClientOriginalExtension();
-                if (!in_array(strtolower($fileExtension), array_map('strtolower', $allowedFormats))) {
+                $allowedFormats = collect(explode(',', $requirement->file_format))
+                    ->map(fn ($ext) => strtolower(trim($ext)))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                $fileExtension = strtolower($request->file('file')->getClientOriginalExtension());
+
+                if (!empty($allowedFormats) && !in_array($fileExtension, $allowedFormats, true)) {
+                    $formattedList = collect($allowedFormats)
+                        ->map(fn ($ext) => strtoupper($ext))
+                        ->join(', ');
+
                     return response()->json([
                         'success' => false,
-                        'message' => 'Invalid file format. Allowed formats: ' . $requirement->file_format
+                        'message' => 'Invalid file format. Allowed formats: ' . $formattedList
                     ], 422);
                 }
             }
@@ -814,6 +907,15 @@ class DocumentController extends Controller
     {
         try {
             $application = Application::findOrFail($applicationId);
+
+            $submissionWindow = $this->resolveSubmissionWindow($application);
+            if ($submissionWindow['is_locked'] ?? false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $submissionWindow['lock_reason']
+                        ?? 'Document submission period has ended. Please contact HR.',
+                ], 403);
+            }
 
             // Check if user owns this application
             if ($application->applicant_id !== Auth::id()) {
