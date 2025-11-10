@@ -55,4 +55,9 @@ class Application extends Model
     {
         return $this->hasMany(DocumentSubmission::class);
     }
+
+    public function documentFollowUpRequests()
+    {
+        return $this->hasMany(DocumentFollowUpRequest::class);
+    }
 }

@@ -10,6 +10,7 @@ import {
   Card,
   Alert,
   Modal,
+  Form,
 } from "react-bootstrap";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -153,6 +154,21 @@ const Onboarding = () => {
   const [loadingFollowUpRequests, setLoadingFollowUpRequests] = useState(false);
 
   const [followUpRequestsError, setFollowUpRequestsError] = useState("");
+
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+
+  const [selectedFollowUpRequest, setSelectedFollowUpRequest] =
+    useState(null);
+
+  const [followUpActionType, setFollowUpActionType] = useState(null);
+
+  const [followUpActionForm, setFollowUpActionForm] = useState({
+    extensionDays: 3,
+
+    hrResponse: "",
+  });
+
+  const [followUpActionLoading, setFollowUpActionLoading] = useState(false);
 
   const [showDocumentModal, setShowDocumentModal] = useState(false);
 
@@ -422,6 +438,10 @@ const Onboarding = () => {
       status_badge: doc.status_badge,
 
       status_description: doc.status_description,
+
+      submission_window: doc.submission_window || null,
+
+      follow_up: doc.follow_up || null,
     }));
 
     const submissions = documents
@@ -1458,6 +1478,16 @@ const Onboarding = () => {
 
         status: (item.status || "Pending")?.toString(),
 
+        extensionDays: item.extension_days ?? null,
+
+        extensionDeadline: item.extension_deadline || null,
+
+        hrResponse: item.hr_response || "",
+
+        respondedAt: item.responded_at || null,
+
+        attachmentName: item.attachment_name || null,
+
         raw: item,
       }));
 
@@ -1473,64 +1503,148 @@ const Onboarding = () => {
     }
   }, []);
 
-  const handleViewFollowUpRequest = useCallback((request) => {
+  const handleOpenFollowUpModal = useCallback((request, action = null) => {
     if (!request) return;
 
-    const details = [
-      `Applicant: ${request.applicantName || "N/A"}`,
-
-      `Document: ${request.documentType || "N/A"}`,
-
-      `Status: ${request.status || "Pending"}`,
-
-      "",
-
-      request.message ? request.message : "No message provided.",
-    ].join("\n");
-
-    alert(details);
+    setSelectedFollowUpRequest(request);
+    setFollowUpActionType(action);
+    setFollowUpActionForm({
+      extensionDays:
+        action === "accept" ? Math.max(request.extensionDays || 3, 1) : 3,
+      hrResponse: "",
+    });
+    setShowFollowUpModal(true);
   }, []);
 
-  const handleReplyToFollowUpRequest = useCallback((request) => {
-    if (!request) return;
-
-    const reply = window.prompt(
-      `Reply to ${request.applicantName || "the applicant"} regarding ${
-        request.documentType || "the document"
-      }:`,
-
-      ""
-    );
-
-    if (!reply) return;
-
-    alert("Reply sent (integration pending).");
+  const handleCloseFollowUpModal = useCallback(() => {
+    setShowFollowUpModal(false);
+    setSelectedFollowUpRequest(null);
+    setFollowUpActionType(null);
+    setFollowUpActionForm({
+      extensionDays: 3,
+      hrResponse: "",
+    });
+    setFollowUpActionLoading(false);
   }, []);
 
-  const handleMarkFollowUpResolved = useCallback((requestId) => {
-    if (!requestId) return;
-
-    setFollowUpRequests((prev) =>
-      prev.map((request) =>
-        request.id === requestId
-          ? {
-              ...request,
-
-              status: "Resolved",
-            }
-          : request
-      )
-    );
+  const handleFollowUpActionInputChange = useCallback((field, value) => {
+    setFollowUpActionForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
   }, []);
 
-  const handleOpenFollowUpAttachment = useCallback((request) => {
-    if (!request?.attachmentUrl) {
-      alert("No attachment provided for this follow-up request.");
-
+  const handleSubmitFollowUpAction = useCallback(async () => {
+    if (
+      !selectedApplicationForDocs?.id ||
+      !selectedFollowUpRequest ||
+      !followUpActionType
+    ) {
       return;
     }
 
-    window.open(request.attachmentUrl, "_blank", "noopener");
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("Authentication is required to process follow-up requests.");
+      return;
+    }
+
+    const payload = {};
+    let endpoint = "";
+
+    if (followUpActionType === "accept") {
+      const days = parseInt(followUpActionForm.extensionDays, 10);
+      if (!Number.isInteger(days) || days <= 0) {
+        alert("Please provide a valid number of days for the extension.");
+        return;
+      }
+      payload.extension_days = days;
+      if (followUpActionForm.hrResponse.trim()) {
+        payload.hr_response = followUpActionForm.hrResponse.trim();
+      }
+      endpoint = "accept";
+    } else if (followUpActionType === "reject") {
+      if (followUpActionForm.hrResponse.trim()) {
+        payload.hr_response = followUpActionForm.hrResponse.trim();
+      }
+      endpoint = "reject";
+    } else {
+      return;
+    }
+
+    try {
+      setFollowUpActionLoading(true);
+
+      await axios.post(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/follow-ups/${selectedFollowUpRequest.id}/${endpoint}`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      await fetchFollowUpRequests(selectedApplicationForDocs.id);
+      await fetchDocumentRequirements(selectedApplicationForDocs.id);
+      alert("Follow-up request processed successfully.");
+      handleCloseFollowUpModal();
+    } catch (error) {
+      console.error("Error processing follow-up request:", error);
+      alert(
+        error.response?.data?.message ||
+          "Failed to process follow-up request. Please try again."
+      );
+    } finally {
+      setFollowUpActionLoading(false);
+    }
+  }, [
+    fetchDocumentRequirements,
+    fetchFollowUpRequests,
+    followUpActionForm.extensionDays,
+    followUpActionForm.hrResponse,
+    followUpActionType,
+    handleCloseFollowUpModal,
+    selectedApplicationForDocs,
+    selectedFollowUpRequest,
+  ]);
+
+  const handleOpenFollowUpAttachment = useCallback(async (request) => {
+    if (!request?.attachmentUrl) {
+      alert("No attachment provided for this follow-up request.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("Please log in to download attachments.");
+      return;
+    }
+
+    try {
+      const response = await axios.get(request.attachmentUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        responseType: "blob",
+      });
+
+      const blob = new Blob([response.data], {
+        type:
+          response.data.type ||
+          request.attachmentMime ||
+          "application/octet-stream",
+      });
+
+      const objectUrl = window.URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener");
+      setTimeout(() => {
+        window.URL.revokeObjectURL(objectUrl);
+      }, 30000);
+    } catch (error) {
+      console.error("Error downloading attachment:", error);
+      alert("Failed to download attachment. Please try again.");
+    }
   }, []);
 
   // Fetch document status for all applicants in onboarding
@@ -8872,15 +8986,7 @@ const Onboarding = () => {
 
                                     <th>Document Type</th>
 
-                                    <th style={{ minWidth: "220px" }}>
-                                      Message / Note
-                                    </th>
-
                                     <th>Date &amp; Time Sent</th>
-
-                                    <th>Attached File</th>
-
-                                    <th>Status</th>
 
                                     <th>Actions</th>
                                   </tr>
@@ -8890,6 +8996,14 @@ const Onboarding = () => {
                                   {followUpRequests.map((request) => {
                                     const statusVariant =
                                       getFollowUpStatusVariant(request.status);
+                                    const statusLower =
+                                      (request.status || "").toLowerCase();
+                                    const extensionDeadlineDisplay =
+                                      request.extensionDeadline
+                                        ? formatDateTime(
+                                            request.extensionDeadline
+                                          )
+                                        : null;
 
                                     return (
                                       <tr key={request.id}>
@@ -8903,117 +9017,23 @@ const Onboarding = () => {
                                         <td>{request.documentType || "—"}</td>
 
                                         <td>
-                                          <div
-                                            className="text-muted"
-                                            style={{
-                                              maxWidth: "260px",
-
-                                              whiteSpace: "nowrap",
-
-                                              overflow: "hidden",
-
-                                              textOverflow: "ellipsis",
-                                            }}
-                                            title={request.message || ""}
-                                          >
-                                            {request.message || "—"}
-                                          </div>
-                                        </td>
-
-                                        <td>
                                           {formatDateTime(request.sentAt)}
                                         </td>
 
                                         <td>
-                                          {request.attachmentUrl ? (
-                                            <Badge bg="info" text="dark">
-                                              Attachment
-                                            </Badge>
-                                          ) : (
-                                            <span className="text-muted small">
-                                              None
-                                            </span>
-                                          )}
-                                        </td>
-
-                                        <td>
-                                          <Badge bg={statusVariant}>
-                                            {request.status || "Pending"}
-                                          </Badge>
-                                        </td>
-
-                                        <td>
-                                          <div className="d-flex flex-wrap gap-2">
-                                            <Button
-                                              variant="outline-primary"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleViewFollowUpRequest(
-                                                  request
-                                                )
-                                              }
-                                            >
-                                              <FontAwesomeIcon
-                                                icon={faEye}
-                                                className="me-2"
-                                              />
-                                              View
-                                            </Button>
-
-                                            <Button
-                                              variant="outline-secondary"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleReplyToFollowUpRequest(
-                                                  request
-                                                )
-                                              }
-                                            >
-                                              <FontAwesomeIcon
-                                                icon={faReply}
-                                                className="me-2"
-                                              />
-                                              Reply
-                                            </Button>
-
-                                            <Button
-                                              variant="outline-success"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleMarkFollowUpResolved(
-                                                  request.id
-                                                )
-                                              }
-                                              disabled={
-                                                (
-                                                  request.status || ""
-                                                ).toLowerCase() === "resolved"
-                                              }
-                                            >
-                                              <FontAwesomeIcon
-                                                icon={faCheck}
-                                                className="me-2"
-                                              />
-                                              Mark as Resolved
-                                            </Button>
-
-                                            <Button
-                                              variant="outline-dark"
-                                              size="sm"
-                                              onClick={() =>
-                                                handleOpenFollowUpAttachment(
-                                                  request
-                                                )
-                                              }
-                                              disabled={!request.attachmentUrl}
-                                            >
-                                              <FontAwesomeIcon
-                                                icon={faExternalLinkAlt}
-                                                className="me-2"
-                                              />
-                                              Open Document
-                                            </Button>
-                                          </div>
+                                          <Button
+                                            variant="outline-primary"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleOpenFollowUpModal(request)
+                                            }
+                                          >
+                                            <FontAwesomeIcon
+                                              icon={faEye}
+                                              className="me-2"
+                                            />
+                                            View
+                                          </Button>
                                         </td>
                                       </tr>
                                     );
@@ -9191,6 +9211,213 @@ const Onboarding = () => {
           </div>
         </div>
       )}
+
+      <Modal
+        show={showFollowUpModal}
+        onHide={handleCloseFollowUpModal}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faEnvelope} className="me-2 text-primary" />
+            {followUpActionType === "accept"
+              ? "Accept Follow-Up Request"
+              : followUpActionType === "reject"
+              ? "Reject Follow-Up Request"
+              : "Follow-Up Request"}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedFollowUpRequest ? (
+            <>
+              <div className="mb-3">
+                <div className="fw-semibold">
+                  {selectedFollowUpRequest.applicantName || "Applicant"}
+                </div>
+                <div className="text-muted small">
+                  Document: {selectedFollowUpRequest.documentType || "Document"}
+                </div>
+                <div className="text-muted small">
+                  Submitted:{" "}
+                  {selectedFollowUpRequest.sentAt
+                    ? formatDateTime(selectedFollowUpRequest.sentAt)
+                    : "N/A"}
+                </div>
+                <div className="text-muted small">
+                  Status: {selectedFollowUpRequest.status || "Pending"}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <h6 className="fw-semibold">Applicant Message</h6>
+                <div className="bg-light p-3 rounded small">
+                  {selectedFollowUpRequest.message || "No message provided."}
+                </div>
+              </div>
+
+              {selectedFollowUpRequest.attachmentUrl && (
+                <div className="mb-3">
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    onClick={() =>
+                      handleOpenFollowUpAttachment(selectedFollowUpRequest)
+                    }
+                  >
+                    <FontAwesomeIcon icon={faExternalLinkAlt} className="me-2" />
+                    View Attachment
+                  </Button>
+                  {selectedFollowUpRequest.attachmentName && (
+                    <div className="text-muted small mt-2">
+                      {selectedFollowUpRequest.attachmentName}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedFollowUpRequest.status &&
+                selectedFollowUpRequest.status.toLowerCase() !== "pending" && (
+                  <Alert
+                    variant={
+                      selectedFollowUpRequest.status.toLowerCase() === "accepted"
+                        ? "success"
+                        : "danger"
+                    }
+                  >
+                    <div className="fw-semibold mb-1">
+                      {selectedFollowUpRequest.status.toLowerCase() === "accepted"
+                        ? "Follow-up Approved"
+                        : "Follow-up Not Approved"}
+                    </div>
+                    {selectedFollowUpRequest.extensionDeadline &&
+                      selectedFollowUpRequest.status.toLowerCase() ===
+                        "accepted" && (
+                        <div className="small text-muted">
+                          Extension until{" "}
+                          {formatDateTime(selectedFollowUpRequest.extensionDeadline)}
+                        </div>
+                      )}
+                    {selectedFollowUpRequest.hrResponse && (
+                      <div className="small mt-2">
+                        HR Response: {selectedFollowUpRequest.hrResponse}
+                      </div>
+                    )}
+                  </Alert>
+                )}
+
+              {selectedFollowUpRequest.status?.toLowerCase() === "pending" &&
+                !followUpActionType && (
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    <Button
+                      variant="success"
+                      onClick={() => setFollowUpActionType("accept")}
+                    >
+                      <FontAwesomeIcon icon={faCheck} className="me-2" />
+                      Accept Request
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => setFollowUpActionType("reject")}
+                    >
+                      <FontAwesomeIcon icon={faTimes} className="me-2" />
+                      Reject Request
+                    </Button>
+                  </div>
+                )}
+
+              {followUpActionType === "accept" && (
+                <Form>
+                  <Form.Group controlId="staffFollowUpExtensionDays">
+                    <Form.Label>Extension Duration (days)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={1}
+                      value={followUpActionForm.extensionDays}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "extensionDays",
+                          event.target.value
+                        )
+                      }
+                    />
+                    <Form.Text className="text-muted">
+                      Specify how many additional day(s) the applicant will have
+                      to resubmit this document.
+                    </Form.Text>
+                  </Form.Group>
+                  <Form.Group controlId="staffFollowUpHrResponse" className="mt-3">
+                    <Form.Label>Message to Applicant (optional)</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={followUpActionForm.hrResponse}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "hrResponse",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Provide additional guidance or clarification."
+                    />
+                  </Form.Group>
+                </Form>
+              )}
+
+              {followUpActionType === "reject" && (
+                <Form>
+                  <Form.Group controlId="staffFollowUpRejectMessage">
+                    <Form.Label>Message to Applicant (optional)</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={followUpActionForm.hrResponse}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "hrResponse",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Let the applicant know why the request was rejected."
+                    />
+                  </Form.Group>
+                </Form>
+              )}
+            </>
+          ) : (
+            <div className="text-muted">No follow-up request selected.</div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseFollowUpModal}>
+            Close
+          </Button>
+          {followUpActionType &&
+            selectedFollowUpRequest?.status?.toLowerCase() === "pending" && (
+              <Button
+                variant={
+                  followUpActionType === "accept" ? "success" : "danger"
+                }
+                onClick={handleSubmitFollowUpAction}
+                disabled={followUpActionLoading}
+              >
+                {followUpActionLoading ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
+                    Processing...
+                  </>
+                ) : followUpActionType === "accept" ? (
+                  "Confirm Acceptance"
+                ) : (
+                  "Confirm Rejection"
+                )}
+              </Button>
+            )}
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

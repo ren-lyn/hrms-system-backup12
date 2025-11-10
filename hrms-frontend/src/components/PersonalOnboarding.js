@@ -1458,6 +1458,8 @@ const PersonalOnboarding = () => {
           typeof doc.can_upload === "boolean" ? doc.can_upload : true,
         lockUploads:
           typeof doc.lock_uploads === "boolean" ? doc.lock_uploads : false,
+        submissionWindow: doc.submission_window || null,
+        followUp: doc.follow_up || null,
       });
     });
 
@@ -1691,15 +1693,25 @@ const PersonalOnboarding = () => {
         return;
       }
 
-      // Placeholder for backend follow-up endpoint
+      const formData = new FormData();
+      formData.append("document_key", documentKey);
+      formData.append("message", trimmedMessage);
+      if (followUpAttachment) {
+        formData.append("attachment", followUpAttachment);
+      }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await axios.post(
+        `http://localhost:8000/api/applications/${activeApplicationId}/documents/follow-ups`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
 
-      console.log("Follow-up payload", {
-        documentKey,
-        message: trimmedMessage,
-        attachment: followUpAttachment,
-      });
+      await fetchDocumentOverview({ silent: true });
 
       showToast(
         "success",
@@ -1714,6 +1726,7 @@ const PersonalOnboarding = () => {
       showToast(
         "error",
         "Follow-Up Failed",
+        error.response?.data?.message ||
         "Unable to send follow-up request. Please try again later."
       );
     } finally {
@@ -1756,7 +1769,9 @@ const PersonalOnboarding = () => {
     setFollowUpError("");
   };
 
-  const fetchDocumentOverview = useCallback(async () => {
+  const fetchDocumentOverview = useCallback(async (options = {}) => {
+    const { silent = false } = options || {};
+
     if (!activeApplicationId) {
       return null;
     }
@@ -1770,7 +1785,9 @@ const PersonalOnboarding = () => {
     }
 
     try {
+      if (!silent) {
       setDocumentLoading(true);
+      }
 
       const response = await axios.get(
         `http://localhost:8000/api/applications/${activeApplicationId}/documents/overview`,
@@ -1794,7 +1811,9 @@ const PersonalOnboarding = () => {
 
       return null;
     } finally {
+      if (!silent) {
       setDocumentLoading(false);
+      }
     }
   }, [activeApplicationId, applyDocumentOverview]);
 
@@ -1951,7 +1970,10 @@ const PersonalOnboarding = () => {
 
     fetchDocumentOverview();
 
-    const interval = setInterval(fetchDocumentOverview, 30000);
+    const interval = setInterval(
+      () => fetchDocumentOverview({ silent: true }),
+      10 * 60 * 1000
+    );
 
     return () => clearInterval(interval);
   }, [currentPage, activeTab, activeApplicationId, fetchDocumentOverview]);
@@ -3777,23 +3799,87 @@ const PersonalOnboarding = () => {
     .map((ext) => `.${ext}`)
     .join(",");
 
-  const additionalRequirementUploadsLocked = Boolean(
-    isSubmissionLocked ||
-      activeAdditionalRequirement?.lockUploads ||
-      activeAdditionalRequirementDoc?.lock_uploads
-  );
+  const additionalRequirementSubmissionWindow =
+    activeAdditionalRequirement?.submissionWindow ||
+    activeAdditionalRequirementDoc?.submission_window ||
+    null;
 
-  const additionalRequirementCanUpload =
-    !additionalRequirementUploadsLocked &&
-    (typeof activeAdditionalRequirement?.canUpload === "boolean"
+  const additionalRequirementFollowUp =
+    activeAdditionalRequirement?.followUp ||
+    activeAdditionalRequirementDoc?.follow_up ||
+    null;
+
+  const additionalRequirementExtensionActive =
+    additionalRequirementSubmissionWindow?.extended || false;
+
+  const rawAdditionalRequirementExtensionDaysRemaining =
+    typeof additionalRequirementSubmissionWindow?.days_remaining === "number"
+      ? additionalRequirementSubmissionWindow.days_remaining
+      : null;
+  const additionalRequirementExtensionDaysRemaining =
+    rawAdditionalRequirementExtensionDaysRemaining === null
+      ? null
+      : Math.max(0, Math.floor(rawAdditionalRequirementExtensionDaysRemaining));
+
+  const additionalRequirementExtensionDeadlineDisplay =
+    additionalRequirementSubmissionWindow?.extension_deadline
+      ? formatTimestampForDisplay(
+          additionalRequirementSubmissionWindow.extension_deadline
+        )
+      : null;
+
+  const additionalRequirementOriginalDays =
+    typeof additionalRequirementSubmissionWindow?.original_total_days === "number"
+      ? Math.floor(additionalRequirementSubmissionWindow.original_total_days)
+      : submissionTotalDays;
+
+  const additionalRequirementExtensionAddedDays =
+    typeof additionalRequirementSubmissionWindow?.extension_days_total === "number" &&
+    additionalRequirementSubmissionWindow.extension_days_total > 0
+      ? Math.floor(additionalRequirementSubmissionWindow.extension_days_total)
+      : null;
+
+  const additionalRequirementTotalDays =
+    typeof additionalRequirementSubmissionWindow?.total_days === "number"
+      ? Math.floor(additionalRequirementSubmissionWindow.total_days)
+      : additionalRequirementOriginalDays;
+
+  const additionalRequirementTotalDaysDisplay =
+    additionalRequirementTotalDays ??
+    additionalRequirementOriginalDays ??
+    submissionTotalDays;
+
+  const additionalRequirementExtensionAddedDaysDisplay =
+    additionalRequirementExtensionAddedDays &&
+    additionalRequirementExtensionAddedDays > 0
+      ? additionalRequirementExtensionAddedDays
+      : null;
+
+  const additionalRequirementFollowUpStatus =
+    additionalRequirementFollowUp?.status?.toString().toLowerCase() || null;
+
+  const additionalRequirementBackendCanUpload =
+    typeof activeAdditionalRequirement?.canUpload === "boolean"
       ? activeAdditionalRequirement.canUpload
       : typeof activeAdditionalRequirementDoc?.can_upload === "boolean"
       ? activeAdditionalRequirementDoc.can_upload
-      : true);
+      : true;
+
+  const additionalRequirementUploadsLocked =
+    (isSubmissionLocked ||
+      activeAdditionalRequirement?.lockUploads ||
+      activeAdditionalRequirementDoc?.lock_uploads) &&
+    !additionalRequirementExtensionActive;
+
+  const additionalRequirementCanUpload =
+    additionalRequirementExtensionActive ||
+    (additionalRequirementBackendCanUpload && !additionalRequirementUploadsLocked);
 
   const additionalRequirementLockReason =
-    (activeAdditionalRequirementDoc?.upload_lock_reason ||
-      (isSubmissionLocked ? submissionLockMessage : null)) ?? null;
+    additionalRequirementExtensionActive
+      ? null
+      : (activeAdditionalRequirementDoc?.upload_lock_reason ||
+          (isSubmissionLocked ? submissionLockMessage : null)) ?? null;
 
   const scrollToDocumentField = useCallback(
     (documentKey) => {
@@ -6307,12 +6393,12 @@ const PersonalOnboarding = () => {
                           <span>{submissionLockMessage}</span>
                         </div>
                       ) : (
-                        <Badge
+                      <Badge
                           bg={submissionCountdownVariant}
                           className="rounded-pill px-3 py-2 fw-semibold submission-countdown-badge"
                         >
                           {submissionCountdownLabel}
-                        </Badge>
+                      </Badge>
                       )}
                     </div>
                   </div>
@@ -6408,6 +6494,69 @@ const PersonalOnboarding = () => {
                                     documentData?.status_label ||
                                     statusConfig.label;
 
+                                  const documentSubmissionWindow =
+                                    documentData?.submission_window || null;
+                                  const documentFollowUpInfo =
+                                    documentData?.follow_up || null;
+                                  const documentExtensionActive =
+                                    documentSubmissionWindow?.extended || false;
+                                  const rawDocumentExtensionDaysRemaining =
+                                    typeof documentSubmissionWindow?.days_remaining ===
+                                    "number"
+                                      ? documentSubmissionWindow.days_remaining
+                                      : null;
+                                  const documentExtensionDaysRemaining =
+                                    rawDocumentExtensionDaysRemaining === null
+                                      ? null
+                                      : Math.max(
+                                          0,
+                                          Math.floor(
+                                            rawDocumentExtensionDaysRemaining
+                                          )
+                                        );
+                                  const documentExtensionDeadlineDisplay =
+                                    documentSubmissionWindow?.extension_deadline
+                                      ? formatTimestampForDisplay(
+                                          documentSubmissionWindow.extension_deadline
+                                        )
+                                      : null;
+                                  const documentExtensionOriginalDays =
+                                    typeof documentSubmissionWindow?.original_total_days ===
+                                    "number"
+                                      ? Math.floor(
+                                          documentSubmissionWindow.original_total_days
+                                        )
+                                      : null;
+                                  const documentExtensionAddedDays =
+                                    typeof documentSubmissionWindow?.extension_days_total ===
+                                    "number"
+                                      ? Math.floor(
+                                          documentSubmissionWindow.extension_days_total
+                                        )
+                                      : null;
+                                  const documentExtensionTotalDays =
+                                    typeof documentSubmissionWindow?.total_days ===
+                                    "number"
+                                      ? Math.floor(documentSubmissionWindow.total_days)
+                                      : documentExtensionOriginalDays;
+                                  const documentExtensionTotalDaysDisplay =
+                                    documentExtensionTotalDays ??
+                                    documentExtensionOriginalDays ??
+                                    submissionTotalDays;
+                                  const documentExtensionAddedDaysDisplay =
+                                    documentExtensionAddedDays && documentExtensionAddedDays > 0
+                                      ? documentExtensionAddedDays
+                                      : null;
+                                  const documentFollowUpStatus = documentFollowUpInfo?.status
+                                    ?.toString()
+                                    .toLowerCase();
+                                  const followUpPending =
+                                    documentFollowUpStatus === "pending";
+                                  const followUpRejected =
+                                    documentFollowUpStatus === "rejected";
+                                  const followUpAccepted =
+                                    documentFollowUpStatus === "accepted";
+
                                   return (
                                     <li
                                       key={`${document.id}-status-item`}
@@ -6422,16 +6571,74 @@ const PersonalOnboarding = () => {
                                         }
                                       }}
                                     >
-                                      <span className="small">
+                                      <div className="d-flex flex-column pe-3">
+                                        <span className="small fw-semibold">
                                         {document.label}
                                       </span>
+                                        {documentExtensionActive && (
+                                          <span className="text-success small mt-1">
+                                            Follow-up approved: window extended to{" "}
+                                            {documentExtensionTotalDaysDisplay}{" "}
+                                            {documentExtensionTotalDaysDisplay === 1 ? "day" : "days"}
+                                            {documentExtensionAddedDaysDisplay
+                                              ? ` (+${documentExtensionAddedDaysDisplay} ${
+                                                  documentExtensionAddedDaysDisplay === 1 ? "day" : "days"
+                                                })`
+                                              : "" }
+                                            {documentExtensionDaysRemaining !== null
+                                              ? ` — ${documentExtensionDaysRemaining} ${
+                                                  documentExtensionDaysRemaining === 1 ? "day" : "days"
+                                                } remaining`
+                                              : ""}
+                                            {documentExtensionDeadlineDisplay
+                                              ? ` (until ${documentExtensionDeadlineDisplay})`
+                                              : ""}
+                                          </span>
+                                        )}
+                                        {!documentExtensionActive &&
+                                          followUpAccepted &&
+                                          documentExtensionDaysRemaining !== null && (
+                                            <span className="text-success small mt-1">
+                                              Follow-up approved. {documentExtensionDaysRemaining}{" "}
+                                              {documentExtensionDaysRemaining === 1
+                                                ? "day"
+                                                : "days"}{" "}
+                                              remaining
+                                              {documentExtensionDeadlineDisplay
+                                                ? ` (until ${documentExtensionDeadlineDisplay})`
+                                                : ""}
+                                            </span>
+                                          )}
+                                        {!documentExtensionActive &&
+                                          !followUpAccepted &&
+                                          followUpPending && (
+                                          <span className="text-muted small mt-1">
+                                            Follow-up request pending HR review
+                                          </span>
+                                        )}
+                                        {!documentExtensionActive &&
+                                          !followUpAccepted &&
+                                          followUpRejected && (
+                                          <span className="text-danger small mt-1">
+                                            Follow-up request was not approved
+                                          </span>
+                                        )}
+                                      </div>
 
+                                      <div className="d-flex flex-column align-items-end">
                                       <Badge
                                         bg={statusConfig.variant}
                                         className="status-badge"
                                       >
                                         {displayStatusLabel}
                                       </Badge>
+                                        {documentExtensionActive &&
+                                          documentExtensionDeadlineDisplay && (
+                                            <span className="text-muted small mt-1 text-end">
+                                              Until {documentExtensionDeadlineDisplay}
+                                            </span>
+                                          )}
+                                      </div>
                                     </li>
                                   );
                                 })}
@@ -6464,16 +6671,107 @@ const PersonalOnboarding = () => {
                                           }}
                                           style={{ cursor: "pointer" }}
                                         >
-                                          <span className="small">
+                                          <div className="d-flex flex-column pe-3">
+                                            <span className="small fw-semibold">
                                             {requirement.title || "Additional Requirement"}
                                           </span>
+                                            {(() => {
+                                              const rawRemaining =
+                                                typeof requirement.submissionWindow?.days_remaining ===
+                                                "number"
+                                                  ? requirement.submissionWindow.days_remaining
+                                                  : null;
+                                              const remainingDisplay =
+                                                rawRemaining === null
+                                                  ? null
+                                                  : Math.max(0, Math.floor(rawRemaining));
+                                              const originalDays =
+                                                typeof requirement.submissionWindow?.original_total_days ===
+                                                "number"
+                                                  ? Math.floor(
+                                                      requirement.submissionWindow.original_total_days
+                                                    )
+                                                  : submissionTotalDays;
+                                              const extensionAdded =
+                                                typeof requirement.submissionWindow?.extension_days_total ===
+                                                  "number" &&
+                                                requirement.submissionWindow.extension_days_total > 0
+                                                  ? Math.floor(
+                                                      requirement.submissionWindow.extension_days_total
+                                                    )
+                                                  : null;
+                                              const totalDays =
+                                                typeof requirement.submissionWindow?.total_days ===
+                                                "number"
+                                                  ? Math.floor(requirement.submissionWindow.total_days)
+                                                  : originalDays;
+                                              const deadlineDisplay = requirement.submissionWindow
+                                                ?.extension_deadline
+                                                ? formatTimestampForDisplay(
+                                                    requirement.submissionWindow.extension_deadline
+                                                  )
+                                                : null;
+                                              const followUpStatus =
+                                                requirement.followUp?.status?.toString().toLowerCase() ||
+                                                null;
 
+                                              if (requirement.submissionWindow?.extended) {
+                                                return (
+                                                  <span className="text-success small mt-1">
+                                                    Follow-up approved: window extended to {totalDays}{" "}
+                                                    {totalDays === 1 ? "day" : "days"}
+                                                    {extensionAdded
+                                                      ? ` (+${extensionAdded} ${
+                                                          extensionAdded === 1 ? "day" : "days"
+                                                        })`
+                                                      : ""}
+                                                    {remainingDisplay !== null
+                                                      ? ` — ${remainingDisplay} ${
+                                                          remainingDisplay === 1 ? "day" : "days"
+                                                        } remaining`
+                                                      : ""}
+                                                    {deadlineDisplay ? ` (until ${deadlineDisplay})` : ""}
+                                                  </span>
+                                                );
+                                              }
+
+                                              if (followUpStatus === "pending") {
+                                                return (
+                                                  <span className="text-muted small mt-1">
+                                                    Follow-up request pending HR review
+                                                  </span>
+                                                );
+                                              }
+
+                                              if (followUpStatus === "rejected") {
+                                                return (
+                                                  <span className="text-danger small mt-1">
+                                                    Follow-up request was not approved
+                                                  </span>
+                                                );
+                                              }
+
+                                              return null;
+                                            })()}
+                                          </div>
+
+                                          <div className="d-flex flex-column align-items-end">
                                           <Badge
                                             bg={requirement.statusVariant || "secondary"}
                                             className="status-badge"
                                           >
                                             {requirement.statusLabel || "Pending"}
                                           </Badge>
+                                            {requirement.submissionWindow?.extended &&
+                                              requirement.submissionWindow?.extension_deadline && (
+                                                <span className="text-muted small mt-1 text-end">
+                                                  Until{" "}
+                                                  {formatTimestampForDisplay(
+                                                    requirement.submissionWindow.extension_deadline
+                                                  )}
+                                                </span>
+                                              )}
+                                          </div>
                                         </li>
                                       ))}
                                     </>
@@ -6519,6 +6817,67 @@ const PersonalOnboarding = () => {
                                 documentDataMap[document.id] || null;
 
                               const remoteSubmission = documentData?.submission;
+
+                              const documentSubmissionWindow =
+                                documentData?.submission_window || null;
+                              const documentFollowUpInfo =
+                                documentData?.follow_up || null;
+                              const documentFollowUpStatus =
+                                documentFollowUpInfo?.status?.toString().toLowerCase() ||
+                                null;
+                              const documentExtensionActive =
+                                documentSubmissionWindow?.extended || false;
+                              const rawDocumentExtensionDaysRemaining =
+                                typeof documentSubmissionWindow?.days_remaining ===
+                                "number"
+                                  ? documentSubmissionWindow.days_remaining
+                                  : null;
+                              const documentExtensionDaysRemaining =
+                                rawDocumentExtensionDaysRemaining === null
+                                  ? null
+                                  : Math.max(
+                                      0,
+                                      Math.floor(rawDocumentExtensionDaysRemaining)
+                                    );
+                              const documentExtensionDeadlineDisplay =
+                                documentSubmissionWindow?.extension_deadline
+                                  ? formatTimestampForDisplay(
+                                      documentSubmissionWindow.extension_deadline
+                                    )
+                                  : null;
+                              const documentExtensionOriginalDays =
+                                typeof documentSubmissionWindow?.original_total_days ===
+                                "number"
+                                  ? Math.floor(
+                                      documentSubmissionWindow.original_total_days
+                                    )
+                                  : submissionTotalDays;
+                              const documentExtensionAddedDays =
+                                typeof documentSubmissionWindow?.extension_days_total ===
+                                  "number" &&
+                                documentSubmissionWindow.extension_days_total > 0
+                                  ? Math.floor(
+                                      documentSubmissionWindow.extension_days_total
+                                    )
+                                  : null;
+                              const documentExtensionTotalDays =
+                                typeof documentSubmissionWindow?.total_days === "number"
+                                  ? Math.floor(documentSubmissionWindow.total_days)
+                                  : documentExtensionOriginalDays;
+                              const documentExtensionTotalDaysDisplay =
+                                documentExtensionTotalDays ??
+                                documentExtensionOriginalDays ??
+                                submissionTotalDays;
+                              const documentExtensionAddedDaysDisplay =
+                                documentExtensionAddedDays && documentExtensionAddedDays > 0
+                                  ? documentExtensionAddedDays
+                                  : null;
+                              const followUpPending =
+                                documentFollowUpStatus === "pending";
+                              const followUpRejected =
+                                documentFollowUpStatus === "rejected";
+                              const followUpAccepted =
+                                documentFollowUpStatus === "accepted";
 
                               const displayStatusLabel =
                                 documentData?.status_label ||
@@ -6647,15 +7006,83 @@ const PersonalOnboarding = () => {
                                                 document.id
                                               );
                                             }}
+                                            disabled={followUpPending}
                                           >
                                             <FontAwesomeIcon icon={faEnvelope} className="me-2" />
-                                            Request Follow-Up
+                                            {followUpPending
+                                              ? "Follow-Up Pending"
+                                              : "Request Follow-Up"}
                                           </Button>
                                         </div>
 
                                         <p className="text-muted small mb-3">
                                           {document.helperText}
                                         </p>
+
+                                        {documentFollowUpInfo && (
+                                          <Alert
+                                            variant={
+                                              followUpAccepted
+                                                ? "success"
+                                                : followUpRejected
+                                                ? "danger"
+                                                : "info"
+                                            }
+                                            className="mb-3"
+                                          >
+                                            <div className="fw-semibold mb-1">
+                                              {followUpAccepted
+                                                ? "Follow-up Approved"
+                                                : followUpRejected
+                                                ? "Follow-up Not Approved"
+                                                : "Follow-up Pending Review"}
+                                            </div>
+                                            <div className="small mb-1">
+                                              {followUpAccepted
+                                                ? `HR granted you additional time to submit this document${
+                                                    documentExtensionDeadlineDisplay
+                                                      ? ` until ${documentExtensionDeadlineDisplay}`
+                                                      : ""
+                                                  }.`
+                                                : followUpRejected
+                                                ? documentFollowUpInfo.hr_response ||
+                                                  "Your follow-up request was not approved. Please contact HR for further assistance."
+                                                : "HR is currently reviewing your follow-up request."}
+                                            </div>
+                                            {followUpAccepted &&
+                                              documentExtensionDaysRemaining !== null && (
+                                                <div className="small text-muted">
+                                                  Remaining: {documentExtensionDaysRemaining}{" "}
+                                                  {documentExtensionDaysRemaining === 1
+                                                    ? "day"
+                                                    : "days"}{" "}
+                                                  (total window {documentExtensionTotalDaysDisplay}{" "}
+                                                  {documentExtensionTotalDaysDisplay === 1
+                                                    ? "day"
+                                                    : "days"}
+                                                  {documentExtensionAddedDaysDisplay
+                                                    ? `, +${documentExtensionAddedDaysDisplay} ${
+                                                        documentExtensionAddedDaysDisplay === 1
+                                                          ? "day"
+                                                          : "days"
+                                                      } extension`
+                                                    : ""}).
+                                                </div>
+                                              )}
+                                            {followUpAccepted &&
+                                              documentFollowUpInfo.hr_response && (
+                                                <div className="small text-muted mt-1">
+                                                  HR note: {documentFollowUpInfo.hr_response}
+                                                </div>
+                                              )}
+                                            {followUpRejected &&
+                                              documentFollowUpInfo.hr_response && (
+                                                <div className="small text-muted mt-1">
+                                                  HR note: {documentFollowUpInfo.hr_response}
+                                                </div>
+                                              )}
+                                          </Alert>
+                                        )}
 
                                         {isLockedByRemote &&
                                           documentData?.upload_lock_reason && (
@@ -7018,6 +7445,63 @@ const PersonalOnboarding = () => {
                 </Modal.Title>
               </Modal.Header>
               <Modal.Body>
+                {additionalRequirementFollowUp && (
+                  <Alert
+                    variant={
+                      additionalRequirementFollowUpStatus === "accepted"
+                        ? "success"
+                        : additionalRequirementFollowUpStatus === "rejected"
+                        ? "danger"
+                        : "info"
+                    }
+                    className="mb-3"
+                  >
+                    <div className="fw-semibold mb-1">
+                      {additionalRequirementFollowUpStatus === "accepted"
+                        ? "Follow-up Approved"
+                        : additionalRequirementFollowUpStatus === "rejected"
+                        ? "Follow-up Not Approved"
+                        : "Follow-up Pending Review"}
+                    </div>
+                    <div className="small mb-1">
+                      {additionalRequirementFollowUpStatus === "accepted"
+                        ? `HR granted you additional time to submit this requirement${
+                            additionalRequirementExtensionDeadlineDisplay
+                              ? ` until ${additionalRequirementExtensionDeadlineDisplay}`
+                              : ""
+                          }.`
+                        : additionalRequirementFollowUpStatus === "rejected"
+                        ? additionalRequirementFollowUp.hr_response ||
+                          "Your follow-up request was not approved. Please contact HR for further assistance."
+                        : "HR is currently reviewing your follow-up request."}
+                    </div>
+                    {additionalRequirementExtensionActive &&
+                      additionalRequirementExtensionDaysRemaining !== null && (
+                        <div className="small text-muted">
+                          Remaining: {additionalRequirementExtensionDaysRemaining}{" "}
+                          {additionalRequirementExtensionDaysRemaining === 1
+                            ? "day"
+                            : "days"}{" "}
+                          (total window {additionalRequirementTotalDaysDisplay}{" "}
+                          {additionalRequirementTotalDaysDisplay === 1 ? "day" : "days"}
+                          {additionalRequirementExtensionAddedDaysDisplay
+                            ? `, +${additionalRequirementExtensionAddedDaysDisplay} ${
+                                additionalRequirementExtensionAddedDaysDisplay === 1
+                                  ? "day"
+                                  : "days"
+                              } extension`
+                            : ""}).
+                        </div>
+                      )}
+                    {additionalRequirementFollowUp.hr_response &&
+                      additionalRequirementFollowUpStatus === "accepted" && (
+                        <div className="small text-muted mt-1">
+                          HR note: {additionalRequirementFollowUp.hr_response}
+                        </div>
+                      )}
+                  </Alert>
+                )}
+
                 {additionalRequirementRemoteSubmission && (
                   <div className="p-3 border rounded bg-light mb-3">
                     <div className="d-flex flex-column flex-md-row justify-content-between gap-3">

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Application;
 use App\Models\DocumentRequirement;
 use App\Models\DocumentSubmission;
+use App\Models\DocumentFollowUpRequest;
 use App\Notifications\DocumentStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -451,20 +452,81 @@ class DocumentController extends Controller
         $application->load([
             'documentRequirements.latestSubmission',
             'documentRequirements.latestSubmission.reviewer',
+            'documentFollowUpRequests',
         ]);
+
+        $followUpsByDocument = $application->documentFollowUpRequests
+            ->groupBy(function (DocumentFollowUpRequest $followUp) {
+                return $followUp->document_key;
+            });
 
         $submissionWindow = $this->resolveSubmissionWindow($application);
         $documents = $application->documentRequirements
             ->sortBy('order')
             ->values()
-            ->map(function (DocumentRequirement $requirement) use ($submissionWindow) {
+            ->map(function (DocumentRequirement $requirement) use ($submissionWindow, $followUpsByDocument, $application) {
                 $documentKey = $this->ensureDocumentKey($requirement);
                 $submission = $requirement->latestSubmission;
                 $status = $submission ? $this->mapStatusForOverview($submission->status) : 'not_submitted';
                 $statusMeta = self::STATUS_META[$status] ?? self::STATUS_META['not_submitted'];
 
+                $documentFollowUps = $followUpsByDocument[$documentKey] ?? collect();
+                $latestAcceptedFollowUp = $documentFollowUps
+                    ->where('status', 'accepted')
+                    ->sortByDesc(function (DocumentFollowUpRequest $request) {
+                        return $request->extension_deadline ?? $request->responded_at ?? $request->created_at;
+                    })
+                    ->first();
+
+                $latestFollowUp = $documentFollowUps
+                    ->sortByDesc(function (DocumentFollowUpRequest $request) {
+                        return $request->updated_at ?? $request->created_at;
+                    })
+                    ->first();
+
+                $now = Carbon::now();
+
+                $extensionDeadline = $latestAcceptedFollowUp?->extension_deadline;
+                $extensionDaysRemaining = null;
+                $extensionActive = false;
+                $totalExtensionDays = (int) $documentFollowUps
+                    ->where('status', 'accepted')
+                    ->sum(function (DocumentFollowUpRequest $request) {
+                        return (int) ($request->extension_days ?? 0);
+                    });
+
+                $baseTotalDays = (int) ($submissionWindow['total_days'] ?? self::SUBMISSION_WINDOW_DAYS);
+                $overallTotalDays = $baseTotalDays + $totalExtensionDays;
+                $baseDaysRemaining = $submissionWindow['days_remaining'] ?? null;
+                if (is_numeric($baseDaysRemaining)) {
+                    $baseDaysRemaining = (int) $baseDaysRemaining;
+                } else {
+                    $baseDaysRemaining = null;
+                }
+
+                if ($extensionDeadline instanceof Carbon) {
+                    $extensionDaysRemaining = max(
+                        0,
+                        $now->startOfDay()->diffInDays(
+                            $extensionDeadline->copy()->endOfDay(),
+                            false
+                        )
+                    );
+                    $extensionActive = $extensionDeadline->greaterThanOrEqualTo($now);
+                }
+
+                $extensionDaysRemainingInt = $extensionDaysRemaining !== null
+                    ? (int) $extensionDaysRemaining
+                    : null;
+
                 $forceLock = (bool)($submissionWindow['is_locked'] ?? false);
                 $lockUploads = $forceLock || $this->shouldLockUploads($submission, $status);
+
+                if ($extensionActive) {
+                    $forceLock = false;
+                    $lockUploads = false;
+                }
+
                 $lockReason = $forceLock
                     ? ($submissionWindow['lock_reason'] ?? 'Document submission window has ended.')
                     : $this->getUploadLockReason($status);
@@ -487,6 +549,38 @@ class DocumentController extends Controller
                     'lock_uploads' => $lockUploads,
                     'can_upload' => !$lockUploads,
                     'upload_lock_reason' => $lockUploads ? $lockReason : null,
+                    'submission_window' => [
+                        'has_started' => $submissionWindow['has_started'] ?? false,
+                        'is_active' => !$lockUploads,
+                        'deadline' => $extensionActive && $extensionDeadline
+                            ? $extensionDeadline->toIso8601String()
+                            : ($submissionWindow['deadline'] ?? null),
+                        'days_remaining' => $extensionActive && $extensionDeadline
+                            ? $extensionDaysRemainingInt
+                            : $baseDaysRemaining,
+                        'extended' => $extensionActive,
+                        'extension_days' => $extensionActive ? ($latestAcceptedFollowUp->extension_days ?? null) : null,
+                        'extension_deadline' => $extensionActive && $extensionDeadline
+                            ? $extensionDeadline->toIso8601String()
+                            : null,
+                        'total_days' => $extensionActive ? $overallTotalDays : $baseTotalDays,
+                        'original_total_days' => $baseTotalDays,
+                        'extension_days_total' => $totalExtensionDays,
+                        'extension_days_active' => $extensionActive ? ($latestAcceptedFollowUp->extension_days ?? null) : null,
+                    ],
+                    'follow_up' => $latestFollowUp ? [
+                        'id' => $latestFollowUp->id,
+                        'status' => $latestFollowUp->status,
+                        'message' => $latestFollowUp->message,
+                        'submitted_at' => optional($latestFollowUp->created_at)->toIso8601String(),
+                        'responded_at' => optional($latestFollowUp->responded_at)->toIso8601String(),
+                        'hr_response' => $latestFollowUp->hr_response,
+                        'extension_days' => $latestFollowUp->extension_days,
+                        'extension_deadline' => optional($latestFollowUp->extension_deadline)->toIso8601String(),
+                        'attachment_url' => $latestFollowUp->attachment_path
+                            ? url("/api/applications/{$application->id}/documents/follow-ups/{$latestFollowUp->id}/attachment")
+                            : null,
+                    ] : null,
                 ];
             })
             ->values()
@@ -808,14 +902,33 @@ class DocumentController extends Controller
                 ], 403);
             }
 
-        $submissionWindow = $this->resolveSubmissionWindow($application);
-        if ($submissionWindow['is_locked'] ?? false) {
-            return response()->json([
-                'success' => false,
-                'message' => $submissionWindow['lock_reason']
-                    ?? 'Document submission period has ended. Please contact HR.',
-            ], 403);
-        }
+            $submissionWindow = $this->resolveSubmissionWindow($application);
+
+            $activeExtension = DocumentFollowUpRequest::where('application_id', $applicationId)
+                ->where('document_requirement_id', $requirementId)
+                ->where('status', 'accepted')
+                ->whereNotNull('extension_deadline')
+                ->orderByDesc('extension_deadline')
+                ->first();
+
+            $extensionActive = false;
+            if ($activeExtension && $activeExtension->extension_deadline) {
+                $extensionDeadline = $activeExtension->extension_deadline instanceof Carbon
+                    ? $activeExtension->extension_deadline
+                    : Carbon::parse($activeExtension->extension_deadline);
+
+                if ($extensionDeadline->copy()->endOfDay()->isFuture()) {
+                    $extensionActive = true;
+                }
+            }
+
+            if (($submissionWindow['is_locked'] ?? false) && !$extensionActive) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $submissionWindow['lock_reason']
+                        ?? 'Document submission period has ended. Please contact HR.',
+                ], 403);
+            }
 
             // Validate file format if specified
             if ($requirement->file_format) {

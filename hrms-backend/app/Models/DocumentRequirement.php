@@ -40,6 +40,11 @@ class DocumentRequirement extends Model
     {
         return $this->hasOne(DocumentSubmission::class)->latestOfMany();
     }
+
+    public function followUpRequests()
+    {
+        return $this->hasMany(DocumentFollowUpRequest::class);
+    }
 }
 
 
