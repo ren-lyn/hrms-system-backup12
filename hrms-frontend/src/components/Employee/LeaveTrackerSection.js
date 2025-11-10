@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Spinner, Alert, Badge, ProgressBar } from 'react-bootstrap';
+import { Card, Row, Col, Spinner, Badge } from 'react-bootstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPesoSign,
@@ -9,7 +9,6 @@ import {
   faHourglassHalf,
   faTimesCircle,
   faCalendarCheck,
-  faExclamationTriangle,
   faInfoCircle
 } from '@fortawesome/free-solid-svg-icons';
 import axios from 'axios';
@@ -36,12 +35,10 @@ const LeaveTrackerSection = () => {
       eligible: false
     },
     recentRequests: [],
-    yearlyLimit: 3,
-    remainingThisYear: 3,
     yearlyUsage: 0,
-    nextAvailableDate: null,
     upcomingLeaves: [],
-    tenure: null
+    tenure: null,
+    isYearlyLimitUnlimited: true
   });
 
   useEffect(() => {
@@ -76,8 +73,7 @@ const LeaveTrackerSection = () => {
       const tenureMonths = typeof tenureInfo?.months === 'number' ? tenureInfo.months : null;
       const isEligibleForWithPay = tenureMonths !== null && tenureMonths >= 12;
 
-      // Calculate yearly remaining leaves (3 per year limit)
-      // Use same logic as leave form: count ALL requests, not just approved ones
+      // Count yearly leave requests (informational only)
       const currentDate = new Date();
       const currentYear = currentDate.getFullYear();
       
@@ -93,11 +89,8 @@ const LeaveTrackerSection = () => {
         return requestDate.getFullYear() === currentYear;
       });
 
-      const remainingThisYear = Math.max(0, 3 - currentYearRequestsAll.length);
-
-      // Calculate yearly usage
-      // Use same logic as leave form: count ALL requests for yearly usage
       const currentYearRequests = currentYearRequestsAll;
+      const yearlyUsage = currentYearRequests.length;
 
       // Get upcoming approved leaves
       const upcomingLeaves = requests
@@ -108,13 +101,6 @@ const LeaveTrackerSection = () => {
         })
         .sort((a, b) => new Date(a.from) - new Date(b.from))
         .slice(0, 3);
-
-      // Calculate next available date (if yearly limit reached)
-      let nextAvailableDate = null;
-      if (remainingThisYear === 0) {
-        const nextYear = new Date(currentYear + 1, 0, 1);
-        nextAvailableDate = nextYear;
-      }
 
       // Format leave balance data for display
       const buildLeaveTypeBalance = (key) => ({
@@ -204,12 +190,10 @@ const LeaveTrackerSection = () => {
         leaveBalance: formattedLeaveBalance,
         payBalance: payBalanceData,
         recentRequests: enrichedRecentRequests,
-        yearlyLimit: 3,
-        remainingThisYear,
-        yearlyUsage: currentYearRequests.length,
-        nextAvailableDate,
+        yearlyUsage,
         upcomingLeaves,
-        tenure: tenureInfo
+        tenure: tenureInfo,
+        isYearlyLimitUnlimited: true
       });
     } catch (error) {
       console.error('Error loading leave data:', error);
@@ -302,32 +286,18 @@ const LeaveTrackerSection = () => {
                 <h6 className="mb-0">This Year</h6>
               </div>
               <div className="d-flex align-items-center">
-                <h4 className="text-info mb-0 me-2">{leaveData.remainingThisYear}</h4>
-                <small className="text-muted">of {leaveData.yearlyLimit} remaining</small>
+                <h4 className="text-info mb-0 me-2">{leaveData.yearlyUsage}</h4>
+                <small className="text-muted">
+                  leave request{leaveData.yearlyUsage === 1 ? '' : 's'} filed in {new Date().getFullYear()}
+                </small>
               </div>
-              <ProgressBar 
-                variant="info" 
-                now={(leaveData.remainingThisYear / leaveData.yearlyLimit) * 100} 
-                style={{ height: '6px' }}
-                className="mt-1"
-              />
+              {leaveData.isYearlyLimitUnlimited && (
+                <div className="small text-muted mt-1">Unlimited leave filing enabled.</div>
+              )}
             </Card.Body>
           </Card>
         </Col>
       </Row>
-
-      {/* Yearly Limit Warning */}
-      {leaveData.remainingThisYear === 0 && (
-        <Alert variant="warning" className="mb-3">
-          <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" />
-          <strong>Yearly limit reached!</strong>
-          {leaveData.nextAvailableDate && (
-            <div className="small mt-1">
-              Next leave available: {formatDate(leaveData.nextAvailableDate)}
-            </div>
-          )}
-        </Alert>
-      )}
 
       {/* Leave Type Breakdown */}
       <div className="mb-3">
@@ -434,13 +404,9 @@ const LeaveTrackerSection = () => {
             <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
             Yearly usage: {leaveData.yearlyUsage} leave{leaveData.yearlyUsage !== 1 ? 's' : ''}
           </small>
-          <small className="text-muted">
-            {leaveData.remainingThisYear > 0 && (
-              <span className="text-success">
-                {leaveData.remainingThisYear} more this year
-              </span>
-            )}
-          </small>
+          {leaveData.isYearlyLimitUnlimited && (
+            <small className="text-muted">Unlimited leave filing enabled</small>
+          )}
         </div>
       </div>
     </div>

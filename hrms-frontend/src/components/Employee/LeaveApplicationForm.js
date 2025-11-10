@@ -56,7 +56,7 @@ const LeaveApplicationForm = ({ onBack }) => {
       console.error('Error fetching leave summary:', error);
       // Set default values if API fails
       setLeaveSummary({
-        leave_instances: { total_allowed: 3, used: 0, remaining: 3 },
+        leave_instances: { total_allowed: null, used: 0, remaining: null, is_unlimited: true },
         payment_status: {
           next_leave_will_be: 'with PAY (up to 7 days)',
           message: 'Your first leave of the year will be paid (up to 7 days).',

@@ -38,12 +38,35 @@ const EmbeddedLeaveForm = () => {
   const [attachmentImageUrl, setAttachmentImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [remainingLeaves, setRemainingLeaves] = useState(3);
   const [paidLeaveStatus, setPaidLeaveStatus] = useState({ hasPaidLeave: true, paidLeavesUsed: 0 });
   const [leaveSummary, setLeaveSummary] = useState(null);
   const [loadingLeaveSummary, setLoadingLeaveSummary] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentBreakdown, setPaymentBreakdown] = useState(null);
+
+  const storedRole = useMemo(() => {
+    const roleFromStorage = localStorage.getItem('role');
+    if (roleFromStorage) {
+      return roleFromStorage;
+    }
+    try {
+      const userRaw = localStorage.getItem('user');
+      if (userRaw) {
+        const userData = JSON.parse(userRaw);
+        if (typeof userData.role === 'string') {
+          return userData.role;
+        }
+        if (userData.role && typeof userData.role.name === 'string') {
+          return userData.role.name;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read stored user role:', error);
+    }
+    return '';
+  }, []);
+
+  const isManagerUser = (storedRole || '').toLowerCase() === 'manager';
 
   const paidLeaveIndicator = useMemo(() => {
     const leaveType = formData.leaveType;
@@ -301,17 +324,12 @@ const EmbeddedLeaveForm = () => {
       
       setLeaveSummary(data);
       
-      // Update remaining leaves based on summary
-      if (data.leave_instances) {
-        setRemainingLeaves(data.leave_instances.remaining);
-      }
-      
       console.log('Leave summary loaded:', data);
     } catch (error) {
       console.error('Error fetching leave summary:', error);
       // Set default values if API fails
       setLeaveSummary({
-        leave_instances: { total_allowed: 3, used: 0, remaining: 3 },
+        leave_instances: { total_allowed: null, used: 0, remaining: null, is_unlimited: true },
         payment_status: {
           next_leave_will_be: 'with PAY (up to 7 days)',
           message: 'Your first leave of the year will be paid (up to 7 days).',
@@ -401,9 +419,6 @@ const EmbeddedLeaveForm = () => {
       setLeaveRequests(myLeaveRequests);
       setLeaveHistory(historyRequests);
       
-      // Calculate remaining leaves for current month
-      calculateRemainingLeaves(allRequests);
-      
       // Calculate paid leave status for current year
       calculatePaidLeaveStatus(allRequests);
       
@@ -426,22 +441,6 @@ const EmbeddedLeaveForm = () => {
     } catch (error) {
       console.error('Failed to load leave data:', error);
     }
-  };
-
-  // Calculate remaining leaves for current year
-  const calculateRemainingLeaves = (allRequests) => {
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    
-    // Count leaves filed in current year
-    const currentYearLeaves = allRequests.filter(request => {
-      const requestDate = new Date(request.submitted_at || request.created_at || request.date_filed);
-      return requestDate.getFullYear() === currentYear;
-    }).length;
-    
-    const remaining = Math.max(0, 3 - currentYearLeaves);
-    setRemainingLeaves(remaining);
-    return remaining;
   };
 
   // Calculate paid leave status for current year
@@ -1016,9 +1015,6 @@ const EmbeddedLeaveForm = () => {
       // Simple success message (payment info already shown in modal)
       showSuccess('Leave application submitted successfully! Your request has been sent to your manager for approval.');
       
-      // Decrease remaining leaves counter
-      setRemainingLeaves(prev => Math.max(0, prev - 1));
-      
       // Reset form after successful submission
       // Clean up attachment preview URL if exists
       if (formData.attachmentPreview) {
@@ -1099,8 +1095,13 @@ const EmbeddedLeaveForm = () => {
       let severity = 'warning';
       
       if (request.status === 'pending') {
-        displayStatus = 'For Approval (Manager)';
-        severity = 'warning';
+        if (isManagerUser) {
+          displayStatus = 'For Approval (HR Assistant)';
+          severity = 'info';
+        } else {
+          displayStatus = 'For Approval (Manager)';
+          severity = 'warning';
+        }
       } else if (request.status === 'manager_approved') {
         displayStatus = 'For Approval (HR Assistant)';
         severity = 'info';

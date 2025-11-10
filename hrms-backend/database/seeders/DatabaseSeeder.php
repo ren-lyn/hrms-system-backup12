@@ -39,7 +39,7 @@ class DatabaseSeeder extends Seeder
             // ResignationFlagSeeder::class,
             SecuritySettingsSeeder::class,
             Holiday2025To2050Seeder::class,
-            ApprovedLeaveRequestSeeder::class,
+            //ApprovedLeaveRequestSeeder::class,
             ApprovedOvertimeRequestSeeder::class,
         ]);
     }

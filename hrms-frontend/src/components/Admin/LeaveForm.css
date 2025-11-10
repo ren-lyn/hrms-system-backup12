@@ -1,0 +1,40 @@
+.admin-leave-form {
+  padding: 24px;
+  background: var(--admin-content-bg, #f4f5fb);
+  min-height: calc(100vh - 80px);
+  box-sizing: border-box;
+}
+
+.admin-leave-form__header {
+  margin-bottom: 24px;
+}
+
+.admin-leave-form__header h2 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  color: #1f2937;
+}
+
+.admin-leave-form__header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.admin-leave-form__content {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  padding: 24px;
+}
+
+@media (max-width: 1023px) {
+  .admin-leave-form {
+    padding: 16px;
+  }
+
+  .admin-leave-form__content {
+    padding: 16px;
+  }
+}
+

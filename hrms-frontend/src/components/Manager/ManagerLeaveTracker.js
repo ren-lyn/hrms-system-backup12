@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Form, InputGroup, Alert, Spinner, Modal } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, Calendar, Download, Eye, User, TrendingUp, TrendingDown, Users, UserCheck, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchEmployeeLeaveTracker, exportLeaveTrackerData } from '../../api/leave';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -130,6 +130,38 @@ const ManagerLeaveTracker = () => {
     });
   };
 
+const calculateTotalLeaveDays = (employee = {}) => {
+  const directTotal = Number(employee.totalLeaveDays);
+  if (!Number.isNaN(directTotal)) {
+    return directTotal;
+  }
+
+  const periods = Array.isArray(employee.leavePeriods) ? employee.leavePeriods : [];
+
+  return periods.reduce((sum, period = {}) => {
+    const totalDaysValue = Number(period.totalDays ?? period.total_days);
+    if (!Number.isNaN(totalDaysValue)) {
+      return sum + totalDaysValue;
+    }
+
+    const start = period.startDate || period.start_date;
+    const end = period.endDate || period.end_date;
+
+    if (start && end) {
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+        const dayDiff = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        if (dayDiff > 0) {
+          return sum + dayDiff;
+        }
+      }
+    }
+
+    return sum;
+  }, 0);
+};
+
   const getLeaveTypeColor = (leaveType) => {
     const colors = {
       'Vacation Leave': 'success',
@@ -140,13 +172,6 @@ const ManagerLeaveTracker = () => {
       'LOA': 'primary'
     };
     return colors[leaveType] || 'secondary';
-  };
-
-  const getBalanceStatus = (remaining, total) => {
-    const percentage = (remaining / total) * 100;
-    if (percentage >= 70) return { color: 'success', icon: <CheckCircle size={16} /> };
-    if (percentage >= 40) return { color: 'warning', icon: <Clock size={16} /> };
-    return { color: 'danger', icon: <XCircle size={16} /> };
   };
 
   const exportToPDF = async () => {
@@ -163,22 +188,21 @@ const ManagerLeaveTracker = () => {
       
       // Table data
       const tableData = filteredData.map(emp => {
-        const totalLeaves = emp.leavePeriods ? emp.leavePeriods.length : 0;
-        const remainingLeaves = Math.max(0, 3 - totalLeaves);
-        
+        const totalLeaveDays = calculateTotalLeaveDays(emp);
+        const totalLeaveLabel = `${totalLeaveDays} ${totalLeaveDays === 1 ? 'day' : 'days'}`;
+
         return [
         emp.name,
         emp.department,
         emp.position,
-          `${totalLeaves} / 3`,
+          totalLeaveLabel,
           emp.paidLeaveDays || 0,
-          emp.unpaidLeaveDays || 0,
-          `${remainingLeaves} ${remainingLeaves === 1 ? 'leave' : 'leaves'} left`
+          emp.unpaidLeaveDays || 0
         ];
       });
       
       pdf.autoTable({
-        head: [['Employee', 'Department', 'Position', 'Total Leaves', 'Paid Days', 'Unpaid Days', 'Balance']],
+        head: [['Employee', 'Department', 'Position', 'Total Leaves', 'Paid Days', 'Unpaid Days']],
         body: tableData,
         startY: 45,
         styles: { fontSize: 8 },
@@ -226,7 +250,7 @@ const ManagerLeaveTracker = () => {
     <Container fluid className="leave-tracker manager-leave-tracker">
       <div className="page-header mb-4">
         <h2 className="page-title">Leave Tracker</h2>
-        <p className="page-subtitle">Monitor employee leave usage and remaining balances</p>
+        <p className="page-subtitle">Monitor employee leave usage across the organization</p>
       </div>
 
       {alert.show && (
@@ -393,13 +417,12 @@ const ManagerLeaveTracker = () => {
                     <th style={{ textAlign: 'center' }}>Total Leaves</th>
                     <th style={{ textAlign: 'center' }}>Paid Days</th>
                     <th style={{ textAlign: 'center' }}>Unpaid Days</th>
-                    <th style={{ textAlign: 'center' }}>Balance Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center p-4">
+                      <td colSpan="7" className="text-center p-4">
                         <Calendar size={48} className="text-muted mb-3" />
                         <p className="text-muted">No leave data found for the selected period.</p>
                         <small className="text-muted">Employee leave records will appear here.</small>
@@ -407,19 +430,8 @@ const ManagerLeaveTracker = () => {
                     </tr>
                   ) : (
                     filteredData.map((employee, index) => {
-                      // Calculate total leaves (count of leave instances) - max 3
-                      const totalLeaves = employee.leavePeriods ? employee.leavePeriods.length : 0;
-                      const remainingLeaves = Math.max(0, 3 - totalLeaves);
-                      
-                      // Determine balance status based on remaining leave instances
-                      let balanceStatus;
-                      if (remainingLeaves >= 2) {
-                        balanceStatus = { color: 'success', icon: <CheckCircle size={16} /> };
-                      } else if (remainingLeaves === 1) {
-                        balanceStatus = { color: 'warning', icon: <Clock size={16} /> };
-                      } else {
-                        balanceStatus = { color: 'danger', icon: <XCircle size={16} /> };
-                      }
+                      const totalLeaveDays = calculateTotalLeaveDays(employee);
+                      const totalLeaveLabel = `${totalLeaveDays} ${totalLeaveDays === 1 ? 'day' : 'days'}`;
 
                       const leavePeriods = employee.leavePeriods || [];
                       const firstPeriod = leavePeriods[0];
@@ -496,7 +508,7 @@ const ManagerLeaveTracker = () => {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
-                              {totalLeaves} / 3
+                              {totalLeaveLabel}
                             </div>
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -507,16 +519,6 @@ const ManagerLeaveTracker = () => {
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
                               {employee.unpaidLeaveDays || 0}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div className="d-flex align-items-center justify-content-center">
-                              <span className={`me-2 text-${balanceStatus.color}`}>
-                                {balanceStatus.icon}
-                              </span>
-                              <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
-                                {remainingLeaves} {remainingLeaves === 1 ? 'leave' : 'leaves'} left
-                              </div>
                             </div>
                           </td>
                         </tr>

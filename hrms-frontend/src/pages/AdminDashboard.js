@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTachometerAlt, faUsers, faUserCog, faBuilding, faShieldAlt,
-  faSignOutAlt, faBars, faTimes, faUser, faCog, faChartBar,
+  faCalendar, faSignOutAlt, faBars, faTimes, faUser, faCog, faChartBar,
   faUserPlus, faEdit, faTrash, faEye, faKey, faToggleOn, faToggleOff
 } from '@fortawesome/free-solid-svg-icons';
 import useUserProfile from '../hooks/useUserProfile';
 import axios from 'axios';
 import UserAccountManagement from '../components/Admin/UserAccountManagement';
 import EmployeeManagement from '../components/Admin/EmployeeManagement';
+import LeaveForm from '../components/Admin/LeaveForm';
 import DepartmentPositionManagement from '../components/Admin/DepartmentPositionManagement';
 import DataPrivacySecurity from '../components/Admin/DataPrivacySecurity';
 import './AdminDashboard.css';
@@ -68,6 +69,13 @@ const AdminDashboard = () => {
       icon: faUsers, 
       description: 'Manage employee profiles and information',
       color: '#059669'
+    },
+    { 
+      id: 'leave-form', 
+      title: 'Leave Form', 
+      icon: faCalendar, 
+      description: 'Submit leave applications directly from admin view',
+      color: '#2563EB'
     },
     { 
       id: 'department-position', 
@@ -189,12 +197,94 @@ const AdminDashboard = () => {
   // (Security alerts removed)
   // Security Alerts feature removed
 
+  const currentEmployeeRecord = useMemo(() => {
+    if (!userProfile || !employees.length) return null;
+
+    const normalize = (value) =>
+      (value || '').toString().trim().toLowerCase();
+
+    return (
+      employees.find((emp) => {
+        if (!emp) return false;
+
+        const employeeEmail = normalize(
+          emp.email || emp.user_email || emp.userEmail
+        );
+        const profileEmail = normalize(userProfile.email);
+        if (employeeEmail && profileEmail && employeeEmail === profileEmail) {
+          return true;
+        }
+
+        const employeeId = normalize(
+          emp.user_id || emp.userId || emp.id
+        );
+        const profileId = normalize(userProfile.id);
+        if (employeeId && profileId && employeeId === profileId) {
+          return true;
+        }
+
+        const employeeFullName = normalize(
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() ||
+            emp.name ||
+            ''
+        );
+        const profileName = normalize(userProfile.name);
+        return (
+          employeeFullName &&
+          profileName &&
+          employeeFullName === profileName
+        );
+      }) || null
+    );
+  }, [employees, userProfile]);
+
+  const currentRoleTitle = useMemo(() => {
+    const candidates = [];
+
+    const pushCandidate = (value) => {
+      if (!value) return;
+      if (typeof value === 'object' && value.name) {
+        value = value.name;
+      }
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (trimmed) {
+        candidates.push(trimmed);
+      }
+    };
+
+    if (currentEmployeeRecord) {
+      pushCandidate(currentEmployeeRecord.system_role);
+      pushCandidate(currentEmployeeRecord.role);
+      pushCandidate(currentEmployeeRecord.user_role);
+      pushCandidate(currentEmployeeRecord.userRole);
+      pushCandidate(currentEmployeeRecord.position);
+      pushCandidate(currentEmployeeRecord.job_title);
+      pushCandidate(currentEmployeeRecord.title);
+    }
+
+    pushCandidate(userProfile?.role);
+    pushCandidate(userProfile?.rawRole);
+
+    const adminCandidate = candidates.find((candidate) =>
+      candidate.toLowerCase().includes('admin')
+    );
+
+    if (adminCandidate) {
+      return 'System Administration';
+    }
+
+    return candidates[0] || 'Employee';
+  }, [currentEmployeeRecord, userProfile]);
+
   const renderContent = () => {
     switch (activeView) {
       case 'user-management':
         return <UserAccountManagement />;
       case 'employee-management':
         return <EmployeeManagement />;
+      case 'leave-form':
+        return <LeaveForm />;
       case 'department-position':
         return <DepartmentPositionManagement />;
       case 'data-privacy':
@@ -367,8 +457,10 @@ const AdminDashboard = () => {
             <FontAwesomeIcon icon={faUser} />
           </div>
           <div className="admin-user-details">
-            <h4>{userProfile?.first_name} {userProfile?.last_name}</h4>
-            <p>System Administrator</p>
+            <h4>
+              {userProfile?.name || `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'User'}
+            </h4>
+            <p>{currentRoleTitle}</p>
           </div>
         </div>
 
@@ -395,6 +487,14 @@ const AdminDashboard = () => {
           >
             <FontAwesomeIcon icon={faUsers} />
             <span>Employee Management</span>
+          </button>
+
+          <button
+            className={`admin-nav-link ${activeView === 'leave-form' ? 'active' : ''}`}
+            onClick={() => setActiveView('leave-form')}
+          >
+            <FontAwesomeIcon icon={faCalendar} />
+            <span>Leave Form</span>
           </button>
 
           <button

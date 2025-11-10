@@ -7,7 +7,7 @@ import axios from '../../axios';
 import { useDebounce } from '../../utils/debounce';
 import './LeaveManagement.css';
 
-const LeaveManagement = () => {
+const LeaveManagement = ({ showPending = true }) => {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [stats, setStats] = useState({
     approval_stats: { requested: 0, approved: 0, rejected: 0, pending: 0 },
@@ -32,7 +32,13 @@ const LeaveManagement = () => {
   const [selectedLeaveForView, setSelectedLeaveForView] = useState(null);
   const [loadingLeaveDetails, setLoadingLeaveDetails] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState(showPending ? 'pending' : 'approved');
+
+  useEffect(() => {
+    if (!showPending && activeTab === 'pending') {
+      setActiveTab('approved');
+    }
+  }, [showPending, activeTab]);
   const [selectedMonth, setSelectedMonth] = useState('');
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
@@ -1075,11 +1081,12 @@ const LeaveManagement = () => {
                 <div className="stats-icon me-3" style={{
                   backgroundColor: activeTab === 'pending' ? '#ffc107' : 
                                   activeTab === 'approved' ? '#28a745' : 
-                                  '#dc3545'
+                                  '#dc3545',
+                  color: '#ffffff'
                 }}>
-                  {activeTab === 'pending' ? <Clock size={20} /> : 
-                   activeTab === 'approved' ? <CheckCircle size={20} /> : 
-                   <XCircle size={20} />}
+                  {activeTab === 'pending' ? <Clock size={20} color="#ffffff" /> : 
+                   activeTab === 'approved' ? <CheckCircle size={20} color="#ffffff" /> : 
+                   <XCircle size={20} color="#ffffff" />}
                 </div>
                 <h6 className="mb-0">
                   {activeTab === 'pending' ? 'Pending Requests' : 
@@ -1300,15 +1307,17 @@ const LeaveManagement = () => {
         <Card.Body className="p-0">
           <Tab.Container activeKey={activeTab} onSelect={setActiveTab}>
             <Nav variant="tabs" className="border-bottom">
-              <Nav.Item>
-                <Nav.Link eventKey="pending" className="d-flex align-items-center">
-                  <Clock size={16} className="me-2" />
-                  Pending Requests
-                  <Badge bg="warning" className="ms-2">
-                    {leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length}
-                  </Badge>
-                </Nav.Link>
-              </Nav.Item>
+              {showPending && (
+                <Nav.Item>
+                  <Nav.Link eventKey="pending" className="d-flex align-items-center">
+                    <Clock size={16} className="me-2" />
+                    Pending Requests
+                    <Badge bg="warning" className="ms-2">
+                      {leaveRequests.filter(r => r.status === 'manager_approved' || r.status === 'manager_rejected').length}
+                    </Badge>
+                  </Nav.Link>
+                </Nav.Item>
+              )}
               <Nav.Item>
                 <Nav.Link eventKey="approved" className="d-flex align-items-center">
                   <CheckCircle size={16} className="me-2" />
@@ -1330,142 +1339,144 @@ const LeaveManagement = () => {
             </Nav>
             
             <Tab.Content>
-              <Tab.Pane eventKey="pending">
-                <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
-                  {loading && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1000
-                    }}>
-                      <div className="spinner-border text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
+              {showPending && (
+                <Tab.Pane eventKey="pending">
+                  <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>
+                    {loading && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000
+                      }}>
+                        <div className="spinner-border text-primary" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
-                    <thead>
-                    <tr>
-                      <th>👤 Employee Name</th>
-                      <th>Department</th>
-                      <th>Type of Leave</th>
-                      <th>Terms</th>
-                      <th>Start Date</th>
-                      <th>End Date</th>
-                      <th>Days</th>
-                      <th>Reason</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map((request) => (
-                      <tr key={request.id}>
-                        <td>
-                          <div className="employee-info">
-                            <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
-                            {request.company && <div className="company-text">{request.company}</div>}
-                          </div>
-                        </td>
-                        <td>
-                          <span className="department-text">{request.department || '-'}</span>
-                        </td>
-                        <td>
-                          <div className="leave-type-info">
-                            <div>{request.type}</div>
-                            {request.leave_category && (
-                              <small className="text-muted">({request.leave_category})</small>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="terms-section">
-                            <div style={{ fontSize: '13px', color: '#212529', marginBottom: '4px' }}>
-                              <strong>
-                                {request.terms === 'with PAY' ? 'with PAY' : 
-                                 request.terms === 'without PAY' ? 'without PAY' : 
-                                 'TBD by HR'}
-                              </strong>
+                    )}
+                    <Table responsive className="leave-table" style={{ minWidth: '1200px' }}>
+                      <thead>
+                      <tr>
+                        <th>👤 Employee Name</th>
+                        <th>Department</th>
+                        <th>Type of Leave</th>
+                        <th>Terms</th>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                        <th>Days</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRequests.map((request) => (
+                        <tr key={request.id}>
+                          <td>
+                            <div className="employee-info">
+                              <strong>{getEmployeeName(request.employee, request.employee_name)}</strong>
+                              {request.company && <div className="company-text">{request.company}</div>}
                             </div>
-                            {request.leave_category && (
-                              <div style={{ fontSize: '13px', color: '#6c757d' }}>
+                          </td>
+                          <td>
+                            <span className="department-text">{request.department || '-'}</span>
+                          </td>
+                          <td>
+                            <div className="leave-type-info">
+                              <div>{request.type}</div>
+                              {request.leave_category && (
+                                <small className="text-muted">({request.leave_category})</small>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="terms-section">
+                              <div style={{ fontSize: '13px', color: '#212529', marginBottom: '4px' }}>
                                 <strong>
-                                  {request.leave_category === 'Service Incentive Leave (SIL)' ? 'SIL' : 'Emergency Leave'}
+                                  {request.terms === 'with PAY' ? 'with PAY' : 
+                                   request.terms === 'without PAY' ? 'without PAY' : 
+                                   'TBD by HR'}
                                 </strong>
                               </div>
-                            )}
-                          </div>
-                        </td>
-                        <td>{formatDate(request.from)}</td>
-                        <td>{formatDate(request.to)}</td>
-                        <td>
-                          <span className="days-count">{request.total_days || '-'}</span>
-                        </td>
-                        <td>
-                          <span className="reason-text">
-                            {request.reason || 'No reason provided'}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="action-buttons d-flex align-items-center gap-1">
-                            <Button
-                              variant="outline-info"
-                              size="sm"
-                              onClick={() => handleViewLeave(request)}
-                              disabled={loadingLeaveDetails}
-                              title="View leave form details"
-                            >
-                              <Eye size={14} />
-                            </Button>
-                            {request.status === 'manager_approved' ? (
-                              <>
-                                <Button
-                                  variant="success"
-                                  size="sm"
-                                  onClick={() => handleAction(request, 'approve')}
-                                  title="Approve leave request"
-                                >
-                                  <Check size={14} />
-                                </Button>
-                              </>
-                            ) : request.status === 'manager_rejected' ? (
-                              <>
-                                <Button
-                                  variant="warning"
-                                  size="sm"
-                                  onClick={() => handleAction(request, 'confirm_rejection')}
-                                  title="Confirm manager's rejection"
-                                >
-                                  <Check size={14} /> Confirm
-                                </Button>
-                              </>
-                            ) : (
-                              <div className="ms-2">
-                                {getStatusBadge(request.status)}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  </Table>
-                </div>
-                
-                {filteredRequests.length === 0 && (
-                  <div className="text-center p-4">
-                    <Clock size={48} className="text-muted mb-3" />
-                    <p className="text-muted">No pending leave requests found.</p>
-                    <small className="text-muted">Leave requests that need HR approval will appear here.</small>
+                              {request.leave_category && (
+                                <div style={{ fontSize: '13px', color: '#6c757d' }}>
+                                  <strong>
+                                    {request.leave_category === 'Service Incentive Leave (SIL)' ? 'SIL' : 'Emergency Leave'}
+                                  </strong>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td>{formatDate(request.from)}</td>
+                          <td>{formatDate(request.to)}</td>
+                          <td>
+                            <span className="days-count">{request.total_days || '-'}</span>
+                          </td>
+                          <td>
+                            <span className="reason-text">
+                              {request.reason || 'No reason provided'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="action-buttons d-flex align-items-center gap-1">
+                              <Button
+                                variant="outline-info"
+                                size="sm"
+                                onClick={() => handleViewLeave(request)}
+                                disabled={loadingLeaveDetails}
+                                title="View leave form details"
+                              >
+                                <Eye size={14} />
+                              </Button>
+                              {request.status === 'manager_approved' ? (
+                                <>
+                                  <Button
+                                    variant="success"
+                                    size="sm"
+                                    onClick={() => handleAction(request, 'approve')}
+                                    title="Approve leave request"
+                                  >
+                                    <Check size={14} />
+                                  </Button>
+                                </>
+                              ) : request.status === 'manager_rejected' ? (
+                                <>
+                                  <Button
+                                    variant="warning"
+                                    size="sm"
+                                    onClick={() => handleAction(request, 'confirm_rejection')}
+                                    title="Confirm manager's rejection"
+                                  >
+                                    <Check size={14} /> Confirm
+                                  </Button>
+                                </>
+                              ) : (
+                                <div className="ms-2">
+                                  {getStatusBadge(request.status)}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    </Table>
                   </div>
-                )}
-              </Tab.Pane>
+                  
+                  {filteredRequests.length === 0 && (
+                    <div className="text-center p-4">
+                      <Clock size={48} className="text-muted mb-3" />
+                      <p className="text-muted">No pending leave requests found.</p>
+                      <small className="text-muted">Leave requests that need HR approval will appear here.</small>
+                    </div>
+                  )}
+                </Tab.Pane>
+              )}
               
               <Tab.Pane eventKey="approved">
                 <div className="leave-table-container" style={{ position: 'relative', maxHeight: '500px', overflowY: 'auto' }}>

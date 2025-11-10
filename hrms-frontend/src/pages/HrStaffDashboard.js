@@ -10,6 +10,9 @@ import OnboardingDashboard from "../components/HrStaff/Onboarding";
 import StaffCalendar from '../components/HrAssistant/StaffCalendar';
 import DisciplinaryManagement from '../components/HrAssistant/DisciplinaryManagement';
 import LeaveManagement from '../components/HrAssistant/LeaveManagement';
+import LeaveForm from '../components/Admin/LeaveForm';
+import LeaveTracker from '../components/HrAssistant/LeaveTracker';
+import LeaveHistory from '../components/HrAssistant/LeaveHistory';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
@@ -21,6 +24,8 @@ import {
   faUserPlus,
   faSignOutAlt,
   faFileAlt,
+  faClipboardList,
+  faHistory,
   faBars,
   faEnvelope,
   faBell as faBellIcon,
@@ -39,6 +44,8 @@ const HrStaffDashboard = () => {
   const [date, setDate] = useState(new Date());
   const [timeNow, setTimeNow] = useState(new Date());
   const { userProfile, loading } = useUserProfile();
+  const [isLeaveDropdownOpen, setIsLeaveDropdownOpen] = useState(false);
+  const leaveViews = ['leave-overview', 'leave-form', 'leave-tracker', 'leave-history'];
 
   useEffect(() => {
     const timer = setInterval(() => setTimeNow(new Date()), 1000);
@@ -70,6 +77,23 @@ const HrStaffDashboard = () => {
     setIsJobOnboardingDropdownOpen(!isJobOnboardingDropdownOpen);
   };
 
+  const toggleLeaveDropdown = () => {
+    setIsLeaveDropdownOpen((prev) => !prev);
+  };
+
+  const handleSetActiveView = (view) => {
+    setActiveView(view);
+    if (!leaveViews.includes(view)) {
+      setIsLeaveDropdownOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (leaveViews.includes(activeView)) {
+      setIsLeaveDropdownOpen(true);
+    }
+  }, [activeView]);
+
   // Toast notification helpers
   const showSuccess = (message) => toast.success(message);
   const showError = (message) => toast.error(message);
@@ -77,7 +101,7 @@ const HrStaffDashboard = () => {
 
   // Notification handlers
   const handleOpenLeave = (leaveId, data) => {
-    setActiveView('leave');
+    handleSetActiveView('leave-overview');
     // You can add additional logic to highlight specific leave request
   };
 
@@ -87,27 +111,27 @@ const HrStaffDashboard = () => {
   };
 
   const handleOpenEvaluation = (evaluationId, data) => {
-    setActiveView('evaluation');
+    handleSetActiveView('evaluation');
     // You can add additional logic to highlight specific evaluation
   };
 
   const handleOpenDisciplinary = (disciplinaryId, data) => {
-    setActiveView('disciplinary');
+    handleSetActiveView('disciplinary');
     // You can add additional logic to highlight specific disciplinary case
   };
 
   const handleOpenCalendar = (eventId, data) => {
-    setActiveView('calendar');
+    handleSetActiveView('calendar');
     // You can add additional logic to highlight specific calendar event
   };
 
   const handleOpenJobApplications = (applicationId, data) => {
-    setActiveView('onboarding');
+    handleSetActiveView('onboarding');
     // You can add additional logic to highlight specific application
   };
 
   const handleOpenJobPostings = (jobPostingId, data) => {
-    setActiveView('job-posting');
+    handleSetActiveView('job-posting');
     // You can add additional logic to highlight specific job posting
   };
 
@@ -187,8 +211,14 @@ const HrStaffDashboard = () => {
         return "Evaluation";
       case "disciplinary":
         return "Disciplinary Action & Issuance";
-      case "leave":
-        return "Leave";
+      case "leave-overview":
+        return "Leave Overview";
+      case "leave-form":
+        return "Leave Form";
+      case "leave-tracker":
+        return "Leave Tracker";
+      case "leave-history":
+        return "Leave History";
       case "calendar":
         return "My Calendar";
       case "onboarding":
@@ -294,8 +324,20 @@ const HrStaffDashboard = () => {
       return <DisciplinaryManagement />;
     }
 
-    if (activeView === "leave") {
-      return <LeaveManagement />;
+    if (activeView === "leave-overview") {
+      return <LeaveManagement showPending={false} />;
+    }
+
+    if (activeView === "leave-form") {
+      return <LeaveForm />;
+    }
+
+    if (activeView === "leave-tracker") {
+      return <LeaveTracker />;
+    }
+
+    if (activeView === "leave-history") {
+      return <LeaveHistory />;
     }
 
     if (activeView === "calendar") {
@@ -307,7 +349,7 @@ const HrStaffDashboard = () => {
     }
 
     if (activeView === "profile") {
-      return <HrStaffProfile onBack={() => setActiveView('dashboard')} />;
+      return <HrStaffProfile onBack={() => handleSetActiveView('dashboard')} />;
     }
 
     return (
@@ -373,7 +415,7 @@ const HrStaffDashboard = () => {
           <ul className="nav flex-column gap-2">
             <li>
               <button
-                onClick={() => setActiveView("dashboard")}
+                onClick={() => handleSetActiveView("dashboard")}
                 className={`hrms-unified-nav-link ${activeView === 'dashboard' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faChartBar} className="me-2" /> Dashboard
@@ -396,7 +438,7 @@ const HrStaffDashboard = () => {
               <div className={`hrms-dropdown-menu ${isJobOnboardingDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
                 <button
                   onClick={() => {
-                    setActiveView("job-posting");
+                    handleSetActiveView("job-posting");
                     setIsJobOnboardingDropdownOpen(false);
                   }}
                   className={`hrms-dropdown-item ${activeView === 'job-posting' ? 'hrms-dropdown-active' : ''}`}
@@ -405,7 +447,7 @@ const HrStaffDashboard = () => {
                 </button>
                 <button
                   onClick={() => {
-                    setActiveView("onboarding");
+                    handleSetActiveView("onboarding");
                     setIsJobOnboardingDropdownOpen(false);
                   }}
                   className={`hrms-dropdown-item ${activeView === 'onboarding' ? 'hrms-dropdown-active' : ''}`}
@@ -416,7 +458,7 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("employee-record")}
+                onClick={() => handleSetActiveView("employee-record")}
                 className={`hrms-unified-nav-link ${activeView === 'employee-record' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faUsers} className="me-2" /> Employee Record
@@ -424,7 +466,7 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("evaluation")}
+                onClick={() => handleSetActiveView("evaluation")}
                 className={`hrms-unified-nav-link ${activeView === 'evaluation' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faChartBar} className="me-2" /> Evaluation
@@ -432,23 +474,54 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("disciplinary")}
+                onClick={() => handleSetActiveView("disciplinary")}
                 className={`hrms-unified-nav-link ${activeView === 'disciplinary' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faExclamationTriangle} className="me-2" /> Disciplinary Action
               </button>
             </li>
-            <li>
+            <li className="hrms-dropdown-container">
               <button
-                onClick={() => setActiveView("leave")}
-                className={`hrms-unified-nav-link ${activeView === 'leave' ? 'hrms-unified-active' : ''}`}
+                onClick={toggleLeaveDropdown}
+                className={`hrms-unified-nav-link hrms-dropdown-toggle ${leaveViews.includes(activeView) ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> Leave
+                <FontAwesomeIcon
+                  icon={isLeaveDropdownOpen ? faChevronDown : faChevronRight}
+                  className="ms-auto"
+                  size="sm"
+                />
               </button>
+              <div className={`hrms-dropdown-menu ${isLeaveDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+                <button
+                  onClick={() => handleSetActiveView("leave-overview")}
+                  className={`hrms-dropdown-item ${activeView === 'leave-overview' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faChartBar} className="me-2" /> Leave Overview
+                </button>
+                <button
+                  onClick={() => handleSetActiveView("leave-form")}
+                  className={`hrms-dropdown-item ${activeView === 'leave-form' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faFileAlt} className="me-2" /> Leave Form
+                </button>
+                <button
+                  onClick={() => handleSetActiveView("leave-tracker")}
+                  className={`hrms-dropdown-item ${activeView === 'leave-tracker' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faClipboardList} className="me-2" /> Leave Tracker
+                </button>
+                <button
+                  onClick={() => handleSetActiveView("leave-history")}
+                  className={`hrms-dropdown-item ${activeView === 'leave-history' ? 'hrms-dropdown-active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faHistory} className="me-2" /> Leave History
+                </button>
+              </div>
             </li>
             <li>
               <button
-                onClick={() => setActiveView("calendar")}
+                onClick={() => handleSetActiveView("calendar")}
                 className={`hrms-unified-nav-link ${activeView === 'calendar' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" /> My Calendar
@@ -456,7 +529,7 @@ const HrStaffDashboard = () => {
             </li>
             <li>
               <button
-                onClick={() => setActiveView("profile")}
+                onClick={() => handleSetActiveView("profile")}
                 className={`hrms-unified-nav-link ${activeView === 'profile' ? 'hrms-unified-active' : ''}`}
               >
                 <FontAwesomeIcon icon={faUsers} className="me-2" /> Profile
@@ -511,7 +584,7 @@ const HrStaffDashboard = () => {
                       border: "2px solid #0d6efd",
                       cursor: "pointer"
                     }}
-                    onClick={() => setActiveView('profile')}
+                    onClick={() => handleSetActiveView('profile')}
                     title={`Go to Profile - ${userProfile?.name || 'HR Staff'}`}
                   />
                 </div>

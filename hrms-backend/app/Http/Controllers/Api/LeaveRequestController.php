@@ -277,7 +277,7 @@ class LeaveRequestController extends Controller
         
         // Check if user is a Manager - if so, set status to 'manager_approved' to skip manager approval
         $userRole = $user->role ? $user->role->name : null;
-        if ($userRole === 'Manager') {
+        if ($userRole && strcasecmp($userRole, 'Manager') === 0) {
             // Manager's leave requests go directly to HR Assistant
             $leaveRequest->status = 'manager_approved';
             $leaveRequest->manager_approved_by = $user->id;
@@ -739,14 +739,13 @@ class LeaveRequestController extends Controller
      * Validate leave request limits for an employee
      * Rules:
      * 1. Check if employee is a new hire (less than 1 year) - NEW HIRE VALIDATION
-     * 2. Maximum 3 leave requests per year
+     * 2. Must wait 3 days after the end date of a rejected leave before filing another (rejection cooldown)
      * 3. Must wait 7 days after the end date of previous leave before filing another
      * 4. Check if requested days exceed maximum days allowed for the leave type (per-request limit)
      * 5. Check leave balance for the requested leave type (annual balance)
      */
     private function validateLeaveRequestLimits($employeeId, $leaveType = null, $requestedDays = 0)
     {
-        $currentYear = Carbon::now()->year;
         $today = Carbon::now();
         
         // Rule 1: New hires (<1 year) are allowed but with an unpaid warning
@@ -757,17 +756,7 @@ class LeaveRequestController extends Controller
             ];
         }
         
-        // Rule 2: Check yearly limit (3 requests per year) - exclude rejected leaves
-        $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
-            ->whereYear('created_at', $currentYear)
-            ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
-            ->count();
-            
-        if ($yearlyRequestCount >= 3) {
-            return 'You have reached the yearly limit of 3 leave requests. Please wait until next year to submit another request.';
-        }
-        
-        // Rule 2.5: Check 3-day waiting period after rejection
+        // Rule 2: Check 3-day waiting period after rejection
         $lastRejectedLeave = LeaveRequest::where('employee_id', $employeeId)
             ->whereIn('status', ['rejected', 'manager_rejected'])
             ->orderBy('rejected_at', 'desc')
@@ -899,7 +888,7 @@ class LeaveRequestController extends Controller
         $currentYear = Carbon::now()->year;
         $today = Carbon::now();
         
-        // Yearly usage - exclude rejected leaves
+        // Yearly usage (informational only) - exclude rejected leaves
         $yearlyRequestCount = LeaveRequest::where('employee_id', $employeeId)
             ->whereYear('created_at', $currentYear)
             ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
@@ -959,9 +948,10 @@ class LeaveRequestController extends Controller
         
         return [
             'yearly_limit' => [
-                'limit' => 3,
+                'limit' => null,
+                'is_unlimited' => true,
                 'used' => $yearlyRequestCount,
-                'remaining' => max(0, 3 - $yearlyRequestCount),
+                'remaining' => null,
                 'year' => $currentYear
             ],
             'rejection_waiting_period' => $rejectionWaitingPeriod,
@@ -1209,8 +1199,6 @@ class LeaveRequestController extends Controller
             ->whereNotIn('status', ['rejected', 'manager_rejected']) // Exclude rejected leaves
             ->count();
         
-        $remainingRequests = max(0, 3 - $yearlyRequestCount);
-        
         // Check for rejection waiting period (3 days) - priority check
         $nextAvailableDate = null;
         $rejectionNote = null;
@@ -1250,18 +1238,13 @@ class LeaveRequestController extends Controller
             }
         }
         
-        // If all 3 leaves used, next available is next year
-        if ($yearlyRequestCount >= 3 && !$nextAvailableDate) {
-            $nextYear = Carbon::create($currentYear + 1, 1, 1);
-            $nextAvailableDate = $nextYear->format('F j, Y');
-        }
-        
         return response()->json([
             'year' => $currentYear,
             'leave_instances' => [
-                'total_allowed' => 3,
+                'total_allowed' => null,
                 'used' => $yearlyRequestCount,
-                'remaining' => $remainingRequests,
+                'remaining' => null,
+                'is_unlimited' => true,
                 'next_available_date' => $nextAvailableDate,
                 'rejection_note' => $rejectionNote
             ],

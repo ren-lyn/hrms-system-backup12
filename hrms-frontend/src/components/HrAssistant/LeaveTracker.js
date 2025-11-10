@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Form, InputGroup, Alert, Spinner, Modal } from 'react-bootstrap';
-import { Search, Calendar, Download, Eye, User, Clock, CheckCircle, XCircle, TrendingUp, TrendingDown, Users, UserCheck, BarChart3, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, Calendar, Download, Eye, Users, UserCheck, BarChart3, ChevronDown } from 'lucide-react';
 import { fetchEmployeeLeaveTracker, exportLeaveTrackerData } from '../../api/leave';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -61,13 +61,29 @@ const LeaveTracker = () => {
     }
   };
 
+  const computeTotalLeaveDays = (employee) => {
+    if (!employee) return 0;
+
+    if (typeof employee.totalLeaveDays === 'number') {
+      return employee.totalLeaveDays;
+    }
+
+    const periods = Array.isArray(employee.leavePeriods) ? employee.leavePeriods : [];
+
+    return periods.reduce((sum, period) => {
+      const rawDays = period?.days ?? period?.totalDays ?? period?.total_days ?? 0;
+      const numericDays = typeof rawDays === 'number' ? rawDays : parseFloat(rawDays);
+      return sum + (Number.isFinite(numericDays) ? numericDays : 0);
+    }, 0);
+  };
+
   const calculateStats = (data) => {
     // Ensure data is an array
     const safeData = Array.isArray(data) ? data : [];
     
     const totalEmployees = safeData.length;
-    const employeesWithLeave = safeData.filter(emp => emp && emp.totalLeaveDays > 0).length;
-    const totalLeaveDays = safeData.reduce((sum, emp) => sum + (emp?.totalLeaveDays || 0), 0);
+    const employeesWithLeave = safeData.filter(emp => computeTotalLeaveDays(emp) > 0).length;
+    const totalLeaveDays = safeData.reduce((sum, emp) => sum + computeTotalLeaveDays(emp), 0);
     const averageLeaveDays = totalEmployees > 0 ? (totalLeaveDays / totalEmployees).toFixed(1) : 0;
 
     setStats({
@@ -108,8 +124,8 @@ const LeaveTracker = () => {
   useEffect(() => {
     if (filteredData.length > 0 || (searchTerm || selectedDepartment)) {
       const totalEmployees = filteredData.length;
-      const employeesWithLeave = filteredData.filter(emp => emp && emp.totalLeaveDays > 0).length;
-      const totalLeaveDays = filteredData.reduce((sum, emp) => sum + (emp?.totalLeaveDays || 0), 0);
+      const employeesWithLeave = filteredData.filter(emp => computeTotalLeaveDays(emp) > 0).length;
+      const totalLeaveDays = filteredData.reduce((sum, emp) => sum + computeTotalLeaveDays(emp), 0);
       const averageLeaveDays = totalEmployees > 0 ? (totalLeaveDays / totalEmployees).toFixed(1) : 0;
 
       setStats({
@@ -142,13 +158,6 @@ const LeaveTracker = () => {
     return colors[leaveType] || 'secondary';
   };
 
-  const getBalanceStatus = (remaining, total) => {
-    const percentage = (remaining / total) * 100;
-    if (percentage >= 70) return { color: 'success', icon: <CheckCircle size={16} /> };
-    if (percentage >= 40) return { color: 'warning', icon: <Clock size={16} /> };
-    return { color: 'danger', icon: <XCircle size={16} /> };
-  };
-
   const exportToPDF = async () => {
     try {
       const pdf = new jsPDF();
@@ -163,22 +172,19 @@ const LeaveTracker = () => {
       
       // Table data
       const tableData = filteredData.map(emp => {
-        const totalLeaves = emp.leavePeriods ? emp.leavePeriods.length : 0;
-        const remainingLeaves = Math.max(0, 3 - totalLeaves);
-        
+        const totalLeaveDays = computeTotalLeaveDays(emp);
         return [
-        emp.name,
-        emp.department,
-        emp.position,
-          `${totalLeaves} / 3`,
+          emp.name,
+          emp.department,
+          emp.position,
+          totalLeaveDays,
           emp.paidLeaveDays || 0,
-          emp.unpaidLeaveDays || 0,
-          `${remainingLeaves} ${remainingLeaves === 1 ? 'leave' : 'leaves'} left`
+          emp.unpaidLeaveDays || 0
         ];
       });
       
       pdf.autoTable({
-        head: [['Employee', 'Department', 'Position', 'Total Leaves', 'Paid Days', 'Unpaid Days', 'Balance']],
+        head: [['Employee', 'Department', 'Position', 'Total Leave Days', 'Paid Days', 'Unpaid Days']],
         body: tableData,
         startY: 45,
         styles: { fontSize: 8 },
@@ -496,7 +502,7 @@ const LeaveTracker = () => {
     <Container fluid className="leave-tracker">
       <div className="page-header mb-4">
         <h2 className="page-title">Leave Tracker</h2>
-        <p className="page-subtitle">Monitor employee leave usage and remaining balances</p>
+        <p className="page-subtitle">Monitor employee leave usage and total days taken</p>
       </div>
 
       {alert.show && (
@@ -660,16 +666,15 @@ const LeaveTracker = () => {
                     <th style={{ textAlign: 'center' }}>Department</th>
                     <th style={{ textAlign: 'center' }}>Position</th>
                     <th style={{ textAlign: 'center' }}>Leave Periods</th>
-                    <th style={{ textAlign: 'center' }}>Total Leaves</th>
+                    <th style={{ textAlign: 'center' }}>Total Leave Days</th>
                     <th style={{ textAlign: 'center' }}>Paid Days</th>
                     <th style={{ textAlign: 'center' }}>Unpaid Days</th>
-                    <th style={{ textAlign: 'center' }}>Balance Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center p-4">
+                      <td colSpan="7" className="text-center p-4">
                         <Calendar size={48} className="text-muted mb-3" />
                         <p className="text-muted">No leave data found for the selected period.</p>
                         <small className="text-muted">Employee leave records will appear here.</small>
@@ -677,21 +682,9 @@ const LeaveTracker = () => {
                     </tr>
                   ) : (
                     filteredData.map((employee, index) => {
-                      // Calculate total leaves (count of leave instances) - max 3
-                      const totalLeaves = employee.leavePeriods ? employee.leavePeriods.length : 0;
-                      const remainingLeaves = Math.max(0, 3 - totalLeaves);
-                      
-                      // Determine balance status based on remaining leave instances
-                      let balanceStatus;
-                      if (remainingLeaves >= 2) {
-                        balanceStatus = { color: 'success', icon: <CheckCircle size={16} /> };
-                      } else if (remainingLeaves === 1) {
-                        balanceStatus = { color: 'warning', icon: <Clock size={16} /> };
-                      } else {
-                        balanceStatus = { color: 'danger', icon: <XCircle size={16} /> };
-                      }
-
                       const leavePeriods = employee.leavePeriods || [];
+                      const totalLeaveDays = computeTotalLeaveDays(employee);
+
                       const firstPeriod = leavePeriods[0];
                       const remainingPeriods = leavePeriods.slice(1);
                       const dropdownKey = employee?.id ?? employee?.email ?? `employee-index-${index}`;
@@ -766,7 +759,7 @@ const LeaveTracker = () => {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
-                              {totalLeaves} / 3
+                              {totalLeaveDays}
                             </div>
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -777,16 +770,6 @@ const LeaveTracker = () => {
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
                               {employee.unpaidLeaveDays || 0}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div className="d-flex align-items-center justify-content-center">
-                              <span className={`me-2 text-${balanceStatus.color}`}>
-                                {balanceStatus.icon}
-                              </span>
-                              <div style={{ fontSize: '0.9375rem', fontWeight: '500', color: '#475569' }}>
-                                {remainingLeaves} {remainingLeaves === 1 ? 'leave' : 'leaves'} left
-                              </div>
                             </div>
                           </td>
                         </tr>
