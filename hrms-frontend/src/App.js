@@ -18,6 +18,7 @@ const ApplicantDashboard = lazy(() => import('./pages/ApplicantDashboard'));
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'));
 const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 const HrAssistantLayout = lazy(() => import('./pages/HrAssistant/HrAssistantLayout'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const EmployeeRecords = lazy(() => import('./pages/HrAssistant/EmployeeRecords'));
 const LeaveManagement = lazy(() => import('./components/HrAssistant/LeaveManagement'));
 const LeaveTracker = lazy(() => import('./components/HrAssistant/LeaveTracker'));
@@ -86,6 +87,7 @@ function App() {
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
+         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
 
         {/* Public preview route for the consolidated HR Assistant Dashboard */}

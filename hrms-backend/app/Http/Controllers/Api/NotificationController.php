@@ -133,6 +133,10 @@ class NotificationController extends Controller
                 return 'New Job Posting Created';
             case 'interview_scheduled':
                 return 'Interview Scheduled';
+            case 'password_change_request_submitted':
+                return 'Password Reset Request';
+            case 'password_change_request_status':
+                return 'Password Reset Request Update';
             default:
                 return $data['title'] ?? 'Notification';
         }
@@ -211,6 +215,19 @@ class NotificationController extends Controller
             
             case 'interview_scheduled':
                 return $data['message'] ?? 'An interview has been scheduled for your application. Check your Interview tab for details.';
+            
+            case 'password_change_request_submitted':
+                return $data['message'] ?? 'A new password reset request was submitted and needs your review.';
+            
+            case 'password_change_request_status':
+                $status = $data['status'] ?? null;
+                if ($status === 'approved') {
+                    return 'Your password reset request was approved. Please check your email for the reset link.';
+                }
+                if ($status === 'rejected') {
+                    return 'Your password reset request was declined. Review the administrator notes.';
+                }
+                return $data['message'] ?? 'Your password reset request status was updated.';
             
             default:
                 return $data['message'] ?? 'You have a new notification.';

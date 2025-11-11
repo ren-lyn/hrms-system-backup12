@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTrophy,
@@ -9,7 +9,6 @@ import {
   faCalendarCheck,
   faChartLine
 } from '@fortawesome/free-solid-svg-icons';
-import Chart from 'chart.js/auto';
 import api from '../../axios';
 
 const CACHE_KEY = 'evaluationAnalyticsSummary';
@@ -53,7 +52,6 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
   const [metrics, setMetrics] = useState(null);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const chartRef = useRef(null);
-  const chartInstance = useRef(null);
 
   const fetchEvaluationSummary = useMemo(() => async ({ silent = false } = {}) => {
     if (!silent) {
@@ -117,16 +115,23 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
         return safeNumber(current.rating, 10) < safeNumber(worst.rating, 10) ? current : worst;
       }, null);
 
-      const chartSlice = [...sortedEvaluations].slice(0, 6).reverse();
-      const chartLabels = chartSlice.map((item) =>
-        formatDate(item.submitted_at).replace(',', '')
-      );
-      const chartScores = chartSlice.map((item) =>
-        Number(safeNumber(item?.percentage ?? item?.percentage_score ?? item?.average_score * 10).toFixed(1))
-      );
-      const goalLine = chartSlice.map(() => 70);
-
       const changeText = diff !== null ? `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%` : null;
+      const recentEvaluations = [...sortedEvaluations]
+        .slice(0, 3)
+        .map((evaluation) => {
+          const percentValue = safeNumber(
+            evaluation?.percentage ?? evaluation?.percentage_score ?? evaluation?.average_score * 10,
+            0
+          );
+          const roundedPercentage = Number(percentValue.toFixed(1));
+          return {
+            id: evaluation.id,
+            date: formatDate(evaluation.submitted_at),
+            percentage: roundedPercentage,
+            status: evaluation.is_passed ? 'Passed' : 'Needs Attention',
+            title: evaluation.form_title || 'Evaluation'
+          };
+        });
 
       const computedMetrics = {
         overall: {
@@ -169,11 +174,7 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
           last: formatDate(latest?.submitted_at),
           next: formatDate(latest?.next_evaluation_date)
         },
-        chart: {
-          labels: chartLabels,
-          scores: chartScores,
-          goal: goalLine
-        }
+        recent: recentEvaluations
       };
 
       setMetrics(computedMetrics);
@@ -225,252 +226,6 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
 
     fetchEvaluationSummary({ silent: warmCache });
   }, [cacheHydrated, fetchEvaluationSummary]);
-
-  useEffect(() => {
-    if (!metrics?.chart?.labels?.length || !chartRef.current) {
-      if (chartInstance.current) {
-        chartInstance.current.destroy();
-        chartInstance.current = null;
-      }
-      return;
-    }
-
-    const ctx = chartRef.current.getContext('2d');
-    if (chartInstance.current) {
-      chartInstance.current.destroy();
-    }
-
-    const primaryGradient = ctx.createLinearGradient(0, 0, 0, 280);
-    primaryGradient.addColorStop(0, 'rgba(59, 130, 246, 0.32)');
-    primaryGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
-
-    const goalColor = 'rgba(148, 163, 184, 0.55)';
-    const lastPointIndex = metrics.chart.scores.length - 1;
-    const latestValue = metrics.chart.scores[lastPointIndex];
-    const latestChangeText = metrics.latest?.changeText ?? null;
-    const latestStrengthLabel = metrics.latest?.strengthLabel;
-    const latestImprovementLabel = metrics.latest?.improvementLabel;
-
-    const hoverLinePlugin = {
-      id: 'hoverLine',
-      afterDatasetsDraw(chart) {
-        if (!chart.tooltip?.active || !chart.tooltip.active.length) return;
-        const ctxPlugin = chart.ctx;
-        const { element } = chart.tooltip.active[0];
-        ctxPlugin.save();
-        ctxPlugin.beginPath();
-        ctxPlugin.setLineDash([4, 4]);
-        ctxPlugin.moveTo(element.x, chart.chartArea.top);
-        ctxPlugin.lineTo(element.x, chart.chartArea.bottom);
-        ctxPlugin.lineWidth = 1;
-        ctxPlugin.strokeStyle = 'rgba(30, 64, 175, 0.35)';
-        ctxPlugin.stroke();
-        ctxPlugin.restore();
-      }
-    };
-
-    const pointLabelsPlugin = {
-      id: 'pointLabels',
-      afterDatasetsDraw(chart) {
-        const meta = chart.getDatasetMeta(0);
-        const dataset = chart.config.data.datasets[0];
-        if (!meta?.data?.length || !dataset?.data?.length) return;
-
-        const ctxPlugin = chart.ctx;
-        ctxPlugin.save();
-        ctxPlugin.textAlign = 'center';
-        meta.data.forEach((point, index) => {
-          const value = dataset.data[index];
-          if (value === undefined || value === null) return;
-          const isLatest = index === lastPointIndex;
-          const baseValue = typeof value === 'number' ? value.toFixed(1) : value;
-          const displayValue = isLatest && latestChangeText
-            ? `${baseValue}% (${latestChangeText})`
-            : `${baseValue}%`;
-          const yOffset = isLatest ? -28 : -20;
-          ctxPlugin.font = `${isLatest ? '600' : '500'} 12px "Segoe UI", sans-serif`;
-          ctxPlugin.fillStyle = isLatest ? '#1d4ed8' : 'rgba(234, 88, 12, 0.9)';
-          ctxPlugin.fillText(displayValue, point.x, point.y + yOffset);
-        });
-        ctxPlugin.restore();
-      }
-    };
-
-    const latestPointGlowPlugin = {
-      id: 'latestPointGlow',
-      afterDraw(chart) {
-        const meta = chart.getDatasetMeta(0);
-        if (!meta?.data?.length) return;
-        const point = meta.data[lastPointIndex];
-        if (!point) return;
-        const ctxPlugin = chart.ctx;
-        ctxPlugin.save();
-        const glowGradient = ctxPlugin.createRadialGradient(point.x, point.y, 0, point.x, point.y, 28);
-        glowGradient.addColorStop(0, 'rgba(37, 99, 235, 0.35)');
-        glowGradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
-        ctxPlugin.beginPath();
-        ctxPlugin.fillStyle = glowGradient;
-        ctxPlugin.arc(point.x, point.y, 24, 0, 2 * Math.PI);
-        ctxPlugin.fill();
-        ctxPlugin.restore();
-      }
-    };
-
-    chartInstance.current = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: metrics.chart.labels,
-        datasets: [
-          {
-            label: 'Performance %',
-            data: metrics.chart.scores,
-            borderColor: '#f97316',
-            backgroundColor: primaryGradient,
-            pointBackgroundColor: metrics.chart.scores.map((_, idx) =>
-              idx === lastPointIndex ? '#1d4ed8' : '#f97316'
-            ),
-            pointBorderColor: metrics.chart.scores.map((_, idx) =>
-              idx === lastPointIndex ? '#1d4ed8' : '#f97316'
-            ),
-            pointRadius: metrics.chart.scores.map((_, idx) =>
-              idx === lastPointIndex ? 8 : 5
-            ),
-            pointHoverRadius: metrics.chart.scores.map((_, idx) =>
-              idx === lastPointIndex ? 10 : 7
-            ),
-            pointBorderWidth: 2,
-            pointHitRadius: 12,
-            cubicInterpolationMode: 'monotone',
-            tension: 0.45,
-            fill: true,
-            borderWidth: 3
-          },
-          {
-            label: 'Passing Goal',
-            data: metrics.chart.goal,
-            borderColor: goalColor,
-            borderDash: [4, 4],
-            pointRadius: 0,
-            tension: 0.35,
-            fill: false,
-            borderWidth: 2
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: {
-          padding: {
-            top: 12,
-            right: 18,
-            left: 8,
-            bottom: 10
-          }
-        },
-        interaction: {
-          mode: 'nearest',
-          intersect: false
-        },
-        plugins: {
-          legend: {
-            display: expanded,
-            labels: {
-              color: '#1f2937',
-              usePointStyle: true,
-              boxWidth: 8
-            }
-          },
-          tooltip: {
-            backgroundColor: '#0f172a',
-            titleColor: '#f1f5f9',
-            bodyColor: '#e2e8f0',
-            borderColor: '#1d4ed8',
-            borderWidth: 1,
-            padding: 12,
-            displayColors: false,
-            callbacks: {
-              title: (context) => context[0]?.label ?? '',
-              label: (context) => {
-                const value = context.parsed.y;
-                const isLatest = context.dataIndex === lastPointIndex && context.datasetIndex === 0;
-                if (context.datasetIndex === 1) {
-                  return `Passing Goal • ${value}%`;
-                }
-                const baseLine = `Performance • ${value}%`;
-                if (!isLatest) {
-                  return baseLine;
-                }
-
-                const lines = [baseLine];
-                if (latestChangeText) {
-                  lines.push(`Change • ${latestChangeText}`);
-                }
-                if (latestStrengthLabel) {
-                  lines.push(`⭐ Strength • ${latestStrengthLabel}`);
-                }
-                if (latestImprovementLabel) {
-                  lines.push(`⚠ Focus • ${latestImprovementLabel}`);
-                }
-                return lines;
-              }
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            suggestedMax: 100,
-            ticks: {
-              color: 'rgba(100, 116, 139, 0.7)',
-              callback: (value) => `${value}%`
-            },
-            grid: {
-              color: 'rgba(148, 163, 184, 0.25)',
-              borderDash: [3, 3],
-              drawBorder: false,
-              lineWidth: 1
-            }
-          },
-          x: {
-            ticks: {
-              color: 'rgba(100, 116, 139, 0.7)'
-            },
-            grid: {
-              display: false
-            }
-          }
-        },
-        animation: {
-          tension: {
-            duration: 800,
-            easing: 'easeInOutQuad',
-            from: 0.2,
-            to: 0.45,
-            loop: false
-          },
-          radius: {
-            duration: 200,
-            easing: 'easeOutQuad'
-          }
-        },
-        elements: {
-          line: {
-            borderCapStyle: 'round',
-            borderJoinStyle: 'round'
-          }
-        }
-      },
-      plugins: [hoverLinePlugin, pointLabelsPlugin, latestPointGlowPlugin]
-    });
-
-    return () => {
-      if (chartInstance.current) {
-        chartInstance.current.destroy();
-        chartInstance.current = null;
-      }
-    };
-  }, [metrics, expanded]);
 
   if (loading) {
     return (
@@ -650,7 +405,7 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
                 </p>
                 <p className="text-sm font-semibold text-slate-700">{metrics.dates.next}</p>
               </div>
-
+              
             </div>
           </div>
         </div>

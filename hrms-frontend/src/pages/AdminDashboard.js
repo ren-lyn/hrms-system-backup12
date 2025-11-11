@@ -13,6 +13,7 @@ import EmployeeManagement from '../components/Admin/EmployeeManagement';
 import LeaveForm from '../components/Admin/LeaveForm';
 import DepartmentPositionManagement from '../components/Admin/DepartmentPositionManagement';
 import DataPrivacySecurity from '../components/Admin/DataPrivacySecurity';
+import PasswordResetRequests from '../components/Admin/PasswordResetRequests';
 import './AdminDashboard.css';
 
 const AdminDashboard = () => {
@@ -90,6 +91,13 @@ const AdminDashboard = () => {
       icon: faShieldAlt, 
       description: 'Configure security policies and monitor access',
       color: '#7C3AED'
+    },
+    {
+      id: 'password-reset-requests',
+      title: 'Password Reset Requests',
+      icon: faKey,
+      description: 'Review identity verifications and send reset links',
+      color: '#FB923C'
     }
   ];
 
@@ -289,6 +297,8 @@ const AdminDashboard = () => {
         return <DepartmentPositionManagement />;
       case 'data-privacy':
         return <DataPrivacySecurity />;
+      case 'password-reset-requests':
+        return <PasswordResetRequests />;
       case 'dashboard':
       default:
         return (

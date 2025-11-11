@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\PositionController;
 use App\Http\Controllers\Api\SecuritySettingsController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\PasswordChangeRequestController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\SecurityAlertController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\DocumentController;
@@ -116,6 +117,20 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::post('/register', [ApplicantController::class, 'register']);
 // Password change request (public or authenticated)
 Route::post('/password-change-requests', [PasswordChangeRequestController::class, 'store']);
+Route::middleware(['auth:sanctum', 'role:Admin'])->group(function () {
+    Route::get('/password-change-requests', [PasswordChangeRequestController::class, 'index']);
+    Route::post('/password-change-requests/{id}/approve', [PasswordChangeRequestController::class, 'approve']);
+    Route::post('/password-change-requests/{id}/reject', [PasswordChangeRequestController::class, 'reject']);
+});
+
+Route::get(
+    '/password-change-requests/{id}/attachments/{slot}',
+    [PasswordChangeRequestController::class, 'attachment']
+);
+
+// Password reset flow (token-based)
+Route::post('/password-reset/validate', [PasswordResetController::class, 'validateToken']);
+Route::post('/password-reset/complete', [PasswordResetController::class, 'reset']);
 
 
 // Debug routes for manager evaluation (temporary)
