@@ -4,17 +4,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Application;
+use App\Models\BenefitsEnrollment;
 use App\Models\DocumentRequirement;
 use App\Models\DocumentSubmission;
 use App\Models\DocumentFollowUpRequest;
 use App\Notifications\DocumentStatusChanged;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Carbon\Carbon;
 
 class DocumentController extends Controller
 {
@@ -109,7 +110,7 @@ class DocumentController extends Controller
             'document_key' => 'employmentCertificate',
             'document_name' => 'Certificate of Employment / Recommendation Letters',
             'description' => 'Proof of past work experience or references',
-            'is_required' => false,
+            'is_required' => true,
             'file_format' => 'pdf,jpg,jpeg,png',
         ],
         [
@@ -165,7 +166,7 @@ class DocumentController extends Controller
             'document_key' => 'vaccinationRecords',
             'document_name' => 'Vaccination Records',
             'description' => 'If required by the company or job role',
-            'is_required' => false,
+            'is_required' => true,
             'file_format' => 'pdf,jpg,jpeg,png',
         ],
     ];
@@ -196,9 +197,23 @@ class DocumentController extends Controller
                     'max_file_size_mb' => $definition['max_file_size_mb'] ?? 5,
                     'order' => $definition['order'] ?? ($index + 1),
                 ]);
-            } elseif (!$existing->document_key) {
-                $existing->document_key = $documentKey;
-                $existing->save();
+            } else {
+                $needsSave = false;
+
+                if (!$existing->document_key) {
+                    $existing->document_key = $documentKey;
+                    $needsSave = true;
+                }
+
+                $desiredRequired = $definition['is_required'] ?? true;
+                if ($existing->is_required !== $desiredRequired) {
+                    $existing->is_required = $desiredRequired;
+                    $needsSave = true;
+                }
+
+                if ($needsSave) {
+                    $existing->save();
+                }
             }
         }
     }
@@ -338,6 +353,8 @@ class DocumentController extends Controller
             'label' => ucfirst($submission->status),
             'description' => null,
         ];
+        $requiresHrReview = $submission->status !== 'received';
+        $isOptionalRequirement = optional($submission->documentRequirement)->is_required === false;
 
         return [
             'id' => $submission->id,
@@ -358,6 +375,8 @@ class DocumentController extends Controller
                 'id' => $submission->reviewer->id,
                 'name' => $submission->reviewer->name,
             ] : null,
+            'requires_hr_review' => $requiresHrReview,
+            'is_optional_requirement' => $isOptionalRequirement,
         ];
     }
 
@@ -374,6 +393,14 @@ class DocumentController extends Controller
         return true;
     }
 
+    private const COMPLETED_STATUSES = [
+        'Orientation Schedule',
+        'Starting Date',
+        'Benefits Enroll',
+        'Profile Creation',
+        'Hired',
+    ];
+
     private function getUploadLockReason(string $status): ?string
     {
         return match ($status) {
@@ -381,6 +408,102 @@ class DocumentController extends Controller
             'received' => 'Upload locked because the document is already approved.',
             default => null,
         };
+    }
+
+    private function getDocumentsCompletionMessage(): string
+    {
+        return 'Congratulations! You’ve completed all document requirements. Please wait for HR’s next update on your onboarding schedule.';
+    }
+
+    private function storeDocumentsSnapshotIfNeeded(Application $application, array $documents, array $statusCounts, bool $documentsCompleted): void
+    {
+        try {
+            if (empty($documents)) {
+                return;
+            }
+
+            $hasSubmittedDocument = collect($documents)->contains(function (array $document) {
+                return !empty($document['submission']);
+            });
+
+            if (!$hasSubmittedDocument) {
+                return;
+            }
+
+            $normalizedRequirements = collect($documents)
+                ->map(function (array $document) {
+                    $submission = $document['submission'] ?? null;
+
+                    return [
+                        'requirement_id' => $document['requirement_id'] ?? null,
+                        'document_key' => $document['document_key'] ?? null,
+                        'document_name' => $document['document_name'] ?? null,
+                        'description' => $document['description'] ?? null,
+                        'is_required' => (bool)($document['is_required'] ?? false),
+                        'status' => $document['status'] ?? null,
+                        'status_label' => $document['status_label'] ?? null,
+                        'submission' => $submission ? [
+                            'id' => $submission['id'] ?? null,
+                            'document_requirement_id' => $submission['document_requirement_id'] ?? null,
+                            'document_type' => $submission['document_type'] ?? null,
+                            'file_name' => $submission['file_name'] ?? null,
+                            'file_path' => $submission['file_path'] ?? null,
+                            'file_type' => $submission['file_type'] ?? null,
+                            'file_size' => $submission['file_size'] ?? null,
+                            'status' => $submission['status'] ?? null,
+                            'status_label' => $submission['status_label'] ?? null,
+                            'submitted_at' => $submission['submitted_at'] ?? null,
+                            'reviewed_at' => $submission['reviewed_at'] ?? null,
+                            'reviewed_by' => $submission['reviewed_by'] ?? null,
+                            'reviewer' => $submission['reviewer'] ?? null,
+                            'rejection_reason' => $submission['rejection_reason'] ?? null,
+                        ] : null,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $snapshotPayload = [
+                'captured_at' => now()->toIso8601String(),
+                'requirements' => $normalizedRequirements,
+                'status_counts' => $statusCounts,
+                'completed' => $documentsCompleted,
+                'completion_at' => optional($application->documents_approved_at)->toIso8601String(),
+                'completion_message' => $documentsCompleted ? $this->getDocumentsCompletionMessage() : null,
+            ];
+
+            $existingSnapshot = $application->documents_snapshot ?? null;
+
+            if ($existingSnapshot) {
+                $existingComparable = [
+                    'requirements' => $existingSnapshot['requirements'] ?? [],
+                    'status_counts' => $existingSnapshot['status_counts'] ?? [],
+                    'completed' => $existingSnapshot['completed'] ?? false,
+                    'completion_at' => $existingSnapshot['completion_at'] ?? null,
+                    'completion_message' => $existingSnapshot['completion_message'] ?? null,
+                ];
+
+                $newComparable = [
+                    'requirements' => $snapshotPayload['requirements'],
+                    'status_counts' => $snapshotPayload['status_counts'],
+                    'completed' => $snapshotPayload['completed'],
+                    'completion_at' => $snapshotPayload['completion_at'],
+                    'completion_message' => $snapshotPayload['completion_message'],
+                ];
+
+                if ($existingComparable == $newComparable) {
+                    return;
+                }
+            }
+
+            $application->forceFill(['documents_snapshot' => $snapshotPayload])->save();
+            $application->documents_snapshot = $snapshotPayload;
+        } catch (\Throwable $e) {
+            Log::error('Failed to persist documents snapshot', [
+                'application_id' => $application->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function resolveSubmissionWindow(Application $application): array
@@ -531,6 +654,17 @@ class DocumentController extends Controller
                     ? ($submissionWindow['lock_reason'] ?? 'Document submission window has ended.')
                     : $this->getUploadLockReason($status);
 
+                $isOptionalWithoutSubmission = !$requirement->is_required && !$submission;
+                $requiresHrReview = $submission !== null && $submission->status !== 'received';
+
+                if ($isOptionalWithoutSubmission) {
+                    $statusMeta = [
+                        'label' => 'Optional',
+                        'badge' => 'secondary',
+                        'description' => 'Optional document. HR review becomes available once the applicant uploads a file.',
+                    ];
+                }
+
                 return [
                     'requirement_id' => $requirement->id,
                     'document_key' => $documentKey,
@@ -549,6 +683,9 @@ class DocumentController extends Controller
                     'lock_uploads' => $lockUploads,
                     'can_upload' => !$lockUploads,
                     'upload_lock_reason' => $lockUploads ? $lockReason : null,
+                    'requires_hr_review' => $requiresHrReview,
+                    'review_actions_visible' => $requiresHrReview,
+                    'is_optional_without_submission' => $isOptionalWithoutSubmission,
                     'submission_window' => [
                         'has_started' => $submissionWindow['has_started'] ?? false,
                         'is_active' => !$lockUploads,
@@ -601,6 +738,13 @@ class DocumentController extends Controller
             $statusCounts[$status]++;
         }
 
+        $documentsCompleted = ($application->documents_approved_at !== null)
+            || in_array($application->status, self::COMPLETED_STATUSES, true);
+        $documentsCompletionMessage = $documentsCompleted ? $this->getDocumentsCompletionMessage() : null;
+        $documentsCompletionAt = optional($application->documents_approved_at)->toIso8601String();
+
+        $this->storeDocumentsSnapshotIfNeeded($application, $documents, $statusCounts, $documentsCompleted);
+
         return [
             'application_id' => $application->id,
             'documents' => $documents,
@@ -608,7 +752,12 @@ class DocumentController extends Controller
             'documents_submission_window' => $submissionWindow,
             'documents_submission_locked' => (bool)($submissionWindow['is_locked'] ?? false),
             'documents_submission_days_total' => $submissionWindow['total_days'] ?? self::SUBMISSION_WINDOW_DAYS,
+            'documents_approved_at' => optional($application->documents_approved_at)->toIso8601String(),
             'last_updated_at' => now()->toISOString(),
+            'documents_completed' => $documentsCompleted,
+            'documents_completion_message' => $documentsCompletionMessage,
+            'documents_completion_at' => $documentsCompletionAt,
+            'documents_snapshot' => $application->documents_snapshot,
         ];
     }
 
@@ -672,6 +821,7 @@ class DocumentController extends Controller
 
             $this->ensureDocumentKey($requirement);
 
+            $application->loadMissing('benefitsEnrollment');
             $overview = $this->buildDocumentOverview($application->fresh());
 
             return response()->json([
@@ -862,7 +1012,16 @@ class DocumentController extends Controller
             $submissions = DocumentSubmission::where('application_id', $applicationId)
                 ->with(['documentRequirement', 'reviewer'])
                 ->orderBy('submitted_at', 'desc')
-                ->get();
+                ->get()
+                ->map(function (DocumentSubmission $submission) {
+                    $requiresHrReview = $submission->status !== 'received';
+                    $isOptionalRequirement = optional($submission->documentRequirement)->is_required === false;
+
+                    $submission->setAttribute('requires_hr_review', $requiresHrReview);
+                    $submission->setAttribute('is_optional_requirement', $isOptionalRequirement);
+
+                    return $submission;
+                });
 
             return response()->json([
                 'success' => true,
@@ -1213,6 +1372,7 @@ class DocumentController extends Controller
 
             // Check if all required documents are approved
             $allApproved = false;
+
             try {
                 $requiredDocs = DocumentRequirement::where('application_id', $applicationId)
                     ->where('is_required', true)
@@ -1225,23 +1385,29 @@ class DocumentController extends Controller
 
                 if ($requiredDocs->count() > 0 && $approvedCount === $requiredDocs->count()) {
                     $allApproved = true;
-                    
-                    // Update application status to "Orientation Schedule" if it's currently "Onboarding" or "Document Submission"
-                    if (in_array($application->status, ['Onboarding', 'Document Submission'])) {
-                        $application->update([
-                            'status' => 'Orientation Schedule',
-                            'reviewed_at' => now()
-                        ]);
-                        
-                        // Send notification about moving to next stage
-                        if ($application->applicant && $application->applicant->user) {
-                            $application->applicant->user->notify(new \App\Notifications\OnboardingStatusChanged($application));
-                        }
+
+                    $applicationUpdates = [
+                        'reviewed_at' => Carbon::now(),
+                    ];
+
+                    if (!$application->documents_approved_at) {
+                        $applicationUpdates['documents_approved_at'] = Carbon::now();
                     }
+
+                    $application->update($applicationUpdates);
+                } elseif ($status === 'rejected') {
+                    $application->update([
+                        'documents_approved_at' => null,
+                        'documents_completed_at' => null,
+                    ]);
+
+                    BenefitsEnrollment::where('application_id', $application->id)->delete();
                 }
             } catch (\Exception $e) {
                 Log::error('Error checking document approval status: ' . $e->getMessage());
             }
+
+            $application->refresh()->load('benefitsEnrollment');
 
             $overview = $this->buildDocumentOverview($application->fresh());
 
@@ -1251,6 +1417,13 @@ class DocumentController extends Controller
                 'data' => $submission,
                 'all_documents_approved' => $allApproved,
                 'application_status' => $application->status,
+                'documents_stage_status' => $application->documents_stage_status,
+                'documents_status_label' => $application->documents_stage_status === 'completed'
+                    ? 'Completed'
+                    : ($allApproved ? 'Approved Documents' : 'In Progress'),
+                'documents_completed_at' => optional($application->documents_completed_at)->toISOString(),
+                'is_in_benefits_enrollment' => $application->benefitsEnrollment !== null,
+                'benefits_enrollment_status' => optional($application->benefitsEnrollment)->enrollment_status,
                 'overview' => $overview,
             ]);
         } catch (\Exception $e) {
@@ -1258,6 +1431,78 @@ class DocumentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to review document'
+            ], 500);
+        }
+    }
+
+    public function completeDocuments(Request $request, $applicationId)
+    {
+        try {
+            $application = Application::with(['applicant.user'])->findOrFail($applicationId);
+
+            $user = $request->user();
+            $roleName = strtolower($user->role->name ?? '');
+            $isHrRole = in_array($roleName, ['hr assistant', 'hr staff', 'hr admin'], true);
+
+            if (!$user || !$isHrRole || !$this->userCanAccessApplication($user, $application)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized',
+                ], 403);
+            }
+
+            $requiredDocs = DocumentRequirement::where('application_id', $applicationId)
+                ->where('is_required', true)
+                ->pluck('id');
+
+            if ($requiredDocs->count() > 0) {
+                $approvedCount = DocumentSubmission::where('application_id', $applicationId)
+                    ->whereIn('document_requirement_id', $requiredDocs)
+                    ->where('status', 'received')
+                    ->count();
+
+                if ($approvedCount !== $requiredDocs->count()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'All required documents must be approved before completing the submission.',
+                    ], 422);
+                }
+            }
+
+            $now = Carbon::now();
+            $application->update([
+                'documents_approved_at' => $application->documents_approved_at ?: $now,
+                'documents_completed_at' => $now,
+                'reviewed_at' => $now,
+            ]);
+
+            $benefitsEnrollment = BenefitsEnrollment::updateOrCreate(
+                ['application_id' => $application->id],
+                [
+                    'enrollment_status' => BenefitsEnrollment::STATUS_PENDING,
+                    'assigned_at' => $now,
+                ]
+            );
+
+            $application->refresh()->load('benefitsEnrollment');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Document submission marked as completed.',
+                'documents_completed' => true,
+                'documents_stage_status' => $application->documents_stage_status,
+                'documents_status_label' => 'Completed',
+                'documents_completed_at' => optional($application->documents_completed_at)->toISOString(),
+                'application_status' => $application->status,
+                'is_in_benefits_enrollment' => $application->benefitsEnrollment !== null,
+                'benefits_enrollment_status' => optional($application->benefitsEnrollment)->enrollment_status,
+                'benefits_enrollment' => $benefitsEnrollment,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error completing document submission: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to complete document submission.',
             ], 500);
         }
     }

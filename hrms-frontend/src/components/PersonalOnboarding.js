@@ -154,7 +154,7 @@ const DOCUMENT_SECTIONS = [
 
         helperText: "Proof of past work experience or references",
 
-        isRequired: false,
+        isRequired: true,
       },
 
       {
@@ -257,7 +257,7 @@ const DOCUMENT_SECTIONS = [
 
         helperText: "If required by the company or job role",
 
-        isRequired: false,
+        isRequired: true,
       },
     ],
   },
@@ -1133,6 +1133,15 @@ const PersonalOnboarding = () => {
         return false;
       }
 
+      const previewWindow =
+        typeof window !== "undefined" ? window.open("", "_blank", "noopener") : null;
+
+      if (previewWindow) {
+        previewWindow.document.write(
+          "<p style='font-family: sans-serif; padding: 24px;'>Loading document preview…</p>"
+        );
+      }
+
       try {
         const downloadUrl = `http://localhost:8000/api/applications/${activeApplicationId}/documents/submissions/${submissionId}/download`;
 
@@ -1150,9 +1159,9 @@ const PersonalOnboarding = () => {
 
         const objectUrl = window.URL.createObjectURL(blob);
 
-        const newWindow = window.open(objectUrl, "_blank");
-
-        if (!newWindow) {
+        if (previewWindow) {
+          previewWindow.location.href = objectUrl;
+        } else {
           const anchor = document.createElement("a");
 
           anchor.href = objectUrl;
@@ -1173,6 +1182,10 @@ const PersonalOnboarding = () => {
         return true;
       } catch (error) {
         console.error("Error opening submitted document:", error);
+
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.close();
+        }
 
         showToast(
           "error",
@@ -1509,11 +1522,23 @@ const PersonalOnboarding = () => {
         return null;
       }
 
-      setDocumentOverview(overview);
+      const documentsList =
+        Array.isArray(overview.documents) && overview.documents.length > 0
+          ? overview.documents
+          : Array.isArray(overview.documents_snapshot?.requirements)
+          ? overview.documents_snapshot.requirements
+          : [];
+
+      const normalizedOverview = {
+        ...overview,
+        documents: documentsList,
+      };
+
+      setDocumentOverview(normalizedOverview);
 
       const newStatuses = { ...defaultDocumentStatuses };
 
-      (overview.documents || []).forEach((doc) => {
+      documentsList.forEach((doc) => {
         if (doc.document_key) {
           newStatuses[doc.document_key] = mapStatusToLocal(doc.status);
         }
@@ -1521,14 +1546,19 @@ const PersonalOnboarding = () => {
 
       setDocumentStatuses(newStatuses);
 
+      const statusCountsSource =
+        overview.status_counts && Object.keys(overview.status_counts).length > 0
+          ? overview.status_counts
+          : overview.documents_snapshot?.status_counts || {};
+
       const statusCounts = {
-        approved: overview.status_counts?.received ?? 0,
+        approved: statusCountsSource?.received ?? 0,
 
-        pending: overview.status_counts?.pending ?? 0,
+        pending: statusCountsSource?.pending ?? 0,
 
-        rejected: overview.status_counts?.rejected ?? 0,
+        rejected: statusCountsSource?.rejected ?? 0,
 
-        not_submitted: overview.status_counts?.not_submitted ?? 0,
+        not_submitted: statusCountsSource?.not_submitted ?? 0,
       };
 
       setDocumentOverviewMeta({
@@ -1622,27 +1652,6 @@ const PersonalOnboarding = () => {
       return String(value);
     }
   }, []);
-
-  const finalInterviewEntries = useMemo(() => {
-    if (!Array.isArray(interviewData)) return [];
-
-    return interviewData.filter((interview) => {
-      const stage = (
-        interview.stage ||
-        interview.phase ||
-        interview.status ||
-        ""
-      )
-        .toString()
-        .toLowerCase();
-
-      const type = (interview.interview_type || interview.type || "")
-        .toString()
-        .toLowerCase();
-
-      return stage.includes("final") || type.includes("final");
-    });
-  }, [interviewData]);
 
   const handleFollowUpSubmit = async (event = null) => {
     if (event) {
@@ -2419,7 +2428,10 @@ const PersonalOnboarding = () => {
             allInterviews.length
           );
 
-          setInterviewData(allInterviews);
+          const normalizedInterviews =
+            enrichInterviewsWithLocalEndTime(allInterviews);
+
+          setInterviewData(normalizedInterviews);
         } else {
           console.log(
             "ℹ️ [PersonalOnboarding] No interviews found for this user"
@@ -2495,6 +2507,10 @@ const PersonalOnboarding = () => {
           enriched.interview_time = match.interviewTime;
 
           enriched.interviewTime = match.interviewTime;
+        }
+
+        if (!enriched.stage && match.stage) {
+          enriched.stage = match.stage;
         }
 
         return enriched;
@@ -2588,6 +2604,18 @@ const PersonalOnboarding = () => {
 
     return raw;
   };
+
+const formatStageLabel = (stage) => {
+  if (!stage) return "Interview";
+
+  return stage
+    .toString()
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
 
   // Local interview merge removed: only backend-sourced interview data is used
 
@@ -3735,6 +3763,21 @@ const PersonalOnboarding = () => {
   const submissionLockMessage =
     submissionWindow?.lock_reason ||
     "⏰ Submission period has ended. Please contact HR.";
+
+  const documentsCompleted =
+    Boolean(documentOverview.documents_completed) ||
+    Boolean(documentOverview.documents_snapshot?.completed);
+
+  const documentsCompletionMessage =
+    documentOverview.documents_completion_message ||
+    documentOverview.documents_snapshot?.completion_message ||
+    "Congratulations! You've completed all document requirements. Please wait for HR's update regarding your final interview.";
+
+  const documentsCompletionAt =
+    documentOverview.documents_completion_at ||
+    documentOverview.documents_snapshot?.completion_at ||
+    documentOverview.documents_snapshot?.captured_at ||
+    null;
 
   const followUpDocumentLabel = followUpTargetDocument
     ? getDocumentLabel(followUpTargetDocument)
@@ -5530,15 +5573,11 @@ const PersonalOnboarding = () => {
 
                 <button
                   className={`subnav-item ${
-                    activeTab === "final-interview" ? "active" : ""
+                    activeTab === "benefits" ? "active" : ""
                   }`}
-                  onClick={() => {
-                    setActiveTab("final-interview");
-
-                    fetchInterviewData();
-                  }}
+                  onClick={() => setActiveTab("benefits")}
                 >
-                  Final Interview
+                  Benefits Enroll
                 </button>
 
                 <button
@@ -5548,15 +5587,6 @@ const PersonalOnboarding = () => {
                   onClick={() => setActiveTab("profile")}
                 >
                   Profile Creation
-                </button>
-
-                <button
-                  className={`subnav-item ${
-                    activeTab === "benefits" ? "active" : ""
-                  }`}
-                  onClick={() => setActiveTab("benefits")}
-                >
-                  Benefits Enroll
                 </button>
 
                 <button
@@ -5579,163 +5609,6 @@ const PersonalOnboarding = () => {
               </div>
 
               {/* Content based on activeTab */}
-
-              {activeTab === "final-interview" && (
-                <div>
-                  <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-4">
-                    <h4 className="mb-0">
-                      <FontAwesomeIcon
-                        icon={faUserTie}
-                        className="me-2 text-primary"
-                      />
-                      Final Interview Details
-                    </h4>
-
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={() => fetchInterviewData()}
-                      >
-                        <FontAwesomeIcon icon={faRefresh} className="me-2" />
-                        Refresh
-                      </button>
-                    </div>
-                  </div>
-
-                  {loadingInterview ? (
-                    <div className="card border-0 shadow-sm">
-                      <div className="card-body py-5 text-center">
-                        <div
-                          className="spinner-border text-primary mb-3"
-                          role="status"
-                        >
-                          <span className="visually-hidden">Loading...</span>
-                        </div>
-
-                        <p className="text-muted mb-0">
-                          Fetching final interview information...
-                        </p>
-                      </div>
-                    </div>
-                  ) : finalInterviewEntries.length > 0 ? (
-                    finalInterviewEntries.map((interview, index) => (
-                      <Card
-                        key={interview.id || index}
-                        className="mb-3 border-0 shadow-sm"
-                      >
-                        <Card.Body>
-                          <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3">
-                            <div>
-                              <h5 className="mb-1 text-primary fw-semibold">
-                                {interview.application?.job_posting?.title ||
-                                  "Final Interview"}
-                              </h5>
-
-                              <p className="text-muted mb-0 small">
-                                {interview.application?.job_posting
-                                  ?.department || "Department not specified"}
-                              </p>
-                            </div>
-
-                            <Badge bg="info" className="text-uppercase">
-                              Final Stage
-                            </Badge>
-                          </div>
-
-                          <div className="row g-3 mt-3">
-                            <div className="col-md-4">
-                              <div className="p-3 bg-light rounded-3 h-100">
-                                <label className="text-muted small text-uppercase d-block mb-1">
-                                  Interview Date
-                                </label>
-
-                                <span className="fw-semibold">
-                                  {formatInterviewDateSafe(
-                                    interview.interview_date
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="col-md-4">
-                              <div className="p-3 bg-light rounded-3 h-100">
-                                <label className="text-muted small text-uppercase d-block mb-1">
-                                  Time
-                                </label>
-
-                                <span className="fw-semibold">
-                                  {formatInterviewTimeSafe(
-                                    interview.interview_time ||
-                                      interview.interviewTime
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="col-md-4">
-                              <div className="p-3 bg-light rounded-3 h-100">
-                                <label className="text-muted small text-uppercase d-block mb-1">
-                                  Location
-                                </label>
-
-                                <span className="fw-semibold">
-                                  {interview.location || "To be announced"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="row g-3 mt-1">
-                            <div className="col-md-6">
-                              <div className="p-3 border rounded-3 h-100">
-                                <label className="text-muted small text-uppercase d-block mb-1">
-                                  Interviewer
-                                </label>
-
-                                <span className="fw-semibold">
-                                  {interview.interviewer || "To be assigned"}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="col-md-6">
-                              <div className="p-3 border rounded-3 h-100">
-                                <label className="text-muted small text-uppercase d-block mb-1">
-                                  Additional Notes
-                                </label>
-
-                                <span className="fw-semibold">
-                                  {interview.notes ||
-                                    "No additional notes provided."}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    ))
-                  ) : (
-                    <div className="card border-0 shadow-sm">
-                      <div className="card-body py-5 text-center">
-                        <FontAwesomeIcon
-                          icon={faInfoCircle}
-                          className="text-muted mb-3"
-                          style={{ fontSize: "2.5rem" }}
-                        />
-
-                        <h5 className="text-muted mb-2">
-                          No Final Interview Scheduled Yet
-                        </h5>
-
-                        <p className="text-muted mb-0">
-                          We will notify you once your final interview has been
-                          scheduled. Check back soon or refresh for updates.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {activeTab === "overview" && (
                 <>
@@ -6387,23 +6260,33 @@ const PersonalOnboarding = () => {
                     </div>
 
                     <div className="text-lg-end">
-                      {isSubmissionLocked ? (
+                      {documentsCompleted ? (
+                        <div className="d-inline-flex align-items-center text-success fw-semibold submission-countdown-success">
+                          <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                          <span>{documentsCompletionMessage}</span>
+                          {documentsCompletionAt && (
+                            <span className="ms-2 text-muted small">
+                              ({formatTimestampForDisplay(documentsCompletionAt)})
+                            </span>
+                          )}
+                        </div>
+                      ) : isSubmissionLocked ? (
                         <div className="d-inline-flex align-items-center text-danger fw-semibold submission-countdown-expired">
                           <FontAwesomeIcon icon={faClock} className="me-2" />
                           <span>{submissionLockMessage}</span>
                         </div>
                       ) : (
-                      <Badge
+                        <Badge
                           bg={submissionCountdownVariant}
                           className="rounded-pill px-3 py-2 fw-semibold submission-countdown-badge"
                         >
                           {submissionCountdownLabel}
-                      </Badge>
+                        </Badge>
                       )}
                     </div>
                   </div>
 
-                  {isSubmissionLocked && (
+                  {!documentsCompleted && isSubmissionLocked && (
                     <Alert variant="danger" className="mb-3">
                       <FontAwesomeIcon icon={faClock} className="me-2" />
                       {submissionLockMessage}
@@ -7373,8 +7256,8 @@ const PersonalOnboarding = () => {
                                           )}
                                         </div>
                                       </div>
-                                    </div>
-                                  ))}
+                    </div>
+                  ))}
                                 </div>
                               )}
                             </div>

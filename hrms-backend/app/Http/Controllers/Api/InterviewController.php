@@ -309,6 +309,7 @@ class InterviewController extends Controller
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
                     'notes' => $interview->notes,
+                    'stage' => $interview->stage ?? 'general',
                     'status' => $interview->status,
                     'feedback' => $interview->feedback,
                     'result' => $interview->result,
@@ -483,6 +484,7 @@ class InterviewController extends Controller
                     'location' => $interview->location,
                     'interviewer' => $interview->interviewer,
                     'notes' => $interview->notes,
+                    'stage' => $interview->stage ?? 'general',
                     'status' => $interview->status,
                     'feedback' => $interview->feedback,
                     'result' => $interview->result,
@@ -588,6 +590,7 @@ class InterviewController extends Controller
                 'location' => 'nullable|string|max:255',
                 'interviewer' => 'nullable|string|max:255',
                 'notes' => 'nullable|string|max:1000',
+                'stage' => 'nullable|string|max:50',
                 'status' => 'nullable|in:scheduled,completed,cancelled,rescheduled',
                 'feedback' => 'nullable|string|max:2000',
                 'result' => 'nullable|in:passed,failed,pending'

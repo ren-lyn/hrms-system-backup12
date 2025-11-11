@@ -23,7 +23,7 @@ class ApplicationController extends Controller
     // Get all applications for HR staff to view
     public function index(Request $request)
     {
-        $applications = Application::with(['jobPosting', 'applicant', 'jobOffer'])
+        $applications = Application::with(['jobPosting', 'applicant', 'jobOffer', 'benefitsEnrollment'])
             ->when($request->job_posting_id, function($query, $jobId) {
                 return $query->where('job_posting_id', $jobId);
             })
@@ -182,10 +182,12 @@ class ApplicationController extends Controller
             'user_id' => Auth::check() ? Auth::id() : 'unknown'
         ]);
         
-        $application->update([
+        $updates = [
             'status' => $request->status,
             'reviewed_at' => now(),
-        ]);
+        ];
+
+        $application->update($updates);
 
         if (in_array($request->status, ['Document Submission', 'Onboarding'], true)) {
             $this->ensureDocumentSubmissionWindowInitialized($application);
@@ -316,7 +318,8 @@ class ApplicationController extends Controller
                 'interview_type' => 'required|string',
                 'location' => 'required|string',
                 'interviewer' => 'required|string',
-                'notes' => 'nullable|string'
+                'notes' => 'nullable|string',
+                'stage' => 'nullable|string|max:50'
             ]);
 
             $application = Application::with('applicant')->findOrFail($id);
@@ -359,6 +362,7 @@ class ApplicationController extends Controller
             }
             
             $isUpdate = $existingInterview !== null;
+            $stage = $request->input('stage', 'general');
 
             if ($existingInterview) {
                 // Update existing interview invite
@@ -373,6 +377,7 @@ class ApplicationController extends Controller
                     'location' => $request->location,
                     'interviewer' => $request->interviewer,
                     'notes' => $request->notes ?? '',
+                    'stage' => $stage,
                     'status' => 'scheduled',
                     'updated_at' => now()
                 ];
@@ -429,6 +434,7 @@ class ApplicationController extends Controller
                     'location' => $request->location,
                     'interviewer' => $request->interviewer,
                     'notes' => $request->notes ?? '',
+                    'stage' => $stage,
                     'status' => 'scheduled'
                 ];
                 
@@ -535,7 +541,8 @@ class ApplicationController extends Controller
                 'interview_type' => 'required|string',
                 'location' => 'required|string',
                 'interviewer' => 'required|string',
-                'notes' => 'nullable|string'
+                'notes' => 'nullable|string',
+                'stage' => 'nullable|string|max:50'
             ]);
 
             $applicationIds = $request->application_ids;
@@ -543,6 +550,7 @@ class ApplicationController extends Controller
                 'interview_date', 'interview_time', 'end_time',
                 'interview_type', 'location', 'interviewer', 'notes'
             ]);
+            $stage = $request->input('stage', 'general');
 
             $successfulInterviews = [];
             $failedInterviews = [];
@@ -602,6 +610,7 @@ class ApplicationController extends Controller
                             'location' => $interviewData['location'],
                             'interviewer' => $interviewData['interviewer'],
                             'notes' => $interviewData['notes'] ?? '',
+                            'stage' => $stage,
                             'status' => 'scheduled',
                             'updated_at' => now()
                         ];
@@ -628,6 +637,7 @@ class ApplicationController extends Controller
                             'location' => $interviewData['location'],
                             'interviewer' => $interviewData['interviewer'],
                             'notes' => $interviewData['notes'] ?? '',
+                            'stage' => $stage,
                             'status' => 'scheduled'
                         ];
                         
@@ -756,7 +766,9 @@ class ApplicationController extends Controller
                     'contact_person' => $request->contact_person,
                     'contact_number' => $request->contact_number,
                     'notes' => $request->notes,
-                    'status' => 'pending'
+                    'status' => 'pending',
+                    'offer_sent_at' => now(),
+                    'responded_at' => null,
                 ]);
                 
                 Log::info('Job offer updated', [
@@ -778,7 +790,8 @@ class ApplicationController extends Controller
                     'contact_number' => $request->contact_number,
                     'notes' => $request->notes,
                     'status' => 'pending',
-                    'offer_sent_at' => now()
+                    'offer_sent_at' => now(),
+                    'responded_at' => null,
                 ]);
                 
                 Log::info('Job offer created', [
@@ -789,6 +802,8 @@ class ApplicationController extends Controller
 
             // Update application status to Offered
             $application->update(['status' => 'Offered']);
+
+            $application->load(['jobOffer']);
             
             // Here you could send email notification to applicant
             // Mail::to($application->applicant->email)->send(new JobOfferMail($application));
@@ -818,7 +833,7 @@ class ApplicationController extends Controller
             DB::beginTransaction();
             
             $user = $request->user();
-            $application = Application::with(['jobPosting', 'applicant'])
+            $application = Application::with(['jobPosting', 'applicant', 'jobOffer'])
                 ->whereHas('applicant', function($query) use ($user) {
                     $query->where('user_id', $user->id);
                 })
@@ -879,6 +894,15 @@ class ApplicationController extends Controller
                 'status' => 'Offer Accepted',
                 'offer_accepted_at' => now()
             ]);
+
+            $jobOffer = $application->jobOffer()->first();
+
+            if ($jobOffer) {
+                $jobOffer->update([
+                    'status' => 'accepted',
+                    'responded_at' => now(),
+                ]);
+            }
             
             Log::info('Application status updated to Offer Accepted', [
                 'application_id' => $id,
@@ -952,7 +976,7 @@ class ApplicationController extends Controller
             
             return response()->json([
                 'message' => 'Job offer accepted successfully.',
-                'application' => $application->fresh(['jobPosting', 'applicant'])
+                'application' => $application->fresh(['jobPosting', 'applicant', 'jobOffer'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -995,8 +1019,10 @@ class ApplicationController extends Controller
     public function declineOffer(Request $request, $id)
     {
         try {
+            DB::beginTransaction();
+
             $user = $request->user();
-            $application = Application::with(['jobPosting', 'applicant'])
+            $application = Application::with(['jobPosting', 'applicant', 'jobOffer'])
                 ->whereHas('applicant', function($query) use ($user) {
                     $query->where('user_id', $user->id);
                 })
@@ -1005,6 +1031,7 @@ class ApplicationController extends Controller
             // Verify the application status allows declining
             $allowedStatuses = ['Offer Sent', 'Offered'];
             if (!in_array($application->status, $allowedStatuses)) {
+                DB::rollBack();
                 return response()->json([
                     'message' => 'Invalid application status for offer decline.'
                 ], 400);
@@ -1012,12 +1039,24 @@ class ApplicationController extends Controller
             
             // Update status to Rejected
             $application->update(['status' => 'Rejected']);
+
+            $jobOffer = $application->jobOffer()->first();
+
+            if ($jobOffer) {
+                $jobOffer->update([
+                    'status' => 'declined',
+                    'responded_at' => now(),
+                ]);
+            }
+
+            DB::commit();
             
             return response()->json([
                 'message' => 'Job offer declined.',
-                'application' => $application->load(['jobPosting', 'applicant'])
+                'application' => $application->load(['jobPosting', 'applicant', 'jobOffer'])
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             Log::error('Error declining offer', [
                 'application_id' => $id,
                 'error' => $e->getMessage()

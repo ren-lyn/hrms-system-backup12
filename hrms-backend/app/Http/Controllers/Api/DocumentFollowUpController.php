@@ -174,7 +174,7 @@ class DocumentFollowUpController extends Controller
 
         $validator = Validator::make($request->all(), [
             'extension_days' => ['required', 'integer', 'min:1', 'max:90'],
-            'hr_response' => ['nullable', 'string', 'max:2000'],
+            'hr_response' => ['required', 'string', 'max:2000'],
         ]);
 
         if ($validator->fails()) {
@@ -254,7 +254,7 @@ class DocumentFollowUpController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'hr_response' => ['nullable', 'string', 'max:2000'],
+            'hr_response' => ['required', 'string', 'max:2000'],
         ]);
 
         if ($validator->fails()) {

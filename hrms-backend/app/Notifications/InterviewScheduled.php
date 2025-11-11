@@ -39,12 +39,16 @@ class InterviewScheduled extends Notification implements ShouldQueue
     {
         $interviewDate = \Carbon\Carbon::parse($this->interview->interview_date)->format('M d, Y');
         $interviewTime = \Carbon\Carbon::parse($this->interview->interview_time)->format('g:i A');
+        $stageLabel = ucfirst($this->interview->stage ?? 'Interview');
         
         return (new MailMessage)
-            ->subject('Interview Scheduled - ' . ($this->application->jobPosting->title ?? 'Position'))
+            ->subject("{$stageLabel} Scheduled - " . ($this->application->jobPosting->title ?? 'Position'))
             ->greeting('Hello ' . ($notifiable->first_name ?? $notifiable->name ?? 'Applicant') . '!')
-            ->line('We are pleased to inform you that an interview has been scheduled for your application.')
+            ->line("We are pleased to inform you that your {$stageLabel} has been scheduled for your application.")
             ->line('**Interview Details:**')
+            ->when($this->interview->stage, function ($message) use ($stageLabel) {
+                return $message->line('🏷️ **Stage:** ' . $stageLabel);
+            })
             ->line('📅 **Date:** ' . $interviewDate)
             ->line('🕐 **Start Time:** ' . $interviewTime)
             ->when($this->interview->end_time, function ($message) {
@@ -74,11 +78,12 @@ class InterviewScheduled extends Notification implements ShouldQueue
         $endTime = $this->interview->end_time 
             ? \Carbon\Carbon::parse($this->interview->end_time)->format('g:i A')
             : null;
+        $stageLabel = $this->interview->stage ? ucfirst($this->interview->stage) : null;
         
         return [
             'type' => 'interview_scheduled',
-            'title' => 'Interview Scheduled',
-            'message' => "Your interview has been scheduled for {$interviewDate} at {$interviewTime}" . ($endTime ? " - {$endTime}" : ""),
+            'title' => $stageLabel ? "{$stageLabel} Scheduled" : 'Interview Scheduled',
+            'message' => ($stageLabel ? "{$stageLabel}: " : '') . "Your interview has been scheduled for {$interviewDate} at {$interviewTime}" . ($endTime ? " - {$endTime}" : ""),
             'interview_id' => $this->interview->id,
             'application_id' => $this->application->id,
             'applicant_user_id' => $this->application->applicant->user_id ?? null,
@@ -86,6 +91,7 @@ class InterviewScheduled extends Notification implements ShouldQueue
             'interview_time' => $this->interview->interview_time,
             'end_time' => $this->interview->end_time,
             'interview_type' => $this->interview->interview_type ?? 'On-site',
+            'stage' => $this->interview->stage ?? 'general',
             'location' => $this->interview->location,
             'interviewer' => $this->interview->interviewer,
             'notes' => $this->interview->notes ?? '',

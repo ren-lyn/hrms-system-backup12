@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentFollowUpController;
 use App\Http\Controllers\Api\PredictiveAnalyticsController;
+use App\Http\Controllers\Api\BenefitsEnrollmentController;
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -236,6 +237,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/submissions/{submissionId}/review', [DocumentController::class, 'reviewSubmission']);
         });
     });
+
+    Route::prefix('applications/{applicationId}/benefits-enrollment')
+        ->middleware(['role:HR Assistant,HR Staff,HR Admin'])
+        ->group(function () {
+            Route::get('/', [BenefitsEnrollmentController::class, 'show']);
+            Route::put('/', [BenefitsEnrollmentController::class, 'update']);
+        });
 });
 
 Route::get('/test', function () {

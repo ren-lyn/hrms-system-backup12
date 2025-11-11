@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import {
   Container,
@@ -48,9 +48,20 @@ import {
   faReply,
   faCheck,
   faExternalLinkAlt,
+  faBuilding,
+  faLightbulb,
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
+
+const createBenefitsEnrollmentForm = () => ({
+  selectedBenefits: [],
+  sssNumber: "",
+  philhealthNumber: "",
+  pagibigNumber: "",
+  contributionType: "employee",
+  notes: "",
+});
 
 const OnboardingDashboard = () => {
   const [activeTab, setActiveTab] = useState("Overview");
@@ -92,18 +103,13 @@ const OnboardingDashboard = () => {
 
   const onboardingTabs = [
     "Document Submission",
-    "Final Interview",
     "Profile Creation",
-    "Benefits Enroll",
     "Orientation Schedule",
     "Start Date",
   ];
 
   const onboardingTabDescriptions = {
-    "Final Interview":
-      "Final interview scheduling and notes will be available here.",
     "Profile Creation": "Profile creation workflow is coming soon.",
-    "Benefits Enroll": "Benefits enrollment workflow is coming soon.",
     "Orientation Schedule":
       "Orientation scheduling tools will be available here.",
     "Start Date": "Start date coordination will be available here.",
@@ -135,35 +141,96 @@ const OnboardingDashboard = () => {
 
   const [followUpActionLoading, setFollowUpActionLoading] = useState(false);
 
-  const [documentFilter, setDocumentFilter] = useState("All");
+  const [
+    showFinalInterviewSelectionModal,
+    setShowFinalInterviewSelectionModal,
+  ] = useState(false);
+
+  const [finalInterviewApplicantsList, setFinalInterviewApplicantsList] =
+    useState([]);
+
+  const [finalInterviewSelection, setFinalInterviewSelection] = useState([]);
+
+  const finalInterviewSelectAllRef = useRef(null);
+
+  useEffect(() => {
+    if (!finalInterviewSelectAllRef.current) return;
+
+    const checkbox = finalInterviewSelectAllRef.current;
+    const isSomeSelected =
+      finalInterviewSelection.length > 0 &&
+      finalInterviewSelection.length < finalInterviewApplicantsList.length;
+
+    checkbox.indeterminate = isSomeSelected;
+  }, [finalInterviewSelection, finalInterviewApplicantsList]);
+
 
   const [documentSearchTerm, setDocumentSearchTerm] = useState("");
 
+  const [benefitsSearchTerm, setBenefitsSearchTerm] = useState("");
+  const [benefitsStatusFilter, setBenefitsStatusFilter] = useState("All");
+  const [showBenefitsModal, setShowBenefitsModal] = useState(false);
+  const [benefitsModalLoading, setBenefitsModalLoading] = useState(false);
+  const [benefitsSaving, setBenefitsSaving] = useState(false);
+  const [benefitsSubmitMode, setBenefitsSubmitMode] = useState("save");
+  const [showBenefitsSubmitConfirm, setShowBenefitsSubmitConfirm] =
+    useState(false);
+  const [benefitsForm, setBenefitsForm] = useState(createBenefitsEnrollmentForm);
+  const [benefitsApplicantInfo, setBenefitsApplicantInfo] = useState(null);
+  const [availableBenefitsOptions, setAvailableBenefitsOptions] = useState([]);
+  const [benefitsEnrollmentStatus, setBenefitsEnrollmentStatus] =
+    useState("pending");
+  const [selectedApplicationForBenefits, setSelectedApplicationForBenefits] =
+    useState(null);
+  const [benefitsValidationErrors, setBenefitsValidationErrors] = useState([]);
+
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
-  const [showDocumentModal, setShowDocumentModal] = useState(false);
+const [showDocumentModal, setShowDocumentModal] = useState(false);
 
-  const [selectedApplicationForDocs, setSelectedApplicationForDocs] =
-    useState(null);
+const [selectedApplicationForDocs, setSelectedApplicationForDocs] =
+  useState(null);
 
-  const [documentModalTab, setDocumentModalTab] = useState(
-    "Applicant Identification"
-  );
+const [documentModalTab, setDocumentModalTab] = useState(
+  "Applicant Identification"
+);
 
-  const documentModalTabs = useMemo(
-    () => [
-      "Applicant Identification",
+const [documentModalReadOnly, setDocumentModalReadOnly] = useState(false);
 
-      "Government & Tax Documents",
+const documentModalTabs = useMemo(
+  () => [
+    "Applicant Identification",
 
-      "Medical Documents",
+    "Government & Tax Documents",
 
-      "Additional Document",
+    "Medical Documents",
 
-      "Follow-Up Requests",
-    ],
-    []
-  );
+    "Additional Document",
+
+    "Follow-Up Requests",
+  ],
+  []
+);
+
+const visibleDocumentTabs = documentModalReadOnly
+  ? documentModalTabs.filter((tab) => tab !== "Follow-Up Requests")
+  : documentModalTabs;
+
+useEffect(() => {
+  if (documentModalReadOnly && documentModalTab === "Follow-Up Requests") {
+    setDocumentModalTab("Applicant Identification");
+  }
+}, [documentModalReadOnly, documentModalTab]);
+
+const closeDocumentModal = useCallback(() => {
+  setShowDocumentModal(false);
+  setDocumentModalReadOnly(false);
+  setSelectedApplicationForDocs(null);
+  setDocumentRequirements([]);
+  setDocumentSubmissions([]);
+  setFollowUpRequests([]);
+  setFollowUpRequestsError("");
+}, []);
 
   const applicantIdentificationDocs = useMemo(
     () => [
@@ -778,8 +845,6 @@ const OnboardingDashboard = () => {
 
   const [rejectingDocumentKey, setRejectingDocumentKey] = useState(null);
 
-  const [approveModalData, setApproveModalData] = useState(null);
-
   const [newRequirement, setNewRequirement] = useState({
     document_name: "",
 
@@ -828,6 +893,8 @@ const OnboardingDashboard = () => {
     interviewer: "",
 
     notes: "",
+
+  stage: "general",
   });
 
   // Batch interview functionality
@@ -841,14 +908,31 @@ const OnboardingDashboard = () => {
 
   // Determine if an offer was already sent for a given applicant (from localStorage)
 
-  const isOfferSent = useCallback((applicantId) => {
-    try {
-      const offers = JSON.parse(localStorage.getItem("jobOffers") || "[]");
-
-      return offers.some((o) => String(o.applicant_id) === String(applicantId));
-    } catch (e) {
+  const isOfferSent = useCallback((applicationRecord) => {
+    if (!applicationRecord) {
       return false;
     }
+
+    const status = (applicationRecord.status || "").toLowerCase();
+
+    if (["offered", "offer accepted", "hired"].includes(status)) {
+      return true;
+    }
+
+    if (applicationRecord.is_offer_locked) {
+      return true;
+    }
+
+    const jobOfferStatus =
+      applicationRecord.offer_status ||
+      applicationRecord.jobOffer?.status ||
+      applicationRecord.job_offer?.status;
+
+    if (!jobOfferStatus) {
+      return false;
+    }
+
+    return jobOfferStatus !== "declined";
   }, []);
 
   const [batchInterviewData, setBatchInterviewData] = useState({
@@ -863,6 +947,8 @@ const OnboardingDashboard = () => {
     interviewer: "",
 
     notes: "",
+
+  stage: "general",
   });
 
   // Fetch applicants from JobPortal applications
@@ -1031,7 +1117,14 @@ const OnboardingDashboard = () => {
           return status === "Accepted" || status === "Offer Accepted";
 
         case "Onboarding":
-          return status === "Onboarding" || status === "Document Submission";
+          return (
+            status === "Onboarding" ||
+            status === "Document Submission" ||
+            status === "Orientation Schedule" ||
+            status === "Starting Date" ||
+            status === "Benefits Enroll" ||
+            status === "Profile Creation"
+          );
 
         case "Hired":
           return status === "Hired";
@@ -1151,7 +1244,20 @@ const OnboardingDashboard = () => {
       },
     };
 
-    const config = statusConfig[status] || statusConfig["Pending"];
+    const onboardingStageStatuses = [
+      "Document Submission",
+      "Profile Creation",
+      "Benefits Enroll",
+      "Orientation Schedule",
+      "Starting Date",
+    ];
+
+    const normalizedStatus = onboardingStageStatuses.includes(status)
+      ? "Onboarding"
+      : status;
+
+    const config =
+      statusConfig[normalizedStatus] || statusConfig["Pending"];
 
     return (
       <Badge
@@ -1250,7 +1356,13 @@ const OnboardingDashboard = () => {
 
   const handleStatusUpdate = async (targetStatus) => {
     try {
-      const applicantToUpdate = selectedRecord || selectedRecordForStatus;
+      const applicantToUpdate =
+        selectedRecord || selectedRecordForStatus || selectedApplicationForDocs;
+
+      if (!applicantToUpdate) {
+        alert("No applicant selected. Please select an applicant first.");
+        return;
+      }
 
       const response = await axios.put(
         `http://localhost:8000/api/applications/${applicantToUpdate.id}/status`,
@@ -1562,7 +1674,13 @@ const OnboardingDashboard = () => {
       return;
     }
 
-    const payload = {};
+    const message = followUpActionForm.hrResponse.trim();
+    if (!message) {
+      alert("Please provide a message for the applicant.");
+      return;
+    }
+
+    const payload = { hr_response: message };
     let endpoint = "";
 
     if (followUpActionType === "accept") {
@@ -1572,14 +1690,8 @@ const OnboardingDashboard = () => {
         return;
       }
       payload.extension_days = days;
-      if (followUpActionForm.hrResponse.trim()) {
-        payload.hr_response = followUpActionForm.hrResponse.trim();
-      }
       endpoint = "accept";
     } else if (followUpActionType === "reject") {
-      if (followUpActionForm.hrResponse.trim()) {
-        payload.hr_response = followUpActionForm.hrResponse.trim();
-      }
       endpoint = "reject";
     } else {
       return;
@@ -1671,7 +1783,10 @@ const OnboardingDashboard = () => {
       (applicant) =>
         applicant.status === "Onboarding" ||
         applicant.status === "Document Submission" ||
-        applicant.status === "Orientation Schedule"
+        applicant.status === "Orientation Schedule" ||
+        applicant.status === "Starting Date" ||
+        applicant.status === "Benefits Enroll" ||
+        applicant.status === "Profile Creation"
     );
 
     for (const applicant of onboardingApplicants) {
@@ -1775,6 +1890,29 @@ const OnboardingDashboard = () => {
             statusMap[applicant.id] = {
               status: overallStatus,
               date: latestDate,
+            };
+          }
+
+          const existingEntry = statusMap[applicant.id];
+          if (applicant.documents_stage_status === "completed") {
+            statusMap[applicant.id] = {
+              status: "Completed",
+              date:
+                applicant.documents_completed_at ||
+                existingEntry?.date ||
+                applicant.documents_approved_at ||
+                null,
+            };
+          } else if (
+            applicant.documents_stage_status === "approved" &&
+            (!existingEntry ||
+              existingEntry.status === "Incomplete" ||
+              existingEntry.status === "Pending Review")
+          ) {
+            statusMap[applicant.id] = {
+              status: "Approved Documents",
+              date:
+                applicant.documents_approved_at || existingEntry?.date || null,
             };
           }
         }
@@ -1920,23 +2058,28 @@ const OnboardingDashboard = () => {
 
         setRejectionReason("");
 
-        if (status === "received") {
-          setApproveModalData(null);
-        }
-
-        // Check if all documents are approved
-
-        if (response.data.all_documents_approved) {
-          // Update the selected application's status in the UI
-
-          if (selectedApplicationForDocs) {
-            setSelectedApplicationForDocs({
-              ...selectedApplicationForDocs,
-
-              status:
-                response.data.application_status || "Orientation Schedule",
-            });
-          }
+        if (selectedApplicationForDocs) {
+          setSelectedApplicationForDocs({
+            ...selectedApplicationForDocs,
+            status:
+              response.data.application_status ||
+              selectedApplicationForDocs.status,
+            documents_stage_status:
+              response.data.documents_stage_status ||
+              selectedApplicationForDocs.documents_stage_status,
+            documents_completed_at:
+              response.data.documents_completed_at ||
+              selectedApplicationForDocs.documents_completed_at,
+            is_in_benefits_enrollment:
+              response.data.is_in_benefits_enrollment ??
+              selectedApplicationForDocs.is_in_benefits_enrollment,
+            benefits_enrollment_status:
+              response.data.benefits_enrollment_status ??
+              selectedApplicationForDocs.benefits_enrollment_status,
+            documents_status_label:
+              response.data.documents_status_label ??
+              selectedApplicationForDocs.documents_status_label,
+          });
         }
       }
     } catch (error) {
@@ -1948,10 +2091,11 @@ const OnboardingDashboard = () => {
 
   // Handle approve document
 
-  const openApproveModal = (submission, doc) => {
+  const handleApproveDocument = async (submission, doc) => {
     if (!submission) {
       return;
     }
+
     const derivedDocumentKey =
       submission.document_key ||
       submission.document_type ||
@@ -1962,30 +2106,24 @@ const OnboardingDashboard = () => {
         ? `requirement_${submission.document_requirement_id}`
         : null);
 
-    setApproveModalData({
-      submissionId: submission.id,
-      documentTitle:
-        doc?.title ||
-        submission.document_requirement?.document_name ||
-        "this document",
-      documentKey: derivedDocumentKey,
-    });
-  };
+    const documentLabel =
+      doc?.title ||
+      submission.document_requirement?.document_name ||
+      "this document";
 
-  const closeApproveModal = () => {
-    if (reviewingDocument) return;
-    setApproveModalData(null);
-  };
+    const confirmApproval = window.confirm(
+      `Are you sure you want to approve ${documentLabel}?`
+    );
 
-  const confirmApproveDocument = async () => {
-    if (!approveModalData?.submissionId) {
+    if (!confirmApproval) {
       return;
     }
+
     await reviewDocumentSubmission(
-      approveModalData.submissionId,
+      submission.id,
       "received",
       "",
-      approveModalData.documentKey || null
+      derivedDocumentKey
     );
   };
 
@@ -2166,6 +2304,7 @@ const OnboardingDashboard = () => {
                       )}
                     </div>
 
+                    {!documentModalReadOnly && (
                     <div className="ms-lg-auto d-flex gap-2">
                       <Button
                         variant="success"
@@ -2173,9 +2312,7 @@ const OnboardingDashboard = () => {
                         disabled={
                           !submission || isApproved || reviewingDocument
                         }
-                        onClick={() =>
-                          submission && openApproveModal(submission, doc)
-                        }
+                        onClick={() => handleApproveDocument(submission, doc)}
                       >
                         Approve
                       </Button>
@@ -2207,6 +2344,7 @@ const OnboardingDashboard = () => {
                         </Button>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {rejectionReason && (
@@ -2226,10 +2364,11 @@ const OnboardingDashboard = () => {
       computeApplicantDocStatus,
       deleteDocumentRequirement,
       handleRejectDocument,
-      openApproveModal,
+      handleApproveDocument,
       openSubmissionFile,
       reviewingDocument,
       statusBadgeStyles,
+      documentModalReadOnly,
     ]
   );
 
@@ -2255,6 +2394,18 @@ const OnboardingDashboard = () => {
     });
   };
 
+  const isDocumentSubmissionCompleted = () => {
+    if (!selectedApplicationForDocs) {
+      return false;
+    }
+
+    return (
+      selectedApplicationForDocs.documents_stage_status === "completed" ||
+      !!selectedApplicationForDocs.documents_completed_at ||
+      selectedApplicationForDocs.documents_status_label === "Completed"
+    );
+  };
+
   // Mark document submission as done and move to next tab
 
   const markDocumentSubmissionAsDone = async () => {
@@ -2266,34 +2417,65 @@ const OnboardingDashboard = () => {
 
     if (
       !window.confirm(
-        "Are you sure you want to mark document submission as complete? This will move the applicant to the Orientation Schedule step."
+        "Are you sure you want to mark document submission as complete? The applicant will remain in Document Submission for any final processing."
       )
     ) {
       return;
     }
 
     try {
-      await handleStatusUpdate("Orientation Schedule");
+      if (!selectedApplicationForDocs?.id) {
+        alert(
+          "Unable to determine the selected applicant. Please reopen the document viewer and try again."
+        );
+        return;
+      }
 
-      setShowDocumentModal(false);
+      const response = await axios.post(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/complete`,
+        {},
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
 
-      setSelectedApplicationForDocs(null);
+      await fetchAllApplicantsDocumentStatus();
 
-      setDocumentRequirements([]);
+      closeDocumentModal();
 
-      setDocumentSubmissions([]);
+      await fetchApplicants();
 
-      setFollowUpRequests([]);
-
-      setFollowUpRequestsError("");
+      if (selectedApplicationForDocs) {
+        setSelectedApplicationForDocs({
+          ...selectedApplicationForDocs,
+          documents_stage_status:
+            response.data.documents_stage_status || "completed",
+          documents_completed_at: response.data.documents_completed_at,
+          is_in_benefits_enrollment:
+            response.data.is_in_benefits_enrollment ?? true,
+          benefits_enrollment_status:
+            response.data.benefits_enrollment_status || "pending",
+          documents_status_label:
+            response.data.documents_status_label || "Completed",
+        });
+      }
 
       alert(
-        "Document submission completed! Applicant moved to Orientation Schedule."
+        "Document submission marked as completed! The applicant remains in Document Submission for final review."
       );
+      setOnboardingSubtab("Document Submission");
     } catch (error) {
       console.error("Error updating status:", error);
 
-      alert("Failed to update status. Please try again.");
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        "Failed to update status. Please try again.";
+
+      alert(message);
     }
   };
 
@@ -2395,6 +2577,79 @@ const OnboardingDashboard = () => {
     return `${h.toString().padStart(2, "0")}:${minute}`;
   };
 
+  const formatDisplayTime = (timeString) => {
+    if (!timeString) return "";
+
+    const [hourStr, minuteStr] = timeString.split(":");
+    let hour = parseInt(hourStr, 10);
+    const minute = minuteStr || "00";
+    const suffix = hour >= 12 ? "PM" : "AM";
+    hour = hour % 12 || 12;
+    return `${hour}:${minute.padStart(2, "0")} ${suffix}`;
+  };
+
+  const defaultInterviewInstructions = useMemo(
+    () => [
+      "Please wear business or smart casual attire.",
+      "Arrive 10 minutes before your scheduled time.",
+      "Bring one valid government-issued ID.",
+      "Prepare printed copies of your resume and supporting documents.",
+      "If virtual, ensure a stable internet connection and a quiet environment.",
+    ],
+    []
+  );
+
+  const interviewSchedulePreview = useMemo(() => {
+    const { interview_date, interview_time, end_time, interviewer } =
+      interviewData;
+
+    if (
+      !interview_date ||
+      !interview_time ||
+      !end_time ||
+      !interviewer?.trim()
+    ) {
+      return {
+        isScheduled: false,
+        message: "Your interview schedule will be posted soon.",
+      };
+    }
+
+    const startDate = new Date(`${interview_date}T${interview_time}`);
+    const endDate = new Date(`${interview_date}T${end_time}`);
+
+    const dateLabel = startDate.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const startTimeLabel = formatDisplayTime(interview_time);
+    const endTimeLabel = formatDisplayTime(end_time);
+
+    return {
+      isScheduled: true,
+      dateLabel,
+      timeLabel:
+        startTimeLabel && endTimeLabel
+          ? `${startTimeLabel} - ${endTimeLabel}`
+          : startTimeLabel || "",
+      interviewerName: interviewer,
+    };
+  }, [interviewData]);
+
+  const interviewInstructionItems = useMemo(() => {
+    if (interviewData.notes && interviewData.notes.trim().length > 0) {
+      return interviewData.notes
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    return defaultInterviewInstructions;
+  }, [defaultInterviewInstructions, interviewData.notes]);
+
   // Handle schedule interview
 
   const handleScheduleInterview = (applicant) => {
@@ -2414,9 +2669,112 @@ const OnboardingDashboard = () => {
       interviewer: "",
 
       notes: "",
+
+      stage: "general",
     });
 
     setShowInterviewModal(true);
+  };
+
+  const handleFinalInterviewScheduleClick = () => {
+    const finalInterviewApplicants = applicants
+      .filter((applicant) => applicant.status === "Orientation Schedule")
+      .sort((a, b) => {
+        const getTimestamp = (applicantRecord) => {
+          const rawValue =
+            applicantRecord.documents_approved_at ||
+            applicantsDocumentStatus[applicantRecord.id]?.approved_at ||
+            applicantsDocumentStatus[applicantRecord.id]?.completed_at ||
+            null;
+
+          if (!rawValue) return Number.MAX_SAFE_INTEGER;
+
+          const date = new Date(rawValue);
+          const time = date.getTime();
+
+          return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
+        };
+
+        const timeA = getTimestamp(a);
+        const timeB = getTimestamp(b);
+
+        if (timeA !== timeB) return timeA - timeB;
+
+        const nameA = `${a.applicant?.first_name || ""} ${
+          a.applicant?.last_name || ""
+        }`.trim();
+        const nameB = `${b.applicant?.first_name || ""} ${
+          b.applicant?.last_name || ""
+        }`.trim();
+
+        return nameA.localeCompare(nameB);
+      });
+
+    if (finalInterviewApplicants.length === 0) {
+      alert("No applicants are ready for orientation scheduling.");
+      return;
+    }
+
+    setBatchInterviewData((prev) => ({
+      ...prev,
+      stage: "general",
+      interview_type: "On-site",
+    }));
+
+    setFinalInterviewApplicantsList(finalInterviewApplicants);
+    setFinalInterviewSelection(finalInterviewApplicants.map((app) => app.id));
+    setShowFinalInterviewSelectionModal(true);
+  };
+
+  const toggleFinalInterviewSelection = (applicantId) => {
+    setFinalInterviewSelection((prev) => {
+      if (prev.includes(applicantId)) {
+        return prev.filter((id) => id !== applicantId);
+      }
+
+      return [...prev, applicantId];
+    });
+  };
+
+  const handleFinalInterviewSelectAll = () => {
+    setFinalInterviewSelection(
+      finalInterviewApplicantsList.map((applicant) => applicant.id)
+    );
+  };
+
+  const handleFinalInterviewClearSelection = () => {
+    setFinalInterviewSelection([]);
+  };
+
+  const handleCloseFinalInterviewSelectionModal = () => {
+    setShowFinalInterviewSelectionModal(false);
+    setFinalInterviewSelection([]);
+    setFinalInterviewApplicantsList([]);
+    setBatchInterviewData((prev) => ({
+      ...prev,
+      stage: "general",
+    }));
+  };
+
+  const handleConfirmFinalInterviewSelection = () => {
+    if (finalInterviewSelection.length === 0) {
+      alert("Please select at least one applicant to schedule.");
+      return;
+    }
+
+    const orderedSelection = finalInterviewApplicantsList.filter((applicant) =>
+      finalInterviewSelection.includes(applicant.id)
+    );
+
+    setSelectedApplicants(orderedSelection);
+    setShowFinalInterviewSelectionModal(false);
+    setFinalInterviewApplicantsList([]);
+    setBatchInterviewData((prev) => ({
+      ...prev,
+      stage: "general",
+      interview_type: "On-site",
+    }));
+    setShowBatchInterviewModal(true);
   };
 
   // Handle view interview details
@@ -2825,7 +3183,7 @@ const OnboardingDashboard = () => {
 
   // Handle send interview invite
 
-  const handleSendInterviewInvite = async () => {
+  const handleSendInterviewInvite = async ({ mode = "submit" } = {}) => {
     try {
       // Validate required fields
 
@@ -2840,6 +3198,15 @@ const OnboardingDashboard = () => {
           "Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer"
         );
 
+        return;
+      }
+
+      if (
+        mode === "reschedule" &&
+        !window.confirm(
+          "Are you sure you want to reschedule this interview for the applicant?"
+        )
+      ) {
         return;
       }
 
@@ -2862,6 +3229,8 @@ const OnboardingDashboard = () => {
           interviewer: interviewData.interviewer,
 
           notes: interviewData.notes,
+
+          stage: interviewData.stage || "general",
         },
 
         {
@@ -2875,13 +3244,12 @@ const OnboardingDashboard = () => {
 
       // Show appropriate message based on whether it was created or updated
 
-      if (response.data?.updated) {
-        alert(
-          "Interview invite updated successfully! The applicant's existing invite has been updated with new details."
-        );
-      } else {
-        alert("Interview invitation sent successfully!");
-      }
+      const wasUpdated = response.data?.updated || mode === "reschedule";
+      const successMessage = wasUpdated
+        ? "Interview invite updated successfully! The applicant will receive the revised schedule."
+        : "Interview invitation sent successfully!";
+
+      alert(successMessage);
 
       // Save interview details to localStorage
 
@@ -2949,6 +3317,8 @@ const OnboardingDashboard = () => {
         interviewer: interviewData.interviewer,
 
         notes: interviewData.notes,
+
+        stage: interviewData.stage || batchInterviewData.stage || "general",
 
         status: "scheduled",
 
@@ -3020,12 +3390,19 @@ const OnboardingDashboard = () => {
       return;
     }
 
+    setBatchInterviewData((prev) => ({
+      ...prev,
+      stage: "general",
+    }));
+
     setShowBatchInterviewModal(true);
   };
 
   // Handle send batch interview invites
 
   const handleSendBatchInterviewInvites = async () => {
+    const scheduledApplicants = [...selectedApplicants];
+
     try {
       // Validate required fields
 
@@ -3045,7 +3422,7 @@ const OnboardingDashboard = () => {
 
       const token = localStorage.getItem("token");
 
-      const applicationIds = selectedApplicants.map(
+      const applicationIds = scheduledApplicants.map(
         (applicant) => applicant.id
       );
 
@@ -3068,6 +3445,8 @@ const OnboardingDashboard = () => {
           interviewer: batchInterviewData.interviewer,
 
           notes: batchInterviewData.notes,
+
+          stage: batchInterviewData.stage || "general",
         },
 
         {
@@ -3096,7 +3475,7 @@ const OnboardingDashboard = () => {
         message += `Failed applicants:\n`;
 
         failed_interviews.forEach((failed) => {
-          const applicant = selectedApplicants.find(
+          const applicant = scheduledApplicants.find(
             (app) => app.id === failed.application_id
           );
 
@@ -3116,13 +3495,18 @@ const OnboardingDashboard = () => {
 
       // Save interview details to localStorage for successful interviews
 
-      selectedApplicants.forEach((applicant) => {
+      scheduledApplicants.forEach((applicant) => {
         saveInterviewToLocalStorage(applicant, batchInterviewData);
       });
 
       setShowBatchInterviewModal(false);
 
       setSelectedApplicants([]);
+
+      setBatchInterviewData((prev) => ({
+        ...prev,
+        stage: "general",
+      }));
 
       await fetchApplicants();
     } catch (error) {
@@ -3175,6 +3559,232 @@ const OnboardingDashboard = () => {
 
       alert("Resume not available for this applicant.");
     }
+  };
+
+  const applyBenefitsPayload = (payload) => {
+    const metadata = payload?.metadata || {};
+    const fields = metadata.fields || {};
+    const benefitsOptions =
+      payload?.available_benefits && payload.available_benefits.length > 0
+        ? payload.available_benefits
+        : availableBenefitsOptions;
+    const normalizedBenefitsOptions = Array.isArray(benefitsOptions)
+      ? benefitsOptions
+      : [];
+    const optionKeys = new Set(
+      normalizedBenefitsOptions.map((benefit) => benefit.key)
+    );
+    const normalizedSelectedBenefits = Array.isArray(
+      metadata.selected_benefits
+    )
+      ? metadata.selected_benefits.filter((key) => optionKeys.has(key))
+      : [];
+
+    setAvailableBenefitsOptions(normalizedBenefitsOptions);
+    setBenefitsForm({
+      selectedBenefits: normalizedSelectedBenefits,
+      sssNumber: fields.sss_number || "",
+      philhealthNumber: fields.philhealth_number || "",
+      pagibigNumber: fields.pagibig_number || "",
+      contributionType: fields.contribution_type || "employee",
+      notes: metadata.notes || "",
+    });
+    setBenefitsEnrollmentStatus(payload.enrollment_status || "pending");
+    if (payload.personal_info) {
+      setBenefitsApplicantInfo(payload.personal_info);
+    }
+  };
+
+  const handleCloseBenefitsModal = () => {
+    setShowBenefitsModal(false);
+    setBenefitsModalLoading(false);
+    setBenefitsSaving(false);
+    setBenefitsSubmitMode("save");
+    setShowBenefitsSubmitConfirm(false);
+    setSelectedApplicationForBenefits(null);
+    setBenefitsApplicantInfo(null);
+    setAvailableBenefitsOptions([]);
+    setBenefitsForm(createBenefitsEnrollmentForm());
+    setBenefitsEnrollmentStatus("pending");
+    setBenefitsValidationErrors([]);
+  };
+
+  const handleBenefitSelectionChange = (benefitKey) => {
+    setBenefitsForm((prev) => {
+      const alreadySelected = prev.selectedBenefits.includes(benefitKey);
+      return {
+        ...prev,
+        selectedBenefits: alreadySelected
+          ? prev.selectedBenefits.filter((item) => item !== benefitKey)
+          : [...prev.selectedBenefits, benefitKey],
+      };
+    });
+  };
+
+  const handleBenefitFieldChange = (field, value) => {
+    setBenefitsForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleEnrollBenefits = async (applicant) => {
+    if (!applicant) {
+      return;
+    }
+
+    setBenefitsForm(createBenefitsEnrollmentForm());
+    setBenefitsApplicantInfo(null);
+    setAvailableBenefitsOptions([]);
+    setBenefitsEnrollmentStatus("pending");
+    setBenefitsValidationErrors([]);
+    setBenefitsSubmitMode("save");
+    setShowBenefitsSubmitConfirm(false);
+
+    setSelectedApplicationForBenefits(applicant);
+    setShowBenefitsModal(true);
+    setBenefitsModalLoading(true);
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        `http://localhost:8000/api/applications/${applicant.id}/benefits-enrollment`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data?.success) {
+        applyBenefitsPayload(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading benefits enrollment:", error);
+      alert("Failed to load benefits enrollment details. Please try again.");
+      handleCloseBenefitsModal();
+    } finally {
+      setBenefitsModalLoading(false);
+    }
+  };
+
+  const handleBenefitsSubmit = async (targetStatus = null) => {
+    if (!selectedApplicationForBenefits) {
+      return;
+    }
+
+    const validationErrors = validateBenefitsForm();
+    if (validationErrors.length > 0) {
+      setBenefitsValidationErrors(validationErrors);
+      return;
+    }
+
+    const submitMode = targetStatus === "completed" ? "submit" : "save";
+    setBenefitsSubmitMode(submitMode);
+
+    try {
+      setBenefitsSaving(true);
+
+      const token = localStorage.getItem("token");
+
+      const nextStatus =
+        targetStatus ||
+        (benefitsEnrollmentStatus === "completed" ? "completed" : "in_progress");
+
+      const payload = {
+        enrollment_status: nextStatus,
+        selected_benefits: benefitsForm.selectedBenefits,
+        sss_number: benefitsForm.sssNumber || null,
+        philhealth_number: benefitsForm.philhealthNumber || null,
+        pagibig_number: benefitsForm.pagibigNumber || null,
+        contribution_type: benefitsForm.contributionType || null,
+        notes: benefitsForm.notes || null,
+      };
+
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${selectedApplicationForBenefits.id}/benefits-enrollment`,
+        payload,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data?.success) {
+        applyBenefitsPayload(response.data);
+        setBenefitsEnrollmentStatus(response.data.enrollment_status || nextStatus);
+
+        setApplicants((prev) =>
+          prev.map((applicationRecord) =>
+            applicationRecord.id === selectedApplicationForBenefits.id
+              ? {
+                  ...applicationRecord,
+                  benefits_enrollment_status: response.data.enrollment_status,
+                }
+              : applicationRecord
+          )
+        );
+
+        setSelectedApplicationForBenefits((prev) =>
+          prev
+            ? {
+                ...prev,
+                benefits_enrollment_status: response.data.enrollment_status,
+              }
+            : prev
+        );
+
+        await fetchApplicants();
+
+        alert("Benefit enrolled successfully.");
+        setBenefitsValidationErrors([]);
+      }
+    } catch (error) {
+      console.error("Error saving benefits enrollment:", error);
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        "Please complete required fields or correct errors.";
+      setBenefitsValidationErrors([message]);
+    } finally {
+      setBenefitsSaving(false);
+      setBenefitsSubmitMode("save");
+    }
+  };
+
+  const handleConfirmBenefitsSubmit = async () => {
+    setShowBenefitsSubmitConfirm(false);
+    await handleBenefitsSubmit("completed");
+  };
+
+  const validateBenefitsForm = () => {
+    const errors = [];
+
+    if (!benefitsForm.selectedBenefits.length) {
+      errors.push("Select at least one benefit to enroll.");
+    }
+
+    if (benefitsForm.selectedBenefits.includes("sss") && !benefitsForm.sssNumber.trim()) {
+      errors.push("SSS number is required when SSS benefit is selected.");
+    }
+
+    if (
+      benefitsForm.selectedBenefits.includes("philhealth") &&
+      !benefitsForm.philhealthNumber.trim()
+    ) {
+      errors.push("PhilHealth number is required when PhilHealth benefit is selected.");
+    }
+
+    if (
+      benefitsForm.selectedBenefits.includes("pagibig") &&
+      !benefitsForm.pagibigNumber.trim()
+    ) {
+      errors.push("Pag-IBIG number is required when Pag-IBIG benefit is selected.");
+    }
+
+    return errors;
   };
 
   if (loading) {
@@ -3415,29 +4025,6 @@ const OnboardingDashboard = () => {
                     <div className="card border-0 shadow-sm mb-3">
                       <div className="card-body p-3">
                         <div className="d-flex flex-wrap align-items-center gap-3">
-                          <div className="d-flex gap-2 flex-wrap">
-                            {["All", "Approved", "Rejected"].map((filter) => (
-                              <Button
-                                key={filter}
-                                variant={
-                                  documentFilter === filter
-                                    ? "primary"
-                                    : "outline-secondary"
-                                }
-                                size="sm"
-                                onClick={() => setDocumentFilter(filter)}
-                                style={{
-                                  borderRadius: "6px",
-
-                                  fontWeight:
-                                    documentFilter === filter ? 600 : 400,
-                                }}
-                              >
-                                {filter}
-                              </Button>
-                            ))}
-                          </div>
-
                           <div
                             className="flex-grow-1"
                             style={{ minWidth: "250px" }}
@@ -3463,18 +4050,6 @@ const OnboardingDashboard = () => {
                             </div>
                           </div>
 
-                          <Button
-                            variant="outline-secondary"
-                            size="sm"
-                            onClick={fetchAllApplicantsDocumentStatus}
-                            style={{ borderRadius: "6px" }}
-                          >
-                            <FontAwesomeIcon
-                              icon={faRefresh}
-                              className="me-2"
-                            />
-                            Refresh
-                          </Button>
                         </div>
                       </div>
                     </div>
@@ -3482,18 +4057,20 @@ const OnboardingDashboard = () => {
                     {(() => {
                       const allFiltered = getFilteredApplicants();
 
-                      const onboardingApplicants = allFiltered.filter(
+                      const documentApplicants = allFiltered.filter(
                         (applicant) =>
-                          applicant.status === "Onboarding" ||
                           applicant.status === "Document Submission" ||
-                          applicant.status === "Orientation Schedule"
+                          applicant.status === "Onboarding" ||
+                          applicant.documents_stage_status === "completed" ||
+                          applicant.documents_completed_at ||
+                          applicant.is_in_benefits_enrollment
                       );
 
                       const searchTerm = documentSearchTerm
                         .trim()
                         .toLowerCase();
 
-                      const filtered = onboardingApplicants.filter(
+                      const filtered = documentApplicants.filter(
                         (applicant) => {
                           const nameVariants = [
                             `${applicant.applicant?.first_name || ""} ${
@@ -3513,25 +4090,7 @@ const OnboardingDashboard = () => {
                               value.includes(searchTerm)
                             );
 
-                          const docStatus =
-                            applicantsDocumentStatus[applicant.id]?.status ||
-                            "Incomplete";
-
-                          let matchesFilter = true;
-
-                          if (documentFilter === "Pending") {
-                            matchesFilter =
-                              docStatus === "Pending Review" ||
-                              docStatus === "uploaded";
-                          } else if (documentFilter === "Approved") {
-                            matchesFilter =
-                              docStatus === "Approved" ||
-                              docStatus === "Approved Documents";
-                          } else if (documentFilter === "Rejected") {
-                            matchesFilter = docStatus === "Rejected";
-                          }
-
-                          return matchesSearch && matchesFilter;
+                          return matchesSearch;
                         }
                       );
 
@@ -3544,8 +4103,8 @@ const OnboardingDashboard = () => {
                               </h5>
 
                               <p className="text-muted mb-0">
-                                {searchTerm || documentFilter !== "All"
-                                  ? "No applicants match your search or filter criteria."
+                                {searchTerm
+                                  ? "No applicants match your search criteria."
                                   : "Applicants will appear here once onboarding starts."}
                               </p>
                             </div>
@@ -3594,9 +4153,18 @@ const OnboardingDashboard = () => {
 
                                 <tbody>
                                   {filtered.map((applicant) => {
-                                    const docStatus =
+                                    const baseDocStatus =
                                       applicantsDocumentStatus[applicant.id]
                                         ?.status || "Incomplete";
+
+                                    const isCompletedStage =
+                                      applicant.documents_stage_status ===
+                                        "completed" ||
+                                      !!applicant.documents_completed_at;
+
+                                    const docStatus = isCompletedStage
+                                      ? "Completed"
+                                      : baseDocStatus;
 
                                     const submittedDate =
                                       applicantsDocumentStatus[applicant.id]
@@ -3624,6 +4192,10 @@ const OnboardingDashboard = () => {
                                       statusVariant = "danger";
 
                                       statusLabel = "Rejected";
+                                    } else if (docStatus === "Completed") {
+                                      statusVariant = "primary";
+
+                                      statusLabel = "Completed";
                                     } else if (
                                       docStatus &&
                                       docStatus !== "Incomplete"
@@ -3758,6 +4330,7 @@ const OnboardingDashboard = () => {
                                                   setSelectedApplicationForDocs(
                                                     applicant
                                                   );
+                                                setDocumentModalReadOnly(false);
 
                                                   setShowDocumentModal(true);
 
@@ -3797,9 +4370,644 @@ const OnboardingDashboard = () => {
                   </div>
                 )}
 
-                {/* Other tabs - Placeholder content */}
+                {false && (
+                  <div>
+                    <div className="card border-0 shadow-sm mb-3">
+                      <div className="card-body p-3">
+                        <div className="d-flex flex-wrap align-items-center gap-3">
+                        <Button
+                          variant="success"
+                          size="sm"
+                          onClick={handleFinalInterviewScheduleClick}
+                          className="d-inline-flex align-items-center gap-2"
+                          style={{ borderRadius: "6px", fontWeight: 600 }}
+                        >
+                          <FontAwesomeIcon icon={faCalendarAlt} />
+                          Schedule Interview
+                        </Button>
 
-                {onboardingSubtab !== "Document Submission" && (
+                          <div
+                            className="flex-grow-1"
+                            style={{ minWidth: "250px" }}
+                          >
+                            <div className="input-group">
+                              <span className="input-group-text bg-white">
+                                <FontAwesomeIcon
+                                  icon={faSearch}
+                                  className="text-muted"
+                                />
+                              </span>
+
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Search by employee name..."
+                                value={documentSearchTerm}
+                                onChange={(e) =>
+                                  setDocumentSearchTerm(e.target.value)
+                                }
+                                style={{ borderLeft: "none" }}
+                              />
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const allFiltered = getFilteredApplicants();
+                      const finalInterviewApplicants = allFiltered.filter(
+                        (applicant) =>
+                          applicant.status === "Orientation Schedule"
+                      );
+
+                      const filteredFinal = finalInterviewApplicants.filter(
+                        (applicant) => {
+                          const name = applicant.applicant
+                            ? `${applicant.applicant.first_name || ""} ${
+                                applicant.applicant.last_name || ""
+                              }`
+                                .trim()
+                                .toLowerCase()
+                            : "";
+                          const matchesSearch =
+                            !documentSearchTerm ||
+                            name.includes(documentSearchTerm.toLowerCase());
+
+                          return matchesSearch;
+                        }
+                      );
+
+                      if (filteredFinal.length === 0) {
+                        return (
+                          <div className="card border-0 shadow-sm">
+                            <div className="card-body text-center py-5">
+                              <FontAwesomeIcon
+                                icon={faUserTie}
+                                size="3x"
+                                className="text-muted mb-3"
+                              />
+
+                              <h5 className="text-muted mb-2">
+                                No applicants in Orientation Schedule
+                              </h5>
+
+                              <p className="text-muted mb-0">
+                                Once an applicant completes document submission,
+                                they will appear here for orientation scheduling
+                                coordination.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="card border-0 shadow-sm">
+                          <div className="card-body p-0">
+                            <div className="table-responsive">
+                              <Table hover className="mb-0">
+                                <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                  <tr>
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Applicant
+                                    </th>
+
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Department &amp; Position
+                                    </th>
+
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Documents
+                                    </th>
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {filteredFinal.map((applicant) => {
+                                    const approvalDateDisplay =
+                                      applicant.documents_approved_at
+                                        ? formatDateTime(
+                                            applicant.documents_approved_at
+                                          )
+                                        : null;
+                                    const department =
+                                      applicant.jobPosting?.department ||
+                                      applicant.job_posting?.department ||
+                                      "N/A";
+
+                                    const position =
+                                      applicant.jobPosting?.position ||
+                                      applicant.job_posting?.position ||
+                                      "";
+
+                                    return (
+                                      <tr
+                                        key={applicant.id}
+                                        style={{ borderBottom: "1px solid #e9ecef" }}
+                                      >
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div
+                                            className="fw-semibold"
+                                            style={{
+                                              color: "#212529",
+                                              marginBottom: "4px",
+                                            }}
+                                          >
+                                            {applicant.applicant
+                                              ? `${
+                                                  applicant.applicant.first_name || ""
+                                                } ${
+                                                  applicant.applicant.last_name || ""
+                                                }`.trim()
+                                              : "N/A"}
+                                          </div>
+
+                                          <div className="small text-muted">
+                                            {applicant.applicant?.email ||
+                                              "N/A"}
+                                          </div>
+                                        </td>
+
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              color: "#495057",
+                                              marginBottom: position
+                                                ? "4px"
+                                                : "0",
+                                            }}
+                                          >
+                                            {department}
+                                          </div>
+
+                                          {position && (
+                                            <div
+                                              style={{
+                                                color: "#6c757d",
+                                                fontStyle: "italic",
+                                                fontSize: "0.9rem",
+                                              }}
+                                            >
+                                              {position}
+                                            </div>
+                                          )}
+                                        </td>
+
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                                            <div className="d-flex flex-wrap align-items-center gap-2">
+                                              <Button
+                                                variant="primary"
+                                                size="sm"
+                                                className="d-inline-flex align-items-center gap-2"
+                                                onClick={() => {
+                                                  setSelectedApplicationForDocs(
+                                                    applicant
+                                                  );
+                                                  setDocumentModalReadOnly(true);
+
+                                                  setShowDocumentModal(true);
+
+                                                  setDocumentModalTab(
+                                                    "Applicant Identification"
+                                                  );
+
+                                                  fetchDocumentRequirements(
+                                                    applicant.id
+                                                  );
+
+                                                  fetchDocumentSubmissions(
+                                                    applicant.id
+                                                  );
+                                                }}
+                                                style={{
+                                                  borderRadius: "6px",
+                                                  color: "#ffffff",
+                                                  marginRight: "18px",
+                                                }}
+                                              >
+                                                <FontAwesomeIcon
+                                                  icon={faFileAlt}
+                                                />
+                                                Documents
+                                              </Button>
+
+                                              {approvalDateDisplay && (
+                                                <span className="text-muted small">
+                                                  Approved on {approvalDateDisplay}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </Table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {onboardingSubtab === "Benefits Enroll" && (
+                  <>
+                    <div className="card border-0 shadow-sm mb-3">
+                      <div className="card-body p-3">
+                        <div className="d-flex flex-wrap align-items-center gap-3">
+                          <div className="d-flex flex-wrap align-items-center gap-3 w-100">
+                            <div
+                              className="flex-grow-1"
+                              style={{ minWidth: "250px" }}
+                            >
+                              <div className="input-group">
+                                <span className="input-group-text bg-white">
+                                  <FontAwesomeIcon
+                                    icon={faSearch}
+                                    className="text-muted"
+                                  />
+                                </span>
+
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  placeholder="Search by applicant name..."
+                                  value={benefitsSearchTerm}
+                                  onChange={(e) =>
+                                    setBenefitsSearchTerm(e.target.value)
+                                  }
+                                  style={{ borderLeft: "none" }}
+                                />
+                              </div>
+                            </div>
+
+                            <div style={{ minWidth: "200px" }}>
+                              <Form.Select
+                                value={benefitsStatusFilter}
+                                onChange={(e) =>
+                                  setBenefitsStatusFilter(e.target.value)
+                                }
+                              >
+                                <option value="All">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="completed">Completed</option>
+                              </Form.Select>
+                            </div>
+                          </div>
+
+                          <div className="text-muted small mt-2 mt-md-0">
+                            Applicants listed here have completed document
+                            submission and are ready for benefits enrollment.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const allFiltered = getFilteredApplicants();
+                      const benefitsApplicants = allFiltered.filter(
+                        (applicant) => applicant.is_in_benefits_enrollment
+                      );
+
+                      const searchTerm = benefitsSearchTerm
+                        .trim()
+                        .toLowerCase();
+
+                      const filtered = benefitsApplicants.filter((applicant) => {
+                        const applicantName = applicant.applicant
+                          ? `${applicant.applicant.first_name || ""} ${
+                              applicant.applicant.last_name || ""
+                            }`
+                              .trim()
+                              .toLowerCase()
+                          : (applicant.employee_name || "").toLowerCase();
+
+                        const applicantEmail = (
+                          applicant.applicant?.email ||
+                          applicant.employee_email ||
+                          ""
+                        ).toLowerCase();
+
+                        if (!searchTerm) {
+                          return true;
+                        }
+
+                        return (
+                          applicantName.includes(searchTerm) ||
+                          applicantEmail.includes(searchTerm)
+                        );
+                      });
+
+                      const statusFiltered = filtered.filter((applicant) => {
+                        if (benefitsStatusFilter === "All") {
+                          return true;
+                        }
+
+                        const status =
+                          applicant.benefits_enrollment_status || "pending";
+
+                        return status === benefitsStatusFilter;
+                      });
+
+                      const finalList = statusFiltered;
+
+                      if (finalList.length === 0) {
+                        return (
+                          <div className="card border-0 shadow-sm">
+                            <div className="card-body text-center py-5">
+                              <h5 className="text-muted mb-2">
+                                No Applicants in Benefits Enrollment
+                              </h5>
+
+                              <p className="text-muted mb-0">
+                                Once an applicant completes document submission,
+                                they will appear here for benefits enrollment
+                                processing.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="card border-0 shadow-sm">
+                          <div className="card-body p-0">
+                            <div className="table-responsive">
+                              <Table hover className="mb-0">
+                                <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                  <tr>
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Applicant
+                                    </th>
+
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Department &amp; Position
+                                    </th>
+
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Benefits Enrollment
+                                    </th>
+
+                                    <th
+                                      style={{
+                                        padding: "16px",
+                                        fontWeight: 600,
+                                        color: "#495057",
+                                      }}
+                                    >
+                                      Actions
+                                    </th>
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {finalList.map((applicant) => {
+                                    const applicantName = applicant.applicant
+                                      ? `${applicant.applicant.first_name || ""} ${
+                                          applicant.applicant.last_name || ""
+                                        }`.trim()
+                                      : applicant.employee_name || "N/A";
+
+                                    const applicantEmail =
+                                      applicant.applicant?.email ||
+                                      applicant.employee_email ||
+                                      "N/A";
+
+                                    const department =
+                                      applicant.jobPosting?.department ||
+                                      applicant.job_posting?.department ||
+                                      "N/A";
+
+                                    const position =
+                                      applicant.jobPosting?.position ||
+                                      applicant.job_posting?.position ||
+                                      "";
+
+                                    const benefitsStatus =
+                                      applicant.benefits_enrollment_status ||
+                                      "pending";
+
+                                    const benefitsStatusLabel = benefitsStatus
+                                      .split("_")
+                                      .map((segment) =>
+                                        segment.length > 0
+                                          ? segment[0].toUpperCase() +
+                                            segment.slice(1)
+                                          : segment
+                                      )
+                                      .join(" ");
+
+                                    let benefitsBadgeVariant = "info";
+                                    if (benefitsStatus === "completed") {
+                                      benefitsBadgeVariant = "success";
+                                    } else if (
+                                      benefitsStatus === "assigned" ||
+                                      benefitsStatus === "in_progress"
+                                    ) {
+                                      benefitsBadgeVariant = "primary";
+                                    }
+
+                                    return (
+                                      <tr
+                                        key={applicant.id}
+                                        style={{
+                                          borderBottom: "1px solid #e9ecef",
+                                          cursor: "pointer",
+                                        }}
+                                        role="button"
+                                        onClick={() => handleEnrollBenefits(applicant)}
+                                      >
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div
+                                            className="fw-semibold"
+                                            style={{
+                                              color: "#212529",
+                                              marginBottom: "4px",
+                                            }}
+                                          >
+                                            {applicantName || "N/A"}
+                                          </div>
+
+                                          <div className="small text-muted">
+                                            {applicantEmail}
+                                          </div>
+                                        </td>
+
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              color: "#495057",
+                                              marginBottom: position
+                                                ? "4px"
+                                                : "0",
+                                            }}
+                                          >
+                                            {department}
+                                          </div>
+
+                                          {position && (
+                                            <div
+                                              style={{
+                                                color: "#6c757d",
+                                                fontStyle: "italic",
+                                                fontSize: "0.9rem",
+                                              }}
+                                            >
+                                              {position}
+                                            </div>
+                                          )}
+                                        </td>
+
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                                            <Badge
+                                              bg={benefitsBadgeVariant}
+                                              className="px-3 py-2"
+                                              style={{
+                                                fontSize: "0.8rem",
+                                                borderRadius: "999px",
+                                              }}
+                                            >
+                                              {benefitsStatusLabel || "Pending"}
+                                            </Badge>
+                                          </div>
+                                        </td>
+
+                                        <td
+                                          style={{
+                                            padding: "16px",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          <div className="d-flex flex-wrap gap-2">
+                                            <Button
+                                              variant="outline-primary"
+                                              size="sm"
+                                              style={{ borderRadius: "6px" }}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                setSelectedApplicationForDocs(
+                                                  applicant
+                                                );
+                                                setDocumentModalReadOnly(true);
+                                                setShowDocumentModal(true);
+                                                setDocumentModalTab(
+                                                  "Applicant Identification"
+                                                );
+                                                fetchDocumentRequirements(
+                                                  applicant.id
+                                                );
+                                                fetchDocumentSubmissions(
+                                                  applicant.id
+                                                );
+                                                fetchFollowUpRequests(
+                                                  applicant.id
+                                                );
+                                              }}
+                                            >
+                                              View Documents
+                                            </Button>
+                                            <Button
+                                              variant="success"
+                                              size="sm"
+                                              style={{ borderRadius: "6px" }}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                handleEnrollBenefits(applicant);
+                                              }}
+                                            >
+                                              Enroll Benefits
+                                            </Button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </Table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+
+                {["Profile Creation", "Orientation Schedule", "Start Date"].includes(
+                  onboardingSubtab
+                ) && (
                   <div className="card border-0 shadow-sm">
                     <div className="card-body text-center py-5">
                       <h5 className="text-muted mb-2">{onboardingSubtab}</h5>
@@ -4250,7 +5458,7 @@ const OnboardingDashboard = () => {
 
                               <Button
                                 variant={
-                                  isOfferSent(applicant.id)
+                                  isOfferSent(applicant)
                                     ? "outline-secondary"
                                     : "outline-primary"
                                 }
@@ -4277,9 +5485,9 @@ const OnboardingDashboard = () => {
 
                                   justifyContent: "center",
                                 }}
-                                disabled={isOfferSent(applicant.id)}
+                                disabled={isOfferSent(applicant)}
                               >
-                                {isOfferSent(applicant.id)
+                                {isOfferSent(applicant)
                                   ? "Offer Sent"
                                   : "Send Offer"}
                               </Button>
@@ -4984,20 +6192,6 @@ const OnboardingDashboard = () => {
                     </div>
                   </div>
 
-                  <div className="col-md-6">
-                    <label className="form-label fw-semibold">
-                      Interview Type
-                    </label>
-
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={interviewData.interview_type}
-                      disabled
-                      style={{ backgroundColor: "#e9ecef" }}
-                    />
-                  </div>
-
                   <div className="col-12">
                     <label className="form-label fw-semibold">
                       Location <span className="text-danger">*</span>
@@ -5083,6 +6277,68 @@ const OnboardingDashboard = () => {
                 </div>
               </div>
 
+              <div className="px-1 px-md-4 pb-3">
+                <Card className="border-0 shadow-sm mb-3">
+                  <Card.Body>
+                    <h6 className="fw-bold mb-3">Interview Schedule</h6>
+                    {interviewSchedulePreview.isScheduled ? (
+                      <div className="row g-3">
+                        <div className="col-md-4">
+                          <div className="text-muted small text-uppercase mb-1">
+                            Date
+                          </div>
+                          <div className="fw-semibold">
+                            {interviewSchedulePreview.dateLabel}
+                          </div>
+                        </div>
+
+                        <div className="col-md-4">
+                          <div className="text-muted small text-uppercase mb-1">
+                            Time
+                          </div>
+                          <div className="fw-semibold">
+                            {interviewSchedulePreview.timeLabel}
+                          </div>
+                        </div>
+
+                        <div className="col-md-4">
+                          <div className="text-muted small text-uppercase mb-1">
+                            Interviewer
+                          </div>
+                          <div className="fw-semibold">
+                            {interviewSchedulePreview.interviewerName}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <Alert variant="info" className="mb-0">
+                        <FontAwesomeIcon icon={faInfoCircle} className="me-2" />
+                        {interviewSchedulePreview.message}
+                      </Alert>
+                    )}
+                  </Card.Body>
+                </Card>
+
+                <Card className="border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="fw-bold mb-3">
+                      Interview Details &amp; Instructions
+                    </h6>
+                    <p className="text-muted small mb-2">
+                      Share these reminders with the applicant together with the
+                      schedule.
+                    </p>
+                    <ul className="mb-0 ps-3">
+                      {interviewInstructionItems.map((item, index) => (
+                        <li key={`${item}-${index}`} className="mb-1">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </Card.Body>
+                </Card>
+              </div>
+
               <div className="modal-footer border-0 px-4 pb-4">
                 <Button
                   variant="secondary"
@@ -5096,12 +6352,20 @@ const OnboardingDashboard = () => {
                 </Button>
 
                 <Button
+                  variant="warning"
+                  onClick={() => handleSendInterviewInvite({ mode: "reschedule" })}
+                >
+                  <FontAwesomeIcon icon={faRefresh} className="me-2" />
+                  Re-schedule
+                </Button>
+
+                <Button
                   variant="success"
-                  onClick={handleSendInterviewInvite}
+                  onClick={() => handleSendInterviewInvite({ mode: "submit" })}
                   className="px-4"
                 >
-                  <i className="bi bi-send me-2"></i>
-                  Send Invite
+                  <FontAwesomeIcon icon={faCheck} className="me-2" />
+                  Submit Interview
                 </Button>
               </div>
             </div>
@@ -5986,10 +7250,6 @@ const OnboardingDashboard = () => {
 
 
         }
-
-
-
-
 
 
 
@@ -7597,6 +8857,8 @@ const OnboardingDashboard = () => {
                       interviewer: "",
 
                       notes: "",
+
+                      stage: "general",
                     });
                   }}
                 ></button>
@@ -7610,15 +8872,11 @@ const OnboardingDashboard = () => {
                     Selected Applicants ({selectedApplicants.length}):
                   </strong>
 
-                  <ul className="mb-0 mt-2">
-                    {selectedApplicants.map((applicant) => (
-                      <li key={applicant.id}>
-                        {applicant.applicant?.first_name}{" "}
-                        {applicant.applicant?.last_name} -{" "}
-                        {applicant.job_posting?.title}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="mb-0 mt-2">
+                    <span className="badge bg-primary rounded-pill fs-6">
+                      {selectedApplicants.length}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="row">
@@ -7787,8 +9045,7 @@ const OnboardingDashboard = () => {
                       <select
                         className="form-control"
                         value={
-                          parseTime12Hour(batchInterviewData.end_time).minute
-                        }
+                          parseTime12Hour(batchInterviewData.end_time).minute}
                         onChange={(e) => {
                           const { hour, ampm } = parseTime12Hour(
                             batchInterviewData.end_time
@@ -8463,7 +9720,8 @@ const OnboardingDashboard = () => {
               >
                 <h5 className="modal-title fw-bold text-white">
                   <FontAwesomeIcon icon={faFilePdf} className="me-2" />
-                  View / Verify Documents -{" "}
+                  {documentModalReadOnly ? "Documents" : "View / Verify Documents"}{" "}
+                  -{" "}
                   {selectedApplicationForDocs.applicant
                     ? `${
                         selectedApplicationForDocs.applicant.first_name || ""
@@ -8476,19 +9734,7 @@ const OnboardingDashboard = () => {
                 <button
                   type="button"
                   className="btn-close btn-close-white"
-                  onClick={() => {
-                    setShowDocumentModal(false);
-
-                    setSelectedApplicationForDocs(null);
-
-                    setDocumentRequirements([]);
-
-                    setDocumentSubmissions([]);
-
-                    setFollowUpRequests([]);
-
-                    setFollowUpRequestsError("");
-                  }}
+                  onClick={closeDocumentModal}
                 ></button>
               </div>
 
@@ -8496,7 +9742,7 @@ const OnboardingDashboard = () => {
                 {/* Tabs */}
 
                 <div className="d-flex flex-wrap gap-2 mb-4 border-bottom">
-                  {documentModalTabs.map((tab) => (
+                  {visibleDocumentTabs.map((tab) => (
                     <Button
                       key={tab}
                       variant={
@@ -8519,7 +9765,9 @@ const OnboardingDashboard = () => {
                 <div>
                   {documentModalTab === "Applicant Identification" ? (
                     <>
-                      {allDocumentsApproved() && (
+                      {!documentModalReadOnly &&
+                        allDocumentsApproved() &&
+                        !isDocumentSubmissionCompleted() && (
                         <Alert variant="success" className="mb-4">
                           <FontAwesomeIcon
                             icon={faCheckCircle}
@@ -8537,272 +9785,287 @@ const OnboardingDashboard = () => {
                   ) : documentModalTab === "Medical Documents" ? (
                     renderDocumentCards(medicalDocs)
                   ) : documentModalTab === "Additional Document" ? (
-                    <>
-                      <div className="card border-0 shadow-sm mb-4">
-                        <div className="card-body">
-                          <div className="d-flex align-items-center mb-3">
-                            <FontAwesomeIcon
-                              icon={faPaperclip}
-                              className="text-primary me-2"
-                            />
-
-                            <h6 className="fw-bold mb-0">
-                              Request Additional Documents
-                            </h6>
-                          </div>
-
-                          <p className="text-muted small mb-4">
-                            Create a custom requirement to notify the applicant
-                            and request the needed document.
-                          </p>
-
-                          <div className="row g-3">
-                            <div className="col-md-6">
-                              <label className="form-label fw-semibold">
-                                Document Name{" "}
-                                <span className="text-danger">*</span>
-                              </label>
-
-                              <input
-                                type="text"
-                                className="form-control"
-                                value={newRequirement.document_name}
-                                onChange={(e) =>
-                                  setNewRequirement((prev) => ({
-                                    ...prev,
-
-                                    document_name: e.target.value,
-                                  }))
-                                }
-                                placeholder="e.g., Portfolio, Certification, Contract"
-                              />
-                            </div>
-
-                            <div className="col-md-6">
-                              <label className="form-label fw-semibold">
-                                File Format
-                              </label>
-
-                              <input
-                                type="text"
-                                className="form-control"
-                                value={newRequirement.file_format}
-                                readOnly
-                                style={{
-                                  backgroundColor: "#f8f9fa",
-                                  cursor: "not-allowed",
-                                }}
-                              />
-                            </div>
-
-                            <div className="col-12">
-                              <label className="form-label fw-semibold">
-                                Description / Instructions
-                              </label>
-
-                              <textarea
-                                className="form-control"
-                                rows="3"
-                                value={newRequirement.description}
-                                onChange={(e) =>
-                                  setNewRequirement((prev) => ({
-                                    ...prev,
-
-                                    description: e.target.value,
-                                  }))
-                                }
-                                placeholder="Provide details or instructions for the applicant."
-                              ></textarea>
-                            </div>
-
-                            <div className="col-md-4">
-                              <label className="form-label fw-semibold">
-                                Max File Size (MB)
-                              </label>
-
-                              <input
-                                type="number"
-                                min="1"
-                                className="form-control"
-                                value={newRequirement.max_file_size_mb}
-                                readOnly
-                                style={{
-                                  backgroundColor: "#f8f9fa",
-                                  cursor: "not-allowed",
-                                }}
-                              />
-                            </div>
-
-                            <div className="col-md-8 d-flex align-items-center">
-                              <div className="form-check">
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id="assistant-additional-doc-required"
-                                  checked={newRequirement.is_required}
-                                  onChange={(e) =>
-                                    setNewRequirement((prev) => ({
-                                      ...prev,
-
-                                      is_required: e.target.checked,
-                                    }))
-                                  }
-                                />
-
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="assistant-additional-doc-required"
-                                >
-                                  Mark as required (applicant must upload)
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mt-4 gap-3">
-                            <span className="text-muted small">
-                              The applicant will be notified to upload this
-                              document once you send the request.
-                            </span>
-
-                            <Button
-                              variant="primary"
-                              className="px-3"
-                              onClick={createDocumentRequirement}
-                              disabled={!newRequirement.document_name.trim()}
-                            >
-                              <FontAwesomeIcon icon={faPlus} className="me-2" />
-                              Send Request to Applicant
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {additionalRequirementDocs.length > 0 ? (
+                    documentModalReadOnly ? (
+                      additionalRequirementDocs.length > 0 ? (
                         renderDocumentCards(additionalRequirementDocs)
                       ) : (
                         <div className="card border-0 shadow-sm">
                           <div className="card-body text-center py-4 text-muted small">
-                            Any additional document requests you send to the
-                            applicant will appear here for review once they
-                            submit them.
+                            No additional documents were requested for this
+                            applicant.
                           </div>
                         </div>
-                      )}
-                    </>
-                  ) : documentModalTab === "Follow-Up Requests" ? (
-                    <>
-                      <div className="card border-0 shadow-sm mb-4">
-                        <div className="card-body">
-                          <div className="d-flex align-items-center mb-3">
-                            <FontAwesomeIcon
-                              icon={faEnvelope}
-                              className="text-primary me-2"
-                            />
-
-                            <h6 className="fw-bold mb-0">Follow-Up Requests</h6>
-                          </div>
-
-                          <p className="text-muted small mb-4">
-                            Review follow-up messages and supporting files sent
-                            by applicants after their initial submissions.
-                          </p>
-
-                          {followUpRequestsError ? (
-                            <Alert variant="danger" className="mb-3">
-                              {followUpRequestsError}
-                            </Alert>
-                          ) : null}
-
-                          {loadingFollowUpRequests ? (
-                            <div className="text-center text-muted py-5">
-                              Loading follow-up requests...
-                            </div>
-                          ) : followUpRequests.length > 0 ? (
-                            <div className="table-responsive">
-                              <Table hover className="align-middle">
-                                <thead className="table-light">
-                                  <tr>
-                                    <th>Applicant Name</th>
-
-                                    <th>Document Type</th>
-
-                                    <th>Date &amp; Time Sent</th>
-
-                                    <th>Actions</th>
-                                  </tr>
-                                </thead>
-
-                                <tbody>
-                                  {followUpRequests.map((request) => {
-                                    const statusVariant =
-                                      getFollowUpStatusVariant(request.status);
-                                    const statusLower =
-                                      (request.status || "").toLowerCase();
-                                    const extensionDeadlineDisplay =
-                                      request.extensionDeadline
-                                        ? formatDateTime(
-                                            request.extensionDeadline
-                                          )
-                                        : null;
-
-                                    return (
-                                      <tr key={request.id}>
-                                        <td>
-                                          <div className="fw-semibold">
-                                            {request.applicantName ||
-                                              "Applicant"}
-                                          </div>
-                                        </td>
-
-                                        <td>{request.documentType || "—"}</td>
-
-                                        <td>
-                                          {formatDateTime(request.sentAt)}
-                                        </td>
-
-                                        <td>
-                                          <Button
-                                            variant="outline-primary"
-                                            size="sm"
-                                            onClick={() =>
-                                              handleOpenFollowUpModal(request)
-                                            }
-                                          >
-                                            <FontAwesomeIcon
-                                              icon={faEye}
-                                              className="me-2"
-                                            />
-                                            View
-                                          </Button>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </Table>
-                            </div>
-                          ) : (
-                            <div className="text-center text-muted py-5">
+                      )
+                    ) : (
+                      <>
+                        <div className="card border-0 shadow-sm mb-4">
+                          <div className="card-body">
+                            <div className="d-flex align-items-center mb-3">
                               <FontAwesomeIcon
-                                icon={faEnvelope}
-                                size="3x"
-                                className="mb-3"
+                                icon={faPaperclip}
+                                className="text-primary me-2"
                               />
 
-                              <h5 className="fw-semibold">
-                                No follow-up requests yet
-                              </h5>
-
-                              <p className="mb-0 small">
-                                Applicants can submit follow-ups when they need
-                                to clarify or update their documents.
-                              </p>
+                              <h6 className="fw-bold mb-0">
+                                Request Additional Documents
+                              </h6>
                             </div>
-                          )}
+
+                            <p className="text-muted small mb-4">
+                              Create a custom requirement to notify the applicant
+                              and request the needed document.
+                            </p>
+
+                            <div className="row g-3">
+                              <div className="col-md-6">
+                                <label className="form-label fw-semibold">
+                                  Document Name{" "}
+                                  <span className="text-danger">*</span>
+                                </label>
+
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value={newRequirement.document_name}
+                                  onChange={(e) =>
+                                    setNewRequirement((prev) => ({
+                                      ...prev,
+
+                                      document_name: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="e.g., Portfolio, Certification, Contract"
+                                />
+                              </div>
+
+                              <div className="col-md-6">
+                                <label className="form-label fw-semibold">
+                                  File Format
+                                </label>
+
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value={newRequirement.file_format}
+                                  readOnly
+                                  style={{
+                                    backgroundColor: "#f8f9fa",
+                                    cursor: "not-allowed",
+                                  }}
+                                />
+                              </div>
+
+                              <div className="col-12">
+                                <label className="form-label fw-semibold">
+                                  Description / Instructions
+                                </label>
+
+                                <textarea
+                                  className="form-control"
+                                  rows="3"
+                                  value={newRequirement.description}
+                                  onChange={(e) =>
+                                    setNewRequirement((prev) => ({
+                                      ...prev,
+
+                                      description: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Provide details or instructions for the applicant."
+                                ></textarea>
+                              </div>
+
+                              <div className="col-md-4">
+                                <label className="form-label fw-semibold">
+                                  Max File Size (MB)
+                                </label>
+
+                                <input
+                                  type="number"
+                                  min="1"
+                                  className="form-control"
+                                  value={newRequirement.max_file_size_mb}
+                                  readOnly
+                                  style={{
+                                    backgroundColor: "#f8f9fa",
+                                    cursor: "not-allowed",
+                                  }}
+                                />
+                              </div>
+
+                              <div className="col-md-8 d-flex align-items-center">
+                                <div className="form-check">
+                                  <input
+                                    className="form-check-input"
+                                    type="checkbox"
+                                    id="assistant-additional-doc-required"
+                                    checked={newRequirement.is_required}
+                                    onChange={(e) =>
+                                      setNewRequirement((prev) => ({
+                                        ...prev,
+
+                                        is_required: e.target.checked,
+                                      }))
+                                    }
+                                  />
+
+                                  <label
+                                    className="form-check-label"
+                                    htmlFor="assistant-additional-doc-required"
+                                  >
+                                    Mark as required (applicant must upload)
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mt-4 gap-3">
+                              <span className="text-muted small">
+                                The applicant will be notified to upload this
+                                document once you send the request.
+                              </span>
+
+                              <Button
+                                variant="primary"
+                                className="px-3"
+                                onClick={createDocumentRequirement}
+                                disabled={!newRequirement.document_name.trim()}
+                              >
+                                <FontAwesomeIcon icon={faPlus} className="me-2" />
+                                Send Request to Applicant
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </>
+
+                        {additionalRequirementDocs.length > 0 ? (
+                          renderDocumentCards(additionalRequirementDocs)
+                        ) : (
+                          <div className="card border-0 shadow-sm">
+                            <div className="card-body text-center py-4 text-muted small">
+                              Any additional document requests you send to the
+                              applicant will appear here for review once they
+                              submit them.
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )
+                  ) : documentModalTab === "Follow-Up Requests" ? (
+                    documentModalReadOnly ? null : (
+                      <>
+                        <div className="card border-0 shadow-sm mb-4">
+                          <div className="card-body">
+                            <div className="d-flex align-items-center mb-3">
+                              <FontAwesomeIcon
+                                icon={faEnvelope}
+                                className="text-primary me-2"
+                              />
+
+                              <h6 className="fw-bold mb-0">Follow-Up Requests</h6>
+                            </div>
+
+                            <p className="text-muted small mb-4">
+                              Review follow-up messages and supporting files sent
+                              by applicants after their initial submissions.
+                            </p>
+
+                            {followUpRequestsError ? (
+                              <Alert variant="danger" className="mb-3">
+                                {followUpRequestsError}
+                              </Alert>
+                            ) : null}
+
+                            {loadingFollowUpRequests ? (
+                              <div className="text-center text-muted py-5">
+                                Loading follow-up requests...
+                              </div>
+                            ) : followUpRequests.length > 0 ? (
+                              <div className="table-responsive">
+                                <Table hover className="align-middle">
+                                  <thead className="table-light">
+                                    <tr>
+                                      <th>Applicant Name</th>
+
+                                      <th>Document Type</th>
+
+                                      <th>Date & Time Sent</th>
+
+                                      <th>Actions</th>
+                                    </tr>
+                                  </thead>
+
+                                  <tbody>
+                                    {followUpRequests.map((request) => {
+                                      const statusVariant =
+                                        getFollowUpStatusVariant(request.status);
+                                      const statusLower =
+                                        (request.status || "").toLowerCase();
+                                      const extensionDeadlineDisplay =
+                                        request.extensionDeadline
+                                          ? formatDateTime(
+                                              request.extensionDeadline
+                                            )
+                                          : null;
+
+                                      return (
+                                        <tr key={request.id}>
+                                          <td>
+                                            <div className="fw-semibold">
+                                              {request.applicantName ||
+                                                "Applicant"}
+                                            </div>
+                                          </td>
+
+                                          <td>{request.documentType || "—"}</td>
+
+                                          <td>
+                                            {formatDateTime(request.sentAt)}
+                                          </td>
+
+                                          <td>
+                                            <Button
+                                              variant="outline-primary"
+                                              size="sm"
+                                              onClick={() =>
+                                                handleOpenFollowUpModal(request)
+                                              }
+                                            >
+                                              <FontAwesomeIcon
+                                                icon={faEye}
+                                                className="me-2"
+                                              />
+                                              View
+                                            </Button>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </Table>
+                              </div>
+                            ) : (
+                              <div className="text-center text-muted py-5">
+                                <FontAwesomeIcon
+                                  icon={faEnvelope}
+                                  size="3x"
+                                  className="mb-3"
+                                />
+
+                                <h5 className="fw-semibold">
+                                  No follow-up requests yet
+                                </h5>
+
+                                <p className="mb-0 small">
+                                  Applicants can submit follow-ups when they need
+                                  to clarify or update their documents.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )
                   ) : (
                     <div className="card border-0 shadow-sm">
                       <div className="card-body text-center py-5">
@@ -8823,51 +10086,7 @@ const OnboardingDashboard = () => {
                   )}
                 </div>
 
-                {approveModalData && (
-                  <Modal
-                    show
-                    onHide={closeApproveModal}
-                    centered
-                    backdrop="static"
-                  >
-                    <Modal.Header
-                      closeButton={!reviewingDocument}
-                      className="border-0"
-                    >
-                      <Modal.Title className="fw-bold">
-                        <FontAwesomeIcon
-                          icon={faCheckCircle}
-                          className="me-2 text-success"
-                        />
-                        Approve Document
-                      </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                      <p className="mb-0">
-                        Are you sure you want to approve{" "}
-                        <strong>{approveModalData.documentTitle}</strong>?
-                      </p>
-                    </Modal.Body>
-                    <Modal.Footer className="border-0">
-                      <Button
-                        variant="secondary"
-                        onClick={closeApproveModal}
-                        disabled={reviewingDocument}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="success"
-                        onClick={confirmApproveDocument}
-                        disabled={reviewingDocument}
-                      >
-                        {reviewingDocument ? "Approving..." : "Approve"}
-                      </Button>
-                    </Modal.Footer>
-                  </Modal>
-                )}
-
-                {rejectingSubmissionId && (
+                {!documentModalReadOnly && rejectingSubmissionId && (
                   <div
                     className="modal show d-block"
                     tabIndex="-1"
@@ -8935,7 +10154,8 @@ const OnboardingDashboard = () => {
                             onClick={() => {
                               setRejectingSubmissionId(null);
 
-                              setRejectingDocumentKey(null);
+                              setRejectingSubmissionId(null);
+                            setRejectingDocumentKey(null);
 
                               setRejectionReason("");
                             }}
@@ -8965,20 +10185,12 @@ const OnboardingDashboard = () => {
                 <div className="d-flex gap-2">
                   <Button
                     variant="secondary"
-                    onClick={() => {
-                      setShowDocumentModal(false);
-
-                      setSelectedApplicationForDocs(null);
-
-                      setDocumentRequirements([]);
-
-                      setDocumentSubmissions([]);
-                    }}
+                    onClick={closeDocumentModal}
                   >
                     Close
                   </Button>
 
-                  {allDocumentsApproved() && (
+                  {allDocumentsApproved() && !isDocumentSubmissionCompleted() && (
                     <Button
                       variant="success"
                       onClick={markDocumentSubmissionAsDone}
@@ -9128,7 +10340,7 @@ const OnboardingDashboard = () => {
                     </Form.Text>
                   </Form.Group>
                   <Form.Group controlId="followUpHrResponse" className="mt-3">
-                    <Form.Label>Message to Applicant (optional)</Form.Label>
+                    <Form.Label>Message to Applicant *</Form.Label>
                     <Form.Control
                       as="textarea"
                       rows={3}
@@ -9140,6 +10352,7 @@ const OnboardingDashboard = () => {
                         )
                       }
                       placeholder="Provide additional guidance or clarification."
+                      required
                     />
                   </Form.Group>
                 </Form>
@@ -9148,7 +10361,7 @@ const OnboardingDashboard = () => {
               {followUpActionType === "reject" && (
                 <Form>
                   <Form.Group controlId="followUpHrResponseReject">
-                    <Form.Label>Message to Applicant (optional)</Form.Label>
+                    <Form.Label>Message to Applicant *</Form.Label>
                     <Form.Control
                       as="textarea"
                       rows={3}
@@ -9160,6 +10373,7 @@ const OnboardingDashboard = () => {
                         )
                       }
                       placeholder="Let the applicant know why the request was rejected."
+                      required
                     />
                   </Form.Group>
                 </Form>
@@ -9180,7 +10394,482 @@ const OnboardingDashboard = () => {
                   followUpActionType === "accept" ? "success" : "danger"
                 }
                 onClick={handleSubmitFollowUpAction}
-                disabled={followUpActionLoading}
+                disabled={
+                  followUpActionLoading || !followUpActionForm.hrResponse.trim()
+                }
+              >
+                {followUpActionLoading ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
+                    Processing...
+                  </>
+                ) : followUpActionType === "accept" ? (
+                  "Confirm Acceptance"
+                ) : (
+                  "Confirm Rejection"
+                )}
+              </Button>
+            )}
+        </Modal.Footer>
+      </Modal>
+
+      {showBenefitsModal && (
+        <Modal
+          show={showBenefitsModal}
+          onHide={handleCloseBenefitsModal}
+          size="lg"
+          centered
+          backdrop="static"
+        >
+          <Modal.Header closeButton>
+            <Modal.Title>Benefits Enrollment</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {benefitsModalLoading ? (
+              <div className="d-flex justify-content-center py-5">
+                <div className="spinner-border text-primary" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                {benefitsApplicantInfo && (
+                  <Card className="border-0 shadow-sm mb-4">
+                    <Card.Body>
+                      <Row className="gy-3">
+                        <Col md={6}>
+                          <div className="text-muted small">Applicant</div>
+                          <div className="fw-semibold">
+                            {benefitsApplicantInfo.name || "N/A"}
+                          </div>
+                        </Col>
+                        <Col md={6}>
+                          <div className="text-muted small">Email</div>
+                          <div className="fw-semibold">
+                            {benefitsApplicantInfo.email || "N/A"}
+                          </div>
+                        </Col>
+                        <Col md={6}>
+                          <div className="text-muted small">Position</div>
+                          <div className="fw-semibold">
+                            {benefitsApplicantInfo.position || "N/A"}
+                          </div>
+                        </Col>
+                        <Col md={6}>
+                          <div className="text-muted small">Department</div>
+                          <div className="fw-semibold">
+                            {benefitsApplicantInfo.department || "N/A"}
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card.Body>
+                  </Card>
+                )}
+
+                <Form>
+                  <Form.Label className="fw-semibold">Select Benefits</Form.Label>
+                  <div className="d-flex flex-column gap-2 mb-3">
+                    {availableBenefitsOptions.length > 0 ? (
+                      availableBenefitsOptions.map((benefit) => (
+                        <Form.Check
+                          key={benefit.key}
+                          type="checkbox"
+                          label={
+                            <div>
+                              <span className="fw-semibold me-1">
+                                {benefit.label}
+                              </span>
+                              {benefit.description && (
+                                <span className="text-muted small">
+                                  {benefit.description}
+                                </span>
+                              )}
+                            </div>
+                          }
+                          checked={benefitsForm.selectedBenefits.includes(
+                            benefit.key
+                          )}
+                          onChange={() =>
+                            handleBenefitSelectionChange(benefit.key)
+                          }
+                        />
+                      ))
+                    ) : (
+                      <div className="text-muted small">
+                        No benefit options configured.
+                      </div>
+                    )}
+                  </div>
+
+                  <Row className="gy-3">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>SSS Number</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={benefitsForm.sssNumber}
+                          onChange={(e) =>
+                            handleBenefitFieldChange("sssNumber", e.target.value)
+                          }
+                          placeholder="Enter SSS number"
+                          disabled={
+                            !benefitsForm.selectedBenefits.includes("sss")
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>PhilHealth Number</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={benefitsForm.philhealthNumber}
+                          onChange={(e) =>
+                            handleBenefitFieldChange(
+                              "philhealthNumber",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Enter PhilHealth number"
+                          disabled={
+                            !benefitsForm.selectedBenefits.includes("philhealth")
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Pag-IBIG Number</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={benefitsForm.pagibigNumber}
+                          onChange={(e) =>
+                            handleBenefitFieldChange(
+                              "pagibigNumber",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Enter Pag-IBIG number"
+                          disabled={
+                            !benefitsForm.selectedBenefits.includes("pagibig")
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Contribution Type</Form.Label>
+                        <Form.Select
+                          value={benefitsForm.contributionType}
+                          onChange={(e) =>
+                            handleBenefitFieldChange(
+                              "contributionType",
+                              e.target.value
+                            )
+                          }
+                        >
+                          <option value="employee">Employee</option>
+                          <option value="employer">Employer</option>
+                          <option value="shared">Shared</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  <Form.Group className="mb-0">
+                    <Form.Label className="fw-semibold">Notes</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={benefitsForm.notes}
+                      onChange={(e) =>
+                        handleBenefitFieldChange("notes", e.target.value)
+                      }
+                      placeholder="Additional instructions or notes..."
+                    />
+                  </Form.Group>
+                </Form>
+              </>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button
+              variant="secondary"
+              onClick={handleCloseBenefitsModal}
+              disabled={benefitsSaving}
+            >
+              Close
+            </Button>
+          <Button
+            variant="success"
+            onClick={() => setShowBenefitsSubmitConfirm(true)}
+            disabled={benefitsSaving || benefitsModalLoading}
+          >
+            {benefitsSaving && benefitsSubmitMode === "submit"
+              ? "Submitting..."
+              : "Submit Enrollment"}
+          </Button>
+            <Button
+              variant="primary"
+              onClick={handleBenefitsSubmit}
+              disabled={benefitsSaving || benefitsModalLoading}
+            >
+            {benefitsSaving && benefitsSubmitMode === "save"
+              ? "Saving..."
+              : "Save Enrollment"}
+            </Button>
+          </Modal.Footer>
+        </Modal>
+      )}
+
+      <Modal
+        show={benefitsValidationErrors.length > 0 && showBenefitsModal}
+        onHide={() => setBenefitsValidationErrors([])}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Validation Error</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="mb-2">Please complete required fields or correct errors.</p>
+          <ul className="mb-0">
+            {benefitsValidationErrors.map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="primary" onClick={() => setBenefitsValidationErrors([])}>
+            Got it
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal
+        show={showBenefitsSubmitConfirm}
+        onHide={() => setShowBenefitsSubmitConfirm(false)}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Submit Benefits Enrollment</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          Are you sure you want to submit this benefits enrollment? Once
+          submitted, the enrollment status will be marked as completed.
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            variant="secondary"
+            onClick={() => setShowBenefitsSubmitConfirm(false)}
+            disabled={benefitsSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="success"
+            onClick={handleConfirmBenefitsSubmit}
+            disabled={benefitsSaving}
+          >
+            Confirm Submit
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal
+        show={showFollowUpModal}
+        onHide={handleCloseFollowUpModal}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faEnvelope} className="me-2 text-primary" />
+            {followUpActionType === "accept"
+              ? "Accept Follow-Up Request"
+              : followUpActionType === "reject"
+              ? "Reject Follow-Up Request"
+              : "Follow-Up Request"}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedFollowUpRequest ? (
+            <>
+              <div className="mb-3">
+                <div className="fw-semibold">
+                  {selectedFollowUpRequest.applicantName || "Applicant"}
+                </div>
+                <div className="text-muted small">
+                  Document: {selectedFollowUpRequest.documentType || "Document"}
+                </div>
+                <div className="text-muted small">
+                  Submitted:{" "}
+                  {selectedFollowUpRequest.sentAt
+                    ? formatDateTime(selectedFollowUpRequest.sentAt)
+                    : "N/A"}
+                </div>
+                <div className="text-muted small">
+                  Status: {selectedFollowUpRequest.status || "Pending"}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <h6 className="fw-semibold">Applicant Message</h6>
+                <div className="bg-light p-3 rounded small">
+                  {selectedFollowUpRequest.message || "No message provided."}
+                </div>
+              </div>
+
+              {selectedFollowUpRequest.attachmentUrl && (
+                <div className="mb-3">
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    onClick={() =>
+                      handleOpenFollowUpAttachment(selectedFollowUpRequest)
+                    }
+                  >
+                    <FontAwesomeIcon icon={faExternalLinkAlt} className="me-2" />
+                    View Attachment
+                  </Button>
+                  {selectedFollowUpRequest.attachmentName && (
+                    <div className="text-muted small mt-2">
+                      {selectedFollowUpRequest.attachmentName}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedFollowUpRequest.status &&
+                selectedFollowUpRequest.status.toLowerCase() !== "pending" && (
+                  <Alert
+                    variant={
+                      selectedFollowUpRequest.status.toLowerCase() === "accepted"
+                        ? "success"
+                        : "danger"
+                    }
+                  >
+                    <div className="fw-semibold mb-1">
+                      {selectedFollowUpRequest.status.toLowerCase() === "accepted"
+                        ? "Follow-up Approved"
+                        : "Follow-up Not Approved"}
+                    </div>
+                    {selectedFollowUpRequest.extensionDeadline &&
+                      selectedFollowUpRequest.status.toLowerCase() ===
+                        "accepted" && (
+                        <div className="small text-muted">
+                          Extension until{" "}
+                          {formatDateTime(selectedFollowUpRequest.extensionDeadline)}
+                        </div>
+                      )}
+                    {selectedFollowUpRequest.hrResponse && (
+                      <div className="small mt-2">
+                        HR Response: {selectedFollowUpRequest.hrResponse}
+                      </div>
+                    )}
+                  </Alert>
+                )}
+
+              {selectedFollowUpRequest.status?.toLowerCase() === "pending" &&
+                !followUpActionType && (
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    <Button
+                      variant="success"
+                      onClick={() => setFollowUpActionType("accept")}
+                    >
+                      <FontAwesomeIcon icon={faCheck} className="me-2" />
+                      Accept Request
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => setFollowUpActionType("reject")}
+                    >
+                      <FontAwesomeIcon icon={faTimes} className="me-2" />
+                      Reject Request
+                    </Button>
+                  </div>
+                )}
+
+              {followUpActionType === "accept" && (
+                <Form>
+                  <Form.Group controlId="followUpExtensionDays">
+                    <Form.Label>Extension Duration (days)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min={1}
+                      value={followUpActionForm.extensionDays}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "extensionDays",
+                          event.target.value
+                        )
+                      }
+                    />
+                    <Form.Text className="text-muted">
+                      Specify how many additional day(s) the applicant will have
+                      to resubmit this document.
+                    </Form.Text>
+                  </Form.Group>
+                  <Form.Group controlId="followUpHrResponse" className="mt-3">
+                    <Form.Label>Message to Applicant *</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={followUpActionForm.hrResponse}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "hrResponse",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Provide additional guidance or clarification."
+                      required
+                    />
+                  </Form.Group>
+                </Form>
+              )}
+
+              {followUpActionType === "reject" && (
+                <Form>
+                  <Form.Group controlId="followUpHrResponseReject">
+                    <Form.Label>Message to Applicant *</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={followUpActionForm.hrResponse}
+                      onChange={(event) =>
+                        handleFollowUpActionInputChange(
+                          "hrResponse",
+                          event.target.value
+                        )
+                      }
+                      placeholder="Let the applicant know why the request was rejected."
+                      required
+                    />
+                  </Form.Group>
+                </Form>
+              )}
+            </>
+          ) : (
+            <div className="text-muted">No follow-up request selected.</div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseFollowUpModal}>
+            Close
+          </Button>
+          {followUpActionType &&
+            selectedFollowUpRequest?.status?.toLowerCase() === "pending" && (
+              <Button
+                variant={
+                  followUpActionType === "accept" ? "success" : "danger"
+                }
+                onClick={handleSubmitFollowUpAction}
+                disabled={
+                  followUpActionLoading || !followUpActionForm.hrResponse.trim()
+                }
               >
                 {followUpActionLoading ? (
                   <>
@@ -9203,5 +10892,4 @@ const OnboardingDashboard = () => {
     </Container>
   );
 };
-
 export default OnboardingDashboard;

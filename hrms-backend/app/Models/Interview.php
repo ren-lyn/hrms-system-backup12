@@ -20,6 +20,7 @@ class Interview extends Model
         'location',
         'interviewer',
         'notes',
+        'stage',
         'status',
         'feedback',
         'result'
