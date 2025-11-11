@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { FaFilePdf, FaFileExcel, FaSearch, FaFilter, FaDownload, FaSpinner, FaTrophy, FaExclamationTriangle, FaChartLine, FaUsers, FaAward, FaTimesCircle, FaIdBadge, FaBuilding, FaBriefcase, FaCheckCircle } from 'react-icons/fa';
+import { FaFilePdf, FaFileExcel, FaSearch, FaFilter, FaDownload, FaSpinner, FaTrophy, FaExclamationTriangle, FaChartLine, FaUsers, FaAward, FaTimesCircle, FaIdBadge, FaBuilding, FaBriefcase, FaCheckCircle, FaCalendarAlt } from 'react-icons/fa';
 import { Card, Button, Row, Col, Form, Table, Dropdown, Badge, Alert, Modal, Spinner, ProgressBar } from 'react-bootstrap';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import Chart from 'chart.js/auto';
 
-const ReportGeneration = () => {
+export default function ReportGeneration() {
   const [reportType, setReportType] = useState('attendance');
   const [dateRange, setDateRange] = useState({
     startDate: '',
@@ -28,6 +28,493 @@ const ReportGeneration = () => {
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
   const [performanceDetailLoading, setPerformanceDetailLoading] = useState(false);
   const [selectedPerformanceDetail, setSelectedPerformanceDetail] = useState(null);
+  const [attendanceData, setAttendanceData] = useState([]);
+  const [attendanceStats, setAttendanceStats] = useState(null);
+  const [attendanceSummary, setAttendanceSummary] = useState([]);
+  const [attendanceStatusTotals, setAttendanceStatusTotals] = useState({});
+  const [attendanceInsights, setAttendanceInsights] = useState([]);
+  const [attendanceAutoAdjusted, setAttendanceAutoAdjusted] = useState(false);
+  const [employeeData, setEmployeeData] = useState([]);
+  const [employeeAnalytics, setEmployeeAnalytics] = useState(null);
+  const [leaveData, setLeaveData] = useState([]);
+  const [leaveAnalytics, setLeaveAnalytics] = useState(null);
+
+  const formatCurrency = (value) => {
+    const numericValue = Number(value ?? 0);
+
+    if (Number.isNaN(numericValue)) {
+      return '₱0.00';
+    }
+
+    return `₱${numericValue.toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  const formatDate = (value) => {
+    if (!value) return '—';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const formatTime = (value) => {
+    if (!value) return '—';
+
+    const date = new Date(`1970-01-01T${value}`);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleTimeString('en-PH', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatTenure = (months) => {
+    if (!months || Number.isNaN(months)) {
+      return '—';
+    }
+
+    const totalMonths = Math.max(0, Math.round(months));
+    const years = Math.floor(totalMonths / 12);
+    const remainingMonths = totalMonths % 12;
+
+    const parts = [];
+    if (years > 0) {
+      parts.push(`${years} yr${years > 1 ? 's' : ''}`);
+    }
+    if (remainingMonths > 0) {
+      parts.push(`${remainingMonths} mo${remainingMonths > 1 ? 's' : ''}`);
+    }
+
+    return parts.length > 0 ? parts.join(' ') : '0 mo';
+  };
+
+  const getEmployeeStatusVariant = (status) => {
+    const normalized = (status || '').toString().toLowerCase();
+
+    if (normalized.includes('active')) return 'success';
+    if (normalized.includes('probation')) return 'info';
+    if (normalized.includes('leave')) return 'warning';
+    if (normalized.includes('terminated')) return 'danger';
+    if (normalized.includes('resigned')) return 'secondary';
+    if (normalized.includes('inactive')) return 'secondary';
+    return 'light';
+  };
+
+  const getLeaveStatusVariant = (status) => {
+    const normalized = (status || '').toString().toLowerCase();
+
+    if (normalized.includes('approved')) return 'success';
+    if (normalized.includes('pending') || normalized.includes('waiting')) return 'warning';
+    if (normalized.includes('manager')) {
+      if (normalized.includes('approved')) return 'info';
+      if (normalized.includes('rejected')) return 'secondary';
+    }
+    if (normalized.includes('rejected') || normalized.includes('cancel')) return 'danger';
+    return 'light';
+  };
+
+  const buildAttendanceSummary = (dailySummary) => {
+    if (!dailySummary) {
+      return [];
+    }
+
+    const summaryEntries = Object.entries(dailySummary).map(([date, items]) => {
+      const counts = Array.isArray(items)
+        ? items.reduce((acc, item) => {
+            const status = item.status || 'Unknown';
+            acc[status] = (acc[status] || 0) + Number(item.count ?? 0);
+
+            return acc;
+          }, {})
+        : {};
+
+      const presentStatuses = ['Present', 'Late', 'Overtime', 'Undertime', 'Holiday (Worked)'];
+      const presentTotal = presentStatuses.reduce((total, status) => total + (counts[status] || 0), 0);
+
+      return {
+        date,
+        present: presentTotal,
+        absent: counts['Absent'] || 0,
+        late: counts['Late'] || 0,
+        onLeave: counts['On Leave'] || 0,
+        overtime: counts['Overtime'] || 0,
+        undertime: counts['Undertime'] || 0,
+        holiday: counts['Holiday (No Work)'] || 0,
+        rawCounts: counts,
+      };
+    });
+
+    return summaryEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  };
+
+  const aggregateAttendanceStatuses = (dailySummary) => {
+    const totals = {};
+
+    if (!dailySummary) {
+      return totals;
+    }
+
+    Object.values(dailySummary).forEach((items) => {
+      if (!Array.isArray(items)) {
+        return;
+      }
+
+      items.forEach((item) => {
+        const status = item.status || 'Unknown';
+        totals[status] = (totals[status] || 0) + Number(item.count ?? 0);
+      });
+    });
+
+    return totals;
+  };
+
+  const buildAttendanceInsights = (stats, summary) => {
+    if (!stats) {
+      return [];
+    }
+
+    const insightsList = [];
+    const totalRecords = stats.total_records || 0;
+    const attendanceRate = Number(stats.attendance_rate ?? 0);
+    const absentRate = totalRecords > 0 ? (Number(stats.absent_count ?? 0) / totalRecords) * 100 : 0;
+    const lateRate = totalRecords > 0 ? (Number(stats.late_count ?? 0) / totalRecords) * 100 : 0;
+
+    if (attendanceRate >= 95) {
+      insightsList.push(`Attendance rate is healthy at ${attendanceRate.toFixed(1)}%. Keep the momentum with regular recognition.`);
+    } else if (attendanceRate >= 85) {
+      insightsList.push(`Attendance rate is ${attendanceRate.toFixed(1)}%. Focus coaching on teams trending below the target.`);
+    } else {
+      insightsList.push(`Attendance rate dipped to ${attendanceRate.toFixed(1)}%. Run root-cause interviews and reinforce policies.`);
+    }
+
+    if (absentRate >= 5) {
+      insightsList.push(`Absence rate sits at ${absentRate.toFixed(1)}%. Review schedule flexibility or wellness support for affected teams.`);
+    }
+
+    if (lateRate >= 10) {
+      insightsList.push(`Late arrivals account for ${lateRate.toFixed(1)}% of records. Consider a targeted communication on punctuality.`);
+    } else if (stats.late_count > 0) {
+      insightsList.push(`Late incidents are limited to ${stats.late_count}. Maintain follow-ups to keep it stable.`);
+    }
+
+    const highestAbsenceDay = summary.reduce((peak, current) => {
+      if (!peak || current.absent > peak.absent) {
+        return current;
+      }
+      return peak;
+    }, null);
+
+    if (highestAbsenceDay && highestAbsenceDay.absent > 0) {
+      insightsList.push(
+        `Absences peaked on ${formatDate(highestAbsenceDay.date)} with ${highestAbsenceDay.absent} record${
+          highestAbsenceDay.absent > 1 ? 's' : ''
+        }. Consider a follow-up with that department.`
+      );
+    }
+
+    if (summary.length >= 4) {
+      const midpoint = Math.floor(summary.length / 2);
+      const firstHalf = summary.slice(0, midpoint);
+      const secondHalf = summary.slice(midpoint);
+
+      const averageLateFirstHalf =
+        firstHalf.reduce((sum, day) => sum + (day.late || 0), 0) / Math.max(firstHalf.length, 1);
+      const averageLateSecondHalf =
+        secondHalf.reduce((sum, day) => sum + (day.late || 0), 0) / Math.max(secondHalf.length, 1);
+
+      if (averageLateSecondHalf > averageLateFirstHalf * 1.25 && averageLateSecondHalf - averageLateFirstHalf >= 1) {
+        insightsList.push(
+          `Late arrivals increased by ${(averageLateSecondHalf - averageLateFirstHalf).toFixed(
+            1
+          )} on average in the recent period. Flag managers for action.`
+        );
+      } else if (averageLateFirstHalf > averageLateSecondHalf * 1.25) {
+        insightsList.push(
+          `Late arrivals improved by ${(averageLateFirstHalf - averageLateSecondHalf).toFixed(
+            1
+          )} on average—recognize teams sustaining punctuality.`
+        );
+      }
+    }
+
+    if ((stats.overtime_count ?? 0) > (stats.undertime_count ?? 0) * 1.5 && (stats.overtime_count ?? 0) > 0) {
+      insightsList.push(
+        `Overtime records (${stats.overtime_count}) greatly exceed undertime (${stats.undertime_count}). Review workload balance.`
+      );
+    }
+
+    if (insightsList.length === 0) {
+      insightsList.push('Attendance is stable across key metrics. Continue monitoring for early signals of change.');
+    }
+
+    return insightsList;
+  };
+
+  const fallbackDepartments = ['Human Resources', 'Information Technology', 'Finance', 'Operations', 'Sales'];
+  const fallbackPositions = ['Chief Executive Officer', 'Manager', 'Supervisor', 'Specialist', 'Staff'];
+
+  const attendanceMix = useMemo(() => {
+    const entries = Object.entries(attendanceStatusTotals || {}).filter(
+      ([, count]) => Number(count) > 0
+    );
+
+    if (entries.length === 0) {
+      return [];
+    }
+
+    const palette = [
+      '#4caf50',
+      '#dc3545',
+      '#ffc107',
+      '#17a2b8',
+      '#6c757d',
+      '#6610f2',
+      '#20c997',
+      '#ff7f50',
+      '#795548',
+    ];
+
+    const total = entries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+
+    return entries.map(([status, count], index) => {
+      const numericCount = Number(count || 0);
+      const percentageValue =
+        total > 0 ? (numericCount / total) * 100 : 0;
+      const percentage =
+        percentageValue === 100 || percentageValue === 0
+          ? `${percentageValue.toFixed(0)}%`
+          : `${percentageValue.toFixed(1)}%`;
+
+      return {
+        label: status,
+        count: numericCount,
+        percentage,
+        color: palette[index % palette.length],
+      };
+    });
+  }, [attendanceStatusTotals]);
+
+  const payrollAggregates = useMemo(() => {
+    if (!payrollData || payrollData.length === 0) {
+      return null;
+    }
+
+    const totals = payrollData.reduce(
+      (acc, payroll) => {
+        const basic = Number(payroll.basic_salary ?? 0);
+        const allowances = Number(payroll.allowances ?? 0);
+        const deductions = Number(payroll.total_deductions ?? 0);
+        const net = Number(payroll.net_pay ?? 0);
+
+        acc.basic += basic;
+        acc.allowances += allowances;
+        acc.deductions += deductions;
+        acc.net += net;
+
+        return acc;
+      },
+      { basic: 0, allowances: 0, deductions: 0, net: 0 }
+    );
+
+    const gross = totals.basic + totals.allowances;
+    const netDistribution = [
+      {
+        label: 'Net Pay',
+        value: totals.net,
+        color: '#28a745',
+      },
+      {
+        label: 'Total Deductions',
+        value: totals.deductions,
+        color: '#dc3545',
+      },
+    ];
+
+    const deductionRate = gross > 0 ? (totals.deductions / gross) * 100 : 0;
+    const allowanceRate = gross > 0 ? (totals.allowances / gross) * 100 : 0;
+
+    return {
+      totals: {
+        ...totals,
+        gross,
+      },
+      netDistribution,
+      deductionRate,
+      allowanceRate,
+    };
+  }, [payrollData]);
+
+  const payrollSummaryMetrics = useMemo(() => {
+    if (!payrollAggregates) {
+      return [];
+    }
+
+    const totals = payrollAggregates.totals;
+
+    return [
+      {
+        label: 'Total Gross Pay',
+        value: formatCurrency(payrollAnalytics?.total_gross ?? totals.gross),
+        variant: 'primary',
+      },
+      {
+        label: 'Total Net Pay',
+        value: formatCurrency(payrollAnalytics?.total_net ?? totals.net),
+        variant: 'success',
+      },
+      {
+        label: 'Total Deductions',
+        value: formatCurrency(payrollAnalytics?.total_deductions ?? totals.deductions),
+        variant: 'danger',
+      },
+      {
+        label: 'Average Net Pay',
+        value: formatCurrency(
+          payrollAnalytics?.average_net_pay ?? (totals.net / (payrollData?.length || 1))
+        ),
+        variant: 'info',
+      },
+    ];
+  }, [payrollAggregates, payrollAnalytics, payrollData?.length]);
+
+  const payrollInsights = useMemo(() => {
+    if (!payrollAggregates) {
+      return [];
+    }
+
+    const { totals, deductionRate, allowanceRate } = payrollAggregates;
+    const insights = [];
+
+    if (deductionRate > 20) {
+      insights.push(
+        `Deductions consume ${deductionRate.toFixed(1)}% of gross pay. Review recurring deductions for possible optimizations.`
+      );
+    } else if (deductionRate > 10) {
+      insights.push(
+        `Deductions account for ${deductionRate.toFixed(1)}% of gross pay, which is within a manageable range.`
+      );
+    } else {
+      insights.push(
+        `Deductions remain lean at ${deductionRate.toFixed(1)}% of gross pay, keeping take-home pay healthy.`
+      );
+    }
+
+    if (allowanceRate > 25) {
+      insights.push(
+        `Allowances represent ${allowanceRate.toFixed(1)}% of gross pay. Ensure allowance policies are aligned with budgeting goals.`
+      );
+    } else if (allowanceRate < 10) {
+      insights.push(
+        `Allowances are modest at ${allowanceRate.toFixed(1)}% of gross pay. Consider whether additional incentives are needed for retention.`
+      );
+    }
+
+    const averageNet = totals.net / (payrollData?.length || 1);
+    if (averageNet < 20000) {
+      insights.push(
+        `Average net pay sits at ${formatCurrency(averageNet)}. Evaluate compensation bands to stay competitive.`
+      );
+    }
+
+    if (insights.length === 0) {
+      insights.push('Payroll metrics are stable. Continue monitoring for variance in deductions or allowances.');
+    }
+
+    return insights;
+  }, [payrollAggregates, payrollData]);
+
+  const performanceSummaryMetrics = useMemo(() => {
+    if (!statistics) {
+      return [];
+    }
+
+    const totalEvaluations = statistics.total_evaluations ?? 0;
+    const passRate = Number(statistics.pass_rate ?? 0);
+    const averageScore = Number(statistics.average_percentage ?? 0);
+    const passedCount = Number(statistics.passed_count ?? 0);
+    const failedCount = Number(statistics.failed_count ?? 0);
+
+    return [
+      {
+        label: 'Total Evaluations',
+        value: totalEvaluations,
+        variant: 'primary',
+      },
+      {
+        label: 'Pass Rate',
+        value: `${passRate.toFixed(1)}%`,
+        variant: passRate >= 85 ? 'success' : passRate >= 70 ? 'warning' : 'danger',
+      },
+      {
+        label: 'Average Score',
+        value: `${averageScore.toFixed(2)}%`,
+        variant: averageScore >= 85 ? 'success' : 'warning',
+      },
+      {
+        label: 'Failed Evaluations',
+        value: failedCount,
+        variant: failedCount > 0 ? 'danger' : 'success',
+      },
+    ];
+  }, [statistics]);
+
+  const performanceOverviewInsights = useMemo(() => {
+    if (!insights || insights.length === 0) {
+      return [];
+    }
+
+    return insights.map((item) => {
+      if (typeof item === 'string') {
+        return item;
+      }
+
+      const description = item.description ?? '';
+      const recommendation = item.recommendation ? ` Recommendation: ${item.recommendation}` : '';
+
+      if (description) {
+        return `${description}${recommendation}`;
+      }
+
+      return recommendation.trim();
+    }).filter(Boolean);
+  }, [insights]);
+
+  const getAttendanceBadgeVariant = (status) => {
+    switch (status) {
+      case 'Present':
+      case 'Holiday (Worked)':
+        return 'success';
+      case 'Late':
+        return 'warning';
+      case 'Absent':
+        return 'danger';
+      case 'On Leave':
+        return 'info';
+      case 'Overtime':
+        return 'primary';
+      case 'Undertime':
+        return 'secondary';
+      case 'Holiday (No Work)':
+        return 'dark';
+      default:
+        return 'secondary';
+    }
+  };
 
   const aggregatedPerformance = useMemo(() => {
     if (!performanceData) return null;
@@ -176,6 +663,44 @@ const ReportGeneration = () => {
       recommendations,
     };
   }, [selectedPerformanceDetail]);
+
+  const attendanceMetrics = useMemo(() => {
+    if (!attendanceStats) {
+      return [];
+    }
+
+    const totalRecords = attendanceStats.total_records || 0;
+    const attendanceRate = Number(attendanceStats.attendance_rate ?? 0);
+    const absentRate = totalRecords > 0 ? (Number(attendanceStats.absent_count ?? 0) / totalRecords) * 100 : 0;
+    const lateRate = totalRecords > 0 ? (Number(attendanceStats.late_count ?? 0) / totalRecords) * 100 : 0;
+
+    return [
+      {
+        label: 'Attendance Rate',
+        value: `${attendanceRate.toFixed(1)}%`,
+        details: `${attendanceStats.present_count ?? 0} of ${totalRecords} records marked present`,
+        variant: attendanceRate >= 95 ? 'success' : attendanceRate >= 85 ? 'warning' : 'danger',
+      },
+      {
+        label: 'Absences',
+        value: attendanceStats.absent_count ?? 0,
+        details: `${absentRate.toFixed(1)}% of records`,
+        variant: absentRate <= 5 ? 'success' : absentRate <= 10 ? 'warning' : 'danger',
+      },
+      {
+        label: 'Late Arrivals',
+        value: attendanceStats.late_count ?? 0,
+        details: `${lateRate.toFixed(1)}% of records`,
+        variant: lateRate <= 5 ? 'success' : lateRate <= 12 ? 'warning' : 'danger',
+      },
+      {
+        label: 'On Leave',
+        value: attendanceStats.on_leave_count ?? 0,
+        details: `${Number(attendanceStats.on_leave_count ?? 0) > 0 ? 'Approved leaves within range' : 'No leave records in range'}`,
+        variant: 'info',
+      },
+    ];
+  }, [attendanceStats]);
   
   // Chart refs
   const passFailChartRef = useRef(null);
@@ -184,9 +709,28 @@ const ReportGeneration = () => {
   const passFailChartInstanceRef = useRef(null);
   const departmentChartInstanceRef = useRef(null);
   const trendChartInstanceRef = useRef(null);
+  const attendanceDistributionChartRef = useRef(null);
+  const attendanceTrendChartRef = useRef(null);
+  const attendanceDistributionChartInstanceRef = useRef(null);
+  const attendanceTrendChartInstanceRef = useRef(null);
+  const payrollDistributionChartRef = useRef(null);
+  const payrollDistributionChartInstanceRef = useRef(null);
+  const employeeDepartmentChartRef = useRef(null);
+  const employeeStatusChartRef = useRef(null);
+  const employeeDepartmentChartInstanceRef = useRef(null);
+  const employeeStatusChartInstanceRef = useRef(null);
+  const leaveStatusChartRef = useRef(null);
+  const leaveTypeChartRef = useRef(null);
+  const leaveStatusChartInstanceRef = useRef(null);
+  const leaveTypeChartInstanceRef = useRef(null);
 
   useEffect(() => {
-    if (reportType === 'performance' || reportType === 'payroll') {
+    fetchDepartments();
+    fetchPositions();
+  }, []);
+
+  useEffect(() => {
+    if (reportType === 'performance' || reportType === 'payroll' || reportType === 'employee') {
       fetchDepartments();
       fetchPositions();
     }
@@ -358,8 +902,516 @@ const ReportGeneration = () => {
         trendChartInstanceRef.current.destroy();
         trendChartInstanceRef.current = null;
       }
+      if (payrollDistributionChartInstanceRef.current) {
+        payrollDistributionChartInstanceRef.current.destroy();
+        payrollDistributionChartInstanceRef.current = null;
+      }
     };
   }, [analytics, reportType, statistics]);
+
+  useEffect(() => {
+    if (reportType !== 'attendance') {
+      if (attendanceDistributionChartInstanceRef.current) {
+        attendanceDistributionChartInstanceRef.current.destroy();
+        attendanceDistributionChartInstanceRef.current = null;
+      }
+
+      if (attendanceTrendChartInstanceRef.current) {
+        attendanceTrendChartInstanceRef.current.destroy();
+        attendanceTrendChartInstanceRef.current = null;
+      }
+
+      return;
+    }
+
+    const statusEntries = attendanceMix;
+
+    if (attendanceDistributionChartRef.current && statusEntries.length > 0) {
+      if (attendanceDistributionChartInstanceRef.current) {
+        attendanceDistributionChartInstanceRef.current.destroy();
+      }
+
+      const ctx = attendanceDistributionChartRef.current.getContext('2d');
+
+      attendanceDistributionChartInstanceRef.current = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: statusEntries.map((item) => item.label),
+          datasets: [
+            {
+              label: 'Attendance Status Distribution',
+              data: statusEntries.map((item) => item.count),
+              backgroundColor: statusEntries.map((item) => item.color),
+              borderWidth: 2,
+              borderColor: '#fff',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: {
+            padding: {
+              top: 36,
+              right: 36,
+              bottom: 36,
+              left: 36,
+            },
+          },
+          plugins: {
+            legend: {
+              display: false,
+            },
+          },
+        },
+      });
+    }
+
+    if (attendanceTrendChartRef.current && attendanceSummary.length > 0) {
+      if (attendanceTrendChartInstanceRef.current) {
+        attendanceTrendChartInstanceRef.current.destroy();
+      }
+
+      const ctx = attendanceTrendChartRef.current.getContext('2d');
+      const labels = attendanceSummary.map((item) => formatDate(item.date));
+      const presentData = attendanceSummary.map((item) => item.present || 0);
+      const absentData = attendanceSummary.map((item) => item.absent || 0);
+      const lateData = attendanceSummary.map((item) => item.late || 0);
+      const onLeaveData = attendanceSummary.map((item) => item.onLeave || 0);
+
+      attendanceTrendChartInstanceRef.current = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Present',
+              data: presentData,
+              borderColor: 'rgba(76, 175, 80, 1)',
+              backgroundColor: 'rgba(76, 175, 80, 0.2)',
+              tension: 0.35,
+              fill: true,
+            },
+            {
+              label: 'Absent',
+              data: absentData,
+              borderColor: 'rgba(220, 53, 69, 1)',
+              backgroundColor: 'rgba(220, 53, 69, 0.15)',
+              tension: 0.35,
+              fill: true,
+            },
+            {
+              label: 'Late',
+              data: lateData,
+              borderColor: 'rgba(255, 193, 7, 1)',
+              backgroundColor: 'rgba(255, 193, 7, 0.2)',
+              tension: 0.35,
+              fill: true,
+            },
+            {
+              label: 'On Leave',
+              data: onLeaveData,
+              borderColor: 'rgba(23, 162, 184, 1)',
+              backgroundColor: 'rgba(23, 162, 184, 0.18)',
+              tension: 0.35,
+              fill: true,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              callbacks: {
+                title: (items) => items.map((item) => item.label).join(', '),
+              },
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                precision: 0,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    return () => {
+      if (attendanceDistributionChartInstanceRef.current) {
+        attendanceDistributionChartInstanceRef.current.destroy();
+        attendanceDistributionChartInstanceRef.current = null;
+      }
+
+      if (attendanceTrendChartInstanceRef.current) {
+        attendanceTrendChartInstanceRef.current.destroy();
+        attendanceTrendChartInstanceRef.current = null;
+      }
+    };
+  }, [reportType, attendanceMix, attendanceSummary]);
+
+  useEffect(() => {
+    if (reportType !== 'payroll') {
+      if (payrollDistributionChartInstanceRef.current) {
+        payrollDistributionChartInstanceRef.current.destroy();
+        payrollDistributionChartInstanceRef.current = null;
+      }
+
+      return;
+    }
+
+    if (!payrollAggregates || !payrollDistributionChartRef.current) {
+      if (payrollDistributionChartInstanceRef.current) {
+        payrollDistributionChartInstanceRef.current.destroy();
+        payrollDistributionChartInstanceRef.current = null;
+      }
+
+      return;
+    }
+
+    if (payrollDistributionChartInstanceRef.current) {
+      payrollDistributionChartInstanceRef.current.destroy();
+      payrollDistributionChartInstanceRef.current = null;
+    }
+
+    const ctx = payrollDistributionChartRef.current.getContext('2d');
+
+    payrollDistributionChartInstanceRef.current = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: payrollAggregates.netDistribution.map((item) => item.label),
+        datasets: [
+          {
+            data: payrollAggregates.netDistribution.map((item) => item.value),
+            backgroundColor: payrollAggregates.netDistribution.map((item) => item.color),
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '55%',
+        plugins: {
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const value = context.parsed || 0;
+                const total = payrollAggregates.netDistribution.reduce((sum, item) => sum + item.value, 0);
+                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+
+                return `${formatCurrency(value)} (${percentage}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }, [reportType, payrollAggregates]);
+
+  useEffect(() => {
+    if (reportType !== 'leave') {
+      if (leaveStatusChartInstanceRef.current) {
+        leaveStatusChartInstanceRef.current.destroy();
+        leaveStatusChartInstanceRef.current = null;
+      }
+      if (leaveTypeChartInstanceRef.current) {
+        leaveTypeChartInstanceRef.current.destroy();
+        leaveTypeChartInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (!leaveAnalytics) {
+      if (leaveStatusChartInstanceRef.current) {
+        leaveStatusChartInstanceRef.current.destroy();
+        leaveStatusChartInstanceRef.current = null;
+      }
+      if (leaveTypeChartInstanceRef.current) {
+        leaveTypeChartInstanceRef.current.destroy();
+        leaveTypeChartInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (leaveStatusChartRef.current) {
+      if (leaveStatusChartInstanceRef.current) {
+        leaveStatusChartInstanceRef.current.destroy();
+      }
+
+      const ctxStatus = leaveStatusChartRef.current.getContext('2d');
+      leaveStatusChartInstanceRef.current = new Chart(ctxStatus, {
+        type: 'doughnut',
+        data: {
+          labels: leaveAnalytics.statusDistribution.map((item) => item.label),
+          datasets: [
+            {
+              data: leaveAnalytics.statusDistribution.map((item) => item.count),
+              backgroundColor: leaveAnalytics.statusDistribution.map((item) => item.color),
+              borderWidth: 2,
+              borderColor: '#fff',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '55%',
+          plugins: {
+            legend: {
+              display: false,
+            },
+          },
+        },
+      });
+    }
+
+    if (leaveTypeChartRef.current) {
+      if (leaveTypeChartInstanceRef.current) {
+        leaveTypeChartInstanceRef.current.destroy();
+      }
+
+      const ctxType = leaveTypeChartRef.current.getContext('2d');
+      leaveTypeChartInstanceRef.current = new Chart(ctxType, {
+        type: 'bar',
+        data: {
+          labels: leaveAnalytics.typeDistribution.map((item) => item.label),
+          datasets: [
+            {
+              label: 'Requests',
+              data: leaveAnalytics.typeDistribution.map((item) => item.count),
+              backgroundColor: 'rgba(255, 152, 150, 0.8)',
+              borderRadius: 6,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                precision: 0,
+              },
+            },
+          },
+          plugins: {
+            legend: {
+              display: false,
+            },
+          },
+        },
+      });
+    }
+  }, [reportType, leaveAnalytics]);
+
+  useEffect(() => {
+    if (reportType !== 'employee') {
+      if (employeeDepartmentChartInstanceRef.current) {
+        employeeDepartmentChartInstanceRef.current.destroy();
+        employeeDepartmentChartInstanceRef.current = null;
+      }
+      if (employeeStatusChartInstanceRef.current) {
+        employeeStatusChartInstanceRef.current.destroy();
+        employeeStatusChartInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (!employeeAnalytics) {
+      if (employeeDepartmentChartInstanceRef.current) {
+        employeeDepartmentChartInstanceRef.current.destroy();
+        employeeDepartmentChartInstanceRef.current = null;
+      }
+      if (employeeStatusChartInstanceRef.current) {
+        employeeStatusChartInstanceRef.current.destroy();
+        employeeStatusChartInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (employeeDepartmentChartRef.current) {
+      if (employeeDepartmentChartInstanceRef.current) {
+        employeeDepartmentChartInstanceRef.current.destroy();
+      }
+
+      if (employeeAnalytics.departments.length > 0) {
+        const ctxDept = employeeDepartmentChartRef.current.getContext('2d');
+        employeeDepartmentChartInstanceRef.current = new Chart(ctxDept, {
+          type: 'bar',
+          data: {
+            labels: employeeAnalytics.departments.map((item) => item.label),
+            datasets: [
+              {
+                label: 'Headcount',
+                data: employeeAnalytics.departments.map((item) => item.count),
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  precision: 0,
+                },
+              },
+            },
+            plugins: {
+              legend: {
+                display: false,
+              },
+            },
+          },
+        });
+      }
+    }
+
+    if (employeeStatusChartRef.current) {
+      if (employeeStatusChartInstanceRef.current) {
+        employeeStatusChartInstanceRef.current.destroy();
+      }
+
+      if (employeeAnalytics.statusDistribution.length > 0) {
+        const ctxStatus = employeeStatusChartRef.current.getContext('2d');
+        employeeStatusChartInstanceRef.current = new Chart(ctxStatus, {
+          type: 'doughnut',
+          data: {
+            labels: employeeAnalytics.statusDistribution.map((item) => item.label),
+            datasets: [
+              {
+                data: employeeAnalytics.statusDistribution.map((item) => item.count),
+                backgroundColor: employeeAnalytics.statusDistribution.map((item) => item.color),
+                borderWidth: 2,
+                borderColor: '#fff',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '55%',
+            plugins: {
+              legend: {
+                display: false,
+              },
+            },
+          },
+        });
+      }
+    }
+  }, [reportType, employeeAnalytics]);
+
+  useEffect(() => {
+    if (reportType === 'leave' && leaveData && leaveData.length > 0 && leaveAnalytics && leaveStatusChartRef.current) {
+      const statusDistribution = leaveAnalytics.statusDistribution.map(item => item.count);
+      if (statusDistribution.length > 0) {
+        if (leaveStatusChartInstanceRef.current) {
+          leaveStatusChartInstanceRef.current.destroy();
+        }
+        const ctx = leaveStatusChartRef.current.getContext('2d');
+        leaveStatusChartInstanceRef.current = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Pending', 'Approved', 'Rejected', 'Manager Approved', 'Manager Rejected'],
+            datasets: [{
+              data: statusDistribution,
+              backgroundColor: ['#ffc107', '#28a745', '#dc3545', '#20c997', '#795548'],
+              borderWidth: 2,
+              borderColor: '#fff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  padding: 15,
+                  font: { size: 12, weight: 'bold' }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed || 0;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    return `${label}: ${value} (${percentage}%)`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  }, [reportType, leaveData, leaveAnalytics]);
+
+  useEffect(() => {
+    if (reportType === 'leave' && leaveData && leaveData.length > 0 && leaveAnalytics && leaveTypeChartRef.current) {
+      const typeDistribution = leaveAnalytics.typeDistribution.map(item => item.count);
+      if (typeDistribution.length > 0) {
+        if (leaveTypeChartInstanceRef.current) {
+          leaveTypeChartInstanceRef.current.destroy();
+        }
+        const ctx = leaveTypeChartRef.current.getContext('2d');
+        leaveTypeChartInstanceRef.current = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Not Specified', 'Vacation', 'Sick Leave', 'Maternity Leave', 'Paternity Leave', 'Bereavement Leave', 'Other'],
+            datasets: [{
+              data: typeDistribution,
+              backgroundColor: ['#6c757d', '#28a745', '#dc3545', '#ffc107', '#6610f2', '#c82333', '#795548'],
+              borderWidth: 2,
+              borderColor: '#fff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  padding: 15,
+                  font: { size: 12, weight: 'bold' }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed || 0;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    return `${label}: ${value} (${percentage}%)`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  }, [reportType, leaveData, leaveAnalytics]);
 
   const fetchDepartments = async () => {
     try {
@@ -409,6 +1461,12 @@ const ReportGeneration = () => {
       await generatePerformancePreview();
     } else if (reportType === 'payroll') {
       await generatePayrollPreview();
+    } else if (reportType === 'attendance') {
+      await generateAttendancePreview();
+    } else if (reportType === 'leave') {
+      await generateLeavePreview();
+    } else if (reportType === 'employee') {
+      await generateEmployeePreview();
     } else {
       toast.info('Other report types coming soon');
     }
@@ -469,6 +1527,238 @@ const ReportGeneration = () => {
       toast.error('Failed to generate payroll report');
       setPayrollData([]);
       setPayrollAnalytics(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateAttendancePreview = async () => {
+    setLoading(true);
+
+    try {
+      const params = {
+        date_from: dateRange.startDate,
+        date_to: dateRange.endDate,
+      };
+
+      if (filters.status && filters.status !== 'all' && filters.status !== '') {
+        params.status = filters.status;
+      }
+
+      const searchTerms = [];
+
+      if (filters.department) {
+        searchTerms.push(filters.department);
+      }
+
+      if (filters.position) {
+        searchTerms.push(filters.position);
+      }
+
+      if (searchTerms.length > 0) {
+        params.search = searchTerms.join(' ');
+      }
+
+      const response = await axios.get('http://localhost:8000/api/attendance/dashboard', {
+        params,
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+
+      if (!response?.data?.success) {
+        throw new Error(response?.data?.message || 'Failed to generate attendance report');
+      }
+
+      const payload = response.data.data || {};
+      const dailySummary = payload.daily_summary || {};
+
+      const summary = buildAttendanceSummary(dailySummary);
+      const totals = aggregateAttendanceStatuses(dailySummary);
+      const computedInsights = buildAttendanceInsights(payload.statistics || null, summary);
+
+      setAttendanceData(payload.recent_attendance || []);
+      setAttendanceStats(payload.statistics || null);
+      setAttendanceSummary(summary);
+      setAttendanceStatusTotals(totals);
+      setAttendanceInsights(computedInsights);
+      setAttendanceAutoAdjusted(Boolean(payload.auto_adjusted_to_latest_import));
+
+      toast.success('Attendance report generated successfully');
+
+      if (payload.auto_adjusted_to_latest_import) {
+        toast.info('Date range automatically adjusted to the latest imported attendance period for richer insights.');
+      }
+    } catch (error) {
+      console.error('Error generating attendance report:', error);
+      toast.error(error.message || 'Failed to generate attendance report');
+      setAttendanceData([]);
+      setAttendanceStats(null);
+      setAttendanceSummary([]);
+      setAttendanceStatusTotals({});
+      setAttendanceInsights([]);
+      setAttendanceAutoAdjusted(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateEmployeePreview = async () => {
+    setLoading(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication token missing. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
+      const response = await axios.get('http://localhost:8000/api/employees', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      });
+
+      let employees = [];
+      const payload = response.data;
+
+      if (Array.isArray(payload)) {
+        employees = payload;
+      } else if (Array.isArray(payload?.data)) {
+        employees = payload.data;
+      } else if (Array.isArray(payload?.employees)) {
+        employees = payload.employees;
+      }
+
+      const normalize = (value) => (value || '').toString().toLowerCase();
+      const filterDepartment = normalize(filters.department);
+      const filterPosition = normalize(filters.position);
+      const filterStatus = normalize(filters.status);
+
+      const filteredEmployees = employees.filter((employee) => {
+        const profile = employee.employee_profile ?? employee;
+        const department = normalize(profile?.department || profile?.dept);
+        const position = normalize(profile?.position || employee.position);
+        const status = normalize(profile?.status || employee.status);
+
+        const matchesDepartment = filterDepartment ? department.includes(filterDepartment) : true;
+        const matchesPosition = filterPosition ? position.includes(filterPosition) : true;
+        const matchesStatus = filterStatus ? status.includes(filterStatus) : true;
+
+        if (!matchesDepartment || !matchesPosition || !matchesStatus) {
+          return false;
+        }
+
+        if (dateRange.startDate && dateRange.endDate) {
+          const hireDateString = profile?.hire_date || profile?.date_hired || profile?.employment_date;
+          if (hireDateString) {
+            const hireDate = new Date(hireDateString);
+            const start = new Date(dateRange.startDate);
+            const end = new Date(dateRange.endDate);
+            if (!Number.isNaN(hireDate.getTime()) && (hireDate < start || hireDate > end)) {
+              return false;
+            }
+          }
+        }
+
+        return true;
+      });
+
+      if (filteredEmployees.length === 0) {
+        setEmployeeData([]);
+        setEmployeeAnalytics(null);
+        toast.info('No employees matched the selected filters.');
+        return;
+      }
+
+      const analytics = buildEmployeeAnalytics(filteredEmployees);
+      setEmployeeAnalytics(analytics);
+      setEmployeeData(analytics.normalizedEmployees || filteredEmployees);
+
+      toast.success('Employee report generated successfully');
+    } catch (error) {
+      console.error('Error generating employee report:', error);
+      toast.error(error.response?.data?.message || 'Failed to generate employee report');
+      setEmployeeData([]);
+      setEmployeeAnalytics(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateLeavePreview = async () => {
+    setLoading(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Authentication token missing. Please log in again.');
+        setLoading(false);
+        return;
+      }
+
+      const requestsResponse = await axios.get('http://localhost:8000/api/leave-requests', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      let leaves = [];
+      const payload = requestsResponse.data;
+      if (Array.isArray(payload)) {
+        leaves = payload;
+      } else if (Array.isArray(payload?.data)) {
+        leaves = payload.data;
+      }
+
+      const normalize = (value) => (value || '').toString().toLowerCase();
+      const filterDepartment = normalize(filters.department);
+      const filterPosition = normalize(filters.position);
+      const filterStatus = normalize(filters.status);
+
+      const filteredLeaves = leaves.filter((leave) => {
+        const employeeProfile = leave.employee?.employee_profile ?? leave.employee ?? {};
+        const department = normalize(employeeProfile.department);
+        const position = normalize(employeeProfile.position);
+        const status = normalize(leave.status);
+
+        const matchesDepartment = filterDepartment ? department.includes(filterDepartment) : true;
+        const matchesPosition = filterPosition ? position.includes(filterPosition) : true;
+        const matchesStatus = filterStatus ? status.includes(filterStatus) : true;
+
+        if (!matchesDepartment || !matchesPosition || !matchesStatus) {
+          return false;
+        }
+
+        if (dateRange.startDate && dateRange.endDate) {
+          const fromDate = leave.from ? new Date(leave.from) : null;
+          if (fromDate && (!Number.isNaN(fromDate.getTime()))) {
+            const start = new Date(dateRange.startDate);
+            const end = new Date(dateRange.endDate);
+            if (fromDate < start || fromDate > end) {
+              return false;
+            }
+          }
+        }
+
+        return true;
+      });
+
+      if (filteredLeaves.length === 0) {
+        setLeaveData([]);
+        setLeaveAnalytics(null);
+        toast.info('No leave requests matched the selected filters.');
+        return;
+      }
+
+      const analytics = buildLeaveAnalytics(filteredLeaves);
+      setLeaveAnalytics(analytics);
+      setLeaveData(analytics.normalizedLeaves || filteredLeaves);
+
+      toast.success('Leave report generated successfully');
+    } catch (error) {
+      console.error('Error generating leave report:', error);
+      toast.error(error.response?.data?.message || 'Failed to generate leave report');
+      setLeaveData([]);
+      setLeaveAnalytics(null);
     } finally {
       setLoading(false);
     }
@@ -731,14 +2021,570 @@ const ReportGeneration = () => {
             {new Date(payroll.period_end).toLocaleDateString()}
           </div>
         </td>
-        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.basic_salary ?? 0).toFixed(2)}</td>
-        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.allowances ?? 0).toFixed(2)}</td>
-        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.total_deductions ?? 0).toFixed(2)}</td>
-        <td className="text-end fw-semibold text-success" style={{ padding: '1rem' }}>
-          ₱{Number(payroll.net_pay ?? 0).toFixed(2)}
+        <td
+          className="text-end"
+          style={{ padding: '1rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {formatCurrency(payroll.basic_salary)}
+        </td>
+        <td
+          className="text-end"
+          style={{ padding: '1rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {formatCurrency(payroll.allowances)}
+        </td>
+        <td
+          className="text-end"
+          style={{ padding: '1rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {formatCurrency(payroll.total_deductions)}
+        </td>
+        <td
+          className="text-end fw-semibold text-success"
+          style={{ padding: '1rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+        >
+          {formatCurrency(payroll.net_pay)}
         </td>
       </tr>
     ));
+  };
+
+  const renderAttendanceReport = () => {
+    if (loading) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            Generating attendance insights...
+          </td>
+        </tr>
+      );
+    }
+
+    if (!attendanceData || attendanceData.length === 0) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            No attendance records found for the selected criteria.
+          </td>
+        </tr>
+      );
+    }
+
+    return attendanceData.map((record, index) => {
+      const employee = record.employee || {};
+      const employeeName = `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.employee_id || 'Employee';
+      const netHours =
+        record.total_hours !== undefined && record.total_hours !== null
+          ? `${Number(record.total_hours).toFixed(2)} hrs`
+          : '—';
+
+      return (
+        <tr key={record.id || `${employee.employee_id}-${record.date}-${index}`}>
+          <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
+          <td style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{employeeName}</div>
+            <div className="text-muted small">
+              {(employee.employee_id || employee.id || '—')}{' '}
+              {(employee.department || employee.position) && (
+                <>
+                  • {employee.department || 'No Department'}
+                  {employee.position ? ` • ${employee.position}` : ''}
+                </>
+              )}
+            </div>
+          </td>
+          <td style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{formatDate(record.date)}</div>
+            {record.remarks && <div className="text-muted small">Remarks: {record.remarks}</div>}
+          </td>
+          <td className="text-center" style={{ padding: '1rem' }}>
+            <Badge
+              bg={getAttendanceBadgeVariant(record.status)}
+              className="fw-semibold text-uppercase"
+              style={{ fontSize: '0.75rem', letterSpacing: '0.03em' }}
+            >
+              {record.status || 'No Record'}
+            </Badge>
+          </td>
+          <td className="text-center" style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{formatTime(record.clock_in)}</div>
+            {record.break_out && <div className="text-muted small">Break Out: {formatTime(record.break_out)}</div>}
+          </td>
+          <td className="text-center" style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{formatTime(record.clock_out)}</div>
+            {record.break_in && <div className="text-muted small">Break In: {formatTime(record.break_in)}</div>}
+            <div className="text-muted small">Total: {netHours}</div>
+          </td>
+        </tr>
+      );
+    });
+  };
+
+  const renderLeaveReport = () => {
+    if (loading) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            Loading leave data...
+          </td>
+        </tr>
+      );
+    }
+
+    if (!leaveData || leaveData.length === 0) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            No leave requests found for the selected criteria.
+          </td>
+        </tr>
+      );
+    }
+
+    return leaveData.map((leave, index) => {
+      const normalized = leave.__normalized ?? {};
+      const employeeProfile = leave.employee?.employee_profile ?? leave.employee ?? {};
+      const name = `${employeeProfile.first_name || ''} ${employeeProfile.last_name || ''}`.trim() || leave.employee_name || 'Employee';
+      const leaveType = normalized.leaveType || leave.type || 'Not Specified';
+      const startDate = normalized.fromDate ? formatDate(normalized.fromDate) : formatDate(leave.from);
+      const endDate = normalized.toDate ? formatDate(normalized.toDate) : formatDate(leave.to);
+      const statusVariant = getLeaveStatusVariant(normalized.status || leave.status);
+
+      return (
+        <tr key={leave.id || index} style={{ borderBottom: '1px solid #e9ecef' }}>
+          <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
+          <td style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{name}</div>
+            <div className="text-muted small">{employeeProfile.employee_id || 'ID N/A'}</div>
+          </td>
+          <td style={{ padding: '1rem' }}>{leaveType}</td>
+          <td style={{ padding: '1rem' }}>{startDate}</td>
+          <td style={{ padding: '1rem' }}>{endDate}</td>
+          <td style={{ padding: '1rem' }}>
+            <Badge
+              bg={statusVariant}
+              text={statusVariant === 'light' ? 'dark' : 'light'}
+              className="fw-semibold text-uppercase"
+            >
+              {leave.status || 'Unknown'}
+            </Badge>
+          </td>
+        </tr>
+      );
+    });
+  };
+
+  const renderEmployeeReport = () => {
+    if (loading) {
+      return (
+        <tr>
+          <td colSpan="7" className="text-center text-muted py-4">
+            Loading employee data...
+          </td>
+        </tr>
+      );
+    }
+
+    if (!employeeData || employeeData.length === 0) {
+      return (
+        <tr>
+          <td colSpan="7" className="text-center text-muted py-4">
+            No employee data found for the selected criteria.
+          </td>
+        </tr>
+      );
+    }
+
+    return employeeData.map((employee, index) => {
+      const profile = employee.employee_profile ?? employee;
+      const fullName = `${profile?.first_name || employee.first_name || ''} ${profile?.last_name || employee.last_name || ''}`.trim() || employee.name || 'Employee';
+      const department = employee.__normalized?.department || profile?.department || profile?.dept || 'Unassigned';
+      const position = employee.__normalized?.position || profile?.position || employee.position || 'Not Specified';
+      const status = employee.__normalized?.statusLabel || profile?.status || employee.status || 'Unknown';
+      const hireDate = profile?.hire_date || profile?.date_hired || profile?.employment_date || null;
+      let tenureMonths = employee.__normalized?.tenureMonths;
+
+      if ((tenureMonths === null || tenureMonths === undefined) && hireDate) {
+        const hire = new Date(hireDate);
+        if (!Number.isNaN(hire.getTime())) {
+          const now = new Date();
+          tenureMonths = Math.max(0, (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth()));
+        }
+      }
+
+      const statusVariant = getEmployeeStatusVariant(status);
+
+      return (
+        <tr key={employee.id || profile?.id || index} style={{ borderBottom: '1px solid #e9ecef' }}>
+          <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
+          <td style={{ padding: '1rem' }}>
+            <div className="fw-semibold text-dark">{fullName}</div>
+            <div className="text-muted small">{profile?.employee_id || employee.employee_id || 'ID N/A'}</div>
+          </td>
+          <td style={{ padding: '1rem' }}>{department}</td>
+          <td style={{ padding: '1rem' }}>{position}</td>
+          <td style={{ padding: '1rem' }}>
+            <Badge
+              bg={statusVariant}
+              text={statusVariant === 'light' ? 'dark' : 'light'}
+              className="fw-semibold text-uppercase"
+            >
+              {status}
+            </Badge>
+          </td>
+          <td style={{ padding: '1rem' }}>{hireDate ? formatDate(hireDate) : 'N/A'}</td>
+          <td style={{ padding: '1rem' }}>{formatTenure(tenureMonths)}</td>
+        </tr>
+      );
+    });
+  };
+
+  const buildEmployeeAnalytics = (employees) => {
+    const now = new Date();
+    const totals = {
+      total: employees.length,
+      active: 0,
+      inactive: 0,
+      probation: 0,
+      resigned: 0,
+      terminated: 0,
+      onLeave: 0,
+      averageTenureMonths: 0,
+      newHires: 0,
+    };
+
+    const departmentMap = new Map();
+    const positionMap = new Map();
+    const statusMap = new Map();
+    const tenureBrackets = {
+      '<1 year': 0,
+      '1-3 years': 0,
+      '3-5 years': 0,
+      '5+ years': 0,
+    };
+
+    const normalizedEmployees = employees.map((employee) => {
+      const profile = employee.employee_profile ?? employee;
+      const department = (profile?.department || profile?.dept || 'Unassigned').trim() || 'Unassigned';
+      const position = (profile?.position || employee.position || 'Not Specified').trim() || 'Not Specified';
+      const rawStatus = (profile?.status || employee.status || '').toString().trim() || 'Unknown';
+      const status = rawStatus.toLowerCase();
+
+      const hireDateString = profile?.hire_date || profile?.date_hired || profile?.employment_date;
+      const hireDate = hireDateString ? new Date(hireDateString) : null;
+      let tenureMonths = 0;
+      if (hireDate && !Number.isNaN(hireDate.getTime())) {
+        tenureMonths = Math.max(0, (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth()));
+      }
+
+      // Update totals
+      if (status.includes('active')) totals.active += 1;
+      else if (status.includes('terminated')) totals.terminated += 1;
+      else if (status.includes('resigned')) totals.resigned += 1;
+      else if (status.includes('probation')) totals.probation += 1;
+      else if (status.includes('leave')) totals.onLeave += 1;
+      else totals.inactive += 1;
+
+      if (hireDate && (now - hireDate) / (1000 * 60 * 60 * 24) <= 90) {
+        totals.newHires += 1;
+      }
+
+      totals.averageTenureMonths += tenureMonths;
+
+      const tenureYears = tenureMonths / 12;
+      if (tenureYears < 1) tenureBrackets['<1 year'] += 1;
+      else if (tenureYears < 3) tenureBrackets['1-3 years'] += 1;
+      else if (tenureYears < 5) tenureBrackets['3-5 years'] += 1;
+      else tenureBrackets['5+ years'] += 1;
+
+      departmentMap.set(department, (departmentMap.get(department) || 0) + 1);
+      positionMap.set(position, (positionMap.get(position) || 0) + 1);
+      statusMap.set(rawStatus || 'Unknown', (statusMap.get(rawStatus || 'Unknown') || 0) + 1);
+
+      return {
+        ...employee,
+        __normalized: {
+          department,
+          position,
+          statusLabel: rawStatus || 'Unknown',
+          tenureMonths,
+          hireDate,
+        },
+      };
+    });
+
+    if (totals.total > 0) {
+      totals.averageTenureMonths = totals.averageTenureMonths / totals.total;
+    }
+
+    const departments = Array.from(departmentMap.entries()).map(([label, count]) => ({ label, count }));
+    const positions = Array.from(positionMap.entries()).map(([label, count]) => ({ label, count }));
+    const statusDistribution = Array.from(statusMap.entries()).map(([label, count], index) => ({
+      label,
+      count,
+      color: ['#4caf50', '#dc3545', '#ffc107', '#17a2b8', '#6c757d', '#6610f2'][index % 6],
+    }));
+    const tenureDistribution = Object.entries(tenureBrackets).map(([label, count]) => ({ label, count }));
+
+    const sortedByTenure = [...normalizedEmployees]
+      .filter((emp) => emp.__normalized.tenureMonths > 0)
+      .sort((a, b) => b.__normalized.tenureMonths - a.__normalized.tenureMonths)
+      .slice(0, 5);
+
+    const recentHires = [...normalizedEmployees]
+      .filter((emp) => emp.__normalized.hireDate)
+      .sort((a, b) => b.__normalized.hireDate - a.__normalized.hireDate)
+      .slice(0, 5);
+
+    const insights = [];
+    if (departments.length > 0) {
+      const topDepartment = departments.reduce((prev, current) => (current.count > prev.count ? current : prev));
+      insights.push(`${topDepartment.count} employees work in ${topDepartment.label}, making it the largest department.`);
+    }
+
+    if (totals.newHires > 0) {
+      insights.push(`Welcomed ${totals.newHires} new hire${totals.newHires > 1 ? 's' : ''} in the last 90 days.`);
+    }
+
+    if (totals.terminated + totals.resigned > 0) {
+      const attritionRate = ((totals.terminated + totals.resigned) / Math.max(totals.total, 1)) * 100;
+      insights.push(`Attrition indicators: ${totals.resigned} resigned and ${totals.terminated} terminated employees (${attritionRate.toFixed(1)}% of headcount).`);
+    }
+
+    const tenureYearsAvg = totals.averageTenureMonths / 12;
+    if (tenureYearsAvg) {
+      insights.push(`Average tenure sits at ${tenureYearsAvg.toFixed(1)} years.`);
+    }
+
+    return {
+      totals,
+      departments,
+      positions,
+      statusDistribution,
+      tenureDistribution,
+      topTenureEmployees: sortedByTenure,
+      recentHires,
+      insights,
+      normalizedEmployees,
+    };
+  };
+
+  const employeeSummaryMetrics = useMemo(() => {
+    if (!employeeAnalytics) {
+      return [];
+    }
+
+    const { totals } = employeeAnalytics;
+    const tenureYears = totals.averageTenureMonths / 12;
+
+    return [
+      {
+        label: 'Total Employees',
+        value: totals.total,
+        variant: 'primary',
+      },
+      {
+        label: 'Active Employees',
+        value: totals.active,
+        variant: 'success',
+      },
+      {
+        label: 'Average Tenure',
+        value: `${tenureYears.toFixed(1)} yrs`,
+        variant: 'info',
+      },
+      {
+        label: 'New Hires (90 days)',
+        value: totals.newHires,
+        variant: 'warning',
+      },
+    ];
+  }, [employeeAnalytics]);
+
+  const employeeOverviewInsights = useMemo(() => {
+    if (!employeeAnalytics || !employeeAnalytics.insights) {
+      return [];
+    }
+
+    return employeeAnalytics.insights;
+  }, [employeeAnalytics]);
+
+  const leaveSummaryMetrics = useMemo(() => {
+    if (!leaveAnalytics) {
+      return [];
+    }
+
+    const { totals, averageDuration, upcomingCount, approvalRate } = leaveAnalytics;
+
+    return [
+      {
+        label: 'Total Requests',
+        value: totals.total,
+        variant: 'primary',
+      },
+      {
+        label: 'Approval Rate',
+        value: `${approvalRate.toFixed(1)}%`,
+        variant: approvalRate >= 75 ? 'success' : approvalRate >= 50 ? 'warning' : 'danger',
+      },
+      {
+        label: 'Average Duration',
+        value: `${averageDuration.toFixed(1)} days`,
+        variant: 'info',
+      },
+      {
+        label: 'Upcoming Leaves',
+        value: upcomingCount,
+        variant: 'warning',
+      },
+    ];
+  }, [leaveAnalytics]);
+
+  const leaveOverviewInsights = useMemo(() => {
+    if (!leaveAnalytics) {
+      return [];
+    }
+
+    return leaveAnalytics.insights || [];
+  }, [leaveAnalytics]);
+
+  const attendanceOverviewInsights = useMemo(() => attendanceInsights || [], [attendanceInsights]);
+
+  const buildLeaveAnalytics = (leaves) => {
+    const now = new Date();
+    const totals = {
+      total: leaves.length,
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      managerApproved: 0,
+      managerRejected: 0,
+    };
+
+    const typeMap = new Map();
+    const departmentMap = new Map();
+
+    let totalDuration = 0;
+    let longestLeave = null;
+    let shortestLeave = null;
+
+    const normalizedLeaves = leaves.map((leave) => {
+      const employeeProfile = leave.employee?.employee_profile ?? leave.employee ?? {};
+      const department = employeeProfile.department || 'Unassigned';
+      const position = employeeProfile.position || 'Not Specified';
+      const status = (leave.status || 'unknown').toLowerCase();
+      const leaveType = leave.type || 'Not Specified';
+
+      const fromDate = leave.from ? new Date(leave.from) : null;
+      const toDate = leave.to ? new Date(leave.to) : null;
+
+      let durationDays = Number(leave.total_days ?? 0);
+      if ((!durationDays || durationDays <= 0) && fromDate && toDate) {
+        durationDays = Math.max(1, Math.round((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1);
+      }
+
+      if (status.includes('pending')) totals.pending += 1;
+      else if (status.includes('approved') && status.includes('manager')) totals.managerApproved += 1;
+      else if (status.includes('manager') && status.includes('rejected')) totals.managerRejected += 1;
+      else if (status.includes('approved')) totals.approved += 1;
+      else if (status.includes('rejected')) totals.rejected += 1;
+
+      typeMap.set(leaveType, (typeMap.get(leaveType) || 0) + 1);
+      departmentMap.set(department, (departmentMap.get(department) || 0) + 1);
+
+      totalDuration += durationDays;
+
+      if (!longestLeave || durationDays > longestLeave.durationDays) {
+        longestLeave = { leave, durationDays };
+      }
+
+      if (!shortestLeave || durationDays < shortestLeave.durationDays) {
+        shortestLeave = { leave, durationDays };
+      }
+
+      const isUpcoming = fromDate && fromDate >= now;
+
+      return {
+        ...leave,
+        __normalized: {
+          department,
+          position,
+          status,
+          leaveType,
+          durationDays,
+          fromDate,
+          toDate,
+          isUpcoming,
+        },
+      };
+    });
+
+    const typeDistribution = Array.from(typeMap.entries()).map(([label, count], index) => ({
+      label,
+      count,
+      color: ['#4caf50', '#dc3545', '#ffc107', '#17a2b8', '#6c757d', '#6610f2', '#20c997'][index % 7],
+    }));
+
+    const departmentDistribution = Array.from(departmentMap.entries()).map(([label, count]) => ({
+      label,
+      count,
+    }));
+
+    const statusDistribution = [
+      { label: 'Approved', count: totals.approved + totals.managerApproved, color: '#28a745' },
+      { label: 'Pending', count: totals.pending, color: '#ffc107' },
+      { label: 'Rejected', count: totals.rejected + totals.managerRejected, color: '#dc3545' },
+    ];
+
+    const upcomingLeaves = normalizedLeaves
+      .filter((item) => item.__normalized.isUpcoming)
+      .sort((a, b) => a.__normalized.fromDate - b.__normalized.fromDate)
+      .slice(0, 6);
+
+    const averageDuration = totals.total > 0 ? totalDuration / totals.total : 0;
+    const approvalRate = totals.total > 0 ? ((totals.approved + totals.managerApproved) / totals.total) * 100 : 0;
+
+    const insights = [];
+
+    if (typeDistribution.length > 0) {
+      const topType = typeDistribution.reduce((prev, current) => (current.count > prev.count ? current : prev));
+      insights.push(`${topType.label} is the most requested leave type (${topType.count} requests).`);
+    }
+
+    if (approvalRate > 0) {
+      insights.push(`Approval rate stands at ${approvalRate.toFixed(1)}%, with ${totals.pending} request${totals.pending === 1 ? '' : 's'} pending.`);
+    }
+
+    if (longestLeave) {
+      const leave = longestLeave.leave;
+      const name = leave.employee?.employee_profile?.first_name ? `${leave.employee.employee_profile.first_name} ${leave.employee.employee_profile.last_name}` : leave.employee_name || 'An employee';
+      insights.push(`${name} filed the longest leave at ${longestLeave.durationDays} day${longestLeave.durationDays > 1 ? 's' : ''} (${leave.type}).`);
+    }
+
+    if (shortestLeave) {
+      const leave = shortestLeave.leave;
+      const name = leave.employee?.employee_profile?.first_name ? `${leave.employee.employee_profile.first_name} ${leave.employee.employee_profile.last_name}` : leave.employee_name || 'An employee';
+      insights.push(`${name}'s ${leave.type} was the shortest at ${shortestLeave.durationDays} day${shortestLeave.durationDays > 1 ? 's' : ''}.`);
+    }
+
+    if (upcomingLeaves.length > 0) {
+      insights.push(`${upcomingLeaves.length} upcoming leave${upcomingLeaves.length > 1 ? 's are' : ' is'} scheduled within the selected period.`);
+    }
+
+    return {
+      totals: {
+        ...totals,
+      },
+      averageDuration,
+      approvalRate,
+      upcomingCount: upcomingLeaves.length,
+      typeDistribution,
+      statusDistribution,
+      departmentDistribution,
+      upcomingLeaves,
+      normalizedLeaves,
+      insights,
+    };
   };
 
   return (
@@ -803,19 +2649,11 @@ const ReportGeneration = () => {
                     onChange={handleFilterChange}
                   >
                     <option value="">All Departments</option>
-                    {reportType === 'performance' 
-                      ? departments.map((dept, idx) => (
-                          <option key={idx} value={dept}>{dept}</option>
-                        ))
-                      : (
-                        <>
-                          <option value="hr">Human Resources</option>
-                          <option value="it">Information Technology</option>
-                          <option value="finance">Finance</option>
-                          <option value="operations">Operations</option>
-                        </>
-                      )
-                    }
+                    {(departments.length > 0 ? departments : fallbackDepartments).map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
                   </Form.Select>
                 </Form.Group>
               </Col>
@@ -828,18 +2666,11 @@ const ReportGeneration = () => {
                     onChange={handleFilterChange}
                   >
                     <option value="">All Positions</option>
-                    {reportType === 'performance' 
-                      ? positions.map((pos, idx) => (
-                          <option key={idx} value={pos}>{pos}</option>
-                        ))
-                      : (
-                        <>
-                          <option value="manager">Manager</option>
-                          <option value="supervisor">Supervisor</option>
-                          <option value="staff">Staff</option>
-                        </>
-                      )
-                    }
+                    {(positions.length > 0 ? positions : fallbackPositions).map((pos) => (
+                      <option key={pos} value={pos}>
+                        {pos}
+                      </option>
+                    ))}
                   </Form.Select>
                 </Form.Group>
               </Col>
@@ -851,13 +2682,27 @@ const ReportGeneration = () => {
                     value={filters.status}
                     onChange={handleFilterChange}
                   >
-                    {reportType === 'performance' ? (
+                    {reportType === 'performance' && (
                       <>
                         <option value="all">All Status</option>
                         <option value="passed">Passed</option>
                         <option value="failed">Failed</option>
                       </>
-                    ) : (
+                    )}
+                    {reportType === 'attendance' && (
+                      <>
+                        <option value="">All Status</option>
+                        <option value="Present">Present</option>
+                        <option value="Late">Late</option>
+                        <option value="Absent">Absent</option>
+                        <option value="On Leave">On Leave</option>
+                        <option value="Holiday (Worked)">Holiday (Worked)</option>
+                        <option value="Holiday (No Work)">Holiday (No Work)</option>
+                        <option value="Overtime">Overtime</option>
+                        <option value="Undertime">Undertime</option>
+                      </>
+                    )}
+                    {reportType === 'payroll' && (
                       <>
                         <option value="">All Status</option>
                         <option value="active">Active</option>
@@ -865,6 +2710,32 @@ const ReportGeneration = () => {
                         <option value="on-leave">On Leave</option>
                       </>
                     )}
+                    {reportType === 'leave' && (
+                      <>
+                        <option value="">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="manager_approved">Manager Approved</option>
+                        <option value="manager_rejected">Manager Rejected</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="cancelled">Cancelled</option>
+                      </>
+                    )}
+                    {reportType === 'employee' && (
+                      <>
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="probation">Probationary</option>
+                        <option value="resigned">Resigned</option>
+                        <option value="terminated">Terminated</option>
+                        <option value="leave">On Leave</option>
+                      </>
+                    )}
+                    {reportType !== 'performance' &&
+                      reportType !== 'attendance' &&
+                      reportType !== 'payroll' &&
+                      reportType !== 'employee' && <option value="">All Status</option>}
                   </Form.Select>
                 </Form.Group>
               </Col>
@@ -917,185 +2788,87 @@ const ReportGeneration = () => {
         </Card.Body>
       </Card>
       
-      {statistics && reportType === 'performance' && (
+      {reportType === 'performance' && statistics && (
         <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
-          <Card.Header className="text-white" style={{ 
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '12px 12px 0 0',
-            border: 'none',
-            padding: '1.25rem'
-          }}>
+          <Card.Header
+            className="text-white"
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '12px 12px 0 0',
+              border: 'none',
+              padding: '1.25rem',
+            }}
+          >
             <h5 className="mb-0 d-flex align-items-center">
               <FaChartLine className="me-2" />
-              Summary Statistics
+              Performance Overview
             </h5>
           </Card.Header>
-          <Card.Body style={{ padding: '2rem' }}>
-            <Row className="g-4">
-              <Col md={6}>
-                <Row className="g-4">
-                  <Col md={6}>
-                    <div className="text-center p-4" style={{ 
-                      background: 'linear-gradient(135deg, #667eea15 0%, #764ba215 100%)',
-                      borderRadius: '12px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div className="mb-3">
-                        <FaUsers style={{ fontSize: '2.5rem', color: '#667eea' }} />
-                      </div>
-                      <h2 className="mb-2" style={{ color: '#667eea', fontWeight: '700', fontSize: '2.5rem' }}>
-                        {statistics.total_evaluations}
-                      </h2>
-                      <p className="text-muted mb-0" style={{ fontSize: '0.95rem', fontWeight: '500' }}>
-                        Total Evaluations
-                      </p>
-                    </div>
-                  </Col>
-                  <Col md={6}>
-                    <div className="text-center p-4" style={{ 
-                      background: 'linear-gradient(135deg, #56ab2f15 0%, #a8e06315 100%)',
-                      borderRadius: '12px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div className="mb-3">
-                        <FaAward style={{ fontSize: '2.5rem', color: '#28a745' }} />
-                      </div>
-                      <h2 className="mb-2" style={{ color: '#28a745', fontWeight: '700', fontSize: '2.5rem' }}>
-                        {statistics.passed_count}
-                      </h2>
-                      <p className="text-muted mb-0" style={{ fontSize: '0.95rem', fontWeight: '500' }}>
-                        Passed
-                      </p>
-                    </div>
-                  </Col>
-                  <Col md={6}>
-                    <div className="text-center p-4" style={{ 
-                      background: 'linear-gradient(135deg, #eb334915 0%, #f45c4315 100%)',
-                      borderRadius: '12px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div className="mb-3">
-                        <FaTimesCircle style={{ fontSize: '2.5rem', color: '#dc3545' }} />
-                      </div>
-                      <h2 className="mb-2" style={{ color: '#dc3545', fontWeight: '700', fontSize: '2.5rem' }}>
-                        {statistics.failed_count}
-                      </h2>
-                      <p className="text-muted mb-0" style={{ fontSize: '0.95rem', fontWeight: '500' }}>
-                        Failed
-                      </p>
-                    </div>
-                  </Col>
-                  <Col md={6}>
-                    <div className="text-center p-4" style={{ 
-                      background: 'linear-gradient(135deg, #f0981915 0%, #edde5d15 100%)',
-                      borderRadius: '12px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div className="mb-3">
-                        <FaChartLine style={{ fontSize: '2.5rem', color: '#ffc107' }} />
-                      </div>
-                      <h2 className="mb-2" style={{ color: '#ffc107', fontWeight: '700', fontSize: '2.5rem' }}>
-                        {statistics.average_percentage}%
-                      </h2>
-                      <p className="text-muted mb-0" style={{ fontSize: '0.95rem', fontWeight: '500' }}>
-                        Average Score
-                      </p>
-                    </div>
-                  </Col>
-                </Row>
-              </Col>
-              <Col md={6}>
-                <div style={{ 
-                  height: '350px',
-                  padding: '1rem',
-                  background: '#f8f9fa',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <canvas ref={passFailChartRef}></canvas>
-                </div>
-              </Col>
+          <Card.Body>
+            <Row className="g-3 mb-4">
+              {performanceSummaryMetrics.map((metric) => (
+                <Col key={metric.label} xs={12} md={6} lg={3}>
+                  <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                    <Card.Body className="d-flex flex-column">
+                      <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                      <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                      <span className="small text-muted mt-auto">Derived from current performance preview.</span>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              ))}
             </Row>
-          </Card.Body>
-        </Card>
-      )}
 
-      {insights && reportType === 'performance' && insights.length > 0 && (
-        <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
-          <Card.Header className="text-white" style={{ 
-            background: 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
-            borderRadius: '12px 12px 0 0',
-            border: 'none',
-            padding: '1.25rem'
-          }}>
-            <h5 className="mb-0 d-flex align-items-center">
-              <FaExclamationTriangle className="me-2" />
-              Key Insights & Recommendations
-            </h5>
-          </Card.Header>
-          <Card.Body style={{ padding: '1.5rem' }}>
-            <Row className="g-3">
-              {insights.map((insight, idx) => {
-                let bgColor, borderColor, iconColor;
-                if (insight.type === 'success') {
-                  bgColor = '#d4edda';
-                  borderColor = '#c3e6cb';
-                  iconColor = '#155724';
-                } else if (insight.type === 'danger') {
-                  bgColor = '#f8d7da';
-                  borderColor = '#f5c6cb';
-                  iconColor = '#721c24';
-                } else if (insight.type === 'warning') {
-                  bgColor = '#fff3cd';
-                  borderColor = '#ffeaa7';
-                  iconColor = '#856404';
-                } else {
-                  bgColor = '#d1ecf1';
-                  borderColor = '#bee5eb';
-                  iconColor = '#0c5460';
-                }
-                
-                return (
-                  <Col key={idx} md={12}>
-                    <div className="p-4" style={{
-                      background: bgColor,
-                      borderRadius: '12px',
-                      border: `2px solid ${borderColor}`,
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                    }}>
-                      <h6 className="mb-3 d-flex align-items-center" style={{ 
-                        color: iconColor,
-                        fontWeight: '700',
-                        fontSize: '1.1rem'
-                      }}>
-                        {insight.type === 'success' && <FaAward className="me-2" />}
-                        {insight.type === 'warning' && <FaExclamationTriangle className="me-2" />}
-                        {insight.type === 'danger' && <FaTimesCircle className="me-2" />}
-                        {(!insight.type || insight.type === 'info') && <FaChartLine className="me-2" />}
-                        {insight.title}
-                      </h6>
-                      <p className="mb-3" style={{ 
-                        color: '#333',
-                        lineHeight: '1.6',
-                        fontSize: '0.95rem'
-                      }}>
-                        {insight.description}
-                      </p>
-                      <div style={{
-                        background: 'rgba(255,255,255,0.6)',
-                        padding: '0.75rem 1rem',
-                        borderRadius: '8px',
-                        borderLeft: `4px solid ${iconColor}`
-                      }}>
-                        <strong style={{ color: iconColor }}>Recommendation:</strong>{' '}
-                        <span style={{ color: '#555' }}>{insight.recommendation}</span>
+            <Row className="g-4">
+              <Col xs={12} lg={5}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Pass vs Fail</h6>
+                    <div className="d-flex justify-content-center">
+                      <div style={{ height: '220px', width: '220px' }}>
+                        <canvas ref={passFailChartRef}></canvas>
                       </div>
                     </div>
-                  </Col>
-                );
-              })}
+                    <div className="mt-3 text-center">
+                      <span className="badge bg-success bg-opacity-10 text-success me-2 fw-semibold">Passed: {statistics.passed_count}</span>
+                      <span className="badge bg-danger bg-opacity-10 text-danger fw-semibold">Failed: {statistics.failed_count}</span>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={7}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Snapshot</h6>
+                    <Row className="g-2">
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">Evaluations Reviewed</div>
+                          <div className="h5 mb-0 text-primary fw-bold">{statistics.total_evaluations ?? aggregatedPerformance?.length ?? 0}</div>
+                        </div>
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">Average Score</div>
+                          <div className="h5 mb-0 text-warning fw-bold">{Number(statistics.average_percentage ?? 0).toFixed(2)}%</div>
+                        </div>
+                      </Col>
+                    </Row>
+                    {performanceOverviewInsights.length > 0 && (
+                      <div className="mt-3">
+                        <h6 className="text-uppercase text-muted fw-semibold mb-2">Insights</h6>
+                        <ul className="mb-0 ps-3">
+                          {performanceOverviewInsights.map((item, idx) => (
+                            <li key={`perf-overview-insight-${idx}`} className="mb-1 text-muted small">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
+              </Col>
             </Row>
           </Card.Body>
         </Card>
@@ -1551,6 +3324,447 @@ const ReportGeneration = () => {
         </Card>
       )}
 
+      {reportType === 'attendance' && (
+        <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
+          <Card.Header
+            className="text-white"
+            style={{
+              background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+              borderRadius: '12px 12px 0 0',
+              border: 'none',
+              padding: '1.25rem',
+            }}
+          >
+            <h5 className="mb-0 d-flex align-items-center">
+              <FaChartLine className="me-2" />
+              Attendance Overview
+            </h5>
+          </Card.Header>
+          <Card.Body>
+            {attendanceStats ? (
+              <>
+                <Row className="g-3 mb-4">
+                  {attendanceMetrics.map((metric) => (
+                    <Col key={metric.label} xs={12} md={6} lg={3}>
+                      <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                        <Card.Body className="d-flex flex-column">
+                          <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                          <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                          <span className="small text-muted mt-auto">{metric.details}</span>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+
+                <Row className="g-4">
+                  <Col xs={12} lg={4}>
+                    <Card className="h-100 border-0 shadow-sm">
+                      <Card.Body>
+                        <h6 className="text-uppercase text-muted fw-semibold mb-3">Attendance Mix</h6>
+                        <div className="d-flex flex-column align-items-stretch">
+                          <div className="d-flex justify-content-center">
+                            {attendanceMix.length > 0 ? (
+                              <div style={{ height: '200px', width: '200px' }}>
+                                <canvas ref={attendanceDistributionChartRef}></canvas>
+                              </div>
+                            ) : (
+                              <div className="text-muted small d-flex align-items-center justify-content-center" style={{ height: '200px' }}>
+                                Generate a preview to visualize attendance mix.
+                              </div>
+                            )}
+                          </div>
+                          {attendanceMix.length > 0 && (
+                            <div className="mt-3">
+                              {attendanceMix.map((item, idx) => (
+                                <div key={`attendance-mix-item-${idx}`} className="d-flex align-items-center mb-2">
+                                  <span
+                                    style={{
+                                      width: '12px',
+                                      height: '12px',
+                                      borderRadius: '3px',
+                                      backgroundColor: item.color,
+                                      marginRight: '8px',
+                                      display: 'inline-block',
+                                    }}
+                                  ></span>
+                                  <span className="text-muted small flex-grow-1">{item.label}</span>
+                                  <span className="fw-semibold small" style={{ color: '#1f2937' }}>{item.percentage}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col xs={12} lg={8}>
+                    <Card className="h-100 border-0 shadow-sm">
+                      <Card.Body>
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <h6 className="text-uppercase text-muted fw-semibold mb-0">Daily Trend</h6>
+                          <span className="small text-muted">
+                            Present vs Absent vs Late across the selected range
+                          </span>
+                        </div>
+                        <div style={{ height: '260px' }}>
+                          {attendanceSummary.length > 0 ? (
+                            <canvas ref={attendanceTrendChartRef}></canvas>
+                          ) : (
+                            <div className="text-muted small d-flex align-items-center justify-content-center h-100">
+                              No daily summary data found for the selected window.
+                            </div>
+                          )}
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+
+                {attendanceInsights.length > 0 && (
+                  <div className="mt-4">
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
+                    <ul className="mb-0 ps-3">
+                      {attendanceInsights.map((insight, idx) => (
+                        <li key={`attendance-insight-${idx}`} className="mb-2 text-muted">
+                          {insight}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center text-muted py-5">
+                Generate a preview to see attendance analytics and insights.
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      )}
+
+      {reportType === 'leave' && leaveData && leaveData.length > 0 && leaveAnalytics && (
+        <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
+          <Card.Header
+            className="text-white"
+            style={{
+              background: 'linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%)',
+              borderRadius: '12px 12px 0 0',
+              border: 'none',
+              padding: '1.25rem',
+            }}
+          >
+            <h5 className="mb-0 d-flex align-items-center">
+              <FaCalendarAlt className="me-2" />
+              Leave Overview
+            </h5>
+          </Card.Header>
+          <Card.Body>
+            <Row className="g-3 mb-4">
+              {leaveSummaryMetrics.map((metric) => (
+                <Col key={metric.label} xs={12} md={6} lg={3}>
+                  <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                    <Card.Body className="d-flex flex-column">
+                      <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                      <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                      <span className="small text-muted mt-auto">Updated from current leave preview.</span>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+
+            <Row className="g-4">
+              <Col xs={12} lg={5}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Status Distribution</h6>
+                    <div className="d-flex justify-content-center">
+                      <div style={{ height: '200px', width: '200px' }}>
+                        <canvas ref={leaveStatusChartRef}></canvas>
+                      </div>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={7}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Requests by Type</h6>
+                    <div style={{ height: '260px' }}>
+                      <canvas ref={leaveTypeChartRef}></canvas>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+
+            <Row className="g-4 mt-1">
+              <Col xs={12} lg={6}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Upcoming Leaves</h6>
+                    <Table striped hover size="sm" className="align-middle mb-0">
+                      <tbody>
+                        {leaveAnalytics.upcomingLeaves.length > 0 ? (
+                          leaveAnalytics.upcomingLeaves.map((leave, idx) => {
+                            const profile = leave.employee?.employee_profile ?? leave.employee ?? {};
+                            const name = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || leave.employee_name || 'Employee';
+                            const from = leave.__normalized?.fromDate ? formatDate(leave.__normalized.fromDate) : formatDate(leave.from);
+                            const to = leave.__normalized?.toDate ? formatDate(leave.__normalized.toDate) : formatDate(leave.to);
+                            const duration = leave.__normalized?.durationDays ?? leave.total_days ?? 0;
+
+                            return (
+                              <tr key={`upcoming-leave-${idx}`}>
+                                <td className="fw-semibold">{name}</td>
+                                <td className="text-muted small">{leave.type}</td>
+                                <td className="text-end small fw-semibold">{from} – {to} ({duration}d)</td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="text-center text-muted small">No upcoming leaves within the selected window.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </Table>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={6}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Department Hotspots</h6>
+                    <Table striped hover size="sm" className="align-middle mb-0">
+                      <tbody>
+                        {leaveAnalytics.departmentDistribution?.length > 0 ? (
+                          leaveAnalytics.departmentDistribution.map((dept, idx) => (
+                            <tr key={`leave-dept-${idx}`}>
+                              <td className="fw-semibold">{dept.label}</td>
+                              <td className="text-end fw-semibold">{dept.count}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={2} className="text-center text-muted small">No department breakdown available.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </Table>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+
+            {leaveOverviewInsights.length > 0 && (
+              <div className="mt-4">
+                <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
+                <ul className="mb-0 ps-3">
+                  {leaveOverviewInsights.map((insight, idx) => (
+                    <li key={`leave-insight-${idx}`} className="mb-2 text-muted">
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      )}
+
+      {reportType === 'employee' && employeeData && employeeData.length > 0 && employeeAnalytics && (
+        <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
+          <Card.Header
+            className="text-white"
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '12px 12px 0 0',
+              border: 'none',
+              padding: '1.25rem',
+            }}
+          >
+            <h5 className="mb-0 d-flex align-items-center">
+              <FaUsers className="me-2" />
+              Employee Overview
+            </h5>
+          </Card.Header>
+          <Card.Body>
+            <Row className="g-3 mb-4">
+              {employeeSummaryMetrics.map((metric) => (
+                <Col key={metric.label} xs={12} md={6} lg={3}>
+                  <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                    <Card.Body className="d-flex flex-column">
+                      <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                      <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                      <span className="small text-muted mt-auto">Updated from current employee data.</span>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+
+            <Row className="g-4">
+              <Col xs={12} lg={5}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Employee Distribution</h6>
+                    <div className="d-flex flex-column align-items-stretch">
+                      <div className="d-flex justify-content-center">
+                        {employeeAnalytics.departments.length > 0 ? (
+                           <div style={{ height: '200px', width: '200px' }}>
+                             <canvas ref={employeeDepartmentChartRef}></canvas>
+                           </div>
+                        ) : (
+                          <div className="text-muted small d-flex align-items-center justify-content-center" style={{ height: '200px' }}>
+                            Generate a preview to visualize employee distribution.
+                          </div>
+                        )}
+                      </div>
+                      {employeeAnalytics.departments.length > 0 && (
+                        <div className="mt-3">
+                          {employeeAnalytics.departments.map((item, idx) => {
+                            const palette = ['#667eea', '#764ba2', '#28a745', '#ffc107', '#17a2b8', '#6f42c1'];
+                            const color = palette[idx % palette.length];
+                            const percentage = employeeAnalytics.totals.total > 0 ? ((item.count / employeeAnalytics.totals.total) * 100).toFixed(1) : '0.0';
+
+                            return (
+                              <div key={`employee-dist-item-${idx}`} className="d-flex align-items-center mb-2">
+                                <span
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '3px',
+                                    backgroundColor: color,
+                                    marginRight: '8px',
+                                    display: 'inline-block',
+                                  }}
+                                ></span>
+                                <span className="text-muted small flex-grow-1">{item.label}</span>
+                                <span className="fw-semibold small" style={{ color: '#1f2937' }}>{item.count} ({percentage}%)</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={7}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Status Distribution</h6>
+                    <div className="d-flex flex-column align-items-stretch">
+                      <div className="d-flex justify-content-center">
+                        {employeeAnalytics.statusDistribution.length > 0 ? (
+                          <div style={{ height: '200px', width: '200px' }}>
+                            <canvas ref={employeeStatusChartRef}></canvas>
+                          </div>
+                        ) : (
+                          <div className="text-muted small d-flex align-items-center justify-content-center" style={{ height: '200px' }}>
+                            Generate a preview to visualize status distribution.
+                          </div>
+                        )}
+                      </div>
+                      {employeeAnalytics.statusDistribution.length > 0 && (
+                        <div className="mt-3">
+                          {employeeAnalytics.statusDistribution.map((item, idx) => {
+                            const percentage = employeeAnalytics.totals.total > 0 ? ((item.count / employeeAnalytics.totals.total) * 100).toFixed(1) : '0.0';
+
+                            return (
+                              <div key={`status-dist-item-${idx}`} className="d-flex align-items-center mb-2">
+                                <span
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '3px',
+                                    backgroundColor: item.color,
+                                    marginRight: '8px',
+                                    display: 'inline-block',
+                                  }}
+                                ></span>
+                                <span className="text-muted small flex-grow-1">{item.label}</span>
+                                <span className="fw-semibold small" style={{ color: '#1f2937' }}>{item.count} ({percentage}%)</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+
+            <Row className="g-4 mt-1">
+              <Col xs={12} lg={6}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Tenure Distribution</h6>
+                    {employeeAnalytics.tenureDistribution.length > 0 ? (
+                      <div>
+                        {employeeAnalytics.tenureDistribution.map((item, idx) => (
+                          <div key={`tenure-dist-item-${idx}`} className="d-flex align-items-center justify-content-between mb-2">
+                            <span className="text-muted small">{item.label}</span>
+                            <span className="fw-semibold" style={{ color: '#1f2937' }}>{item.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-muted small">Generate a preview to view tenure distribution.</div>
+                    )}
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={6}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Recent Hires</h6>
+                    {employeeAnalytics.recentHires.length > 0 ? (
+                      <div>
+                        {employeeAnalytics.recentHires.map((emp, idx) => {
+                          const profile = emp.employee_profile ?? emp;
+                          const name = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || emp.name || 'Employee';
+                          const hireDate = profile?.hire_date || profile?.date_hired || profile?.employment_date;
+
+                          return (
+                            <div key={`recent-hire-item-${idx}`} className="d-flex align-items-center justify-content-between mb-2">
+                              <div>
+                                <div className="fw-semibold" style={{ color: '#1f2937' }}>{name}</div>
+                                <div className="text-muted small">{profile?.department || 'Unassigned'}</div>
+                              </div>
+                              <div className="text-end small">
+                                <div>{hireDate ? formatDate(hireDate) : 'N/A'}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-muted small">No recent hires within the selected window.</div>
+                    )}
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+
+            {employeeOverviewInsights.length > 0 && (
+              <div className="mt-4">
+                <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
+                <ul className="mb-0 ps-3">
+                  {employeeOverviewInsights.map((insight, idx) => (
+                    <li key={`employee-insight-${idx}`} className="mb-2 text-muted">
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      )}
+
       <Card className="shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
         <Card.Header style={{
           background: '#f8f9fa',
@@ -1620,10 +3834,10 @@ const ReportGeneration = () => {
                   }}>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>#</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Employee</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Basic Salary</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Allowances</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Deductions</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Net Pay</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Basic Salary</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Allowances</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Deductions</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Net Pay</th>
                   </tr>
                 )}
                 {reportType === 'leave' && (
@@ -1639,13 +3853,30 @@ const ReportGeneration = () => {
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Status</th>
                   </tr>
                 )}
+                {reportType === 'employee' && (
+                  <tr style={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white'
+                  }}>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>#</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Employee</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Department</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Position</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Status</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Hire Date</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Tenure</th>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {reportType === 'performance' && renderPerformanceReport()}
                 {reportType === 'payroll' && renderPayrollReport()}
-                {reportType !== 'performance' && reportType !== 'payroll' && (
+                {reportType === 'attendance' && renderAttendanceReport()}
+                {reportType === 'leave' && renderLeaveReport()}
+                {reportType === 'employee' && renderEmployeeReport()}
+                {reportType !== 'performance' && reportType !== 'payroll' && reportType !== 'attendance' && reportType !== 'leave' && reportType !== 'employee' && (
                   <tr>
-                    <td colSpan="6" className="text-center text-muted py-5" style={{ 
+                    <td colSpan={reportType === 'employee' ? 7 : 6} className="text-center text-muted py-5" style={{ 
                       background: '#f8f9fa',
                       fontSize: '1rem'
                     }}>
@@ -1672,140 +3903,123 @@ const ReportGeneration = () => {
             </div>
           )}
 
-          {reportType === 'payroll' && payrollData && payrollData.length > 0 && (
-            <>
-              <div className="d-flex justify-content-between align-items-center mt-4" style={{
-                padding: '1rem',
-                background: '#f8f9fa',
-                borderRadius: '8px'
-              }}>
-                <div className="text-muted" style={{ fontWeight: '500' }}>
-                  Showing <strong>1</strong> to <strong>{payrollData.length}</strong> of <strong>{payrollData.length}</strong> employees
-                </div>
-                {payrollAnalytics && (
-                  <div className="text-muted small">
-                    Total gross: <strong>₱{Number(payrollAnalytics.total_gross ?? 0).toFixed(2)}</strong> • Total net: <strong>₱{Number(payrollAnalytics.total_net ?? 0).toFixed(2)}</strong>
+          {reportType === 'payroll' && payrollData && payrollData.length > 0 && payrollAggregates && (
+            <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
+              <Card.Header
+                className="text-white"
+                style={{
+                  background: 'linear-gradient(135deg, #3c8dbc 0%, #0fb9b1 100%)',
+                  borderRadius: '12px 12px 0 0',
+                  border: 'none',
+                  padding: '1.25rem',
+                }}
+              >
+                <h5 className="mb-0 d-flex align-items-center">
+                  <FaBriefcase className="me-2" />
+                  Payroll Overview
+                </h5>
+              </Card.Header>
+              <Card.Body>
+                <Row className="g-3 mb-4">
+                  {payrollSummaryMetrics.map((metric) => (
+                    <Col key={metric.label} xs={12} md={6} lg={3}>
+                      <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                        <Card.Body className="d-flex flex-column">
+                          <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                          <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                          <span className="small text-muted mt-auto">Updated from the latest payroll preview.</span>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+
+                <Row className="g-4">
+                  <Col xs={12} lg={5}>
+                    <Card className="h-100 border-0 shadow-sm">
+                      <Card.Body>
+                        <h6 className="text-uppercase text-muted fw-semibold mb-3">Net vs Deductions</h6>
+                        <div className="d-flex flex-column align-items-stretch">
+                          <div className="d-flex justify-content-center">
+                            <div style={{ height: '200px', width: '200px' }}>
+                              <canvas ref={payrollDistributionChartRef}></canvas>
+                            </div>
+                          </div>
+                          <div className="mt-3">
+                            {payrollAggregates.netDistribution.map((item, idx) => (
+                              <div key={`payroll-dist-${idx}`} className="d-flex align-items-center mb-2">
+                                <span
+                                  style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '3px',
+                                    backgroundColor: item.color,
+                                    marginRight: '8px',
+                                    display: 'inline-block',
+                                  }}
+                                ></span>
+                                <span className="text-muted small flex-grow-1">{item.label}</span>
+                                <span className="fw-semibold small" style={{ color: '#1f2937' }}>
+                                  {formatCurrency(item.value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col xs={12} lg={7}>
+                    <Card className="h-100 border-0 shadow-sm">
+                      <Card.Body>
+                        <h6 className="text-uppercase text-muted fw-semibold mb-3">Payroll Snapshot</h6>
+                        <Row className="g-2">
+                          <Col xs={12} md={6}>
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <div className="text-muted small fw-semibold mb-1">Basic Salary Total</div>
+                              <div className="h5 mb-0 text-primary fw-bold">{formatCurrency(payrollAggregates.totals.basic)}</div>
+                            </div>
+                          </Col>
+                          <Col xs={12} md={6}>
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <div className="text-muted small fw-semibold mb-1">Allowances Total</div>
+                              <div className="h5 mb-0 text-info fw-bold">{formatCurrency(payrollAggregates.totals.allowances)}</div>
+                            </div>
+                          </Col>
+                        </Row>
+                        <Row className="g-2 mt-1">
+                          <Col xs={12} md={6}>
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <div className="text-muted small fw-semibold mb-1">Average Net per Employee</div>
+                              <div className="h5 mb-0 text-success fw-bold">{formatCurrency(payrollAggregates.totals.net / payrollData.length || 0)}</div>
+                            </div>
+                          </Col>
+                          <Col xs={12} md={6}>
+                            <div className="p-3 bg-light rounded-3 h-100">
+                              <div className="text-muted small fw-semibold mb-1">Deduction Rate</div>
+                              <div className="h5 mb-0 text-danger fw-bold">{payrollAggregates.deductionRate.toFixed(1)}%</div>
+                            </div>
+                          </Col>
+                        </Row>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+
+                {payrollInsights.length > 0 && (
+                  <div className="mt-4">
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
+                    <ul className="mb-0 ps-3">
+                      {payrollInsights.map((insight, idx) => (
+                        <li key={`payroll-insight-${idx}`} className="mb-2 text-muted">
+                          {insight}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
-              </div>
-
-              {payrollAnalytics && (
-                <div className="mt-4">
-                  <Row className="g-3">
-                    <Col md={3}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <div className="text-muted text-uppercase small fw-semibold">Total Gross Pay</div>
-                          <div className="h4 text-primary fw-bold mb-0">₱{Number(payrollAnalytics.total_gross ?? 0).toFixed(2)}</div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                    <Col md={3}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <div className="text-muted text-uppercase small fw-semibold">Total Net Pay</div>
-                          <div className="h4 text-success fw-bold mb-0">₱{Number(payrollAnalytics.total_net ?? 0).toFixed(2)}</div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                    <Col md={3}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <div className="text-muted text-uppercase small fw-semibold">Total Deductions</div>
-                          <div className="h4 text-danger fw-bold mb-0">₱{Number(payrollAnalytics.total_deductions ?? 0).toFixed(2)}</div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                    <Col md={3}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <div className="text-muted text-uppercase small fw-semibold">Average Net Pay</div>
-                          <div className="h4 text-primary fw-bold mb-0">₱{Number(payrollAnalytics.average_net_pay ?? 0).toFixed(2)}</div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  </Row>
-
-                  <Row className="g-3 mt-3">
-                    <Col md={6}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Deduction Breakdown</h6>
-                          <Table bordered size="sm" className="mb-0 align-middle">
-                            <thead className="table-light">
-                              <tr>
-                                <th>Deduction</th>
-                                <th className="text-end">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {payrollAnalytics.deductions_breakdown &&
-                                Object.entries(payrollAnalytics.deductions_breakdown).map(([key, value]) => (
-                                  <tr key={key}>
-                                    <td className="text-capitalize">{key.replace('_', ' ')}</td>
-                                    <td className="text-end">₱{Number(value ?? 0).toFixed(2)}</td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </Table>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                    <Col md={6}>
-                      <Card className="border-0 shadow-sm h-100">
-                        <Card.Body>
-                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Top Earners</h6>
-                          <Table bordered size="sm" className="mb-3 align-middle">
-                            <thead className="table-light">
-                              <tr>
-                                <th>Name</th>
-                                <th className="text-end">Net Pay</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {payrollAnalytics.top_earners?.map((earner, idx) => (
-                                <tr key={`top-earner-${idx}`}>
-                                  <td>{earner.employee_name}</td>
-                                  <td className="text-end text-success fw-semibold">₱{Number(earner.net_pay ?? 0).toFixed(2)}</td>
-                                </tr>
-                              ))}
-                              {(!payrollAnalytics.top_earners || payrollAnalytics.top_earners.length === 0) && (
-                                <tr>
-                                  <td colSpan={2} className="text-center text-muted small">No data</td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </Table>
-
-                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Lowest Earners</h6>
-                          <Table bordered size="sm" className="mb-0 align-middle">
-                            <thead className="table-light">
-                              <tr>
-                                <th>Name</th>
-                                <th className="text-end">Net Pay</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {payrollAnalytics.lowest_earners?.map((earner, idx) => (
-                                <tr key={`low-earner-${idx}`}>
-                                  <td>{earner.employee_name}</td>
-                                  <td className="text-end text-danger fw-semibold">₱{Number(earner.net_pay ?? 0).toFixed(2)}</td>
-                                </tr>
-                              ))}
-                              {(!payrollAnalytics.lowest_earners || payrollAnalytics.lowest_earners.length === 0) && (
-                                <tr>
-                                  <td colSpan={2} className="text-center text-muted small">No data</td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </Table>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  </Row>
-                </div>
-              )}
-            </>
+              </Card.Body>
+            </Card>
           )}
         </Card.Body>
       </Card>
@@ -2020,7 +4234,7 @@ const ReportGeneration = () => {
                               <th>Category</th>
                               <th>Questions</th>
                               <th>Avg Rating</th>
-                              <th style={{ width: '180px' }}>Percentage</th>
+                              <th style={{ width: '180px' }}>Avg %</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2122,6 +4336,4 @@ const ReportGeneration = () => {
       </Modal>
     </>
   );
-};
-
-export default ReportGeneration;
+}
