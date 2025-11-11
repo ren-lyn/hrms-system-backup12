@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Evaluation;
+use App\Models\Payroll;
 use App\Models\EmployeeProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -242,6 +243,272 @@ class ReportController extends Controller
                 'success' => false,
                 'message' => 'Failed to generate performance report',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get detailed performance data for a specific employee
+     */
+    public function getEmployeePerformanceDetails(Request $request, int $employeeId): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after_or_equal:start_date',
+            ]);
+
+            $evaluations = Evaluation::with([
+                    'employee.employeeProfile',
+                    'manager.employeeProfile',
+                    'responses.question'
+                ])
+                ->where('status', 'Submitted')
+                ->where('employee_id', $employeeId)
+                ->whereBetween('evaluation_period_start', [
+                    $validated['start_date'],
+                    $validated['end_date']
+                ])
+                ->orderBy('evaluation_period_start', 'desc')
+                ->get();
+
+            $employeeProfileRecord = EmployeeProfile::where('user_id', $employeeId)->first();
+            $employeeName = $employeeProfileRecord
+                ? trim(($employeeProfileRecord->first_name ?? '') . ' ' . ($employeeProfileRecord->last_name ?? ''))
+                : null;
+
+            if ($evaluations->isEmpty()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'employee' => [
+                            'id' => $employeeId,
+                            'name' => $employeeName ?? 'Employee',
+                            'employee_id_number' => optional($employeeProfileRecord)->employee_id,
+                            'department' => optional($employeeProfileRecord)->department,
+                            'position' => optional($employeeProfileRecord)->position,
+                        ],
+                        'summary' => [
+                            'evaluation_count' => 0,
+                            'average_percentage' => 0,
+                            'category_summary' => [],
+                        ],
+                        'evaluations' => [],
+                    ],
+                ]);
+            }
+
+            $categoryAggregate = [];
+
+            $evaluationDetails = $evaluations->map(function ($evaluation) use (&$categoryAggregate) {
+                $responses = $evaluation->responses;
+                $formTitle = optional($evaluation->evaluationForm)->title;
+
+                $categoryData = $responses->groupBy(function ($response) {
+                    return $response->question->category ?? 'General';
+                })->map(function ($group, $category) use (&$categoryAggregate) {
+                    $totalRating = $group->sum('rating');
+                    $totalMax = $group->sum(function ($response) {
+                        return $response->question->max_score ?? 10;
+                    });
+                    $questionCount = $group->count();
+
+                    if (!isset($categoryAggregate[$category])) {
+                        $categoryAggregate[$category] = [
+                            'total_rating' => 0,
+                            'total_max' => 0,
+                            'question_count' => 0,
+                        ];
+                    }
+
+                    $categoryAggregate[$category]['total_rating'] += $totalRating;
+                    $categoryAggregate[$category]['total_max'] += $totalMax;
+                    $categoryAggregate[$category]['question_count'] += $questionCount;
+
+                    return [
+                        'category' => $category,
+                        'question_count' => $questionCount,
+                        'average_rating' => $questionCount > 0 ? round($group->avg('rating'), 2) : 0,
+                        'percentage' => $totalMax > 0 ? round(($totalRating / $totalMax) * 100, 1) : 0,
+                    ];
+                })->values();
+
+                $questionData = $responses->map(function ($response) {
+                    $question = $response->question;
+                    $maxScore = $question->max_score ?? 10;
+                    $percentage = $maxScore > 0 ? ($response->rating / $maxScore) * 100 : null;
+
+                    return [
+                        'question_id' => $response->question_id,
+                        'question' => $question->question_text ?? 'Question',
+                        'category' => $question->category ?? 'General',
+                        'rating' => round($response->rating, 2),
+                        'max_rating' => $maxScore,
+                        'percentage' => $percentage !== null ? round($percentage, 1) : null,
+                    ];
+                })->values();
+
+                return [
+                    'id' => $evaluation->id,
+                    'form_title' => $formTitle,
+                    'submitted_at' => $evaluation->submitted_at,
+                    'evaluation_period_start' => $evaluation->evaluation_period_start,
+                    'evaluation_period_end' => $evaluation->evaluation_period_end,
+                    'percentage_score' => round($evaluation->percentage_score ?? 0, 2),
+                    'total_score' => round($evaluation->total_score ?? 0, 2),
+                    'average_score' => round($evaluation->average_score ?? 0, 2),
+                    'categories' => $categoryData,
+                    'questions' => $questionData,
+                ];
+            })->values();
+
+            $categorySummary = collect($categoryAggregate)->map(function ($data, $category) {
+                $percentage = $data['total_max'] > 0 ? ($data['total_rating'] / $data['total_max']) * 100 : 0;
+                $averageRating = $data['question_count'] > 0
+                    ? $data['total_rating'] / $data['question_count']
+                    : 0;
+
+                return [
+                    'category' => $category,
+                    'question_count' => $data['question_count'],
+                    'average_rating' => round($averageRating, 2),
+                    'average_percentage' => round($percentage, 1),
+                ];
+            })->values();
+
+            $employee = $evaluations->first()->employee;
+            $employeeProfile = $employee->employeeProfile;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'employee' => [
+                        'id' => $employee->id,
+                        'name' => $employeeProfile
+                            ? trim(($employeeProfile->first_name ?? '') . ' ' . ($employeeProfile->last_name ?? ''))
+                            : $employee->name,
+                        'employee_id_number' => $employeeProfile->employee_id ?? 'N/A',
+                        'department' => $employeeProfile->department ?? 'N/A',
+                        'position' => $employeeProfile->position ?? 'N/A',
+                    ],
+                    'summary' => [
+                        'evaluation_count' => $evaluationDetails->count(),
+                        'average_percentage' => $evaluationDetails->count() > 0
+                            ? round($evaluationDetails->avg('percentage_score'), 2)
+                            : 0,
+                        'category_summary' => $categorySummary,
+                    ],
+                    'evaluations' => $evaluationDetails,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch employee performance details',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get payroll report preview data with analytics
+     */
+    public function getPayrollReport(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after_or_equal:start_date',
+                'department' => 'nullable|string',
+                'position' => 'nullable|string',
+            ]);
+
+            $query = Payroll::with(['employee', 'employee.user'])
+                ->whereBetween('period_start', [$validated['start_date'], $validated['end_date']])
+                ->whereBetween('period_end', [$validated['start_date'], $validated['end_date']]);
+
+            if (!empty($validated['department'])) {
+                $query->whereHas('employee', function ($q) use ($validated) {
+                    $q->where('department', $validated['department']);
+                });
+            }
+
+            if (!empty($validated['position'])) {
+                $query->whereHas('employee', function ($q) use ($validated) {
+                    $q->where('position', $validated['position']);
+                });
+            }
+
+            $payrolls = $query->get()->map(function ($payroll) {
+                $profile = $payroll->employee;
+                $user = $profile?->user;
+                $name = $profile && ($profile->first_name || $profile->last_name)
+                    ? trim(($profile->first_name ?? '') . ' ' . ($profile->last_name ?? ''))
+                    : ($user?->name ?? 'Employee');
+                return [
+                    'id' => $payroll->id,
+                    'employee_id' => $payroll->employee_id,
+                    'employee_name' => $name,
+                    'employee_id_number' => $profile->employee_id ?? 'N/A',
+                    'department' => $profile->department ?? 'N/A',
+                    'position' => $profile->position ?? 'N/A',
+                    'period_start' => $payroll->period_start,
+                    'period_end' => $payroll->period_end,
+                    'basic_salary' => (float) $payroll->basic_salary,
+                    'allowances' => (float) $payroll->allowances,
+                    'total_deductions' => (float) $payroll->total_deductions,
+                    'net_pay' => (float) $payroll->net_pay,
+                    'gross_pay' => (float) $payroll->gross_pay,
+                    'sss_deduction' => (float) $payroll->sss_deduction,
+                    'philhealth_deduction' => (float) $payroll->philhealth_deduction,
+                    'pagibig_deduction' => (float) $payroll->pagibig_deduction,
+                    'tax_deduction' => (float) $payroll->tax_deduction,
+                    'late_deduction' => (float) $payroll->late_deduction,
+                    'undertime_deduction' => (float) $payroll->undertime_deduction,
+                    'cash_advance_deduction' => (float) $payroll->cash_advance_deduction,
+                    'other_deductions' => (float) $payroll->other_deductions,
+                ];
+            });
+
+            $totalGross = $payrolls->sum('gross_pay');
+            $totalNet = $payrolls->sum('net_pay');
+            $totalDeductions = $payrolls->sum('total_deductions');
+            $averageNet = $payrolls->count() > 0 ? $totalNet / $payrolls->count() : 0;
+
+            $deductionsBreakdown = [
+                'sss' => $payrolls->sum('sss_deduction'),
+                'philhealth' => $payrolls->sum('philhealth_deduction'),
+                'pagibig' => $payrolls->sum('pagibig_deduction'),
+                'tax' => $payrolls->sum('tax_deduction'),
+                'late' => $payrolls->sum('late_deduction'),
+                'undertime' => $payrolls->sum('undertime_deduction'),
+                'cash_advance' => $payrolls->sum('cash_advance_deduction'),
+                'other' => $payrolls->sum('other_deductions'),
+            ];
+
+            $topEarners = $payrolls->sortByDesc('net_pay')->take(5)->values();
+            $lowestEarners = $payrolls->sortBy('net_pay')->take(5)->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'payrolls' => $payrolls,
+                    'analytics' => [
+                        'total_gross' => round($totalGross, 2),
+                        'total_net' => round($totalNet, 2),
+                        'total_deductions' => round($totalDeductions, 2),
+                        'average_net_pay' => round($averageNet, 2),
+                        'deductions_breakdown' => array_map(fn($value) => round($value, 2), $deductionsBreakdown),
+                        'top_earners' => $topEarners,
+                        'lowest_earners' => $lowestEarners,
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate payroll report',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

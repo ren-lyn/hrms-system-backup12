@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { FaFilePdf, FaFileExcel, FaSearch, FaFilter, FaDownload, FaSpinner, FaTrophy, FaExclamationTriangle, FaChartLine, FaUsers, FaAward, FaTimesCircle } from 'react-icons/fa';
-import { Card, Button, Row, Col, Form, Table, Dropdown, Badge, Alert } from 'react-bootstrap';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { FaFilePdf, FaFileExcel, FaSearch, FaFilter, FaDownload, FaSpinner, FaTrophy, FaExclamationTriangle, FaChartLine, FaUsers, FaAward, FaTimesCircle, FaIdBadge, FaBuilding, FaBriefcase, FaCheckCircle } from 'react-icons/fa';
+import { Card, Button, Row, Col, Form, Table, Dropdown, Badge, Alert, Modal, Spinner, ProgressBar } from 'react-bootstrap';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import Chart from 'chart.js/auto';
@@ -20,9 +20,162 @@ const ReportGeneration = () => {
   const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [performanceData, setPerformanceData] = useState(null);
+  const [payrollData, setPayrollData] = useState(null);
   const [statistics, setStatistics] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [insights, setInsights] = useState(null);
+  const [payrollAnalytics, setPayrollAnalytics] = useState(null);
+  const [showPerformanceModal, setShowPerformanceModal] = useState(false);
+  const [performanceDetailLoading, setPerformanceDetailLoading] = useState(false);
+  const [selectedPerformanceDetail, setSelectedPerformanceDetail] = useState(null);
+
+  const aggregatedPerformance = useMemo(() => {
+    if (!performanceData) return null;
+
+    const map = new Map();
+
+    performanceData.forEach((evaluation) => {
+      const key = evaluation.employee_id;
+      if (!map.has(key)) {
+        map.set(key, {
+          employee_id: evaluation.employee_id,
+          employee_name: evaluation.employee_name,
+          employee_id_number: evaluation.employee_id_number,
+          department: evaluation.department,
+          position: evaluation.position,
+          evaluation_count: 0,
+          total_percentage: 0,
+          latest_submission: null,
+        });
+      }
+
+      const entry = map.get(key);
+      entry.evaluation_count += 1;
+      entry.total_percentage += Number(evaluation.percentage_score ?? 0);
+
+      if (evaluation.submitted_at) {
+        const submittedDate = new Date(evaluation.submitted_at);
+        if (!entry.latest_submission || submittedDate > entry.latest_submission) {
+          entry.latest_submission = submittedDate;
+        }
+      }
+    });
+
+    return Array.from(map.values()).map((entry) => ({
+      ...entry,
+      average_percentage:
+        entry.evaluation_count > 0
+          ? entry.total_percentage / entry.evaluation_count
+          : 0,
+      latest_submission: entry.latest_submission
+        ? entry.latest_submission.toISOString()
+        : null,
+    }));
+  }, [performanceData]);
+
+  const performanceInsightsData = useMemo(() => {
+    if (!selectedPerformanceDetail) return null;
+
+    const { summary, evaluations } = selectedPerformanceDetail;
+    const evaluationCount = summary?.evaluation_count ?? evaluations?.length ?? 0;
+    const averagePercentage = summary?.average_percentage ?? 0;
+    const categorySummary = summary?.category_summary ?? [];
+
+    const passCount = evaluations?.filter(
+      (evaluation) => Number(evaluation.percentage_score ?? 0) >= 70
+    ).length ?? 0;
+    const passRate = evaluationCount > 0 ? (passCount / evaluationCount) * 100 : 0;
+
+    let latestScore = null;
+    let oldestScore = null;
+    if (evaluations && evaluations.length > 0) {
+      latestScore = Number(evaluations[0].percentage_score ?? 0);
+      oldestScore = Number(evaluations[evaluations.length - 1].percentage_score ?? 0);
+    }
+    const trendChange = latestScore !== null && oldestScore !== null
+      ? latestScore - oldestScore
+      : null;
+
+    let topCategory = null;
+    let lowCategory = null;
+    if (categorySummary.length > 0) {
+      topCategory = [...categorySummary].sort(
+        (a, b) => (b.average_percentage ?? 0) - (a.average_percentage ?? 0)
+      )[0];
+      lowCategory = [...categorySummary].sort(
+        (a, b) => (a.average_percentage ?? 0) - (b.average_percentage ?? 0)
+      )[0];
+    }
+
+    const analytics = [];
+    analytics.push({
+      label: 'Evaluations reviewed',
+      value: evaluationCount,
+    });
+    analytics.push({
+      label: 'Average percentage',
+      value: `${averagePercentage?.toFixed?.(2) ?? Number(averagePercentage ?? 0).toFixed(2)}%`,
+    });
+    analytics.push({
+      label: 'Pass rate',
+      value: `${passRate.toFixed(1)}%`,
+    });
+    if (trendChange !== null) {
+      analytics.push({
+        label: 'Trend change',
+        value: `${trendChange >= 0 ? '+' : ''}${trendChange.toFixed(1)} pts (latest vs oldest)`,
+      });
+    }
+    if (topCategory) {
+      analytics.push({
+        label: 'Strongest category',
+        value: `${topCategory.category} (${Number(topCategory.average_percentage ?? 0).toFixed(1)}%)`,
+      });
+    }
+    if (lowCategory) {
+      analytics.push({
+        label: 'Focus category',
+        value: `${lowCategory.category} (${Number(lowCategory.average_percentage ?? 0).toFixed(1)}%)`,
+      });
+    }
+
+    const recommendations = [];
+    if (lowCategory && Number(lowCategory.average_percentage ?? 0) < 80) {
+      recommendations.push(
+        `Prioritize coaching on ${lowCategory.category.toLowerCase()}—average score is ${Number(
+          lowCategory.average_percentage ?? 0
+        ).toFixed(1)}%.`
+      );
+    }
+    if (trendChange !== null && trendChange < -3) {
+      recommendations.push(
+        `Overall performance slipped by ${Math.abs(trendChange).toFixed(
+          1
+        )} pts. Schedule a check-in to understand blockers.`
+      );
+    } else if (trendChange !== null && trendChange > 3) {
+      recommendations.push(
+        `Performance improved by ${trendChange.toFixed(
+          1
+        )} pts—recognize the progress to keep momentum.`
+      );
+    }
+    if (passRate < 100) {
+      recommendations.push(
+        `Only ${passRate.toFixed(
+          1
+        )}% of evaluations passed. Align on expectations and support plans.`
+      );
+    }
+    if (recommendations.length === 0) {
+      recommendations.push('Performance is stable—continue current development plan and recognition.');
+    }
+
+    return {
+      analytics,
+      recommendations,
+    };
+  }, [selectedPerformanceDetail]);
   
   // Chart refs
   const passFailChartRef = useRef(null);
@@ -33,7 +186,7 @@ const ReportGeneration = () => {
   const trendChartInstanceRef = useRef(null);
 
   useEffect(() => {
-    if (reportType === 'performance') {
+    if (reportType === 'performance' || reportType === 'payroll') {
       fetchDepartments();
       fetchPositions();
     }
@@ -254,6 +407,8 @@ const ReportGeneration = () => {
 
     if (reportType === 'performance') {
       await generatePerformancePreview();
+    } else if (reportType === 'payroll') {
+      await generatePayrollPreview();
     } else {
       toast.info('Other report types coming soon');
     }
@@ -287,6 +442,33 @@ const ReportGeneration = () => {
       setStatistics(null);
       setAnalytics(null);
       setInsights(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const generatePayrollPreview = async () => {
+    setLoading(true);
+    try {
+      const params = {
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate,
+        department: filters.department || undefined,
+        position: filters.position || undefined,
+      };
+
+      const response = await axios.get('http://localhost:8000/api/reports/payroll', {
+        params,
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+
+      setPayrollData(response.data?.data?.payrolls || []);
+      setPayrollAnalytics(response.data?.data?.analytics || null);
+      toast.success('Payroll report generated successfully');
+    } catch (error) {
+      console.error('Error generating payroll report:', error);
+      toast.error('Failed to generate payroll report');
+      setPayrollData([]);
+      setPayrollAnalytics(null);
     } finally {
       setLoading(false);
     }
@@ -338,16 +520,68 @@ const ReportGeneration = () => {
     }
   };
 
+  const downloadPayrollPDF = async () => {
+    toast.info('Payroll PDF export coming soon');
+  };
+
   const handleGenerateReport = (format) => {
     if (format === 'pdf') {
-      handleDownloadPDF();
+      if (reportType === 'performance') {
+        handleDownloadPDF();
+      } else if (reportType === 'payroll') {
+        downloadPayrollPDF();
+      } else {
+        toast.info('PDF export coming soon for this report type');
+      }
     } else {
       toast.info(`${format.toUpperCase()} export coming soon`);
     }
   };
 
+  const handlePerformanceRowClick = async (employeeSummary) => {
+    const start = dateRange.startDate;
+    const end = dateRange.endDate;
+
+    if (!start || !end) {
+      toast.error('Please select a date range to load performance details.');
+      return;
+    }
+
+    setShowPerformanceModal(true);
+    setPerformanceDetailLoading(true);
+    setSelectedPerformanceDetail(null);
+
+    try {
+      const params = {
+        start_date: start,
+        end_date: end,
+      };
+
+      const response = await axios.get(
+        `http://localhost:8000/api/reports/performance/${employeeSummary.employee_id}/details`,
+        {
+          params,
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }
+      );
+
+      setSelectedPerformanceDetail(response.data.data);
+    } catch (error) {
+      console.error('Error loading performance details:', error);
+      toast.error('Failed to load detailed performance report.');
+    } finally {
+      setPerformanceDetailLoading(false);
+    }
+  };
+
+  const handleClosePerformanceModal = () => {
+    setShowPerformanceModal(false);
+    setSelectedPerformanceDetail(null);
+    setPerformanceDetailLoading(false);
+  };
+
   const renderPerformanceReport = () => {
-    if (!performanceData) {
+    if (!aggregatedPerformance) {
       return (
         <tr>
           <td colSpan="9" className="text-center text-muted py-4">
@@ -357,7 +591,7 @@ const ReportGeneration = () => {
       );
     }
 
-    if (performanceData.length === 0) {
+    if (aggregatedPerformance.length === 0) {
       return (
         <tr>
           <td colSpan="9" className="text-center text-muted py-4">
@@ -367,14 +601,21 @@ const ReportGeneration = () => {
       );
     }
 
-    return performanceData.map((evaluation, index) => (
+    return aggregatedPerformance.map((employeeSummary, index) => {
+      const averageScore = Number(employeeSummary.average_percentage ?? 0);
+      const isPassed = averageScore >= 70;
+
+      return (
       <tr 
-        key={evaluation.id}
+        key={employeeSummary.employee_id}
         style={{
           background: index % 2 === 0 ? '#fff' : '#f8f9fa',
           borderBottom: '1px solid #e9ecef',
-          transition: 'all 0.2s ease'
+          transition: 'all 0.2s ease',
+          cursor: 'pointer'
         }}
+        role="button"
+        onClick={() => handlePerformanceRowClick(employeeSummary)}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = '#e3f2fd';
           e.currentTarget.style.transform = 'scale(1.005)';
@@ -396,43 +637,45 @@ const ReportGeneration = () => {
           fontWeight: '500',
           color: '#2c3e50'
         }}>
-          {evaluation.employee_name}
+          {employeeSummary.employee_name}
         </td>
         <td style={{ 
           padding: '1rem',
           color: '#6c757d'
         }}>
-          {evaluation.employee_id_number}
+          {employeeSummary.employee_id_number}
         </td>
         <td style={{ 
           padding: '1rem',
           color: '#495057'
         }}>
-          {evaluation.department}
+          {employeeSummary.department}
         </td>
         <td style={{ 
           padding: '1rem',
           color: '#495057'
         }}>
-          {evaluation.position}
+          {employeeSummary.position}
         </td>
         <td style={{ 
           padding: '1rem',
           color: '#6c757d'
         }}>
-          {new Date(evaluation.evaluation_period_start).toLocaleDateString()}
+          {employeeSummary.latest_submission
+            ? new Date(employeeSummary.latest_submission).toLocaleDateString()
+            : 'N/A'}
         </td>
         <td style={{ 
           padding: '1rem',
           fontWeight: '600',
-          color: evaluation.percentage_score >= 70 ? '#28a745' : evaluation.percentage_score >= 50 ? '#ffc107' : '#dc3545',
+          color: averageScore >= 70 ? '#28a745' : averageScore >= 50 ? '#ffc107' : '#dc3545',
           fontSize: '1rem'
         }}>
-          {evaluation.percentage_score}%
+          {averageScore.toFixed(2)}%
         </td>
         <td style={{ padding: '1rem' }}>
           <Badge 
-            bg={evaluation.is_passed ? 'success' : 'danger'}
+            bg={isPassed ? 'success' : 'danger'}
             style={{ 
               padding: '0.5rem 1rem',
               fontSize: '0.85rem',
@@ -440,21 +683,67 @@ const ReportGeneration = () => {
               fontWeight: '600'
             }}
           >
-            {evaluation.is_passed ? 'PASSED' : 'FAILED'}
+            {isPassed ? 'PASSED' : 'FAILED'}
           </Badge>
         </td>
         <td style={{ 
           padding: '1rem',
           color: '#6c757d'
         }}>
-          {new Date(evaluation.submitted_at).toLocaleDateString()}
+          {employeeSummary.evaluation_count}
+        </td>
+      </tr>
+    );
+    });
+  };
+
+  const renderPayrollReport = () => {
+    if (!payrollData) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            No data available. Click "Generate Preview" to see results.
+          </td>
+        </tr>
+      );
+    }
+
+    if (payrollData.length === 0) {
+      return (
+        <tr>
+          <td colSpan="6" className="text-center text-muted py-4">
+            No payroll data found for the selected criteria.
+          </td>
+        </tr>
+      );
+    }
+
+    return payrollData.map((payroll, index) => (
+      <tr key={payroll.id || index}>
+        <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
+        <td style={{ padding: '1rem' }}>
+          <div className="fw-semibold text-dark">{payroll.employee_name}</div>
+          <div className="text-muted small">
+            {payroll.employee_id_number} • {payroll.department} • {payroll.position}
+          </div>
+          <div className="text-muted small">
+            Period: {new Date(payroll.period_start).toLocaleDateString()} –{' '}
+            {new Date(payroll.period_end).toLocaleDateString()}
+          </div>
+        </td>
+        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.basic_salary ?? 0).toFixed(2)}</td>
+        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.allowances ?? 0).toFixed(2)}</td>
+        <td className="text-end" style={{ padding: '1rem' }}>₱{Number(payroll.total_deductions ?? 0).toFixed(2)}</td>
+        <td className="text-end fw-semibold text-success" style={{ padding: '1rem' }}>
+          ₱{Number(payroll.net_pay ?? 0).toFixed(2)}
         </td>
       </tr>
     ));
   };
 
   return (
-    <div className="p-4">
+    <>
+      <div className="p-4">
       <h2 className="mb-4">Report Generation</h2>
       
       <Card className="mb-4">
@@ -1300,15 +1589,15 @@ const ReportGeneration = () => {
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Employee ID</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Department</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Position</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Period</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Score</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Latest Evaluation</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Average Score</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Status</th>
                     <th style={{ 
                       padding: '1rem',
                       fontWeight: '600',
                       borderTopRightRadius: '8px',
                       border: 'none'
-                    }}>Submitted</th>
+                    }}>Evaluations</th>
                   </tr>
                 )}
                 {reportType === 'attendance' && (
@@ -1353,7 +1642,8 @@ const ReportGeneration = () => {
               </thead>
               <tbody>
                 {reportType === 'performance' && renderPerformanceReport()}
-                {reportType !== 'performance' && (
+                {reportType === 'payroll' && renderPayrollReport()}
+                {reportType !== 'performance' && reportType !== 'payroll' && (
                   <tr>
                     <td colSpan="6" className="text-center text-muted py-5" style={{ 
                       background: '#f8f9fa',
@@ -1367,20 +1657,470 @@ const ReportGeneration = () => {
             </Table>
           </div>
           
-          {performanceData && (
+          {reportType === 'performance' && aggregatedPerformance && aggregatedPerformance.length > 0 && (
             <div className="d-flex justify-content-between align-items-center mt-4" style={{
               padding: '1rem',
               background: '#f8f9fa',
               borderRadius: '8px'
             }}>
               <div className="text-muted" style={{ fontWeight: '500' }}>
-                Showing <strong>1</strong> to <strong>{performanceData.length}</strong> of <strong>{performanceData.length}</strong> entries
+                Showing <strong>1</strong> to <strong>{aggregatedPerformance.length}</strong> of <strong>{aggregatedPerformance.length}</strong> employees
+              </div>
+              <div className="text-muted small">
+                Average score overall: <strong>{Number(statistics?.average_percentage ?? 0).toFixed(2)}%</strong> • Pass rate: <strong>{Number(statistics?.pass_rate ?? 0).toFixed(2)}%</strong>
               </div>
             </div>
           )}
+
+          {reportType === 'payroll' && payrollData && payrollData.length > 0 && (
+            <>
+              <div className="d-flex justify-content-between align-items-center mt-4" style={{
+                padding: '1rem',
+                background: '#f8f9fa',
+                borderRadius: '8px'
+              }}>
+                <div className="text-muted" style={{ fontWeight: '500' }}>
+                  Showing <strong>1</strong> to <strong>{payrollData.length}</strong> of <strong>{payrollData.length}</strong> employees
+                </div>
+                {payrollAnalytics && (
+                  <div className="text-muted small">
+                    Total gross: <strong>₱{Number(payrollAnalytics.total_gross ?? 0).toFixed(2)}</strong> • Total net: <strong>₱{Number(payrollAnalytics.total_net ?? 0).toFixed(2)}</strong>
+                  </div>
+                )}
+              </div>
+
+              {payrollAnalytics && (
+                <div className="mt-4">
+                  <Row className="g-3">
+                    <Col md={3}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <div className="text-muted text-uppercase small fw-semibold">Total Gross Pay</div>
+                          <div className="h4 text-primary fw-bold mb-0">₱{Number(payrollAnalytics.total_gross ?? 0).toFixed(2)}</div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col md={3}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <div className="text-muted text-uppercase small fw-semibold">Total Net Pay</div>
+                          <div className="h4 text-success fw-bold mb-0">₱{Number(payrollAnalytics.total_net ?? 0).toFixed(2)}</div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col md={3}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <div className="text-muted text-uppercase small fw-semibold">Total Deductions</div>
+                          <div className="h4 text-danger fw-bold mb-0">₱{Number(payrollAnalytics.total_deductions ?? 0).toFixed(2)}</div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col md={3}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <div className="text-muted text-uppercase small fw-semibold">Average Net Pay</div>
+                          <div className="h4 text-primary fw-bold mb-0">₱{Number(payrollAnalytics.average_net_pay ?? 0).toFixed(2)}</div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+
+                  <Row className="g-3 mt-3">
+                    <Col md={6}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Deduction Breakdown</h6>
+                          <Table bordered size="sm" className="mb-0 align-middle">
+                            <thead className="table-light">
+                              <tr>
+                                <th>Deduction</th>
+                                <th className="text-end">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {payrollAnalytics.deductions_breakdown &&
+                                Object.entries(payrollAnalytics.deductions_breakdown).map(([key, value]) => (
+                                  <tr key={key}>
+                                    <td className="text-capitalize">{key.replace('_', ' ')}</td>
+                                    <td className="text-end">₱{Number(value ?? 0).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </Table>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col md={6}>
+                      <Card className="border-0 shadow-sm h-100">
+                        <Card.Body>
+                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Top Earners</h6>
+                          <Table bordered size="sm" className="mb-3 align-middle">
+                            <thead className="table-light">
+                              <tr>
+                                <th>Name</th>
+                                <th className="text-end">Net Pay</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {payrollAnalytics.top_earners?.map((earner, idx) => (
+                                <tr key={`top-earner-${idx}`}>
+                                  <td>{earner.employee_name}</td>
+                                  <td className="text-end text-success fw-semibold">₱{Number(earner.net_pay ?? 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                              {(!payrollAnalytics.top_earners || payrollAnalytics.top_earners.length === 0) && (
+                                <tr>
+                                  <td colSpan={2} className="text-center text-muted small">No data</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </Table>
+
+                          <h6 className="text-uppercase text-muted small fw-semibold mb-3">Lowest Earners</h6>
+                          <Table bordered size="sm" className="mb-0 align-middle">
+                            <thead className="table-light">
+                              <tr>
+                                <th>Name</th>
+                                <th className="text-end">Net Pay</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {payrollAnalytics.lowest_earners?.map((earner, idx) => (
+                                <tr key={`low-earner-${idx}`}>
+                                  <td>{earner.employee_name}</td>
+                                  <td className="text-end text-danger fw-semibold">₱{Number(earner.net_pay ?? 0).toFixed(2)}</td>
+                                </tr>
+                              ))}
+                              {(!payrollAnalytics.lowest_earners || payrollAnalytics.lowest_earners.length === 0) && (
+                                <tr>
+                                  <td colSpan={2} className="text-center text-muted small">No data</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </Table>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+                </div>
+              )}
+            </>
+          )}
         </Card.Body>
       </Card>
-    </div>
+      </div>
+      <Modal
+        size="xl"
+        show={showPerformanceModal}
+        onHide={handleClosePerformanceModal}
+        centered
+        scrollable
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Employee Performance Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {performanceDetailLoading ? (
+            <div className="d-flex justify-content-center align-items-center py-5">
+              <Spinner animation="border" variant="primary" />
+            </div>
+          ) : selectedPerformanceDetail ? (
+            <>
+              <div className="rounded-4 border-0 shadow-sm mb-4 p-4" style={{ background: 'linear-gradient(135deg, rgba(73, 97, 255, 0.22) 0%, rgba(168, 61, 255, 0.22) 100%)' }}>
+                <Row className="align-items-center g-3">
+                  <Col md={8}>
+                    <div className="d-flex align-items-center">
+                      <div className="bg-white rounded-circle text-primary fw-semibold d-flex align-items-center justify-content-center me-3 shadow-sm" style={{ width: '58px', height: '58px', fontSize: '1.4rem' }}>
+                        {selectedPerformanceDetail.employee?.name?.split(' ').map((n) => n[0]).join('').substring(0, 2) || 'EM'}
+                      </div>
+                      <div>
+                        <h4 className="mb-1 text-primary fw-bold">{selectedPerformanceDetail.employee?.name}</h4>
+                        <div className="text-muted small d-flex flex-wrap align-items-center">
+                          <span className="me-3 d-flex align-items-center">
+                            <FaIdBadge className="me-1 text-primary" /> ID: {selectedPerformanceDetail.employee?.employee_id_number || 'N/A'}
+                          </span>
+                          <span className="me-3 d-flex align-items-center">
+                            <FaBuilding className="me-1 text-primary" /> {selectedPerformanceDetail.employee?.department || 'N/A'}
+                          </span>
+                          <span className="d-flex align-items-center">
+                            <FaBriefcase className="me-1 text-primary" /> {selectedPerformanceDetail.employee?.position || 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+                  <Col md={4} className="text-md-end">
+                    <div className="bg-white bg-opacity-75 rounded-3 py-3 px-4 d-inline-block shadow-sm">
+                      <div className="text-uppercase text-muted small fw-semibold">Average Percentage</div>
+                      <div className="display-6 text-primary mb-0 fw-bold">
+                        {(selectedPerformanceDetail.summary?.average_percentage ?? 0).toFixed(2)}%
+                      </div>
+                    </div>
+                  </Col>
+                </Row>
+              </div>
+
+              <Card className="mb-4 border-0 shadow-sm">
+                <Card.Body>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <div className="bg-light rounded-3 p-3 h-100">
+                        <div className="text-muted text-uppercase small fw-semibold">Evaluations Reviewed</div>
+                        <div className="h4 mb-0 text-primary fw-bold">
+                          {selectedPerformanceDetail.summary?.evaluation_count || 0}
+                        </div>
+                      </div>
+                    </Col>
+                    <Col md={4}>
+                      <div className="bg-light rounded-3 p-3 h-100">
+                        <div className="text-muted text-uppercase small fw-semibold">Average Percentage</div>
+                        <div className="h4 mb-0 text-primary fw-bold">
+                          {selectedPerformanceDetail.summary?.average_percentage?.toFixed?.(2) ?? Number(selectedPerformanceDetail.summary?.average_percentage ?? 0).toFixed(2)}%
+                        </div>
+                      </div>
+                    </Col>
+                    <Col md={4}>
+                      <div className="bg-light rounded-3 p-3 h-100">
+                        <div className="text-muted text-uppercase small fw-semibold">Pass Rate</div>
+                        <div className="h4 mb-0 text-success fw-bold">
+                          {performanceInsightsData?.analytics?.find((item) => item.label === 'Pass rate')?.value || '—'}
+                        </div>
+                      </div>
+                    </Col>
+                  </Row>
+
+                  {selectedPerformanceDetail.summary?.category_summary?.length > 0 && (
+                    <div className="mt-4">
+                      <h6 className="mb-3">Category Averages</h6>
+                      <Table bordered size="sm" className="align-middle mb-0">
+                        <thead className="table-light text-muted text-uppercase small">
+                          <tr>
+                            <th>Category</th>
+                            <th>Questions</th>
+                            <th>Avg Rating</th>
+                            <th style={{ width: '200px' }}>Avg %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedPerformanceDetail.summary.category_summary.map((category) => {
+                            const categoryPercent = Number(category.average_percentage ?? 0);
+                            const categoryRating = Number(category.average_rating ?? 0);
+                            const barVariant =
+                              categoryPercent >= 90 ? 'success' : categoryPercent >= 75 ? 'warning' : 'danger';
+                            const label =
+                              categoryPercent >= 90 ? 'Excellent' : categoryPercent >= 75 ? 'Strong' : 'Needs support';
+                            return (
+                              <tr key={category.category}>
+                                <td>{category.category}</td>
+                                <td className="text-center">{category.question_count}</td>
+                                <td className="text-end">{categoryRating.toFixed(2)}</td>
+                                <td>
+                                  <div className="d-flex flex-column">
+                                    <div className="d-flex justify-content-between">
+                                      <span className="fw-semibold">{categoryPercent.toFixed(1)}%</span>
+                                      <span className="text-muted small">{label}</span>
+                                    </div>
+                                    <ProgressBar
+                                      variant={barVariant}
+                                      now={Math.min(100, Math.max(0, categoryPercent))}
+                                      className="mt-2"
+                                      style={{ height: '6px' }}
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </Table>
+                    </div>
+                  )}
+                </Card.Body>
+              </Card>
+
+              {performanceInsightsData && (
+                <Row className="mb-4 g-3">
+                  <Col md={6}>
+                    <div className="border-0 shadow-sm h-100 rounded-4 p-4 bg-white">
+                      <div className="d-flex align-items-center mb-3">
+                        <span className="badge rounded-circle bg-primary text-white fw-bold me-2" style={{ width: '36px', height: '36px' }}>
+                          A
+                        </span>
+                        <h6 className="mb-0 text-primary text-uppercase" style={{ letterSpacing: '0.08em', fontSize: '0.75rem' }}>
+                          Performance Analytics
+                        </h6>
+                      </div>
+                      <ul className="list-unstyled mb-0">
+                        {performanceInsightsData.analytics.map((item, idx) => (
+                          <li key={`analytics-${idx}`} className="mb-3">
+                            <div className="fw-semibold text-dark">{item.label}</div>
+                            <div className="text-muted small">{item.value}</div>
+                            {idx < performanceInsightsData.analytics.length - 1 && <hr className="my-2" />}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <div className="border-0 shadow-sm h-100 rounded-4 p-4 bg-white">
+                      <div className="d-flex align-items-center mb-3">
+                        <span className="badge rounded-circle bg-success text-white fw-bold me-2" style={{ width: '36px', height: '36px' }}>
+                          R
+                        </span>
+                        <h6 className="mb-0 text-success text-uppercase" style={{ letterSpacing: '0.08em', fontSize: '0.75rem' }}>
+                          Recommendations
+                        </h6>
+                      </div>
+                      <ul className="mb-0 ps-3">
+                        {performanceInsightsData.recommendations.map((rec, idx) => (
+                          <li key={`recommendation-${idx}`} className="text-muted mb-2 d-flex">
+                            <FaCheckCircle className="text-success me-2 mt-1" />
+                            <span>{rec}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </Col>
+                </Row>
+              )}
+
+              {selectedPerformanceDetail.evaluations?.map((evaluation) => (
+                <Card key={evaluation.id} className="mb-3 border-0 shadow-sm">
+                  <Card.Header>
+                    <div className="d-flex justify-content-between align-items-center">
+                      <div>
+                        <h6 className="mb-0">
+                          {evaluation.form_title || 'Performance Evaluation'}
+                        </h6>
+                        <small className="text-muted">
+                          Period:{' '}
+                          {new Date(evaluation.evaluation_period_start).toLocaleDateString()} -
+                          {new Date(evaluation.evaluation_period_end).toLocaleDateString()}
+                        </small>
+                      </div>
+                      <div className="text-end">
+                        <div className="h6 mb-0 text-primary">
+                          {evaluation.percentage_score}% overall
+                        </div>
+                        <small className="text-muted">
+                          Total Score: {evaluation.total_score} | Average Rating:{' '}
+                          {evaluation.average_score}
+                        </small>
+                      </div>
+                    </div>
+                  </Card.Header>
+                  <Card.Body>
+                    {evaluation.categories?.length > 0 && (
+                      <div className="mb-3">
+                        <h6 className="mb-2">Category Breakdown</h6>
+                        <Table bordered size="sm" className="align-middle">
+                          <thead className="table-light text-muted text-uppercase small">
+                            <tr>
+                              <th>Category</th>
+                              <th>Questions</th>
+                              <th>Avg Rating</th>
+                              <th style={{ width: '180px' }}>Percentage</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {evaluation.categories.map((category) => {
+                              const categoryPercent = Number(category.percentage ?? 0);
+                              const barVariant =
+                                categoryPercent >= 90 ? 'success' : categoryPercent >= 75 ? 'warning' : 'danger';
+                              return (
+                                <tr key={category.category}>
+                                  <td>{category.category}</td>
+                                  <td className="text-center">{category.question_count}</td>
+                                  <td className="text-end">
+                                    {Number(category.average_rating ?? 0).toFixed(2)}
+                                  </td>
+                                  <td>
+                                    <div className="d-flex flex-column">
+                                      <div className="d-flex justify-content-between">
+                                        <span className="fw-semibold">{categoryPercent.toFixed(1)}%</span>
+                                        <span className="text-muted small">
+                                          {categoryPercent >= 90 ? 'Excellent' : categoryPercent >= 75 ? 'Good' : 'Watch'}
+                                        </span>
+                                      </div>
+                                      <ProgressBar
+                                        variant={barVariant}
+                                        now={Math.min(100, Math.max(0, categoryPercent))}
+                                        className="mt-1"
+                                        style={{ height: '6px' }}
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </Table>
+                      </div>
+                    )}
+
+                    {evaluation.questions?.length > 0 && (
+                      <div>
+                        <h6 className="mb-2">Question Scores</h6>
+                        <Table bordered size="sm" responsive className="align-middle">
+                          <thead className="table-light text-muted text-uppercase small">
+                            <tr>
+                              <th style={{ width: '45%' }}>Question</th>
+                              <th style={{ width: '20%' }}>Category</th>
+                              <th style={{ width: '15%' }}>Rating</th>
+                              <th style={{ width: '15%' }}>Percentage</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {evaluation.questions.map((question) => (
+                              (() => {
+                                const questionPercent = Number(question.percentage ?? 0);
+                                const barVariant =
+                                  questionPercent >= 90 ? 'success' : questionPercent >= 75 ? 'warning' : 'danger';
+                                return (
+                                  <tr key={`${evaluation.id}-${question.question_id}`}>
+                                    <td>{question.question}</td>
+                                    <td>{question.category}</td>
+                                    <td className="text-end">
+                                      {question.rating}/{question.max_rating}
+                                    </td>
+                                    <td>
+                                      {question.percentage !== null ? (
+                                        <div className="d-flex flex-column" style={{ minWidth: '150px' }}>
+                                          <div className="d-flex justify-content-between">
+                                            <span className="fw-semibold">{questionPercent.toFixed(1)}%</span>
+                                          </div>
+                                          <ProgressBar
+                                            variant={barVariant}
+                                            now={Math.min(100, Math.max(0, questionPercent))}
+                                            className="mt-1"
+                                            style={{ height: '6px' }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        'N/A'
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })()
+                            ))}
+                          </tbody>
+                        </Table>
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
+              ))}
+            </>
+          ) : (
+            <div className="text-center text-muted py-4">
+              No performance details available for the selected employee.
+            </div>
+          )}
+        </Modal.Body>
+      </Modal>
+    </>
   );
 };
 

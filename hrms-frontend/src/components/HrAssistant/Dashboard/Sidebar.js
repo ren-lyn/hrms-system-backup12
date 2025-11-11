@@ -21,6 +21,7 @@ const Sidebar = () => {
   const [isAttendanceDropdownOpen, setIsAttendanceDropdownOpen] = useState(false);
   const [isJobOnboardingDropdownOpen, setIsJobOnboardingDropdownOpen] = useState(false);
   const [isCashAdvanceDropdownOpen, setIsCashAdvanceDropdownOpen] = useState(false);
+  const [isEvaluationDropdownOpen, setIsEvaluationDropdownOpen] = useState(false);
 
    // Keep dropdowns open when on child routes
   useEffect(() => {
@@ -35,6 +36,9 @@ const Sidebar = () => {
     }
     if (location.pathname.includes('/job-postings') || location.pathname.includes('/onboarding')) {
       setIsJobOnboardingDropdownOpen(true);
+    }
+    if (location.pathname.includes('/evaluation')) {
+      setIsEvaluationDropdownOpen(true);
     }
   }, [location.pathname]);
 
@@ -63,6 +67,10 @@ const Sidebar = () => {
 
   const toggleCashAdvanceDropdown = () => {
     setIsCashAdvanceDropdownOpen(!isCashAdvanceDropdownOpen);
+  };
+
+  const toggleEvaluationDropdown = () => {
+    setIsEvaluationDropdownOpen(!isEvaluationDropdownOpen);
   };
 
   return (
@@ -203,12 +211,33 @@ const Sidebar = () => {
             </NavLink>
           </div>
         </div>
-        <NavLink
-          to="evaluation-administration"
-          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
-        >
-          <FaStarHalfAlt /> <span>Employee Evaluation</span>
-        </NavLink>
+        <div className="hrms-dropdown-container">
+          <button
+            className="hrms-unified-nav-link hrms-dropdown-toggle"
+            onClick={toggleEvaluationDropdown}
+          >
+            <FaStarHalfAlt />
+            <span>Employee Evaluation</span>
+            {isEvaluationDropdownOpen ? <FaChevronDown className="ms-auto" size={12} /> : <FaChevronRight className="ms-auto" size={12} />}
+          </button>
+
+          <div className={`hrms-dropdown-menu ${isEvaluationDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+            <NavLink
+              to="evaluation"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsEvaluationDropdownOpen(false)}
+            >
+              <FaClipboardList /> <span>Evaluation Results</span>
+            </NavLink>
+            <NavLink
+              to="evaluation-administration"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsEvaluationDropdownOpen(false)}
+            >
+              <FaCog /> <span>Evaluation Administration</span>
+            </NavLink>
+          </div>
+        </div>
         <NavLink
           to="disciplinary"
           className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}

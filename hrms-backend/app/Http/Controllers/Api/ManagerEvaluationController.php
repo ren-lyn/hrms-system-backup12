@@ -464,6 +464,57 @@ class ManagerEvaluationController extends Controller
     }
 
     /**
+     * Get the most recent evaluation summary for each employee
+     */
+    public function getEmployeeResultsSummary()
+    {
+        try {
+            $latestEvaluations = Evaluation::with([
+                    'employee.employeeProfile',
+                    'manager.employeeProfile',
+                    'evaluationForm'
+                ])
+                ->where('status', 'Submitted')
+                ->orderBy('submitted_at', 'desc')
+                ->get()
+                ->groupBy('employee_id')
+                ->map(function ($evaluations, $employeeId) {
+                    $latest = $evaluations->first();
+
+                    return [
+                        'employee_id' => $employeeId,
+                        'evaluation_id' => $latest->id,
+                        'submitted_at' => $latest->submitted_at,
+                        'total_score' => $latest->total_score,
+                        'average_score' => $latest->average_score,
+                        'percentage' => $latest->percentage_score,
+                        'is_passed' => $latest->is_passed,
+                        'passing_score' => $latest->passing_threshold,
+                        'form_title' => optional($latest->evaluationForm)->title,
+                        'manager' => [
+                            'id' => $latest->manager->id ?? null,
+                            'name' => optional($latest->manager->employeeProfile)->first_name && optional($latest->manager->employeeProfile)->last_name
+                                ? trim(($latest->manager->employeeProfile->first_name ?? '') . ' ' . ($latest->manager->employeeProfile->last_name ?? ''))
+                                : ($latest->manager->name ?? null),
+                            'email' => $latest->manager->email ?? null,
+                        ],
+                    ];
+                })
+                ->values();
+
+            return response()->json([
+                'message' => 'Latest employee evaluation summaries retrieved successfully.',
+                'data' => $latestEvaluations
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve evaluation summaries.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Download evaluation result as PDF
      */
     public function downloadPdf($evaluationId)

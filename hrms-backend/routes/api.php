@@ -40,7 +40,7 @@ use App\Http\Controllers\Api\SecurityAlertController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentFollowUpController;
-
+use App\Http\Controllers\Api\PredictiveAnalyticsController;
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -299,6 +299,9 @@ Route::middleware(['auth:sanctum', 'role:HR Assistant'])->group(function () {
     Route::get('/evaluations/{id}', [EmployeeEvaluationController::class, 'show']);
     Route::put('/evaluations/{id}', [EmployeeEvaluationController::class, 'update']);
     Route::delete('/evaluations/{id}', [EmployeeEvaluationController::class, 'destroy']);
+
+     // Predictive Turnover Analytics
+    Route::get('/predictive-analytics', [PredictiveAnalyticsController::class, 'index']);
 });
 
 
@@ -326,6 +329,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/result/{evaluationId}', [ManagerEvaluationController::class, 'getEvaluationResult']);
         Route::get('/result/{evaluationId}/pdf', [ManagerEvaluationController::class, 'downloadPdf']);
         Route::get('/employee/{employeeId}/results', [ManagerEvaluationController::class, 'getEmployeeResults']);
+         Route::get('/employee-results/summary', [ManagerEvaluationController::class, 'getEmployeeResultsSummary']);
         Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluations']);
     });
 
@@ -456,6 +460,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/departments', [ReportController::class, 'getDepartments']);
         Route::get('/positions', [ReportController::class, 'getPositions']);
         Route::get('/performance', [ReportController::class, 'getPerformanceReport']);
+        Route::get('/payroll', [ReportController::class, 'getPayrollReport']);
+        Route::get('/performance/{employee}/details', [ReportController::class, 'getEmployeePerformanceDetails']);
         Route::get('/performance/download', [ReportController::class, 'downloadPerformanceReportPDF']);
     });
 

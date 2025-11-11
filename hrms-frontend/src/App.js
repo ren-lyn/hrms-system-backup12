@@ -30,7 +30,7 @@ const DisciplinaryManagement = lazy(() => import('./components/HrAssistant/Disci
 const AttendanceDashboard = lazy(() => import('./components/HrAssistant/AttendanceDashboard'));
 const AttendanceEditRequests = lazy(() => import('./components/HrAssistant/AttendanceEditRequests'));
 const PayrollDashboard = lazy(() => import('./components/HrAssistant/PayrollDashboard'));
-const EmployeeEvaluationList = lazy(() => import('./pages/HrAssistant/Evaluations/EmployeeEvaluationList'));
+const EvaluationResults = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationResults'));
 const EvaluationForm = lazy(() => import('./pages/HrAssistant/Evaluations/EvaluationForm'));
 const EvaluationAdministration = lazy(() => import('./components/EvaluationAdministration'));
 const JobPostings = lazy(() => import('./components/JobPostings'));
@@ -108,7 +108,7 @@ function App() {
           <Route path="my-calendar" element={<MyCalendar />} />
           <Route path="cash-advances" element={<CashAdvanceManagement />} />
           <Route path="cash-advances/receiving-cash" element={<ReceivingCashMonitoring />} />
-          <Route path="evaluation" element={<EmployeeEvaluationList />} />
+          <Route path="evaluation" element={<EvaluationResults />} />
           <Route path="evaluation/:id/form" element={<EvaluationForm />} />
           <Route path="evaluation-administration" element={<EvaluationAdministration />} />
           <Route path="job-postings" element={<JobPostings />} />

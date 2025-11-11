@@ -276,7 +276,7 @@ class PayrollController extends Controller
         $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0) - $leaveWithoutPayDeduction;
 
         // Calculate tax deductions from assigned taxes
-        $taxDeductions = $this->calculateAssignedTaxes($employee);
+        $taxDeductions = $this->calculateAssignedTaxes($employee, $periodStart, $periodEnd);
         
         // Calculate income tax based on gross pay (if not already included in assigned taxes)
         if ($taxDeductions['tax'] == 0) {
@@ -852,7 +852,7 @@ class PayrollController extends Controller
      * Calculate tax deductions from assigned taxes
      * Taxes are deducted per payroll period (fixed amount per period)
      */
-    private function calculateAssignedTaxes(EmployeeProfile $employee): array
+    private function calculateAssignedTaxes(EmployeeProfile $employee, $periodStart = null, $periodEnd = null): array
     {
         // Get all active tax assignments for the employee
         // Only employees with assigned taxes will have tax deductions
@@ -920,6 +920,12 @@ class PayrollController extends Controller
             $totalTaxDeduction += $effectiveRate;
         }
 
+        $weeksFactor = $this->getWeeksFactorForPeriod($periodStart, $periodEnd);
+        $sssDeduction *= $weeksFactor;
+        $philhealthDeduction *= $weeksFactor;
+        $pagibigDeduction *= $weeksFactor;
+        $totalTaxDeduction = $sssDeduction + $philhealthDeduction + $pagibigDeduction + $otherTaxDeduction;
+
         return [
             'sss' => round($sssDeduction, 2),
             'philhealth' => round($philhealthDeduction, 2),
@@ -927,6 +933,29 @@ class PayrollController extends Controller
             'tax' => round($otherTaxDeduction, 2),
             'total' => round($totalTaxDeduction, 2)
         ];
+    }
+
+    private function getWeeksFactorForPeriod($periodStart, $periodEnd): int
+    {
+        if (!$periodStart || !$periodEnd) {
+            return 1;
+        }
+
+        try {
+            $start = Carbon::parse($periodStart);
+            $end = Carbon::parse($periodEnd);
+        } catch (\Exception $e) {
+            return 1;
+        }
+
+        if ($start->gt($end)) {
+            return 1;
+        }
+
+        $days = $start->diffInDays($end) + 1;
+        $weeks = (int) round($days / 7);
+
+        return max(1, $weeks);
     }
 
     /**
