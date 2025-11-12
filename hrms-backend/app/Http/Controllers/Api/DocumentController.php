@@ -16,10 +16,15 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\QueryException;
 
 class DocumentController extends Controller
 {
     private const SUBMISSION_WINDOW_DAYS = 10;
+    private static bool $identifierColumnsEnsured = false;
+    private static bool $benefitsTableEnsured = false;
 
     private const STATUS_META = [
         'not_submitted' => [
@@ -364,6 +369,10 @@ class DocumentController extends Controller
             'file_name' => $submission->file_name,
             'file_type' => $submission->file_type,
             'file_size' => $submission->file_size,
+            'sss_number' => $submission->sss_number,
+            'philhealth_number' => $submission->philhealth_number,
+            'pagibig_number' => $submission->pagibig_number,
+            'tin_number' => $submission->tin_number,
             'status' => $submission->status,
             'status_label' => $statusMeta['label'] ?? ucfirst($submission->status),
             'status_description' => $statusMeta['description'] ?? null,
@@ -665,6 +674,17 @@ class DocumentController extends Controller
                     ];
                 }
 
+                $documentsCompleted = $application->documents_completed_at !== null
+                    || in_array($application->status, self::COMPLETED_STATUSES, true);
+
+                if ($documentsCompleted) {
+                    $statusMeta = [
+                        'label' => 'Completed',
+                        'badge' => 'success',
+                        'description' => 'All document checks completed by HR.',
+                    ];
+                }
+
                 return [
                     'requirement_id' => $requirement->id,
                     'document_key' => $documentKey,
@@ -765,6 +785,15 @@ class DocumentController extends Controller
     {
         try {
             $application = Application::with(['applicant.user'])->findOrFail($applicationId);
+
+            try {
+                $this->ensureBenefitsEnrollmentTable();
+            } catch (\Throwable $tableError) {
+                Log::warning('Unable to verify benefits_enrollments table during overview request.', [
+                    'application_id' => $applicationId,
+                    'error' => $tableError->getMessage(),
+                ]);
+            }
 
             if (!$this->userCanAccessApplication($request->user(), $application)) {
                 return response()->json([
@@ -1040,16 +1069,7 @@ class DocumentController extends Controller
     public function uploadSubmission(Request $request, $applicationId, $requirementId)
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'file' => 'required|file|max:51200' // 50MB max
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+            $this->ensureGovernmentIdentifierColumns();
 
             $application = Application::findOrFail($applicationId);
             $requirement = DocumentRequirement::findOrFail($requirementId);
@@ -1059,6 +1079,32 @@ class DocumentController extends Controller
                     'success' => false,
                     'message' => 'Unauthorized'
                 ], 403);
+            }
+
+            $documentKey = $this->ensureDocumentKey($requirement);
+            $identifierFieldMap = [
+                'sssDocument' => 'sss_number',
+                'philhealthDocument' => 'philhealth_number',
+                'pagibigDocument' => 'pagibig_number',
+                'tinDocument' => 'tin_number',
+            ];
+            $identifierField = $identifierFieldMap[$documentKey] ?? null;
+
+            $rules = [
+                'file' => 'required|file|max:51200', // 50MB max
+            ];
+
+            if ($identifierField) {
+                $rules[$identifierField] = 'nullable|string|max:50';
+            }
+
+            $validator = Validator::make($request->all(), $rules);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
             }
 
             $submissionWindow = $this->resolveSubmissionWindow($application);
@@ -1112,11 +1158,12 @@ class DocumentController extends Controller
             }
 
             // Validate file size
+            $maxSize = $requirement->max_file_size_mb;
             $fileSizeMB = $request->file('file')->getSize() / (1024 * 1024);
-            if ($fileSizeMB > $requirement->max_file_size_mb) {
+            if (is_numeric($maxSize) && $maxSize > 0 && $fileSizeMB > $maxSize) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'File size exceeds maximum allowed size of ' . $requirement->max_file_size_mb . 'MB'
+                    'message' => 'File size exceeds maximum allowed size of ' . $maxSize . 'MB'
                 ], 422);
             }
 
@@ -1129,8 +1176,9 @@ class DocumentController extends Controller
                 ->where('document_requirement_id', $requirementId)
                 ->first();
 
-            if ($existingSubmission && Storage::disk('public')->exists($existingSubmission->file_path)) {
-                Storage::disk('public')->delete($existingSubmission->file_path);
+            $existingFilePath = $existingSubmission?->file_path;
+            if (is_string($existingFilePath) && $existingFilePath !== '' && Storage::disk('public')->exists($existingFilePath)) {
+                Storage::disk('public')->delete($existingFilePath);
             }
 
             $documentType = $requirement->document_key ?? $request->input('document_type');
@@ -1138,23 +1186,40 @@ class DocumentController extends Controller
                 $documentType = 'requirement_' . $requirementId;
             }
 
+            $identifierValue = null;
+            if ($identifierField) {
+                $rawIdentifier = $request->input($identifierField);
+                if ($rawIdentifier !== null) {
+                    $trimmedIdentifier = trim((string) $rawIdentifier);
+                    $identifierValue = $trimmedIdentifier !== '' ? $trimmedIdentifier : null;
+                } elseif ($existingSubmission) {
+                    $identifierValue = $existingSubmission->{$identifierField};
+                }
+            }
+
+            $attributes = [
+                'document_type' => $documentType,
+                'file_path' => $filePath,
+                'file_name' => $file->getClientOriginalName(),
+                'file_type' => $file->getClientMimeType(),
+                'file_size' => $file->getSize(),
+                'status' => 'pending',
+                'submitted_at' => now(),
+                'reviewed_at' => null,
+                'reviewed_by' => null,
+                'rejection_reason' => null,
+            ];
+
+            if ($identifierField) {
+                $attributes[$identifierField] = $identifierValue;
+            }
+
             $submission = DocumentSubmission::updateOrCreate(
                 [
                     'application_id' => $applicationId,
                     'document_requirement_id' => $requirementId
                 ],
-                [
-                    'document_type' => $documentType,
-                    'file_path' => $filePath,
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_type' => $file->getClientMimeType(),
-                    'file_size' => $file->getSize(),
-                    'status' => 'pending',
-                    'submitted_at' => now(),
-                    'reviewed_at' => null,
-                    'reviewed_by' => null,
-                    'rejection_reason' => null,
-                ]
+                $attributes
             );
 
             $overview = $this->buildDocumentOverview($application->fresh());
@@ -1166,11 +1231,80 @@ class DocumentController extends Controller
                 'overview' => $overview,
             ]);
         } catch (\Exception $e) {
-            Log::error('Error uploading document: ' . $e->getMessage());
+            Log::error(sprintf(
+                'Error uploading document (application_id=%s, requirement_id=%s): %s',
+                $applicationId,
+                $requirementId,
+                $e->getMessage()
+            ), ['trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload document'
             ], 500);
+        }
+    }
+
+    private function ensureGovernmentIdentifierColumns(): void
+    {
+        if (self::$identifierColumnsEnsured) {
+            return;
+        }
+
+        $columns = [
+            'sss_number',
+            'philhealth_number',
+            'pagibig_number',
+            'tin_number',
+        ];
+
+        $missing = array_filter($columns, fn ($column) => !Schema::hasColumn('document_submissions', $column));
+
+        if (!empty($missing)) {
+            Schema::table('document_submissions', function (Blueprint $table) use ($missing) {
+                if (in_array('sss_number', $missing, true)) {
+                    $table->string('sss_number', 50)->nullable();
+                }
+                if (in_array('philhealth_number', $missing, true)) {
+                    $table->string('philhealth_number', 50)->nullable();
+                }
+                if (in_array('pagibig_number', $missing, true)) {
+                    $table->string('pagibig_number', 50)->nullable();
+                }
+                if (in_array('tin_number', $missing, true)) {
+                    $table->string('tin_number', 50)->nullable();
+                }
+            });
+        }
+
+        self::$identifierColumnsEnsured = true;
+    }
+
+    private function ensureBenefitsEnrollmentTable(): void
+    {
+        if (self::$benefitsTableEnsured) {
+            return;
+        }
+
+        try {
+            if (!Schema::hasTable('benefits_enrollments')) {
+                Schema::create('benefits_enrollments', function (Blueprint $table) {
+                    $table->id();
+                    $table->foreignId('application_id')
+                        ->constrained()
+                        ->cascadeOnDelete()
+                        ->unique();
+                    $table->string('enrollment_status')->default(BenefitsEnrollment::STATUS_PENDING);
+                    $table->timestamp('assigned_at')->nullable();
+                    $table->json('metadata')->nullable();
+                    $table->timestamps();
+                });
+            }
+
+            self::$benefitsTableEnsured = true;
+        } catch (\Throwable $e) {
+            Log::warning('Failed to ensure benefits_enrollments table exists.', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1469,22 +1603,81 @@ class DocumentController extends Controller
                 }
             }
 
+            try {
+                $this->ensureBenefitsEnrollmentTable();
+            } catch (\Throwable $tableError) {
+                Log::warning('Unable to verify benefits_enrollments table during completion.', [
+                    'application_id' => $applicationId,
+                    'error' => $tableError->getMessage(),
+                ]);
+            }
+
             $now = Carbon::now();
-            $application->update([
+            $applicationUpdates = [
                 'documents_approved_at' => $application->documents_approved_at ?: $now,
                 'documents_completed_at' => $now,
                 'reviewed_at' => $now,
+            ];
+
+            $terminalStatuses = [
+                'Benefits Enroll',
+                'Orientation Schedule',
+                'Starting Date',
+                'Profile Creation',
+                'Hired',
+            ];
+
+            if (!in_array($application->status, $terminalStatuses, true)) {
+                $applicationUpdates['status'] = 'Benefits Enroll';
+            }
+
+            try {
+                $application->update($applicationUpdates);
+            } catch (QueryException $e) {
+                $message = $e->getMessage();
+                if (isset($applicationUpdates['status']) &&
+                    str_contains(strtolower($message), 'incorrect enum value')) {
+                    Log::warning('Unable to set application status to Benefits Enroll due to enum constraint.', [
+                        'application_id' => $application->id,
+                        'error' => $message,
+                    ]);
+
+                    unset($applicationUpdates['status']);
+                    $application->forceFill($applicationUpdates)->save();
+                } else {
+                    throw $e;
+                }
+            }
+
+            $benefitsEnrollment = null;
+            try {
+                if (Schema::hasTable('benefits_enrollments')) {
+                    $benefitsEnrollment = BenefitsEnrollment::updateOrCreate(
+                        ['application_id' => $application->id],
+                        [
+                            'enrollment_status' => BenefitsEnrollment::STATUS_PENDING,
+                            'assigned_at' => $now,
+                        ]
+                    );
+                } else {
+                    Log::warning('Benefits enrollment table missing; skipping record creation.', [
+                        'application_id' => $application->id,
+                    ]);
+                }
+            } catch (QueryException $benefitsException) {
+                Log::error('Unable to create or update benefits enrollment record.', [
+                    'application_id' => $application->id,
+                    'error' => $benefitsException->getMessage(),
+                ]);
+            }
+
+            $application->refresh()->load([
+                'benefitsEnrollment',
+                'documentRequirements.documentSubmissions',
+                'documentSubmissions',
             ]);
 
-            $benefitsEnrollment = BenefitsEnrollment::updateOrCreate(
-                ['application_id' => $application->id],
-                [
-                    'enrollment_status' => BenefitsEnrollment::STATUS_PENDING,
-                    'assigned_at' => $now,
-                ]
-            );
-
-            $application->refresh()->load('benefitsEnrollment');
+            $overview = $this->buildDocumentOverview($application);
 
             return response()->json([
                 'success' => true,
@@ -1497,6 +1690,7 @@ class DocumentController extends Controller
                 'is_in_benefits_enrollment' => $application->benefitsEnrollment !== null,
                 'benefits_enrollment_status' => optional($application->benefitsEnrollment)->enrollment_status,
                 'benefits_enrollment' => $benefitsEnrollment,
+                'overview' => $overview,
             ]);
         } catch (\Exception $e) {
             Log::error('Error completing document submission: ' . $e->getMessage());

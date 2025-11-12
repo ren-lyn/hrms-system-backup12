@@ -55,11 +55,12 @@ import {
 import axios from "axios";
 
 const createBenefitsEnrollmentForm = () => ({
-  selectedBenefits: [],
   sssNumber: "",
   philhealthNumber: "",
   pagibigNumber: "",
-  contributionType: "employee",
+  enrollmentDate: "",
+  membershipProof: null,
+  membershipProofName: "",
   notes: "",
 });
 
@@ -103,6 +104,7 @@ const OnboardingDashboard = () => {
 
   const onboardingTabs = [
     "Document Submission",
+    "Benefits Enroll",
     "Profile Creation",
     "Orientation Schedule",
     "Start Date",
@@ -113,6 +115,8 @@ const OnboardingDashboard = () => {
     "Orientation Schedule":
       "Orientation scheduling tools will be available here.",
     "Start Date": "Start date coordination will be available here.",
+    "Benefits Enroll":
+      "Manage applicant government benefits setup and enrollment.",
   };
 
   // Document management state
@@ -177,12 +181,12 @@ const OnboardingDashboard = () => {
     useState(false);
   const [benefitsForm, setBenefitsForm] = useState(createBenefitsEnrollmentForm);
   const [benefitsApplicantInfo, setBenefitsApplicantInfo] = useState(null);
-  const [availableBenefitsOptions, setAvailableBenefitsOptions] = useState([]);
   const [benefitsEnrollmentStatus, setBenefitsEnrollmentStatus] =
     useState("pending");
   const [selectedApplicationForBenefits, setSelectedApplicationForBenefits] =
     useState(null);
   const [benefitsValidationErrors, setBenefitsValidationErrors] = useState([]);
+  const [benefitsEditable, setBenefitsEditable] = useState(false);
 
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
@@ -211,6 +215,31 @@ const documentModalTabs = useMemo(
   ],
   []
 );
+
+const GOVERNMENT_ID_FIELD_MAP = {
+  sssDocument: {
+    field: "sss_number",
+    label: "SSS Number",
+  },
+  philhealthDocument: {
+    field: "philhealth_number",
+    label: "PhilHealth Number",
+  },
+  pagibigDocument: {
+    field: "pagibig_number",
+    label: "Pag-IBIG MID Number",
+  },
+  tinDocument: {
+    field: "tin_number",
+    label: "TIN (Tax Identification Number)",
+  },
+};
+
+const GOVERNMENT_ID_FORM_FIELD_MAP = {
+  sss_number: "sssNumber",
+  philhealth_number: "philhealthNumber",
+  pagibig_number: "pagibigNumber",
+};
 
 const visibleDocumentTabs = documentModalReadOnly
   ? documentModalTabs.filter((tab) => tab !== "Follow-Up Requests")
@@ -678,6 +707,51 @@ const closeDocumentModal = useCallback(() => {
       };
     },
     [documentRequirements, documentSubmissions, formatApplicantDocDate]
+  );
+
+  const mapGovernmentIdentifiersFromSubmissions = useCallback(
+    (submissions = documentSubmissions) => {
+      const identifiers = {
+        sssNumber: "",
+        philhealthNumber: "",
+        pagibigNumber: "",
+        membershipProofName: "",
+      };
+
+      if (!Array.isArray(submissions)) {
+        return identifiers;
+      }
+
+      submissions.forEach((submission) => {
+        if (!submission) return;
+
+        const documentKey =
+          submission.document_key || submission.documentKey || null;
+
+        if (!documentKey) return;
+
+        const config = GOVERNMENT_ID_FIELD_MAP[documentKey];
+        if (!config) return;
+
+        const formField = GOVERNMENT_ID_FORM_FIELD_MAP[config.field];
+        if (!formField) return;
+
+        const rawValue = submission[config.field];
+        const normalized =
+          typeof rawValue === "string"
+            ? rawValue.trim()
+            : rawValue !== null && rawValue !== undefined
+            ? String(rawValue).trim()
+            : "";
+
+        if (normalized) {
+          identifiers[formField] = normalized;
+        }
+      });
+
+      return identifiers;
+    },
+    [documentSubmissions]
   );
 
   const openSubmissionFile = useCallback(
@@ -2170,6 +2244,68 @@ const closeDocumentModal = useCallback(() => {
     }
   };
 
+  const renderGovernmentIdCard = (config, display) => {
+    if (!config) {
+      return null;
+    }
+
+    const normalized = (display || "").trim();
+    const isProvided =
+      normalized !== "" && normalized.toLowerCase() !== "not provided" && normalized !== "—";
+
+    const cardStyle = {
+      borderRadius: "14px",
+      padding: "1rem 1.25rem",
+      background: isProvided
+        ? "linear-gradient(135deg, rgba(32,201,151,0.12), rgba(32,201,151,0.04))"
+        : "rgba(248,249,250,1)",
+      border: isProvided
+        ? "1px solid rgba(32,201,151,0.2)"
+        : "1px dashed rgba(108,117,125,0.6)",
+      boxShadow: "0 10px 24px rgba(15, 23, 42, 0.08)",
+    };
+
+    const iconStyle = {
+      width: "42px",
+      height: "42px",
+      borderRadius: "12px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: isProvided ? "rgba(32,201,151,0.15)" : "rgba(220,53,69,0.1)",
+      color: isProvided ? "#20c997" : "#dc3545",
+      flexShrink: 0,
+      fontSize: "1.1rem",
+    };
+
+    return (
+      <div className="mb-3" style={cardStyle}>
+        <div className="d-flex align-items-start gap-3">
+          <div style={iconStyle}>
+            <FontAwesomeIcon icon={faIdCard} />
+          </div>
+
+          <div>
+            <div className="text-uppercase small fw-semibold text-muted mb-1">
+              {config.label}
+            </div>
+            <div
+              className={`fw-bold ${isProvided ? "text-dark" : "text-danger"}`}
+              style={{ fontSize: "1.05rem", letterSpacing: "0.02em" }}
+            >
+              {isProvided ? normalized : "Not provided"}
+            </div>
+            {!isProvided && (
+              <div className="small text-muted mt-1">
+                Applicant hasn’t supplied this identifier yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDocumentCards = useCallback(
     (docs) => (
       <div className="row gy-3">
@@ -2192,9 +2328,28 @@ const closeDocumentModal = useCallback(() => {
             rejectionReason,
 
             submissionStatus,
-          } = computeApplicantDocStatus(doc);
+        } = computeApplicantDocStatus(doc);
 
-          const statusStyle =
+        const governmentIdConfig =
+          GOVERNMENT_ID_FIELD_MAP[doc.documentKey] || null;
+        const governmentIdRawValue =
+          governmentIdConfig && submission
+            ? submission[governmentIdConfig.field] ?? null
+            : null;
+        const governmentIdValue =
+          typeof governmentIdRawValue === "string"
+            ? governmentIdRawValue.trim()
+            : governmentIdRawValue !== null && governmentIdRawValue !== undefined
+            ? String(governmentIdRawValue).trim()
+            : "";
+        const governmentIdDisplay =
+          governmentIdValue !== ""
+            ? governmentIdValue
+            : submission
+            ? "Not provided"
+            : "—";
+
+        const statusStyle =
             statusBadgeStyles[statusVariant] || statusBadgeStyles.neutral;
 
           const isApproved = statusVariant === "approved";
@@ -2233,6 +2388,11 @@ const closeDocumentModal = useCallback(() => {
                       <h6 className="fw-semibold mb-1">{doc.title}</h6>
 
                       <p className="text-muted small mb-2">{doc.description}</p>
+
+                      {renderGovernmentIdCard(
+                        governmentIdConfig,
+                        governmentIdDisplay
+                      )}
 
                       <div className="d-flex flex-wrap align-items-center gap-2">
                         {requirementBadgeLabel ? (
@@ -2417,7 +2577,7 @@ const closeDocumentModal = useCallback(() => {
 
     if (
       !window.confirm(
-        "Are you sure you want to mark document submission as complete? The applicant will remain in Document Submission for any final processing."
+        "Are you sure you want to mark document submission as complete?"
       )
     ) {
       return;
@@ -2451,6 +2611,7 @@ const closeDocumentModal = useCallback(() => {
       if (selectedApplicationForDocs) {
         setSelectedApplicationForDocs({
           ...selectedApplicationForDocs,
+          status: response.data.application_status || "Benefits Enroll",
           documents_stage_status:
             response.data.documents_stage_status || "completed",
           documents_completed_at: response.data.documents_completed_at,
@@ -2464,9 +2625,9 @@ const closeDocumentModal = useCallback(() => {
       }
 
       alert(
-        "Document submission marked as completed! The applicant remains in Document Submission for final review."
+        "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review."
       );
-      setOnboardingSubtab("Document Submission");
+      setOnboardingSubtab("Benefits Enroll");
     } catch (error) {
       console.error("Error updating status:", error);
 
@@ -3561,32 +3722,41 @@ const closeDocumentModal = useCallback(() => {
     }
   };
 
-  const applyBenefitsPayload = (payload) => {
+  const applyBenefitsPayload = (payload, options = {}) => {
     const metadata = payload?.metadata || {};
     const fields = metadata.fields || {};
-    const benefitsOptions =
-      payload?.available_benefits && payload.available_benefits.length > 0
-        ? payload.available_benefits
-        : availableBenefitsOptions;
-    const normalizedBenefitsOptions = Array.isArray(benefitsOptions)
-      ? benefitsOptions
-      : [];
-    const optionKeys = new Set(
-      normalizedBenefitsOptions.map((benefit) => benefit.key)
+    const fallbackIdentifiers = mapGovernmentIdentifiersFromSubmissions(
+      options.documentSubmissions
     );
-    const normalizedSelectedBenefits = Array.isArray(
-      metadata.selected_benefits
-    )
-      ? metadata.selected_benefits.filter((key) => optionKeys.has(key))
-      : [];
 
-    setAvailableBenefitsOptions(normalizedBenefitsOptions);
+    const normalizeIdentifier = (value, key) => {
+      const normalized =
+        typeof value === "string"
+          ? value.trim()
+          : value !== null && value !== undefined
+          ? String(value).trim()
+          : "";
+
+      if (normalized) {
+        return normalized;
+      }
+
+      return fallbackIdentifiers[key] || "";
+    };
+
     setBenefitsForm({
-      selectedBenefits: normalizedSelectedBenefits,
-      sssNumber: fields.sss_number || "",
-      philhealthNumber: fields.philhealth_number || "",
-      pagibigNumber: fields.pagibig_number || "",
-      contributionType: fields.contribution_type || "employee",
+      sssNumber: normalizeIdentifier(fields.sss_number, "sssNumber"),
+      philhealthNumber: normalizeIdentifier(
+        fields.philhealth_number,
+        "philhealthNumber"
+      ),
+      pagibigNumber: normalizeIdentifier(fields.pagibig_number, "pagibigNumber"),
+      enrollmentDate: fields.enrollment_date || "",
+      membershipProof: null,
+      membershipProofName:
+        metadata.membership_proof_name ||
+        fallbackIdentifiers.membershipProofName ||
+        "",
       notes: metadata.notes || "",
     });
     setBenefitsEnrollmentStatus(payload.enrollment_status || "pending");
@@ -3603,28 +3773,25 @@ const closeDocumentModal = useCallback(() => {
     setShowBenefitsSubmitConfirm(false);
     setSelectedApplicationForBenefits(null);
     setBenefitsApplicantInfo(null);
-    setAvailableBenefitsOptions([]);
     setBenefitsForm(createBenefitsEnrollmentForm());
     setBenefitsEnrollmentStatus("pending");
     setBenefitsValidationErrors([]);
-  };
-
-  const handleBenefitSelectionChange = (benefitKey) => {
-    setBenefitsForm((prev) => {
-      const alreadySelected = prev.selectedBenefits.includes(benefitKey);
-      return {
-        ...prev,
-        selectedBenefits: alreadySelected
-          ? prev.selectedBenefits.filter((item) => item !== benefitKey)
-          : [...prev.selectedBenefits, benefitKey],
-      };
-    });
+    setBenefitsEditable(false);
   };
 
   const handleBenefitFieldChange = (field, value) => {
     setBenefitsForm((prev) => ({
       ...prev,
       [field]: value,
+    }));
+  };
+
+  const handleBenefitFileChange = (field, file) => {
+    setBenefitsForm((prev) => ({
+      ...prev,
+      [field]: file,
+      membershipProofName:
+        field === "membershipProof" && file ? file.name : prev.membershipProofName,
     }));
   };
 
@@ -3635,15 +3802,26 @@ const closeDocumentModal = useCallback(() => {
 
     setBenefitsForm(createBenefitsEnrollmentForm());
     setBenefitsApplicantInfo(null);
-    setAvailableBenefitsOptions([]);
     setBenefitsEnrollmentStatus("pending");
     setBenefitsValidationErrors([]);
     setBenefitsSubmitMode("save");
     setShowBenefitsSubmitConfirm(false);
+    setBenefitsEditable(false);
 
     setSelectedApplicationForBenefits(applicant);
     setShowBenefitsModal(true);
     setBenefitsModalLoading(true);
+
+    let documentOverview = null;
+
+    try {
+      documentOverview = await fetchDocumentRequirements(applicant.id);
+    } catch (docError) {
+      console.error(
+        "Error preloading document overview for benefits enrollment:",
+        docError
+      );
+    }
 
     try {
       const token = localStorage.getItem("token");
@@ -3657,7 +3835,9 @@ const closeDocumentModal = useCallback(() => {
       );
 
       if (response.data?.success) {
-        applyBenefitsPayload(response.data);
+        applyBenefitsPayload(response.data, {
+          documentSubmissions: documentOverview?.submissions,
+        });
       }
     } catch (error) {
       console.error("Error loading benefits enrollment:", error);
@@ -3691,23 +3871,27 @@ const closeDocumentModal = useCallback(() => {
         targetStatus ||
         (benefitsEnrollmentStatus === "completed" ? "completed" : "in_progress");
 
-      const payload = {
-        enrollment_status: nextStatus,
-        selected_benefits: benefitsForm.selectedBenefits,
-        sss_number: benefitsForm.sssNumber || null,
-        philhealth_number: benefitsForm.philhealthNumber || null,
-        pagibig_number: benefitsForm.pagibigNumber || null,
-        contribution_type: benefitsForm.contributionType || null,
-        notes: benefitsForm.notes || null,
-      };
+      const formData = new FormData();
+      formData.append("enrollment_status", nextStatus);
+      formData.append("sss_number", benefitsForm.sssNumber || "");
+      formData.append("philhealth_number", benefitsForm.philhealthNumber || "");
+      formData.append("pagibig_number", benefitsForm.pagibigNumber || "");
+      formData.append("enrollment_date", benefitsForm.enrollmentDate || "");
+      formData.append("notes", benefitsForm.notes || "");
 
-      const response = await axios.put(
+      if (benefitsForm.membershipProof instanceof File) {
+        formData.append("membership_proof", benefitsForm.membershipProof);
+      } else if (!benefitsForm.membershipProof) {
+        formData.append("membership_proof", "");
+      }
+
+      const response = await axios.post(
         `http://localhost:8000/api/applications/${selectedApplicationForBenefits.id}/benefits-enrollment`,
-        payload,
+        formData,
         {
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
           },
         }
       );
@@ -3747,7 +3931,13 @@ const closeDocumentModal = useCallback(() => {
         error.response?.data?.message ||
         error.response?.data?.error ||
         "Please complete required fields or correct errors.";
-      setBenefitsValidationErrors([message]);
+      const errors =
+        error.response?.data?.errors && typeof error.response.data.errors === "object"
+          ? Object.values(error.response.data.errors)
+              .flat()
+              .map((err) => String(err))
+          : [message];
+      setBenefitsValidationErrors(errors);
     } finally {
       setBenefitsSaving(false);
       setBenefitsSubmitMode("save");
@@ -3762,26 +3952,14 @@ const closeDocumentModal = useCallback(() => {
   const validateBenefitsForm = () => {
     const errors = [];
 
-    if (!benefitsForm.selectedBenefits.length) {
-      errors.push("Select at least one benefit to enroll.");
-    }
+    if (benefitsSubmitMode === "submit") {
+      if (!benefitsForm.enrollmentDate) {
+        errors.push("Enrollment date is required when submitting.");
+      }
 
-    if (benefitsForm.selectedBenefits.includes("sss") && !benefitsForm.sssNumber.trim()) {
-      errors.push("SSS number is required when SSS benefit is selected.");
-    }
-
-    if (
-      benefitsForm.selectedBenefits.includes("philhealth") &&
-      !benefitsForm.philhealthNumber.trim()
-    ) {
-      errors.push("PhilHealth number is required when PhilHealth benefit is selected.");
-    }
-
-    if (
-      benefitsForm.selectedBenefits.includes("pagibig") &&
-      !benefitsForm.pagibigNumber.trim()
-    ) {
-      errors.push("Pag-IBIG number is required when Pag-IBIG benefit is selected.");
+      if (!benefitsForm.membershipProofName && !(benefitsForm.membershipProof instanceof File)) {
+        errors.push("Proof of membership is required when submitting.");
+      }
     }
 
     return errors;
@@ -4952,33 +5130,6 @@ const closeDocumentModal = useCallback(() => {
                                           }}
                                         >
                                           <div className="d-flex flex-wrap gap-2">
-                                            <Button
-                                              variant="outline-primary"
-                                              size="sm"
-                                              style={{ borderRadius: "6px" }}
-                                              onClick={(event) => {
-                                                event.stopPropagation();
-                                                setSelectedApplicationForDocs(
-                                                  applicant
-                                                );
-                                                setDocumentModalReadOnly(true);
-                                                setShowDocumentModal(true);
-                                                setDocumentModalTab(
-                                                  "Applicant Identification"
-                                                );
-                                                fetchDocumentRequirements(
-                                                  applicant.id
-                                                );
-                                                fetchDocumentSubmissions(
-                                                  applicant.id
-                                                );
-                                                fetchFollowUpRequests(
-                                                  applicant.id
-                                                );
-                                              }}
-                                            >
-                                              View Documents
-                                            </Button>
                                             <Button
                                               variant="success"
                                               size="sm"
@@ -10471,38 +10622,16 @@ const closeDocumentModal = useCallback(() => {
                 )}
 
                 <Form>
-                  <Form.Label className="fw-semibold">Select Benefits</Form.Label>
-                  <div className="d-flex flex-column gap-2 mb-3">
-                    {availableBenefitsOptions.length > 0 ? (
-                      availableBenefitsOptions.map((benefit) => (
-                        <Form.Check
-                          key={benefit.key}
-                          type="checkbox"
-                          label={
-                            <div>
-                              <span className="fw-semibold me-1">
-                                {benefit.label}
-                              </span>
-                              {benefit.description && (
-                                <span className="text-muted small">
-                                  {benefit.description}
-                                </span>
-                              )}
-                            </div>
-                          }
-                          checked={benefitsForm.selectedBenefits.includes(
-                            benefit.key
-                          )}
-                          onChange={() =>
-                            handleBenefitSelectionChange(benefit.key)
-                          }
-                        />
-                      ))
-                    ) : (
-                      <div className="text-muted small">
-                        No benefit options configured.
-                      </div>
-                    )}
+                  <div className="d-flex justify-content-end mb-3">
+                    <Button
+                      variant={benefitsEditable ? "outline-secondary" : "outline-primary"}
+                      size="sm"
+                      onClick={() => setBenefitsEditable((prev) => !prev)}
+                      disabled={benefitsSaving}
+                    >
+                      <FontAwesomeIcon icon={faEdit} className="me-1" />
+                      {benefitsEditable ? "Lock Fields" : "Edit Details"}
+                    </Button>
                   </div>
 
                   <Row className="gy-3">
@@ -10516,9 +10645,7 @@ const closeDocumentModal = useCallback(() => {
                             handleBenefitFieldChange("sssNumber", e.target.value)
                           }
                           placeholder="Enter SSS number"
-                          disabled={
-                            !benefitsForm.selectedBenefits.includes("sss")
-                          }
+                          disabled={!benefitsEditable}
                         />
                       </Form.Group>
                     </Col>
@@ -10535,9 +10662,7 @@ const closeDocumentModal = useCallback(() => {
                             )
                           }
                           placeholder="Enter PhilHealth number"
-                          disabled={
-                            !benefitsForm.selectedBenefits.includes("philhealth")
-                          }
+                          disabled={!benefitsEditable}
                         />
                       </Form.Group>
                     </Col>
@@ -10554,28 +10679,24 @@ const closeDocumentModal = useCallback(() => {
                             )
                           }
                           placeholder="Enter Pag-IBIG number"
-                          disabled={
-                            !benefitsForm.selectedBenefits.includes("pagibig")
-                          }
+                          disabled={!benefitsEditable}
                         />
                       </Form.Group>
                     </Col>
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label>Contribution Type</Form.Label>
-                        <Form.Select
-                          value={benefitsForm.contributionType}
+                        <Form.Label>Date of Enrollment</Form.Label>
+                        <Form.Control
+                          type="date"
+                          value={benefitsForm.enrollmentDate}
                           onChange={(e) =>
                             handleBenefitFieldChange(
-                              "contributionType",
+                              "enrollmentDate",
                               e.target.value
                             )
                           }
-                        >
-                          <option value="employee">Employee</option>
-                          <option value="employer">Employer</option>
-                          <option value="shared">Shared</option>
-                        </Form.Select>
+                          disabled={!benefitsEditable}
+                        />
                       </Form.Group>
                     </Col>
                   </Row>
@@ -10593,6 +10714,31 @@ const closeDocumentModal = useCallback(() => {
                     />
                   </Form.Group>
                 </Form>
+
+                <div className="mt-4">
+                  <Form.Label className="fw-semibold">
+                    Proof of Membership
+                  </Form.Label>
+                  <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-3">
+                    <Form.Control
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        handleBenefitFileChange("membershipProof", file);
+                      }}
+                      disabled={!benefitsEditable}
+                    />
+                    {benefitsForm.membershipProofName && (
+                      <div className="text-muted small">
+                        Current file:{" "}
+                        <span className="fw-semibold">
+                          {benefitsForm.membershipProofName}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </Modal.Body>
@@ -10604,15 +10750,6 @@ const closeDocumentModal = useCallback(() => {
             >
               Close
             </Button>
-          <Button
-            variant="success"
-            onClick={() => setShowBenefitsSubmitConfirm(true)}
-            disabled={benefitsSaving || benefitsModalLoading}
-          >
-            {benefitsSaving && benefitsSubmitMode === "submit"
-              ? "Submitting..."
-              : "Submit Enrollment"}
-          </Button>
             <Button
               variant="primary"
               onClick={handleBenefitsSubmit}

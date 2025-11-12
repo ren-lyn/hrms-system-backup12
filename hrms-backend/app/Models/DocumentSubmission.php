@@ -22,7 +22,11 @@ class DocumentSubmission extends Model
         'rejection_reason',
         'submitted_at',
         'reviewed_at',
-        'reviewed_by'
+        'reviewed_by',
+        'sss_number',
+        'philhealth_number',
+        'pagibig_number',
+        'tin_number'
     ];
 
     protected $casts = [

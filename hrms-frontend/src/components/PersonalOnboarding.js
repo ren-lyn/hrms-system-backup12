@@ -66,7 +66,6 @@ import {
   faShieldAlt,
   faDollarSign,
   faHome,
-  faEdit,
   faHeartbeat,
   faBell,
   faUsers,
@@ -298,6 +297,71 @@ const DOCUMENT_STATUS_CONFIG = {
 };
 
 const DOCUMENT_STATUS_STORAGE_KEY = "personalOnboardingDocumentStatuses";
+const GOOGLE_WEATHER_API_KEY =
+  process.env.REACT_APP_GOOGLE_WEATHER_API_KEY ||
+  process.env.REACT_APP_GOOGLE_MAPS_API_KEY ||
+  "";
+
+const GOVERNMENT_ID_FIELD_MAP = {
+  sssDocument: {
+    field: "sss_number",
+    label: "SSS Number",
+    placeholder: "Enter your SSS Number",
+  },
+  philhealthDocument: {
+    field: "philhealth_number",
+    label: "PhilHealth Number",
+    placeholder: "Enter your PhilHealth Number",
+  },
+  pagibigDocument: {
+    field: "pagibig_number",
+    label: "Pag-IBIG MID Number",
+    placeholder: "Enter your Pag-IBIG MID Number",
+  },
+  tinDocument: {
+    field: "tin_number",
+    label: "TIN (Tax Identification Number)",
+    placeholder: "Enter your TIN",
+  },
+};
+
+const DEFAULT_GOVERNMENT_ID_NUMBERS = {
+  sssDocument: "",
+  philhealthDocument: "",
+  pagibigDocument: "",
+  tinDocument: "",
+};
+
+const BENEFITS_CARD_CONFIG = [
+  {
+    id: "benefit-sss",
+    documentKey: "sssDocument",
+    title: "SSS Membership",
+    subtitle: "Social Security System",
+    icon: faShieldAlt,
+  },
+  {
+    id: "benefit-philhealth",
+    documentKey: "philhealthDocument",
+    title: "PhilHealth Coverage",
+    subtitle: "Philippine Health Insurance",
+    icon: faHeartbeat,
+  },
+  {
+    id: "benefit-pagibig",
+    documentKey: "pagibigDocument",
+    title: "Pag-IBIG Fund",
+    subtitle: "Home Development Mutual Fund",
+    icon: faHome,
+  },
+  {
+    id: "benefit-tin",
+    documentKey: "tinDocument",
+    title: "TIN Registration",
+    subtitle: "Bureau of Internal Revenue",
+    icon: faFileContract,
+  },
+];
 
 const PersonalOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState(null);
@@ -311,6 +375,10 @@ const PersonalOnboarding = () => {
   const [selectedDocument, setSelectedDocument] = useState(null);
 
   const [uploadErrors, setUploadErrors] = useState({});
+
+  const [governmentIdNumbers, setGovernmentIdNumbers] = useState(
+    () => ({ ...DEFAULT_GOVERNMENT_ID_NUMBERS })
+  );
 
   const [attendanceConfirmed, setAttendanceConfirmed] = useState(false);
 
@@ -445,6 +513,16 @@ const PersonalOnboarding = () => {
   const [documentError, setDocumentError] = useState("");
 
   const [applicantName, setApplicantName] = useState("Applicant");
+  const [applicantAvatarUrl, setApplicantAvatarUrl] = useState("");
+  const [weatherInfo, setWeatherInfo] = useState({
+    loading: true,
+    temperature: null,
+    condition: "",
+    location: "",
+    observedAt: null,
+    source: null,
+  });
+  const [weatherError, setWeatherError] = useState(null);
 
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
@@ -470,6 +548,504 @@ const PersonalOnboarding = () => {
     ],
     []
   );
+
+  const formattedCurrentDate = useMemo(() => {
+    return new Date().toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }, []);
+
+  const welcomeName = useMemo(() => {
+    const trimmedName = (applicantName || "").trim();
+    return trimmedName.length > 0 ? trimmedName : "Applicant";
+  }, [applicantName]);
+
+  const weatherSummary = useMemo(() => {
+    if (weatherInfo.loading || weatherError) {
+      return "";
+    }
+
+    const hasTemperature =
+      typeof weatherInfo.temperature === "number" &&
+      Number.isFinite(weatherInfo.temperature);
+
+    const parts = [];
+
+    if (hasTemperature) {
+      parts.push(`${Math.round(weatherInfo.temperature)}°C`);
+    }
+
+    if (weatherInfo.condition && weatherInfo.condition.length > 0) {
+      parts.push(weatherInfo.condition);
+    }
+
+    let summary = parts.join(" ").trim();
+
+    if (weatherInfo.location && weatherInfo.location.length > 0) {
+      summary = `${summary}${summary.length > 0 ? " " : ""}in ${
+        weatherInfo.location
+      }`.trim();
+    }
+
+    return summary;
+  }, [weatherError, weatherInfo]);
+
+  const weatherDisplayText = weatherInfo.loading
+    ? "Fetching local weather..."
+    : weatherSummary;
+
+  const generateAvatarFallback = useCallback((name) => {
+    const safeName = (name || "Applicant").trim() || "Applicant";
+    return `https://ui-avatars.com/api/?background=2563EB&color=ffffff&bold=true&name=${encodeURIComponent(
+      safeName
+    )}`;
+  }, []);
+
+  const resolveAvatarUrl = useCallback((user) => {
+    if (!user || typeof user !== "object") return null;
+
+    const candidateKeys = [
+      "profile_picture_url",
+      "profilePictureUrl",
+      "profile_photo_url",
+      "profilePhotoUrl",
+      "avatar_url",
+      "avatar",
+      "photo_url",
+      "photo",
+      "image_url",
+      "image",
+      "profile_photo_path",
+      "profilePicture",
+    ];
+
+    for (const key of candidateKeys) {
+      const value = user?.[key];
+      if (!value || typeof value !== "string") continue;
+
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+
+      if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) {
+        return trimmed;
+      }
+
+      if (trimmed.startsWith("/storage/") || trimmed.startsWith("storage/")) {
+        const baseUrl =
+          process.env.REACT_APP_API_BASE_URL ||
+          process.env.REACT_APP_BACKEND_URL ||
+          (typeof window !== "undefined" ? window.location.origin : "");
+
+        const normalizedBase =
+          baseUrl && baseUrl.endsWith("/") ? baseUrl : `${baseUrl || ""}/`;
+
+        const normalizedPath = trimmed.replace(/^\/+/, "");
+
+        return `${normalizedBase}${normalizedPath}`;
+      }
+    }
+
+    return null;
+  }, []);
+
+  const displayedAvatarUrl = useMemo(() => {
+    if (applicantAvatarUrl && applicantAvatarUrl.length > 0) {
+      return applicantAvatarUrl;
+    }
+
+    return generateAvatarFallback(welcomeName);
+  }, [applicantAvatarUrl, generateAvatarFallback, welcomeName]);
+
+  const handleAvatarError = useCallback(
+    (event) => {
+      if (!event || !event.target) return;
+      event.target.onerror = null;
+      event.target.src = generateAvatarFallback(welcomeName);
+    },
+    [generateAvatarFallback, welcomeName]
+  );
+
+  const primaryApplication = useMemo(
+    () =>
+      userApplications && userApplications.length > 0
+        ? userApplications[0]
+        : null,
+    [userApplications]
+  );
+
+  const applicationStages = useMemo(
+    () => [
+      "Application",
+      "Under Review",
+      "Shortlisted",
+      "Interview",
+      "Offer",
+      "Onboarding",
+      "Hired",
+    ],
+    []
+  );
+
+  const statusToStageMap = useMemo(
+    () => ({
+      application: "Application",
+      pending: "Under Review",
+      "under review": "Under Review",
+      under_review: "Under Review",
+      shortlisted: "Shortlisted",
+      "short listed": "Shortlisted",
+      short_listed: "Shortlisted",
+      interview: "Interview",
+      interviewed: "Interview",
+      offered: "Offer",
+      offer: "Offer",
+      accepting: "Offer",
+      accepted: "Onboarding",
+      onboarding: "Onboarding",
+      hired: "Hired",
+      completed: "Hired",
+      rejected: "Application",
+      declined: "Under Review",
+    }),
+    []
+  );
+
+  const normalizedApplicationStatus = useMemo(() => {
+    if (!primaryApplication?.status) {
+      return "";
+    }
+
+    return primaryApplication.status.toString().trim().toLowerCase();
+  }, [primaryApplication?.status]);
+
+  const currentStageLabel = useMemo(() => {
+    if (!primaryApplication) {
+      return "Application";
+    }
+
+    return statusToStageMap[normalizedApplicationStatus] || "Application";
+  }, [normalizedApplicationStatus, primaryApplication, statusToStageMap]);
+
+  const currentStageIndex = useMemo(() => {
+    const index = applicationStages.indexOf(currentStageLabel);
+    return index >= 0 ? index : 0;
+  }, [applicationStages, currentStageLabel]);
+
+  const stageProgressPercent = useMemo(() => {
+    if (applicationStages.length <= 1) {
+      return 0;
+    }
+
+    const clampedIndex = Math.min(
+      Math.max(currentStageIndex, 0),
+      applicationStages.length - 1
+    );
+
+    if (clampedIndex === 0) {
+      return 0;
+    }
+
+    const percent =
+      (clampedIndex / (applicationStages.length - 1)) * 100;
+
+    return Number.isFinite(percent) ? percent : 0;
+  }, [applicationStages, currentStageIndex]);
+
+  const applicationLastUpdatedDisplay = useMemo(() => {
+    if (!primaryApplication) return null;
+
+    const candidates = [
+      { key: "status_updated_at_ph", value: primaryApplication.status_updated_at_ph },
+      { key: "updated_at_ph", value: primaryApplication.updated_at_ph },
+      { key: "status_updated_at", value: primaryApplication.status_updated_at },
+      { key: "updated_at", value: primaryApplication.updated_at },
+      { key: "last_updated_at", value: primaryApplication.last_updated_at },
+      { key: "applied_at_ph", value: primaryApplication.applied_at_ph },
+      { key: "applied_at", value: primaryApplication.applied_at },
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        typeof candidate.value === "string" &&
+        candidate.value.trim().length > 0
+      ) {
+        if (/_ph$|_formatted$/i.test(candidate.key)) {
+          return candidate.value.trim();
+        }
+
+        const parsed = new Date(candidate.value);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed.toLocaleString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+        }
+
+        return candidate.value;
+      }
+    }
+
+    return null;
+  }, [primaryApplication]);
+
+  const greetingSubtext = useMemo(() => {
+    if (applicationLastUpdatedDisplay) {
+      return `Last updated on ${applicationLastUpdatedDisplay}`;
+    }
+
+    return "We'll keep you posted as soon as there are new updates.";
+  }, [applicationLastUpdatedDisplay]);
+
+  const currentStatusConfig = useMemo(() => {
+    if (!primaryApplication) {
+      return {
+        title: "No Application Yet",
+        titleClass: "text-secondary",
+        icon: faFileAlt,
+        iconColor: "#4b5563",
+        iconBackground: "rgba(107, 114, 128, 0.18)",
+        message: "You haven't submitted any job applications yet.",
+        subtext:
+          "Apply to a role to start tracking your progress and receiving updates here.",
+        nextStep: "Browse available positions and submit your application to get started.",
+        badgeLabel: "No Application",
+        badgeClass: "badge rounded-pill bg-secondary",
+        appliedDate: null,
+      };
+    }
+
+    const statusRaw = primaryApplication.status || "Pending";
+    const status = statusRaw.toString().trim().toLowerCase();
+    const appliedDate =
+      primaryApplication.applied_at_ph ||
+      primaryApplication.applied_at ||
+      null;
+
+    const baseConfig = {
+      badgeLabel: statusRaw,
+      appliedDate,
+    };
+
+    switch (status) {
+      case "pending":
+      case "under review":
+      case "under_review":
+        return {
+          ...baseConfig,
+          title: "Under Review",
+          titleClass: "text-warning",
+          icon: faClock,
+          iconColor: "#f97316",
+          iconBackground: "rgba(249, 115, 22, 0.15)",
+          message: "Your application is being reviewed by our HR team.",
+          subtext: "We will notify you of any updates within 3-5 business days.",
+          nextStep:
+            "If selected, you will be contacted for an interview within the next week.",
+          badgeClass: "badge rounded-pill bg-warning text-dark",
+        };
+      case "shortlisted":
+      case "short listed":
+      case "short_listed":
+        return {
+          ...baseConfig,
+          title: "Shortlisted",
+          titleClass: "text-primary",
+          icon: faCheckCircle,
+          iconColor: "#2563eb",
+          iconBackground: "rgba(37, 99, 235, 0.15)",
+          message:
+            "Congratulations! You have been shortlisted for the next phase.",
+          subtext: "You will be contacted for the next steps soon.",
+          nextStep: "Prepare for the interview and gather your documents.",
+          badgeClass: "badge rounded-pill bg-primary",
+        };
+      case "interview":
+      case "interviewed":
+        return {
+          ...baseConfig,
+          title: "Interview Scheduled",
+          titleClass: "text-info",
+          icon: faCalendarAlt,
+          iconColor: "#0ea5e9",
+          iconBackground: "rgba(14, 165, 233, 0.18)",
+          message:
+            "You have been selected for an interview. Please prepare accordingly.",
+          subtext: "Interview details will be shared with you shortly.",
+          nextStep: "Attend the interview at the scheduled time and location.",
+          badgeClass: "badge rounded-pill bg-info text-dark",
+        };
+      case "offered":
+      case "offer":
+      case "accepting":
+        return {
+          ...baseConfig,
+          title: "Job Offer Extended",
+          titleClass: "text-success",
+          icon: faGift,
+          iconColor: "#22c55e",
+          iconBackground: "rgba(34, 197, 94, 0.18)",
+          message:
+            "We are pleased to offer you the position. Please review the offer details.",
+          subtext: "Please respond to the offer within the specified timeframe.",
+          nextStep: "Review the offer details and respond within the deadline.",
+          badgeClass: "badge rounded-pill bg-success",
+        };
+      case "onboarding":
+      case "accepted":
+        return {
+          ...baseConfig,
+          title: "Onboarding in Progress",
+          titleClass: "text-info",
+          icon: faUser,
+          iconColor: "#0ea5e9",
+          iconBackground: "rgba(14, 165, 233, 0.15)",
+          message:
+            "You're almost there! We're preparing your onboarding experience.",
+          subtext:
+            "Check your onboarding tasks to complete any pending requirements.",
+          nextStep:
+            "Review your onboarding checklist and complete any outstanding items.",
+          badgeClass: "badge rounded-pill bg-info text-dark",
+        };
+      case "hired":
+      case "completed":
+        return {
+          ...baseConfig,
+          title: "Congratulations! Hired",
+          titleClass: "text-success",
+          icon: faUser,
+          iconColor: "#16a34a",
+          iconBackground: "rgba(22, 163, 74, 0.18)",
+          message: "Welcome to the team! Your application has been successful.",
+          subtext:
+            "Welcome aboard! HR will contact you with onboarding details.",
+          nextStep:
+            "Complete the onboarding process and prepare for your first day.",
+          badgeClass: "badge rounded-pill bg-success",
+        };
+      case "rejected":
+      case "declined":
+        return {
+          ...baseConfig,
+          title: "Application Not Selected",
+          titleClass: "text-danger",
+          icon: faTimes,
+          iconColor: "#ef4444",
+          iconBackground: "rgba(239, 68, 68, 0.18)",
+          message:
+            "We regret to inform you that your application was not selected at this time.",
+          subtext: "You may reapply for other positions in the future.",
+          nextStep: "Consider applying for other available positions.",
+          badgeClass: "badge rounded-pill bg-danger",
+        };
+      default:
+        return {
+          ...baseConfig,
+          title: "Application In Progress",
+          titleClass: "text-primary",
+          icon: faChartLine,
+          iconColor: "#2563eb",
+          iconBackground: "rgba(37, 99, 235, 0.12)",
+          message: "Your application is progressing smoothly.",
+          subtext: "We'll update you the moment there are new developments.",
+          nextStep:
+            "Keep an eye on your notifications for the next steps from our team.",
+          badgeClass: "badge rounded-pill bg-primary",
+        };
+    }
+  }, [primaryApplication]);
+  const getWeatherDescription = useCallback((code, fallbackText = "") => {
+    const stringMapping = {
+      clear: "Clear Skies",
+      clear_sky: "Clear Skies",
+      clear_skies: "Clear Skies",
+      mostly_clear: "Mostly Clear",
+      partly_cloudy: "Partly Cloudy",
+      mostly_cloudy: "Mostly Cloudy",
+      overcast: "Overcast",
+      fog: "Foggy",
+      foggy: "Foggy",
+      mist: "Foggy",
+      haze: "Hazy",
+      drizzle: "Drizzle",
+      light_drizzle: "Light Drizzle",
+      heavy_drizzle: "Heavy Drizzle",
+      light_rain: "Light Rain",
+      rain: "Rainy",
+      rainy: "Rainy",
+      heavy_rain: "Heavy Rain",
+      freezing_rain: "Freezing Rain",
+      sleet: "Sleet",
+      snow: "Snow",
+      light_snow: "Light Snow",
+      heavy_snow: "Heavy Snow",
+      snow_showers: "Snow Showers",
+      hail: "Storm with Hail",
+      thunderstorm: "Thunderstorm",
+      thunderstorm_with_rain: "Thunderstorm",
+      thunderstorm_with_hail: "Storm with Hail",
+      severe_thunderstorm: "Severe Storm",
+      storm: "Stormy",
+    };
+
+    if (typeof code === "string" && code.length > 0) {
+      const normalizedCode = code
+        .replace(/([a-z])([A-Z])/g, "$1_$2")
+        .replace(/[^a-zA-Z]+/g, "_")
+        .toLowerCase()
+        .replace(/^_+|_+$/g, "");
+
+      if (normalizedCode && stringMapping[normalizedCode]) {
+        return stringMapping[normalizedCode];
+      }
+    }
+
+    const mapping = {
+      0: "Clear Skies",
+      1: "Mostly Clear",
+      2: "Partly Cloudy",
+      3: "Overcast",
+      45: "Foggy",
+      48: "Rime Fog",
+      51: "Light Drizzle",
+      53: "Drizzle",
+      55: "Heavy Drizzle",
+      56: "Freezing Drizzle",
+      57: "Dense Freezing Drizzle",
+      61: "Light Rain",
+      63: "Rainy",
+      65: "Heavy Rain",
+      66: "Light Freezing Rain",
+      67: "Freezing Rain",
+      71: "Light Snow",
+      73: "Snow",
+      75: "Heavy Snow",
+      77: "Snow Grains",
+      80: "Light Showers",
+      81: "Showers",
+      82: "Heavy Showers",
+      85: "Snow Showers",
+      86: "Heavy Snow Showers",
+      95: "Thunderstorm",
+      96: "Storm with Hail",
+      99: "Severe Storm",
+    };
+
+    const numericCode =
+      typeof code === "string" ? Number.parseInt(code, 10) : code;
+
+    if (Number.isFinite(numericCode) && mapping[numericCode]) {
+      return mapping[numericCode];
+    }
+
+    return fallbackText || "Weather unavailable";
+  }, []);
 
   const normalizeDocumentLabel = useCallback((value) => {
     if (!value || typeof value !== "string") return "";
@@ -1069,6 +1645,20 @@ const PersonalOnboarding = () => {
     );
   };
 
+  const handleGovernmentIdChange = (documentKey, value) => {
+    if (
+      !documentKey ||
+      !Object.prototype.hasOwnProperty.call(GOVERNMENT_ID_FIELD_MAP, documentKey)
+    ) {
+      return;
+    }
+
+    setGovernmentIdNumbers((prev) => ({
+      ...prev,
+      [documentKey]: value,
+    }));
+  };
+
   const activeApplicationId = useMemo(
     () =>
       userApplications && userApplications.length > 0
@@ -1537,14 +2127,38 @@ const PersonalOnboarding = () => {
       setDocumentOverview(normalizedOverview);
 
       const newStatuses = { ...defaultDocumentStatuses };
+      const remoteGovernmentIds = {};
 
       documentsList.forEach((doc) => {
-        if (doc.document_key) {
-          newStatuses[doc.document_key] = mapStatusToLocal(doc.status);
+        if (!doc.document_key) {
+          return;
+        }
+
+        newStatuses[doc.document_key] = mapStatusToLocal(doc.status);
+
+        const idConfig = GOVERNMENT_ID_FIELD_MAP[doc.document_key];
+        if (idConfig) {
+          const rawValue =
+            doc.submission?.[idConfig.field] ??
+            doc[idConfig.field] ??
+            null;
+          if (rawValue !== null && rawValue !== undefined) {
+            const normalizedValue = String(rawValue).trim();
+            if (normalizedValue !== "") {
+              remoteGovernmentIds[doc.document_key] = normalizedValue;
+            }
+          }
         }
       });
 
       setDocumentStatuses(newStatuses);
+
+      if (Object.keys(remoteGovernmentIds).length > 0) {
+        setGovernmentIdNumbers((prev) => ({
+          ...prev,
+          ...remoteGovernmentIds,
+        }));
+      }
 
       const statusCountsSource =
         overview.status_counts && Object.keys(overview.status_counts).length > 0
@@ -1652,6 +2266,76 @@ const PersonalOnboarding = () => {
       return String(value);
     }
   }, []);
+
+  const benefitsOverviewCards = useMemo(() => {
+    return BENEFITS_CARD_CONFIG.map((config) => {
+      const docData = documentDataMap[config.documentKey] || null;
+      const statusKey = documentStatuses[config.documentKey] || "not_submitted";
+      const isApproved = statusKey === "approved";
+      const statusLabel = isApproved ? "Approved" : "Pending";
+      const statusVariant = isApproved ? "success" : "warning";
+
+      const idConfig = GOVERNMENT_ID_FIELD_MAP[config.documentKey] || null;
+      const membershipNumberRaw = idConfig
+        ? governmentIdNumbers[config.documentKey] ||
+          docData?.submission?.[idConfig.field] ||
+          docData?.[idConfig.field] ||
+          ""
+        : "";
+
+      const normalizedMembership =
+        membershipNumberRaw && String(membershipNumberRaw).trim() !== ""
+          ? String(membershipNumberRaw).trim()
+          : "";
+
+      const hasMembershipNumber = normalizedMembership !== "";
+      const membershipNumber = hasMembershipNumber
+        ? normalizedMembership
+        : "Not provided yet";
+
+      const submittedAt =
+        docData?.submission?.submitted_at
+          ? formatTimestampForDisplay(docData.submission.submitted_at)
+          : "";
+      const reviewedAt =
+        docData?.submission?.reviewed_at
+          ? formatTimestampForDisplay(docData.submission.reviewed_at)
+          : "";
+
+      const hrRemarks =
+        docData?.submission?.hr_response ||
+        docData?.submission?.hr_note ||
+        docData?.submission?.remarks ||
+        docData?.hr_response ||
+        docData?.hr_note ||
+        "";
+
+      const proofAvailable = Boolean(
+        docData?.submission?.proof_url ||
+          docData?.submission?.file_url ||
+          docData?.submission?.file_name ||
+          docData?.submission?.file_path
+      );
+
+      return {
+        ...config,
+        statusLabel,
+        statusVariant,
+        isApproved,
+        hasMembershipNumber,
+        membershipNumber,
+        submittedAt,
+        reviewedAt,
+        hrRemarks,
+        proofAvailable,
+      };
+    });
+  }, [
+    documentStatuses,
+    documentDataMap,
+    governmentIdNumbers,
+    formatTimestampForDisplay,
+  ]);
 
   const handleFollowUpSubmit = async (event = null) => {
     if (event) {
@@ -1864,6 +2548,33 @@ const PersonalOnboarding = () => {
       }
     }
 
+    const identifierConfig = GOVERNMENT_ID_FIELD_MAP[documentKey] || null;
+    let identifierValue = null;
+
+    if (identifierConfig) {
+      const currentValue = governmentIdNumbers[documentKey] || "";
+      const trimmedValue = currentValue.trim();
+
+      if (!trimmedValue) {
+        showToast(
+          "error",
+          "Missing Information",
+          `Please enter your ${identifierConfig.label} before submitting.`
+        );
+
+        return false;
+      }
+
+      if (trimmedValue !== currentValue) {
+        setGovernmentIdNumbers((prev) => ({
+          ...prev,
+          [documentKey]: trimmedValue,
+        }));
+      }
+
+      identifierValue = trimmedValue;
+    }
+
     const token = localStorage.getItem("token");
 
     if (!token) {
@@ -1879,6 +2590,10 @@ const PersonalOnboarding = () => {
     const formData = new FormData();
 
     formData.append("file", selectedFile);
+
+    if (identifierConfig && identifierValue !== null) {
+      formData.append(identifierConfig.field, identifierValue);
+    }
 
     try {
       setUploadingDocumentKey(documentKey);
@@ -2001,10 +2716,27 @@ const PersonalOnboarding = () => {
       if (resolvedName) {
         setApplicantName(resolvedName);
       }
+
+      const fallbackName =
+        resolvedName ||
+        storedUser?.full_name ||
+        storedUser?.name ||
+        `${storedUser?.first_name ?? ""} ${storedUser?.last_name ?? ""}`.trim();
+
+      const avatarUrl =
+        resolveAvatarUrl(storedUser) ||
+        generateAvatarFallback(fallbackName || "Applicant");
+
+      setApplicantAvatarUrl(avatarUrl);
     } catch (error) {
       console.error("Error resolving applicant name from storage:", error);
     }
-  }, [userApplications]);
+  }, [
+    generateAvatarFallback,
+    resolveApplicantDisplayName,
+    resolveAvatarUrl,
+    userApplications,
+  ]);
 
   useEffect(() => {
     const syncApplicantProfile = async () => {
@@ -2053,6 +2785,19 @@ const PersonalOnboarding = () => {
           if (resolvedName) {
             setApplicantName(resolvedName);
           }
+
+          const fallbackName =
+            resolvedName ||
+            normalizedFullName ||
+            canonicalUser.name ||
+            canonicalUser.full_name ||
+            "Applicant";
+
+          const avatarUrl =
+            resolveAvatarUrl(canonicalUser) ||
+            generateAvatarFallback(fallbackName);
+
+          setApplicantAvatarUrl(avatarUrl);
         }
       } catch (error) {
         console.error("Error syncing authenticated user profile:", error);
@@ -2060,7 +2805,399 @@ const PersonalOnboarding = () => {
     };
 
     syncApplicantProfile();
-  }, []);
+  }, [
+    generateAvatarFallback,
+    normalizeNameValue,
+    resolveApplicantDisplayName,
+    resolveAvatarUrl,
+  ]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const requestBrowserCoordinates = () =>
+      new Promise((resolve) => {
+        if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+          resolve(null);
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          },
+          () => resolve(null),
+          {
+            enableHighAccuracy: false,
+            timeout: 8000,
+            maximumAge: 5 * 60 * 1000,
+          }
+        );
+      });
+
+    const parseCoordinate = (value) => {
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+      }
+
+      if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      return null;
+    };
+
+    const normalizeTemperatureToCelsius = (temperaturePayload) => {
+      const parseCandidate = (value) => {
+        if (typeof value === "number") {
+          return Number.isFinite(value) ? value : null;
+        }
+
+        if (typeof value === "string") {
+          const parsed = Number.parseFloat(value);
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        return null;
+      };
+
+      if (
+        typeof temperaturePayload === "number" ||
+        typeof temperaturePayload === "string"
+      ) {
+        return parseCandidate(temperaturePayload);
+      }
+
+      if (temperaturePayload == null || typeof temperaturePayload !== "object") {
+        return null;
+      }
+
+      const directCandidates = [
+        temperaturePayload.value,
+        temperaturePayload.degrees,
+        temperaturePayload.degreesCelsius,
+        temperaturePayload.celsius,
+        temperaturePayload.valueCelsius,
+        temperaturePayload.metricValue,
+        temperaturePayload.metricDegrees,
+        temperaturePayload.metric?.value,
+        temperaturePayload.metric?.degrees,
+        temperaturePayload.metric?.celsius,
+        temperaturePayload.metric?.amount,
+      ];
+
+      for (const candidate of directCandidates) {
+        const parsed = parseCandidate(candidate);
+        if (parsed !== null) {
+          return parsed;
+        }
+      }
+
+      const fahrenheitCandidates = [
+        temperaturePayload.degreesFahrenheit,
+        temperaturePayload.valueFahrenheit,
+        temperaturePayload.fahrenheit,
+        temperaturePayload.imperial?.value,
+      ];
+
+      for (const candidate of fahrenheitCandidates) {
+        const parsed = parseCandidate(candidate);
+        if (parsed !== null) {
+          return ((parsed - 32) * 5) / 9;
+        }
+      }
+
+      if (typeof temperaturePayload.value === "number") {
+        const unitCode = (
+          temperaturePayload.unitCode ||
+          temperaturePayload.unit ||
+          temperaturePayload.units ||
+          ""
+        )
+          .toString()
+          .toUpperCase();
+
+        if (unitCode.includes("FAHRENHEIT")) {
+          return ((temperaturePayload.value - 32) * 5) / 9;
+        }
+
+        if (unitCode.includes("CELSIUS") || unitCode.includes("CEL")) {
+          return temperaturePayload.value;
+        }
+      }
+
+      return null;
+    };
+
+    const fetchWeatherFromGoogle = async (
+      latitude,
+      longitude,
+      ipLocationLabel
+    ) => {
+      const weatherResponse = await axios.get(
+        "https://weather.googleapis.com/v1/currentConditions:lookup",
+        {
+          params: {
+            key: GOOGLE_WEATHER_API_KEY,
+            "location.latitude": latitude,
+            "location.longitude": longitude,
+            unitSystem: "METRIC",
+          },
+        }
+      );
+
+      const weatherData = weatherResponse?.data || {};
+
+      const currentConditionsArray = Array.isArray(
+        weatherData?.currentConditions
+      )
+        ? weatherData.currentConditions
+        : weatherData?.currentConditions
+        ? [weatherData.currentConditions]
+        : [];
+
+      const currentConditions = currentConditionsArray[0];
+
+      if (!currentConditions) {
+        throw new Error("Current conditions not available.");
+      }
+
+      const temperatureCelsius = normalizeTemperatureToCelsius(
+        currentConditions.temperature
+      );
+
+      const apiConditionText =
+        (Array.isArray(currentConditions.weatherConditions)
+          ? currentConditions.weatherConditions
+              .map((condition) => {
+                if (typeof condition === "string") {
+                  return condition;
+                }
+
+                return (
+                  condition?.text ||
+                  condition?.localizedText ||
+                  condition?.shortText ||
+                  condition?.description ||
+                  null
+                );
+              })
+              .find(
+                (text) => typeof text === "string" && text.trim().length > 0
+              )
+          : null) ||
+        currentConditions.weatherCondition?.description?.text ||
+        currentConditions.weatherCondition?.text ||
+        currentConditions.summary ||
+        currentConditions.conditionCode ||
+        "";
+
+      const conditionLabel = (
+        getWeatherDescription(
+          currentConditions.conditionCode ??
+            currentConditions.weatherCondition?.code ??
+            currentConditions.weatherCode,
+          apiConditionText
+        ) || apiConditionText || ""
+      ).trim();
+
+      const googlePlace =
+        weatherData?.place ||
+        weatherData?.location ||
+        currentConditions?.place ||
+        null;
+
+      const googlePlaceName =
+        googlePlace?.displayName?.text ||
+        googlePlace?.displayName ||
+        googlePlace?.name ||
+        googlePlace?.formattedAddress ||
+        googlePlace?.address ||
+        "";
+
+      const resolvedLocation =
+        (googlePlaceName && googlePlaceName.length > 0
+          ? googlePlaceName
+          : ipLocationLabel) || "your area";
+
+      return {
+        temperature: temperatureCelsius,
+        condition: conditionLabel,
+        location: resolvedLocation,
+        observedAt:
+          currentConditions.observationTime?.value ||
+          currentConditions.observationTime ||
+          null,
+        source: "google",
+      };
+    };
+
+    const fetchWeatherFromOpenMeteo = async (
+      latitude,
+      longitude,
+      ipLocationLabel
+    ) => {
+      const response = await axios.get(
+        "https://api.open-meteo.com/v1/forecast",
+        {
+          params: {
+            latitude,
+            longitude,
+            current_weather: true,
+            timezone: "auto",
+          },
+        }
+      );
+
+      const currentWeather = response?.data?.current_weather;
+
+      if (!currentWeather) {
+        throw new Error("Open-Meteo current weather unavailable.");
+      }
+
+      const conditionLabel = (
+        getWeatherDescription(
+          currentWeather.weathercode,
+          currentWeather.weathercode_description ||
+            currentWeather.weather_description ||
+            ""
+        ) || ""
+      ).trim();
+
+      return {
+        temperature: Number.isFinite(currentWeather.temperature)
+          ? currentWeather.temperature
+          : null,
+        condition: conditionLabel,
+        location: ipLocationLabel || "your area",
+        observedAt: currentWeather.time || null,
+        source: "open-meteo",
+      };
+    };
+
+    const fetchWeatherAndLocation = async () => {
+      setWeatherInfo((prev) => ({
+        ...prev,
+        loading: true,
+      }));
+      setWeatherError(null);
+
+      try {
+        const [browserCoordinates, ipLocationData] = await Promise.all([
+          requestBrowserCoordinates(),
+          axios
+            .get("https://ipapi.co/json/")
+            .then((response) => response.data)
+            .catch((locationError) => {
+              console.error(
+                "IP-based location lookup failed:",
+                locationError
+              );
+              return null;
+            }),
+        ]);
+
+        const ipLatitude = parseCoordinate(ipLocationData?.latitude);
+        const ipLongitude = parseCoordinate(ipLocationData?.longitude);
+
+        const latitude =
+          parseCoordinate(browserCoordinates?.latitude) ?? ipLatitude;
+
+        const longitude =
+          parseCoordinate(browserCoordinates?.longitude) ?? ipLongitude;
+
+        if (typeof latitude !== "number" || typeof longitude !== "number") {
+          throw new Error("Unable to determine user coordinates.");
+        }
+
+        const ipLocationLabel = ipLocationData
+          ? [
+              ipLocationData.city,
+              ipLocationData.region,
+              ipLocationData.country_name || ipLocationData.country,
+            ]
+              .filter((segment) => segment && segment.length > 0)
+              .join(", ")
+          : "";
+
+        let weatherResult = null;
+
+        if (GOOGLE_WEATHER_API_KEY) {
+          try {
+            weatherResult = await fetchWeatherFromGoogle(
+              latitude,
+              longitude,
+              ipLocationLabel
+            );
+          } catch (googleError) {
+            console.error("Google Weather API failed:", googleError);
+          }
+        }
+
+        if (!weatherResult) {
+          try {
+            weatherResult = await fetchWeatherFromOpenMeteo(
+              latitude,
+              longitude,
+              ipLocationLabel
+            );
+          } catch (fallbackError) {
+            console.error("Fallback weather provider failed:", fallbackError);
+          }
+        }
+
+        if (!weatherResult) {
+          throw new Error("No weather data available.");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setWeatherInfo({
+          loading: false,
+          temperature:
+            typeof weatherResult.temperature === "number" &&
+            Number.isFinite(weatherResult.temperature)
+              ? weatherResult.temperature
+              : null,
+          condition: weatherResult.condition || "",
+          location: weatherResult.location || "",
+          observedAt: weatherResult.observedAt || null,
+          source: weatherResult.source || null,
+        });
+
+        setWeatherError(null);
+      } catch (error) {
+        console.error("Failed to fetch weather information:", error);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setWeatherInfo({
+          loading: false,
+          temperature: null,
+          condition: "",
+          location: "",
+          observedAt: null,
+          source: null,
+        });
+
+        setWeatherError(error?.message || "Weather unavailable");
+      }
+    };
+
+    fetchWeatherAndLocation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [getWeatherDescription]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4468,150 +5605,297 @@ const formatStageLabel = (stage) => {
 
           {currentPage === "status" && (
             <div className="container-fluid p-4">
-              <div className="row">
-                <div className="col-md-8">
-                  {/* Current Status Panel */}
+              <div
+                className="weather-date-bar mb-3 px-4 py-2"
+                style={{
+                  background:
+                    "linear-gradient(90deg, rgba(248,249,252,0.95), rgba(255,255,255,0.95))",
+                  borderRadius: "14px",
+                  border: "1px solid rgba(0,0,0,0.05)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.75rem",
+                }}
+              >
+                <span
+                  className="text-muted"
+                  style={{ fontWeight: 600, letterSpacing: "0.02em" }}
+                >
+                  {formattedCurrentDate}
+                </span>
 
+                {weatherDisplayText && (
+                  <span
+                    className="text-muted"
+                    style={{ fontWeight: 600, letterSpacing: "0.02em" }}
+                  >
+                    {weatherDisplayText}
+                  </span>
+                )}
+              </div>
+
+              <div
+                className="welcome-banner mb-4 p-4"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(84,112,198,0.1), rgba(45,197,253,0.12))",
+                  borderRadius: "18px",
+                  border: "1px solid rgba(84,112,198,0.18)",
+                }}
+              >
+                <div className="d-flex align-items-center flex-wrap gap-4">
+                  <div
+                    className="welcome-avatar-wrapper"
+                    style={{
+                      width: "72px",
+                      height: "72px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      border: "3px solid rgba(37, 99, 235, 0.25)",
+                      boxShadow: "0 8px 20px rgba(37, 99, 235, 0.15)",
+                      backgroundColor: "white",
+                    }}
+                  >
+                    <img
+                      src={displayedAvatarUrl}
+                      alt={`${welcomeName || "Applicant"} avatar`}
+                      onError={handleAvatarError}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex-grow-1">
+                    <h2 className="mb-1" style={{ fontWeight: 700 }}>
+                      Welcome,{" "}
+                      <span className="text-primary">{welcomeName}</span>!
+                    </h2>
+
+                    <p className="mb-0 text-muted">{greetingSubtext}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-12">
                   <div className="card mb-4">
                     <div className="card-body">
-                      <h5 className="card-title d-flex align-items-center">
+                      {primaryApplication ? (
+                        <>
+                          <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
+                            <div>
+                              <h5 className="card-title d-flex align-items-center mb-1">
                         <FontAwesomeIcon
                           icon={faChartLine}
                           className="me-2 text-primary"
                         />
-                        Current Status
+                                Application Progress
                       </h5>
 
-                      {/* Status Display */}
+                              <p className="text-muted mb-0">
+                                Current stage:{" "}
+                                <span className="fw-semibold text-primary">
+                                  {currentStageLabel}
+                                </span>
+                              </p>
+                            </div>
 
-                      <div className="status-display mb-4">
-                        {userApplications.length > 0 ? (
-                          <>
-                            <div className="d-flex align-items-center mb-3">
-                              <div className="status-icon me-3">
-                                <FontAwesomeIcon
-                                  icon={
-                                    userApplications[0].status === "Pending"
-                                      ? faClock
-                                      : userApplications[0].status ===
-                                        "ShortListed"
-                                      ? faCheckCircle
-                                      : userApplications[0].status ===
-                                        "Interview"
-                                      ? faCalendarAlt
-                                      : userApplications[0].status === "Offered"
-                                      ? faGift
-                                      : userApplications[0].status === "Hired"
-                                      ? faUser
-                                      : userApplications[0].status ===
-                                        "Rejected"
-                                      ? faTimes
-                                      : faClock
-                                  }
-                                  className={
-                                    userApplications[0].status === "Pending"
-                                      ? "text-warning"
-                                      : userApplications[0].status ===
-                                        "ShortListed"
-                                      ? "text-primary"
-                                      : userApplications[0].status ===
-                                        "Interview"
-                                      ? "text-info"
-                                      : userApplications[0].status === "Offered"
-                                      ? "text-success"
-                                      : userApplications[0].status === "Hired"
-                                      ? "text-success"
-                                      : userApplications[0].status ===
-                                        "Rejected"
-                                      ? "text-danger"
-                                      : "text-warning"
-                                  }
+                            {currentStatusConfig.badgeLabel && (
+                              <div className="text-end">
+                                <span className={currentStatusConfig.badgeClass}>
+                                  {currentStatusConfig.badgeLabel}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="application-progress-visual mb-4">
+                            <div
+                              style={{
+                                position: "relative",
+                                padding: "24px 0 12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "20px",
+                                  left: 0,
+                                  right: 0,
+                                  height: "4px",
+                                  borderRadius: "999px",
+                                  backgroundColor: "#e5e7eb",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: `${stageProgressPercent}%`,
+                                    height: "100%",
+                                    borderRadius: "999px",
+                                    background:
+                                      "linear-gradient(90deg, #2563eb, #38bdf8)",
+                                  }}
                                 />
+                              </div>
+
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  gap: "0.75rem",
+                                  position: "relative",
+                                  zIndex: 1,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {applicationStages.map((stage, index) => {
+                                  const isCompleted = index < currentStageIndex;
+                                  const isActive = index === currentStageIndex;
+                                  const circleBorder =
+                                    isActive || isCompleted
+                                      ? "#2563eb"
+                                      : "#d1d5db";
+                                  const circleBg = isActive
+                                    ? "#eff6ff"
+                                    : isCompleted
+                                    ? "#dbeafe"
+                                    : "#f9fafb";
+                                  const circleColor =
+                                    isActive || isCompleted
+                                      ? "#1d4ed8"
+                                      : "#6b7280";
+                                  const labelColor = isActive
+                                    ? "#1d4ed8"
+                                    : isCompleted
+                                    ? "#1f2937"
+                                    : "#6b7280";
+
+                                  return (
+                                    <div
+                                      key={stage}
+                                      style={{
+                                        minWidth: "90px",
+                                        flex: "1 1 90px",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          width: "44px",
+                                          height: "44px",
+                                          borderRadius: "50%",
+                                          margin: "0 auto",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          border: `3px solid ${circleBorder}`,
+                                          backgroundColor: circleBg,
+                                          color: circleColor,
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {index + 1}
+                                      </div>
+
+                                      <div
+                                        style={{
+                                          marginTop: "0.5rem",
+                                          fontSize: "0.85rem",
+                                          fontWeight: isActive ? 600 : 500,
+                                          color: labelColor,
+                                        }}
+                                      >
+                                        {stage}
+                                        {isActive && (
+                                          <div
+                                            style={{
+                                              marginTop: "0.25rem",
+                                              fontSize: "0.7rem",
+                                              color: "#64748b",
+                                              fontWeight: 500,
+                                            }}
+                                          >
+                                            You are here
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="status-display">
+                            <div className="d-flex align-items-center flex-wrap gap-3 mb-3">
+                              <div
+                                className="d-flex align-items-center justify-content-center"
+                                style={{
+                                  width: "60px",
+                                  height: "60px",
+                                  borderRadius: "18px",
+                                  backgroundColor:
+                                    currentStatusConfig.iconBackground,
+                                  color: currentStatusConfig.iconColor,
+                                  fontSize: "1.6rem",
+                                }}
+                              >
+                                <FontAwesomeIcon icon={currentStatusConfig.icon} />
                               </div>
 
                               <div>
                                 <h4
-                                  className={`mb-1 fw-bold ${
-                                    userApplications[0].status === "Pending"
-                                      ? "text-warning"
-                                      : userApplications[0].status ===
-                                        "ShortListed"
-                                      ? "text-primary"
-                                      : userApplications[0].status ===
-                                        "Interview"
-                                      ? "text-info"
-                                      : userApplications[0].status === "Offered"
-                                      ? "text-success"
-                                      : userApplications[0].status === "Hired"
-                                      ? "text-success"
-                                      : userApplications[0].status ===
-                                        "Rejected"
-                                      ? "text-danger"
-                                      : "text-warning"
-                                  }`}
+                                  className={`mb-1 fw-bold ${currentStatusConfig.titleClass}`}
                                 >
-                                  {userApplications[0].status === "Pending"
-                                    ? "Under Review"
-                                    : userApplications[0].status ===
-                                      "ShortListed"
-                                    ? "Shortlisted"
-                                    : userApplications[0].status === "Interview"
-                                    ? "Interview Scheduled"
-                                    : userApplications[0].status === "Offered"
-                                    ? "Job Offer Extended"
-                                    : userApplications[0].status === "Hired"
-                                    ? "Congratulations! Hired"
-                                    : userApplications[0].status === "Rejected"
-                                    ? "Application Not Selected"
-                                    : "Under Review"}
+                                  {currentStatusConfig.title}
                                 </h4>
 
+                                {currentStatusConfig.appliedDate && (
                                 <small className="text-muted">
-                                  Applied:{" "}
-                                  {userApplications[0].applied_at_ph || "N/A"}
+                                    Applied: {currentStatusConfig.appliedDate}
                                 </small>
+                                )}
                               </div>
                             </div>
 
-                            {/* Status Message */}
-
-                            <div className="status-message p-3 bg-light rounded">
+                            <div className="status-message p-3 bg-light rounded mb-3">
                               <p className="mb-2 fw-medium">
-                                {userApplications[0].status === "Pending"
-                                  ? "Your application is being reviewed by our HR team."
-                                  : userApplications[0].status === "ShortListed"
-                                  ? "Congratulations! You have been shortlisted for the next phase."
-                                  : userApplications[0].status === "Interview"
-                                  ? "You have been selected for an interview. Please prepare accordingly."
-                                  : userApplications[0].status === "Offered"
-                                  ? "We are pleased to offer you the position. Please review the offer details."
-                                  : userApplications[0].status === "Hired"
-                                  ? "Welcome to the team! Your application has been successful."
-                                  : userApplications[0].status === "Rejected"
-                                  ? "We regret to inform you that your application was not selected at this time."
-                                  : "Your application is being reviewed by our HR team."}
+                                {currentStatusConfig.message}
                               </p>
 
                               <p className="text-muted mb-0">
-                                {userApplications[0].status === "Pending"
-                                  ? "We will notify you of any updates within 3-5 business days."
-                                  : userApplications[0].status === "ShortListed"
-                                  ? "You will be contacted for the next steps soon."
-                                  : userApplications[0].status === "Interview"
-                                  ? "Interview details will be shared with you shortly."
-                                  : userApplications[0].status === "Offered"
-                                  ? "Please respond to the offer within the specified timeframe."
-                                  : userApplications[0].status === "Hired"
-                                  ? "Welcome aboard! HR will contact you with onboarding details."
-                                  : userApplications[0].status === "Rejected"
-                                  ? "You may reapply for other positions in the future."
-                                  : "We will notify you of any updates within 3-5 business days."}
+                                {currentStatusConfig.subtext}
                               </p>
+                              <div
+                                className="mt-3 d-flex align-items-center flex-wrap gap-2"
+                                style={{
+                                  fontSize: "0.85rem",
+                                  color: "#64748b",
+                                }}
+                              >
+                                <span
+                                  className="badge rounded-pill bg-light text-primary"
+                                  style={{
+                                    border: "1px solid rgba(37,99,235,0.2)",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Stage {currentStageIndex + 1} of{" "}
+                                  {applicationStages.length}
+                                </span>
+                                <span>Progress tracker updated accordingly.</span>
+                              </div>
                             </div>
 
-                            {/* Next Step */}
-
-                            <div className="next-step mt-3 p-3 border-start border-3 border-info bg-info bg-opacity-10">
+                            <div
+                              className="next-step mt-3 p-3 border-start border-3 bg-info bg-opacity-10"
+                              style={{ borderColor: "rgba(14, 165, 233, 0.3)" }}
+                            >
                               <h6 className="text-info mb-2">
                                 <FontAwesomeIcon
                                   icon={faLightbulb}
@@ -4621,20 +5905,38 @@ const formatStageLabel = (stage) => {
                               </h6>
 
                               <p className="mb-0">
-                                {userApplications[0].status === "Pending"
-                                  ? "If selected, you will be contacted for an interview within the next week."
-                                  : userApplications[0].status === "ShortListed"
-                                  ? "Prepare for the interview and gather your documents."
-                                  : userApplications[0].status === "Interview"
-                                  ? "Attend the interview at the scheduled time and location."
-                                  : userApplications[0].status === "Offered"
-                                  ? "Review the offer details and respond within the deadline."
-                                  : userApplications[0].status === "Hired"
-                                  ? "Complete the onboarding process and prepare for your first day."
-                                  : userApplications[0].status === "Rejected"
-                                  ? "Consider applying for other available positions."
-                                  : "If selected, you will be contacted for an interview within the next week."}
+                                {currentStatusConfig.nextStep}
                               </p>
+
+                              <div
+                                className="mt-2"
+                                style={{ fontSize: "0.85rem", color: "#64748b" }}
+                            >
+                              <FontAwesomeIcon
+                                  icon={faChartLine}
+                                  className="me-2 text-primary"
+                                />
+                                Aligned with{" "}
+                                <span className="fw-semibold text-primary">
+                                  Stage {currentStageIndex + 1}:{" "}
+                                  {currentStageLabel}
+                                </span>{" "}
+                                on the progress tracker.
+                          </div>
+                            </div>
+                      </div>
+
+                      <div className="mt-4">
+                          <button
+                            className="btn btn-primary"
+                            onClick={handleViewApplication}
+                          >
+                            <FontAwesomeIcon
+                              icon={faFileAlt}
+                              className="me-2"
+                            />
+                            View Application
+                          </button>
                             </div>
                           </>
                         ) : (
@@ -4657,69 +5959,11 @@ const formatStageLabel = (stage) => {
                               className="btn btn-primary"
                               onClick={() => (window.location.href = "/")}
                             >
-                              <FontAwesomeIcon
-                                icon={faSearch}
-                                className="me-2"
-                              />
+                            <FontAwesomeIcon icon={faSearch} className="me-2" />
                               Browse Jobs
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* View Application Button */}
-
-                      <div className="mt-4">
-                        {userApplications.length > 0 ? (
-                          <button
-                            className="btn btn-primary"
-                            onClick={handleViewApplication}
-                          >
-                            <FontAwesomeIcon
-                              icon={faFileAlt}
-                              className="me-2"
-                            />
-                            View Application
-                          </button>
-                        ) : (
-                          <div className="text-center p-3 bg-light rounded">
-                            <FontAwesomeIcon
-                              icon={faFileAlt}
-                              className="text-muted mb-2"
-                              size="2x"
-                            />
-
-                            <p className="text-muted mb-2 small">
-                              No applications yet
-                            </p>
-
-                            <p className="text-muted small">
-                              Apply for a job to view your application details
-                              here.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-md-4">
-                  <div className="card mb-4">
-                    <div className="card-body">
-                      <h5 className="card-title">Quick Actions</h5>
-
-                      <div className="d-grid gap-2">
-                        <button className="btn btn-outline-secondary">
-                          <FontAwesomeIcon icon={faEdit} className="me-2" />
-                          Update Information
-                        </button>
-
-                        <button className="btn btn-outline-info">
-                          <FontAwesomeIcon icon={faEnvelope} className="me-2" />
-                          Contact HR
                         </button>
                       </div>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -5577,7 +6821,7 @@ const formatStageLabel = (stage) => {
                   }`}
                   onClick={() => setActiveTab("benefits")}
                 >
-                  Benefits Enroll
+                  Benefits Overview
                 </button>
 
                 <button
@@ -6189,6 +7433,134 @@ const formatStageLabel = (stage) => {
                 </>
               )}
 
+              {activeTab === "benefits" && (
+                <div>
+                  <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
+                    <div>
+                      <h4 className="mb-1">
+                        <FontAwesomeIcon
+                          icon={faGift}
+                          className="me-2 text-primary"
+                        />
+                        Benefits Overview
+                      </h4>
+                      <p className="text-muted mb-0">
+                        Review the government benefit enrollments you submitted to
+                        HR. This read-only snapshot highlights membership numbers,
+                        processing status, and any supporting notes.
+                      </p>
+                    </div>
+                    <Badge
+                      bg="light"
+                      className="rounded-pill text-uppercase fw-semibold small text-dark"
+                    >
+                      Read-Only Summary
+                    </Badge>
+                  </div>
+
+                  <div className="row g-4">
+                    {benefitsOverviewCards.map((card) => (
+                      <div
+                        key={card.id}
+                        className="col-12 col-md-6 col-xl-3 d-flex"
+                      >
+                        <div className="card border-0 shadow-sm w-100 h-100">
+                          <div className="card-body p-4 d-flex flex-column">
+                            <div className="d-flex justify-content-between align-items-start mb-3">
+                              <div className="d-flex align-items-start gap-3">
+                                <span className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary p-3">
+                                  <FontAwesomeIcon icon={card.icon} size="lg" />
+                                </span>
+                                <div>
+                                  <h5 className="mb-1 fw-semibold">
+                                    {card.title}
+                                  </h5>
+                                  <div className="text-muted small">
+                                    {card.subtitle}
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge
+                                bg={card.statusVariant}
+                                className={`rounded-pill px-3 py-2 text-uppercase small ${
+                                  card.isApproved ? "" : "text-dark"
+                                }`}
+                              >
+                                {card.statusLabel}
+                              </Badge>
+                            </div>
+
+                            <div className="mb-3">
+                              <div className="text-uppercase text-muted small fw-semibold">
+                                Membership Number
+                              </div>
+                              <div
+                                className={`fs-5 fw-semibold ${
+                                  card.hasMembershipNumber
+                                    ? "text-dark"
+                                    : "text-muted"
+                                }`}
+                              >
+                                {card.membershipNumber}
+                              </div>
+                            </div>
+
+                            {card.submittedAt && (
+                              <div className="d-flex align-items-center text-muted small mb-2">
+                                <FontAwesomeIcon
+                                  icon={faClock}
+                                  className="me-2 text-secondary"
+                                />
+                                Submitted {card.submittedAt}
+                              </div>
+                            )}
+
+                            {card.reviewedAt && (
+                              <div className="d-flex align-items-center text-muted small mb-2">
+                                <FontAwesomeIcon
+                                  icon={faCheckCircle}
+                                  className="me-2 text-success"
+                                />
+                                Approved {card.reviewedAt}
+                              </div>
+                            )}
+
+                            {card.hrRemarks && (
+                              <div className="mt-2 p-3 bg-light border rounded small text-muted">
+                                <FontAwesomeIcon
+                                  icon={faInfoCircle}
+                                  className="me-2 text-info"
+                                />
+                                {card.hrRemarks}
+                              </div>
+                            )}
+
+                            <div className="mt-auto pt-3 border-top d-flex align-items-center justify-content-between">
+                              <span className="text-muted small">
+                                Proof of membership
+                              </span>
+                              {card.proofAvailable ? (
+                                <Badge
+                                  bg="primary"
+                                  className="d-inline-flex align-items-center gap-1"
+                                >
+                                  <FontAwesomeIcon icon={faFileAlt} />
+                                  Uploaded
+                                </Badge>
+                              ) : (
+                                <span className="text-muted small">
+                                  Not provided
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {activeTab === "profile" && (
                 <div>
                   <h4 className="mb-4">
@@ -6203,26 +7575,6 @@ const formatStageLabel = (stage) => {
                     <div className="card-body">
                       <p className="text-muted">
                         Profile creation interface will be available here.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "benefits" && (
-                <div>
-                  <h4 className="mb-4">
-                    <FontAwesomeIcon
-                      icon={faGift}
-                      className="me-2 text-primary"
-                    />
-                    Benefits Enroll
-                  </h4>
-
-                  <div className="card">
-                    <div className="card-body">
-                      <p className="text-muted mb-0">
-                        Benefits enrollment tools will be available here soon.
                       </p>
                     </div>
                   </div>
@@ -6837,6 +8189,12 @@ const formatStageLabel = (stage) => {
                               const remoteFileMeta =
                                 remoteFileMetaParts.join(" • ");
 
+                              const governmentIdConfig =
+                                GOVERNMENT_ID_FIELD_MAP[document.id] || null;
+                              const governmentIdValue = governmentIdConfig
+                                ? governmentIdNumbers[document.id] || ""
+                                : "";
+
                               const submittedDisplay =
                                 formatTimestampForDisplay(
                                   remoteSubmission?.submitted_at
@@ -6901,6 +8259,33 @@ const formatStageLabel = (stage) => {
                                         <p className="text-muted small mb-3">
                                           {document.helperText}
                                         </p>
+
+                                        {governmentIdConfig && (
+                                          <Form.Group className="mb-3">
+                                            <Form.Label className="fw-semibold small text-muted">
+                                              {governmentIdConfig.label}
+                                            </Form.Label>
+                                            <Form.Control
+                                              type="text"
+                                              placeholder={governmentIdConfig.placeholder}
+                                              value={governmentIdValue}
+                                              onChange={(event) =>
+                                                handleGovernmentIdChange(
+                                                  document.id,
+                                                  event.target.value
+                                                )
+                                              }
+                                              disabled={
+                                                isUploadingThisDocument ||
+                                                isLockedByRemote ||
+                                                !canUploadDocument
+                                              }
+                                            />
+                                            <Form.Text className="text-muted">
+                                              This identifier will be shared with HR for verification.
+                                            </Form.Text>
+                                          </Form.Group>
+                                        )}
 
                                         {documentFollowUpInfo && (
                                           <Alert

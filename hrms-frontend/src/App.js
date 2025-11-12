@@ -6,7 +6,6 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './responsive.css'; // Import responsive CSS
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-
 // Lazy load components for better performance
 const Login = lazy(() => import('./pages/Login'));
 const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
@@ -37,7 +36,11 @@ const EvaluationAdministration = lazy(() => import('./components/EvaluationAdmin
 const JobPostings = lazy(() => import('./components/JobPostings'));
 const StandaloneAssistantDashboard = lazy(() => import('./components/HrAssistant/Dashboard/StandaloneAssistantDashboard'));
 const HrAssistantProfile = lazy(() => import('./components/HrAssistant/HrAssistantProfile'));
-const PersonalOnboarding = lazy(() => import('./components/PersonalOnboarding'));
+const PersonalOnboarding = lazy(() =>
+  import('./components/PersonalOnboarding').then((module) => ({
+    default: module.default ?? module,
+  }))
+);
 const OnboardingDashboard = lazy(() => import('./components/HrAssistant/OnboardingDashboard'));
 const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'));
 const ReportGeneration = lazy(() => import('./components/HrAssistant/ReportGeneration/ReportGeneration'));
