@@ -1784,7 +1784,8 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
             status === "Orientation Schedule" ||
             status === "Starting Date" ||
             status === "Benefits Enroll" ||
-            status === "Profile Creation"
+            status === "Profile Creation" ||
+            status === "Hired"
           );
 
         case "Hired":
@@ -4804,23 +4805,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
           );
         }
 
-        setProfileCreationQueue((prev) =>
-            prev.filter((entry) => entry.id !== applicationId)
-        );
-
-        setApplicants((prev) =>
-          prev.filter((applicationRecord) => applicationRecord.id !== applicationId)
-        );
-
-        setApplicantsDocumentStatus((prev) => {
-          if (!prev || !prev[applicationId]) {
-            return prev;
-          }
-          const updated = { ...prev };
-          delete updated[applicationId];
-          return updated;
-        });
-
+        // Keep applicant records visible in all tabs (Document Submission, Benefits Enrollment, Profile Creation)
+        // Do not remove from queues or applicant lists
+        
         await fetchApplicants();
 
         alert("Personal information saved and linked to employee records.");
@@ -5266,6 +5253,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                         (applicant) =>
                           applicant.status === "Document Submission" ||
                           applicant.status === "Onboarding" ||
+                          applicant.status === "Hired" ||
                           applicant.documents_stage_status === "completed" ||
                           applicant.documents_completed_at ||
                           applicant.is_in_benefits_enrollment
@@ -5983,63 +5971,101 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                 {/* Placeholder for upcoming onboarding subtabs */}
 
                 {onboardingSubtab === "Profile Creation" ? (
-                  profileCreationQueue.length === 0 ? (
-                    <div className="card border-0 shadow-sm">
-                      <div className="card-body text-center py-5">
-                        <h5 className="text-muted mb-2">Profile Creation</h5>
+                  (() => {
+                    // Get all hired applicants who are not in the queue
+                    const hiredApplicants = applicants
+                      .filter((app) => app.status === "Hired")
+                      .map((app) => {
+                        const applicantName = app.applicant
+                          ? `${app.applicant.first_name || ""} ${app.applicant.last_name || ""}`.trim()
+                          : app.employee_name || app.name || "N/A";
+                        const applicantEmail = app.applicant?.email || app.employee_email || app.email || "N/A";
+                        const department = app.jobPosting?.department || app.job_posting?.department || "N/A";
+                        const position = app.jobPosting?.position || app.job_posting?.position || "N/A";
+                        
+                        return {
+                          id: app.id,
+                          name: applicantName,
+                          email: applicantEmail,
+                          department: department,
+                          position: position,
+                          enrollmentStatus: "completed",
+                          isHired: true,
+                          applicant: app,
+                        };
+                      })
+                      .filter((hired) => !profileCreationQueue.some((queueEntry) => queueEntry.id === hired.id));
 
-                        <p className="text-muted mb-0">
-                          Mark an applicant as complete from the Benefits Enrollment modal to queue them here for profile setup.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="card border-0 shadow-sm">
-                      <div className="card-body p-0">
-                        <div className="table-responsive">
-                          <Table hover className="mb-0">
-                            <thead style={{ backgroundColor: "#f8f9fa" }}>
-                              <tr>
-                                <th
-                                  style={{
-                                    padding: "16px",
-                                    fontWeight: 600,
-                                    color: "#495057",
-                                  }}
-                                >
-                                  Applicant
-                                </th>
-                                <th
-                                  style={{
-                                    padding: "16px",
-                                    fontWeight: 600,
-                                    color: "#495057",
-                                  }}
-                                >
-                                  Department &amp; Position
-                                </th>
-                                <th
-                                  style={{
-                                    padding: "16px",
-                                    fontWeight: 600,
-                                    color: "#495057",
-                                  }}
-                                >
-                                  Status
-                                </th>
-                                <th
-                                  style={{
-                                    padding: "16px",
-                                    fontWeight: 600,
-                                    color: "#495057",
-                                  }}
-                                >
-                                  Create Profile
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {profileCreationQueue.map((entry) => {
+                    // Combine queue entries and hired applicants
+                    const allProfileEntries = [...profileCreationQueue, ...hiredApplicants];
+
+                    if (allProfileEntries.length === 0) {
+                      return (
+                        <div className="card border-0 shadow-sm">
+                          <div className="card-body text-center py-5">
+                            <h5 className="text-muted mb-2">Profile Creation</h5>
+
+                            <p className="text-muted mb-0">
+                              Mark an applicant as complete from the Benefits Enrollment modal to queue them here for profile setup.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="card border-0 shadow-sm">
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <Table hover className="mb-0">
+                              <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                <tr>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Applicant
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Department &amp; Position
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Status
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Create Profile
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {allProfileEntries.map((entry) => {
+                                // Check if applicant is hired
+                                const isHired = entry.isHired || (() => {
+                                  const applicant = applicants.find((app) => app.id === entry.id);
+                                  return applicant?.status === "Hired";
+                                })();
+                                
                                 const normalizedStatus = (entry.enrollmentStatus || "pending").toString();
                                 const statusLabel = normalizedStatus
                                   .split("_")
@@ -6064,10 +6090,16 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                   ? "Edit Personal Info"
                                   : "Create Profile";
 
-                                const profilePhotoUrl =
-                                  normalizeAssetUrl(
-                                    entry.profileData?.profilePhotoUrl
-                                  ) || PROFILE_PLACEHOLDER_IMAGE;
+                                // Get profile photo from various sources
+                                const profilePhotoUrl = isHired && entry.applicant
+                                  ? normalizeAssetUrl(
+                                      entry.applicant.applicant?.profile_photo_url ||
+                                      entry.applicant.employee_profile?.profile_photo_url ||
+                                      entry.profileData?.profilePhotoUrl
+                                    ) || PROFILE_PLACEHOLDER_IMAGE
+                                  : normalizeAssetUrl(
+                                      entry.profileData?.profilePhotoUrl
+                                    ) || PROFILE_PLACEHOLDER_IMAGE;
 
                                 return (
                                   <tr key={entry.id}>
@@ -6141,13 +6173,23 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                         verticalAlign: "middle",
                                       }}
                                     >
-                                      <Badge
-                                        bg={statusVariant}
-                                        className="px-3 py-2"
-                                        style={{ borderRadius: "999px" }}
-                                      >
-                                        {statusLabel}
-                                      </Badge>
+                                      {isHired ? (
+                                        <Badge
+                                          bg="success"
+                                          className="px-3 py-2"
+                                          style={{ borderRadius: "999px" }}
+                                        >
+                                          Hired
+                                        </Badge>
+                                      ) : (
+                                        <Badge
+                                          bg={statusVariant}
+                                          className="px-3 py-2"
+                                          style={{ borderRadius: "999px" }}
+                                        >
+                                          {statusLabel}
+                                        </Badge>
+                                      )}
                                     </td>
                                     <td
                                       style={{
@@ -6155,26 +6197,31 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                         verticalAlign: "middle",
                                       }}
                                     >
-                                      <Button
-                                        variant={hasProfileData ? "outline-primary" : "primary"}
-                                        size="sm"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          handleOpenProfileCreationModal(entry);
-                                        }}
-                                      >
-                                        {profileButtonLabel}
-                                      </Button>
+                                      {isHired ? (
+                                        <span className="text-muted small">Profile Created</span>
+                                      ) : (
+                                        <Button
+                                          variant={hasProfileData ? "outline-primary" : "primary"}
+                                          size="sm"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleOpenProfileCreationModal(entry);
+                                          }}
+                                        >
+                                          {profileButtonLabel}
+                                        </Button>
+                                      )}
                                     </td>
                                   </tr>
                                 );
-                              })}
-                            </tbody>
-                          </Table>
+                                })}
+                              </tbody>
+                            </Table>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
+                    );
+                  })()
                 ) : ["Orientation Schedule", "Start Date"].includes(
                   onboardingSubtab
                 ) && (
@@ -11831,20 +11878,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                     </Col>
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label>TIN Number</Form.Label>
-                        <Form.Control
-                          type="text"
-                          value={benefitsForm.tinNumber}
-                          onChange={(e) =>
-                            handleBenefitFieldChange("tinNumber", e.target.value)
-                          }
-                          placeholder="Enter TIN number"
-                          disabled={!benefitsEditable}
-                        />
-                      </Form.Group>
-                    </Col>
-                    <Col md={6}>
-                      <Form.Group>
                         <Form.Label>Date of Enrollment</Form.Label>
                         <Form.Control
                           type="date"
@@ -11874,29 +11907,11 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                       disabled={
                         benefitsSaving ||
                         benefitsModalLoading ||
-                        !selectedApplicationForBenefits ||
-                        isApplicantInProfileQueue
+                        !selectedApplicationForBenefits
                       }
                     >
                       <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
-                      {isApplicantInProfileQueue ? "Queued" : "Complete"}
-                    </Button>
-                    <Button
-                      variant={benefitsEditable ? "outline-secondary" : "outline-primary"}
-                      onClick={() => setBenefitsEditable((prev) => !prev)}
-                      disabled={benefitsSaving}
-                    >
-                      <FontAwesomeIcon icon={faEdit} className="me-1" />
-                      {benefitsEditable ? "Lock Fields" : "Edit Details"}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={() => handleBenefitsSubmit()}
-                      disabled={benefitsSaving || benefitsModalLoading}
-                    >
-                      {benefitsSaving && benefitsSubmitMode === "save"
-                        ? "Saving..."
-                        : "Save Enrollment"}
+                      Complete
                     </Button>
                   </div>
                 </div>
@@ -12068,8 +12083,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                       <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                         Civil Status
                       </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.civilStatus}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
@@ -12077,10 +12091,16 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                           e.target.value
                         )
                       }
-                      placeholder="Enter civil status"
                       style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select Civil Status</option>
+                      <option value="Single">Single</option>
+                      <option value="Married">Married</option>
+                      <option value="Divorced">Divorced</option>
+                      <option value="Widowed">Widowed</option>
+                      <option value="Separated">Separated</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -12088,8 +12108,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                       <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                         Gender
                       </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.gender}
                       onChange={(e) =>
                           handleProfileCreationInputChange(
@@ -12097,10 +12116,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                             e.target.value
                           )
                       }
-                      placeholder="Enter gender"
                         style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>

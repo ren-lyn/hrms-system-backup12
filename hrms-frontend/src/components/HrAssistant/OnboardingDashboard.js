@@ -1820,7 +1820,8 @@ const closeDocumentModal = useCallback(() => {
             status === "Orientation Schedule" ||
             status === "Starting Date" ||
             status === "Benefits Enroll" ||
-            status === "Profile Creation"
+            status === "Profile Creation" ||
+            status === "Hired"
           );
 
         case "Hired":
@@ -4826,22 +4827,8 @@ const closeDocumentModal = useCallback(() => {
           );
         }
 
-        setProfileCreationQueue((prev) =>
-            prev.filter((entry) => entry.id !== applicationId)
-        );
-
-        setApplicants((prev) =>
-          prev.filter((applicationRecord) => applicationRecord.id !== applicationId)
-        );
-
-        setApplicantsDocumentStatus((prev) => {
-          if (!prev || !prev[applicationId]) {
-            return prev;
-          }
-          const updated = { ...prev };
-          delete updated[applicationId];
-          return updated;
-        });
+        // Keep applicant records visible in all tabs (Document Submission, Benefits Enrollment, Profile Creation)
+        // Do not remove from queues or applicant lists
 
         await fetchApplicants();
 
@@ -5263,6 +5250,7 @@ const closeDocumentModal = useCallback(() => {
                         (applicant) =>
                           applicant.status === "Document Submission" ||
                           applicant.status === "Onboarding" ||
+                          applicant.status === "Hired" ||
                           applicant.documents_stage_status === "completed" ||
                           applicant.documents_completed_at ||
                           applicant.is_in_benefits_enrollment
@@ -6269,7 +6257,36 @@ const closeDocumentModal = useCallback(() => {
                 )}
 
                 {onboardingSubtab === "Profile Creation" ? (
-                  profileCreationQueue.length === 0 ? (
+                  (() => {
+                    // Get all hired applicants who are not in the queue
+                    const hiredApplicants = applicants
+                      .filter((app) => app.status === "Hired")
+                      .map((app) => {
+                        const applicantName = app.applicant
+                          ? `${app.applicant.first_name || ""} ${app.applicant.last_name || ""}`.trim()
+                          : app.employee_name || app.name || "N/A";
+                        const applicantEmail = app.applicant?.email || app.employee_email || app.email || "N/A";
+                        const department = app.jobPosting?.department || app.job_posting?.department || "N/A";
+                        const position = app.jobPosting?.position || app.job_posting?.position || "N/A";
+                        
+                        return {
+                          id: app.id,
+                          name: applicantName,
+                          email: applicantEmail,
+                          department: department,
+                          position: position,
+                          enrollmentStatus: "completed",
+                          isHired: true,
+                          applicant: app,
+                        };
+                      })
+                      .filter((hired) => !profileCreationQueue.some((queueEntry) => queueEntry.id === hired.id));
+
+                    // Combine queue entries and hired applicants
+                    const allProfileEntries = [...profileCreationQueue, ...hiredApplicants];
+
+                    if (allProfileEntries.length === 0) {
+                      return (
                     <div className="card border-0 shadow-sm">
                       <div className="card-body text-center py-5">
                         <h5 className="text-muted mb-2">Profile Creation</h5>
@@ -6279,7 +6296,10 @@ const closeDocumentModal = useCallback(() => {
                         </p>
                       </div>
                     </div>
-                  ) : (
+                      );
+                    }
+
+                    return (
                     <div className="card border-0 shadow-sm">
                       <div className="card-body p-0">
                         <div className="table-responsive">
@@ -6325,7 +6345,13 @@ const closeDocumentModal = useCallback(() => {
                               </tr>
                             </thead>
                             <tbody>
-                              {profileCreationQueue.map((entry) => {
+                                {allProfileEntries.map((entry) => {
+                                // Check if applicant is hired
+                                const isHired = entry.isHired || (() => {
+                                  const applicant = applicants.find((app) => app.id === entry.id);
+                                  return applicant?.status === "Hired";
+                                })();
+                                
                                 const normalizedStatus = (entry.enrollmentStatus || "pending").toString();
                                 const statusLabel = normalizedStatus
                                   .split("_")
@@ -6350,8 +6376,14 @@ const closeDocumentModal = useCallback(() => {
                                   ? "Edit Personal Info"
                                   : "Create Profile";
 
-                                const profilePhotoUrl =
-                                  normalizeAssetUrl(
+                                // Get profile photo from various sources
+                                const profilePhotoUrl = isHired && entry.applicant
+                                  ? normalizeAssetUrl(
+                                      entry.applicant.applicant?.profile_photo_url ||
+                                      entry.applicant.employee_profile?.profile_photo_url ||
+                                      entry.profileData?.profilePhotoUrl
+                                    ) || PROFILE_PLACEHOLDER_IMAGE
+                                  : normalizeAssetUrl(
                                     entry.profileData?.profilePhotoUrl
                                   ) || PROFILE_PLACEHOLDER_IMAGE;
 
@@ -6427,6 +6459,15 @@ const closeDocumentModal = useCallback(() => {
                                         verticalAlign: "middle",
                                       }}
                                     >
+                                      {isHired ? (
+                                        <Badge
+                                          bg="success"
+                                          className="px-3 py-2"
+                                          style={{ borderRadius: "999px" }}
+                                        >
+                                          Hired
+                                        </Badge>
+                                      ) : (
                                       <Badge
                                         bg={statusVariant}
                                         className="px-3 py-2"
@@ -6434,6 +6475,7 @@ const closeDocumentModal = useCallback(() => {
                                       >
                                         {statusLabel}
                                       </Badge>
+                                      )}
                                     </td>
                                     <td
                                       style={{
@@ -6441,6 +6483,9 @@ const closeDocumentModal = useCallback(() => {
                                         verticalAlign: "middle",
                                       }}
                                     >
+                                      {isHired ? (
+                                        <span className="text-muted small">Profile Created</span>
+                                      ) : (
                                       <Button
                                         variant={hasProfileData ? "outline-primary" : "primary"}
                                         size="sm"
@@ -6451,6 +6496,7 @@ const closeDocumentModal = useCallback(() => {
                                       >
                                         {profileButtonLabel}
                                       </Button>
+                                      )}
                                     </td>
                                   </tr>
                                 );
@@ -6460,7 +6506,8 @@ const closeDocumentModal = useCallback(() => {
                         </div>
                       </div>
                     </div>
-                  )
+                    );
+                  })()
                 ) : ["Orientation Schedule", "Start Date"].includes(
                   onboardingSubtab
                 ) && (
@@ -11976,19 +12023,6 @@ const closeDocumentModal = useCallback(() => {
                         />
                       </Form.Group>
                     </Col>
-                    <Col md={3}>
-                      <Form.Group controlId="assistantProfileTin">
-                        <Form.Label>TIN</Form.Label>
-                        <Form.Control
-                          type="text"
-                          value={profileCreationForm.tin}
-                          onChange={(e) =>
-                            handleProfileCreationInputChange("tin", e.target.value)
-                          }
-                          placeholder="Enter TIN"
-                        />
-                      </Form.Group>
-                    </Col>
                   </Row>
 
                 </Form>
@@ -12004,29 +12038,11 @@ const closeDocumentModal = useCallback(() => {
                       disabled={
                         benefitsSaving ||
                         benefitsModalLoading ||
-                        !selectedApplicationForBenefits ||
-                        isApplicantInProfileQueue
+                        !selectedApplicationForBenefits
                       }
                     >
                       <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
-                      {isApplicantInProfileQueue ? "Queued" : "Complete"}
-                    </Button>
-                    <Button
-                      variant={benefitsEditable ? "outline-secondary" : "outline-primary"}
-                      onClick={() => setBenefitsEditable((prev) => !prev)}
-                      disabled={benefitsSaving}
-                    >
-                      <FontAwesomeIcon icon={faEdit} className="me-1" />
-                      {benefitsEditable ? "Lock Fields" : "Edit Details"}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={() => handleBenefitsSubmit()}
-                      disabled={benefitsSaving || benefitsModalLoading}
-                    >
-                      {benefitsSaving && benefitsSubmitMode === "save"
-                        ? "Saving..."
-                        : "Save Enrollment"}
+                      Complete
                     </Button>
                   </div>
                 </div>
@@ -12406,8 +12422,7 @@ const closeDocumentModal = useCallback(() => {
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                       Civil Status
                     </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.civilStatus}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
@@ -12415,10 +12430,16 @@ const closeDocumentModal = useCallback(() => {
                           e.target.value
                         )
                       }
-                      placeholder="Enter civil status"
                       style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select Civil Status</option>
+                      <option value="Single">Single</option>
+                      <option value="Married">Married</option>
+                      <option value="Divorced">Divorced</option>
+                      <option value="Widowed">Widowed</option>
+                      <option value="Separated">Separated</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -12426,16 +12447,18 @@ const closeDocumentModal = useCallback(() => {
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                       Gender
                     </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.gender}
                       onChange={(e) =>
                         handleProfileCreationInputChange("gender", e.target.value)
                       }
-                      placeholder="Enter gender"
                       style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select Gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>

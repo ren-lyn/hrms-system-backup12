@@ -772,14 +772,43 @@ const EmployeeRecords = () => {
 
       // Prepare the data in the correct format (flat structure)
       const profile = terminatingEmployee.employee_profile;
+      
+      // Normalize gender to match backend validation (Female/Male or null)
+      let normalizedGender = profile?.gender || null;
+      if (normalizedGender) {
+        const genderLower = normalizedGender.toLowerCase();
+        if (genderLower === 'male') {
+          normalizedGender = 'Male';
+        } else if (genderLower === 'female') {
+          normalizedGender = 'Female';
+        } else {
+          // If gender doesn't match expected values, set to null
+          normalizedGender = null;
+        }
+      }
+      
+      // Normalize civil_status to match backend validation (Single,Married,Divorced,Widowed,Separated or null)
+      let normalizedCivilStatus = profile?.civil_status || null;
+      if (normalizedCivilStatus) {
+        const civilStatusLower = normalizedCivilStatus.toLowerCase();
+        const validStatuses = {
+          'single': 'Single',
+          'married': 'Married',
+          'divorced': 'Divorced',
+          'widowed': 'Widowed',
+          'separated': 'Separated'
+        };
+        normalizedCivilStatus = validStatuses[civilStatusLower] || null;
+      }
+      
       const updateData = {
         // Keep existing employee data
         email: terminatingEmployee.email,
         first_name: profile?.first_name || '',
         last_name: profile?.last_name || '',
         nickname: profile?.nickname || '',
-        civil_status: profile?.civil_status || '',
-        gender: profile?.gender || '',
+        civil_status: normalizedCivilStatus,
+        gender: normalizedGender,
         place_of_birth: profile?.place_of_birth || '',
         birth_date: profile?.birth_date || '',
         age: profile?.age || '',
