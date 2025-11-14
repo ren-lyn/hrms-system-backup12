@@ -41,7 +41,6 @@ import {
   faPlus,
   faTrash,
   faUpload,
-  faDownload,
   faSearch,
   faReply,
   faCheck,
@@ -53,15 +52,150 @@ import {
 
 import axios from "axios";
 
+const PROFILE_CREATION_QUEUE_STORAGE_KEY = "hrStaffProfileCreationQueue";
+
 const createBenefitsEnrollmentForm = () => ({
   sssNumber: "",
   philhealthNumber: "",
   pagibigNumber: "",
+  tinNumber: "",
   enrollmentDate: "",
   membershipProof: null,
   membershipProofName: "",
-  notes: "",
 });
+
+const COMPANY_EMAIL_DOMAIN = "company.com";
+
+const createEmptyProfileForm = () => ({
+  fullName: "",
+  nickname: "",
+  civilStatus: "",
+  gender: "",
+  dateOfBirth: "",
+  age: "",
+  phoneNumber: "",
+  companyEmail: "",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  province: "",
+  barangay: "",
+  city: "",
+  postalCode: "",
+  presentAddress: "",
+  position: "",
+  department: "",
+  employmentStatus: "",
+  dateStarted: "",
+  salary: "",
+  tenure: "",
+  sss: "",
+  philhealth: "",
+  pagibig: "",
+  tin: "",
+  profilePhotoUrl: "",
+});
+
+const calculateAgeFromDateOfBirth = (dateString) => {
+  if (!dateString) {
+    return "";
+  }
+
+  const birthDate = new Date(dateString);
+  if (Number.isNaN(birthDate.getTime())) {
+    return "";
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+
+  const monthDifference = today.getMonth() - birthDate.getMonth();
+  const hasNotHadBirthdayThisYear =
+    monthDifference < 0 ||
+    (monthDifference === 0 && today.getDate() < birthDate.getDate());
+
+  if (hasNotHadBirthdayThisYear) {
+    age -= 1;
+  }
+
+  return age >= 0 ? String(age) : "";
+};
+
+const resolveProfileFullName = (entry, profileData = {}) => {
+  const trimValue = (value) => (typeof value === "string" ? value.trim() : "");
+
+  const profileFullName = trimValue(profileData.fullName);
+  if (profileFullName) {
+    return profileFullName;
+  }
+
+  const profileFirstLast = [
+    trimValue(profileData.firstName),
+    trimValue(profileData.lastName),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (profileFirstLast) {
+    return profileFirstLast;
+  }
+
+  const entryName = trimValue(entry?.name);
+  if (entryName) {
+    return entryName;
+  }
+
+  const entryFirstLast = [
+    trimValue(entry?.firstName || entry?.first_name),
+    trimValue(entry?.lastName || entry?.last_name),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (entryFirstLast) {
+    return entryFirstLast;
+  }
+
+  const applicantFirstLast = [
+    trimValue(entry?.applicant?.first_name),
+    trimValue(entry?.applicant?.last_name),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (applicantFirstLast) {
+    return applicantFirstLast;
+  }
+
+  const applicantFullName = trimValue(
+    entry?.applicant?.name || entry?.applicant?.full_name
+  );
+  if (applicantFullName) {
+    return applicantFullName;
+  }
+
+  return "";
+};
+
+const calculateAgeFromBirthdate = (birthDateValue) => {
+  if (!birthDateValue) {
+    return "";
+  }
+
+  const birthDate = new Date(birthDateValue);
+  if (Number.isNaN(birthDate.getTime())) {
+    return "";
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > birthDate.getMonth() ||
+    (today.getMonth() === birthDate.getMonth() &&
+      today.getDate() >= birthDate.getDate());
+
+  if (!hasHadBirthdayThisYear) {
+    age -= 1;
+  }
+
+  return age >= 0 ? String(age) : "";
+};
 
 const Onboarding = () => {
   const [activeTab, setActiveTab] = useState("Overview");
@@ -227,6 +361,416 @@ const GOVERNMENT_ID_FIELD_MAP = {
     label: "TIN (Tax Identification Number)",
   },
 };
+
+const GOVERNMENT_ID_TO_FORM_FIELD_MAP = {
+  sssDocument: "sss",
+  philhealthDocument: "philhealth",
+  pagibigDocument: "pagibig",
+  tinDocument: "tin",
+};
+
+const normalizeGovernmentIdValue = (value) => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
+};
+
+const extractGovernmentIdsFromOverview = (overview) => {
+  const result = {
+    sss: "",
+    philhealth: "",
+    pagibig: "",
+    tin: "",
+  };
+
+  if (!overview) {
+    return result;
+  }
+
+  const documents = Array.isArray(overview.documents)
+    ? overview.documents
+    : [];
+
+  documents.forEach((doc) => {
+    if (!doc) {
+      return;
+    }
+
+    const documentKey = doc.document_key || doc.documentKey;
+    if (!documentKey || !Object.prototype.hasOwnProperty.call(GOVERNMENT_ID_TO_FORM_FIELD_MAP, documentKey)) {
+      return;
+    }
+
+    const formField = GOVERNMENT_ID_TO_FORM_FIELD_MAP[documentKey];
+    const config = GOVERNMENT_ID_FIELD_MAP[documentKey];
+    const submission = doc.submission || null;
+
+    if (!config || !submission) {
+      return;
+    }
+
+    const candidateKeys = [
+      config.field,
+      config.field?.toLowerCase(),
+      config.field?.toUpperCase(),
+      config.field?.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()),
+    ].filter(Boolean);
+
+    const candidateSources = [
+      submission,
+      submission.data,
+      submission.details,
+      submission.metadata,
+      submission.meta,
+      submission.fields,
+    ].filter((source) => source && typeof source === "object");
+
+    let resolvedValue = "";
+
+    for (const source of candidateSources) {
+      for (const key of candidateKeys) {
+        if (
+          Object.prototype.hasOwnProperty.call(source, key) &&
+          source[key] !== undefined &&
+          source[key] !== null
+        ) {
+          resolvedValue = source[key];
+          break;
+        }
+      }
+
+      if (resolvedValue) {
+        break;
+      }
+    }
+
+    const normalizedValue = normalizeGovernmentIdValue(resolvedValue);
+    if (normalizedValue) {
+      result[formField] = normalizedValue;
+    }
+  });
+
+  return result;
+};
+
+const sanitizeNameForEmail = (value) =>
+  (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+
+const generateCompanyEmail = (fullName, domain = COMPANY_EMAIL_DOMAIN) => {
+  if (!fullName) {
+    return "";
+  }
+
+  const parts = fullName
+    .split(/\s+/)
+    .map((part) => sanitizeNameForEmail(part))
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return "";
+  }
+
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : "";
+  const localPart = last ? `${first}.${last}` : first;
+
+  return `${localPart}@${domain}`;
+};
+
+const getApiBaseUrl = () => {
+  const envBase =
+    process.env.REACT_APP_API_BASE_URL ||
+    process.env.REACT_APP_BACKEND_URL ||
+    "";
+
+  if (envBase && typeof envBase === "string") {
+    return envBase.endsWith("/") ? envBase.slice(0, -1) : envBase;
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const origin = window.location.origin.replace(/\/$/, "");
+    if (/:\d+$/u.test(origin)) {
+      return origin;
+    }
+    return `${origin}:8000`;
+  }
+
+  return "http://localhost:8000";
+};
+
+const PROFILE_PLACEHOLDER_IMAGE =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect fill='%23e2e8f0' width='128' height='128'/%3E%3Ccircle cx='64' cy='48' r='28' fill='%23cbd5f5'/%3E%3Cpath d='M22 118c0-24 19-44 42-44s42 20 42 44' fill='%23cbd5f5'/%3E%3C/svg%3E";
+
+const normalizeAssetUrl = (value) => {
+  if (!value || typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+
+  const baseUrl = getApiBaseUrl();
+  const normalizedBase = baseUrl.endsWith("/")
+    ? baseUrl.slice(0, -1)
+    : baseUrl || "";
+  const normalizedPath = trimmed.startsWith("/")
+    ? trimmed
+    : `/${trimmed}`;
+
+  return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
+};
+
+const resolveSubmissionFileUrl = (submission) => {
+  if (!submission || typeof submission !== "object") {
+    return "";
+  }
+
+  const candidateKeys = [
+    "preview_url",
+    "previewUrl",
+    "file_url",
+    "fileUrl",
+    "document_url",
+    "documentUrl",
+    "download_url",
+    "downloadUrl",
+    "public_url",
+    "publicUrl",
+    "url",
+    "path",
+    "storage_path",
+    "storagePath",
+    "value",
+  ];
+
+  const visited = new WeakSet();
+
+  const resolveValue = (value) => {
+    if (!value) {
+      return "";
+    }
+
+    if (typeof value === "string") {
+      return normalizeAssetUrl(value);
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const url = resolveValue(item);
+        if (url) {
+          return url;
+        }
+      }
+      return "";
+    }
+
+    if (typeof value === "object") {
+      if (visited.has(value)) {
+        return "";
+      }
+
+      visited.add(value);
+
+      for (const key of candidateKeys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const url = resolveValue(value[key]);
+          if (url) {
+            return url;
+          }
+        }
+      }
+
+      const nestedCandidates = [
+        value.file,
+        value.document,
+        value.attachment,
+        value.source,
+      ];
+
+      for (const nested of nestedCandidates) {
+        const url = resolveValue(nested);
+        if (url) {
+          return url;
+        }
+      }
+    }
+
+    return "";
+  };
+
+  return resolveValue(submission);
+};
+
+const extractProfilePhotoFromOverview = (overview) => {
+  if (!overview) {
+    return "";
+  }
+
+  const documents = Array.isArray(overview.documents)
+    ? overview.documents
+    : Array.isArray(overview)
+    ? overview
+    : [];
+
+  const list = documents.length
+    ? documents
+    : Array.isArray(overview.documents)
+    ? overview.documents
+    : [];
+
+  const matchesPhotoDoc = (doc) => {
+    if (!doc) {
+      return false;
+    }
+
+    const documentKey = (doc.document_key || doc.documentKey || "").toLowerCase();
+    if (["photo", "idphoto", "photo2x2"].includes(documentKey)) {
+      return true;
+    }
+
+    const title = (doc.title || "").toLowerCase();
+    if (
+      title.includes("2x2") ||
+      title.includes("passport") ||
+      title.includes("photo")
+    ) {
+      return true;
+    }
+
+    const keywords = Array.isArray(doc.keywords) ? doc.keywords : [];
+    return keywords.some((keyword) => {
+      const lower = (keyword || "").toLowerCase();
+      return lower.includes("2x2") || lower.includes("photo");
+    });
+  };
+
+  for (const doc of list) {
+    if (!matchesPhotoDoc(doc)) {
+      continue;
+    }
+
+    const submission = doc.submission || doc.latestSubmission || null;
+    const url = resolveSubmissionFileUrl(submission);
+    if (url) {
+      return url;
+    }
+  }
+
+  return "";
+};
+
+const PROFILE_MODAL_BODY_STYLE = {
+  background:
+    "linear-gradient(135deg, rgba(13,110,253,0.08), rgba(102,16,242,0.06))",
+};
+
+const PROFILE_MODAL_CONTAINER_STYLE = {
+  maxWidth: "1080px",
+  margin: "0 auto",
+};
+
+const PROFILE_PHOTO_BOX_STYLE = {
+  width: "160px",
+  height: "160px",
+  borderRadius: "18px",
+  border: "2px solid rgba(148, 163, 184, 0.35)",
+  overflow: "hidden",
+  background:
+    "linear-gradient(135deg, rgba(226,232,240,0.9), rgba(203,213,225,0.9))",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+};
+
+const PROFILE_PHOTO_IMAGE_STYLE = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+};
+
+const PROFILE_SECTION_CARD_STYLE = {
+  border: "none",
+  borderRadius: "18px",
+  boxShadow: "0 18px 45px rgba(15, 23, 42, 0.08)",
+};
+
+const PROFILE_SECTION_BAR_STYLE = {
+  width: "6px",
+  minWidth: "6px",
+  height: "56px",
+  borderRadius: "999px",
+  background:
+    "linear-gradient(180deg, rgba(13,110,253,0.95), rgba(102,16,242,0.75))",
+};
+
+const PROFILE_SECTION_TITLE_STYLE = {
+  fontSize: "1.125rem",
+  fontWeight: 600,
+  color: "#0f172a",
+};
+
+const PROFILE_SECTION_SUBTITLE_STYLE = {
+  fontSize: "0.95rem",
+  color: "#64748b",
+};
+
+const PROFILE_HEADER_BADGE_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  padding: "0.45rem 0.85rem",
+  borderRadius: "999px",
+  backgroundColor: "rgba(13,110,253,0.12)",
+  color: "#0d6efd",
+  fontSize: "0.75rem",
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  fontWeight: 600,
+};
+
+const PROFILE_INPUT_STYLE = {
+  backgroundColor: "#f8fafc",
+  border: "1px solid rgba(148, 163, 184, 0.35)",
+  borderRadius: "12px",
+  padding: "0.6rem 0.75rem",
+  color: "#1e293b",
+  fontWeight: 500,
+  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+};
+
+const PROFILE_TEXTAREA_STYLE = {
+  ...PROFILE_INPUT_STYLE,
+  minHeight: "110px",
+  resize: "vertical",
+};
+
+const PROFILE_READONLY_INPUT_STYLE = {
+  ...PROFILE_INPUT_STYLE,
+  backgroundColor: "#eef2ff",
+  borderColor: "rgba(99, 102, 241, 0.35)",
+  color: "#3730a3",
+  fontWeight: 600,
+};
+
+const PROFILE_LABEL_CLASSNAME =
+  "text-uppercase small fw-semibold text-secondary";
 
 const GOVERNMENT_ID_FORM_FIELD_MAP = {
   sss_number: "sssNumber",
@@ -921,6 +1465,42 @@ const closeDocumentModal = useCallback(() => {
 
   const [benefitsSearchTerm, setBenefitsSearchTerm] = useState("");
   const [benefitsStatusFilter, setBenefitsStatusFilter] = useState("All");
+  const [benefitsDepartmentFilter, setBenefitsDepartmentFilter] =
+    useState("All");
+  const [benefitsPositionFilter, setBenefitsPositionFilter] = useState("All");
+  const benefitsFilterOptions = useMemo(() => {
+    const departmentSet = new Set();
+    const positionSet = new Set();
+
+    applicants.forEach((applicant) => {
+      if (!applicant?.is_in_benefits_enrollment) {
+        return;
+      }
+
+      const department =
+        applicant.jobPosting?.department ||
+        applicant.job_posting?.department ||
+        "";
+
+      if (department) {
+        departmentSet.add(department);
+      }
+
+      const position =
+        applicant.jobPosting?.position ||
+        applicant.job_posting?.position ||
+        "";
+
+      if (position) {
+        positionSet.add(position);
+      }
+    });
+
+    return {
+      departments: ["All", ...Array.from(departmentSet).sort()],
+      positions: ["All", ...Array.from(positionSet).sort()],
+    };
+  }, [applicants]);
   const [showBenefitsModal, setShowBenefitsModal] = useState(false);
   const [benefitsModalLoading, setBenefitsModalLoading] = useState(false);
   const [benefitsSaving, setBenefitsSaving] = useState(false);
@@ -935,6 +1515,61 @@ const closeDocumentModal = useCallback(() => {
     useState(null);
   const [benefitsValidationErrors, setBenefitsValidationErrors] = useState([]);
   const [benefitsEditable, setBenefitsEditable] = useState(false);
+  const [benefitsDocumentOverview, setBenefitsDocumentOverview] = useState(null);
+  const [profileCreationQueue, setProfileCreationQueue] = useState(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    try {
+      const stored = window.localStorage.getItem(
+        PROFILE_CREATION_QUEUE_STORAGE_KEY
+      );
+
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error("Failed to parse profile creation queue:", error);
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        PROFILE_CREATION_QUEUE_STORAGE_KEY,
+        JSON.stringify(profileCreationQueue)
+      );
+    } catch (error) {
+      console.error("Failed to persist profile creation queue:", error);
+    }
+  }, [profileCreationQueue]);
+
+  const [profileCreationModalVisible, setProfileCreationModalVisible] =
+    useState(false);
+  const [activeProfileCreationEntry, setActiveProfileCreationEntry] =
+    useState(null);
+  const [profileCreationForm, setProfileCreationForm] = useState(
+    createEmptyProfileForm()
+  );
+const [profileCreationSaving, setProfileCreationSaving] = useState(false);
+
+  useEffect(() => {
+    setProfileCreationForm((prev) => {
+      const computedAge = calculateAgeFromDateOfBirth(prev.dateOfBirth);
+      if (computedAge === prev.age) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        age: computedAge,
+      };
+    });
+  }, [profileCreationForm.dateOfBirth]);
 
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
@@ -2252,7 +2887,7 @@ const closeDocumentModal = useCallback(() => {
             </div>
             {!isProvided && (
               <div className="small text-muted mt-1">
-                Applicant hasn’t supplied this identifier yet.
+                Applicant hasn't supplied this identifier yet.
               </div>
             )}
           </div>
@@ -2533,14 +3168,6 @@ const closeDocumentModal = useCallback(() => {
       return;
     }
 
-    if (
-      !window.confirm(
-        "Are you sure you want to mark document submission as complete?"
-      )
-    ) {
-      return;
-    }
-
     try {
       if (!selectedApplicationForDocs?.id) {
         alert(
@@ -2583,7 +3210,8 @@ const closeDocumentModal = useCallback(() => {
       }
 
       alert(
-        "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review."
+        response.data?.message ||
+          "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review."
       );
       setOnboardingSubtab("Benefits Enroll");
     } catch (error) {
@@ -2594,7 +3222,13 @@ const closeDocumentModal = useCallback(() => {
         error.response?.data?.error ||
         "Failed to update status. Please try again.";
 
-      alert(message);
+      if (
+        message &&
+        message.trim() !==
+          "Unable to finalize the document submission. Please try again or contact support."
+      ) {
+        alert(message);
+      }
     }
   };
 
@@ -3607,13 +4241,13 @@ const closeDocumentModal = useCallback(() => {
         "philhealthNumber"
       ),
       pagibigNumber: normalizeIdentifier(fields.pagibig_number, "pagibigNumber"),
+      tinNumber: normalizeIdentifier(fields.tin_number, "tinNumber"),
       enrollmentDate: fields.enrollment_date || "",
       membershipProof: null,
       membershipProofName:
         metadata.membership_proof_name ||
         fallbackIdentifiers.membershipProofName ||
         "",
-      notes: metadata.notes || "",
     });
     setBenefitsEnrollmentStatus(payload.enrollment_status || "pending");
     if (payload.personal_info) {
@@ -3633,21 +4267,13 @@ const closeDocumentModal = useCallback(() => {
     setBenefitsEnrollmentStatus("pending");
     setBenefitsValidationErrors([]);
     setBenefitsEditable(false);
+    setBenefitsDocumentOverview(null);
   };
 
   const handleBenefitFieldChange = (field, value) => {
     setBenefitsForm((prev) => ({
       ...prev,
       [field]: value,
-    }));
-  };
-
-  const handleBenefitFileChange = (field, file) => {
-    setBenefitsForm((prev) => ({
-      ...prev,
-      [field]: file,
-      membershipProofName:
-        field === "membershipProof" && file ? file.name : prev.membershipProofName,
     }));
   };
 
@@ -3663,6 +4289,7 @@ const closeDocumentModal = useCallback(() => {
     setBenefitsSubmitMode("save");
     setShowBenefitsSubmitConfirm(false);
     setBenefitsEditable(false);
+    setBenefitsDocumentOverview(null);
 
     setSelectedApplicationForBenefits(applicant);
     setShowBenefitsModal(true);
@@ -3672,6 +4299,7 @@ const closeDocumentModal = useCallback(() => {
 
     try {
       documentOverview = await fetchDocumentRequirements(applicant.id);
+      setBenefitsDocumentOverview(documentOverview);
     } catch (docError) {
       console.error(
         "Error preloading document overview for benefits enrollment:",
@@ -3704,6 +4332,503 @@ const closeDocumentModal = useCallback(() => {
     }
   };
 
+  const handleQueueForProfileCreation = () => {
+    if (!selectedApplicationForBenefits) {
+      alert("Select an applicant before marking benefits as complete.");
+      return;
+    }
+
+    const applicantRecord = selectedApplicationForBenefits;
+    const applicantId = applicantRecord.id;
+
+    if (profileCreationQueue.some((entry) => entry.id === applicantId)) {
+      alert("This applicant is already listed in the Profile Creation tab.");
+      handleCloseBenefitsModal();
+      setActiveTab("Onboarding");
+      setOnboardingSubtab("Profile Creation");
+      return;
+    }
+
+    const applicantCore = applicantRecord.applicant || {};
+
+    const resolvedName =
+      benefitsApplicantInfo?.name ||
+      (applicantCore.first_name || applicantCore.last_name
+        ? `${applicantCore.first_name || ""} ${
+            applicantCore.last_name || ""
+          }`.trim()
+        : applicantRecord.employee_name || "N/A");
+
+    const resolvedEmail =
+      benefitsApplicantInfo?.email ||
+      applicantCore.email ||
+      applicantRecord.employee_email ||
+      "";
+
+    const resolvePhoneNumber = () => {
+      const candidates = [
+        benefitsApplicantInfo?.contact_number,
+        benefitsApplicantInfo?.phone_number,
+        applicantCore.contact_number,
+        applicantCore.phone_number,
+        applicantRecord.contact_number,
+        applicantRecord.phone_number,
+      ];
+
+      return candidates.find((value) =>
+        typeof value === "string" && value.trim().length > 0
+      )?.trim();
+    };
+
+    const resolvedDepartment =
+      benefitsApplicantInfo?.department ||
+      applicantRecord.jobPosting?.department ||
+      applicantRecord.job_posting?.department ||
+      "";
+
+    const resolvedPosition =
+      benefitsApplicantInfo?.position ||
+      applicantRecord.jobPosting?.position ||
+      applicantRecord.job_posting?.position ||
+      "";
+
+    const resolvedEmploymentStatus =
+      benefitsApplicantInfo?.employment_status ||
+      applicantRecord.employment_status ||
+      applicantCore.employment_status ||
+      "";
+
+    const resolvedDateStarted =
+      benefitsApplicantInfo?.date_started ||
+      applicantRecord.date_started ||
+      applicantCore.date_started ||
+      "";
+
+    const resolvedSalary =
+      benefitsApplicantInfo?.salary ||
+      applicantRecord.salary ||
+      (applicantRecord.jobPosting?.salary_min &&
+      applicantRecord.jobPosting?.salary_max
+        ? `${applicantRecord.jobPosting.salary_min} - ${applicantRecord.jobPosting.salary_max}`
+        : applicantRecord.job_posting?.salary_min &&
+          applicantRecord.job_posting?.salary_max
+        ? `${applicantRecord.job_posting.salary_min} - ${applicantRecord.job_posting.salary_max}`
+        : "");
+
+    const resolvedAddress = benefitsApplicantInfo?.address || {};
+
+    const calculateAge = (birthDateValue) => {
+      if (!birthDateValue) {
+        return "";
+      }
+
+      const birthDate = new Date(birthDateValue);
+      if (Number.isNaN(birthDate.getTime())) {
+        return "";
+      }
+
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const hasHadBirthdayThisYear =
+        today.getMonth() > birthDate.getMonth() ||
+        (today.getMonth() === birthDate.getMonth() &&
+          today.getDate() >= birthDate.getDate());
+
+      if (!hasHadBirthdayThisYear) {
+        age -= 1;
+      }
+
+      return age >= 0 ? String(age) : "";
+    };
+
+    const resolvedDateOfBirth =
+      benefitsApplicantInfo?.date_of_birth ||
+      applicantCore.date_of_birth ||
+      "";
+
+    const fallbackPhotoCandidates = [
+      benefitsApplicantInfo?.profile_photo_url,
+      benefitsApplicantInfo?.photo_url,
+      benefitsApplicantInfo?.profilePhotoUrl,
+      applicantCore.profile_photo_url,
+      applicantCore.photo_url,
+      applicantRecord.profile_photo_url,
+      applicantRecord.photo_url,
+    ];
+
+    const fallbackProfilePhotoUrl =
+      fallbackPhotoCandidates
+        .map((candidate) => normalizeAssetUrl(candidate))
+        .find((candidate) => candidate && candidate.length > 0) || "";
+
+    const resolvedProfilePhotoUrl =
+      extractProfilePhotoFromOverview(benefitsDocumentOverview) ||
+      fallbackProfilePhotoUrl;
+
+    const resolvedProfileData = {
+      fullName: resolvedName,
+      nickname: benefitsApplicantInfo?.nickname || applicantCore.nickname || "",
+      civilStatus:
+        benefitsApplicantInfo?.civil_status ||
+        applicantCore.civil_status ||
+        "",
+      gender: benefitsApplicantInfo?.gender || applicantCore.gender || "",
+      dateOfBirth: resolvedDateOfBirth,
+      age:
+        benefitsApplicantInfo?.age ||
+        applicantCore.age ||
+        calculateAge(resolvedDateOfBirth),
+      phoneNumber: resolvePhoneNumber() || "",
+      companyEmail: generateCompanyEmail(resolvedName),
+      emergencyContactName:
+        benefitsApplicantInfo?.emergency_contact_name ||
+        applicantCore.emergency_contact_name ||
+        "",
+      emergencyContactPhone:
+        benefitsApplicantInfo?.emergency_contact_phone ||
+        applicantCore.emergency_contact_phone ||
+        "",
+      province:
+        resolvedAddress.province ||
+        applicantCore.province ||
+        applicantRecord.province ||
+        "",
+      barangay:
+        resolvedAddress.barangay ||
+        applicantCore.barangay ||
+        applicantRecord.barangay ||
+        "",
+      city:
+        resolvedAddress.city ||
+        resolvedAddress.city_municipality ||
+        applicantCore.city ||
+        applicantRecord.city ||
+        "",
+      postalCode:
+        resolvedAddress.postal_code ||
+        applicantCore.postal_code ||
+        applicantRecord.postal_code ||
+        "",
+      presentAddress:
+        resolvedAddress.present_address ||
+        resolvedAddress.full ||
+        applicantCore.present_address ||
+        "",
+      position: resolvedPosition,
+      department: resolvedDepartment,
+      employmentStatus: resolvedEmploymentStatus,
+      dateStarted: resolvedDateStarted,
+      salary: resolvedSalary,
+      tenure: benefitsApplicantInfo?.tenure || "",
+      sss: benefitsForm.sssNumber || "",
+      philhealth: benefitsForm.philhealthNumber || "",
+      pagibig: benefitsForm.pagibigNumber || "",
+      tin: benefitsForm.tinNumber || "",
+      profilePhotoUrl: resolvedProfilePhotoUrl,
+    };
+
+    const queueEntry = {
+      id: applicantId,
+      name: resolvedName,
+      email: resolvedEmail,
+      department: resolvedDepartment,
+      position: resolvedPosition,
+      enrollmentStatus: benefitsEnrollmentStatus,
+      addedAt: new Date().toISOString(),
+      profileData: resolvedProfileData,
+      profileDataUpdatedAt: null,
+    };
+
+    setProfileCreationQueue((prev) => [...prev, queueEntry]);
+    alert("Applicant added to the Profile Creation tab.");
+    handleCloseBenefitsModal();
+    setActiveTab("Onboarding");
+    setOnboardingSubtab("Profile Creation");
+  };
+
+  const resetProfileCreationForm = useCallback(() => {
+    setProfileCreationForm(createEmptyProfileForm());
+  }, []);
+
+  const handleOpenProfileCreationModal = useCallback(
+    (entry) => {
+      if (!entry) {
+        return;
+      }
+
+      setActiveProfileCreationEntry(entry);
+      const defaults = createEmptyProfileForm();
+      const existing = entry.profileData || {};
+      const resolvedFullName = resolveProfileFullName(entry, existing);
+      const generatedCompanyEmail = generateCompanyEmail(resolvedFullName);
+      const initialCompanyEmail =
+        existing.companyEmail ||
+        generatedCompanyEmail ||
+        existing.email ||
+        entry.email ||
+        "";
+      const initialProfilePhotoUrl =
+        normalizeAssetUrl(
+          existing.profilePhotoUrl ||
+            existing.profile_photo_url ||
+            entry.profilePhotoUrl ||
+            entry.profile_photo_url
+        ) || "";
+      setProfileCreationForm({
+        ...defaults,
+        ...existing,
+        fullName: resolvedFullName,
+        companyEmail: initialCompanyEmail,
+        profilePhotoUrl: initialProfilePhotoUrl,
+        position: existing.position || entry.position || "",
+        department: existing.department || entry.department || "",
+        sss: existing.sss || "",
+        philhealth: existing.philhealth || "",
+        pagibig: existing.pagibig || "",
+        tin: existing.tin || "",
+      });
+      setProfileCreationModalVisible(true);
+
+      const entryId = entry.id;
+      if (!entryId) {
+        return;
+      }
+
+      const loadGovernmentIds = async () => {
+        try {
+          const overviewResult = await fetchDocumentRequirements(entryId);
+          const overviewData =
+            overviewResult?.overview || overviewResult?.overviewData || overviewResult;
+
+          if (!overviewData) {
+            return;
+          }
+
+          const governmentIds = extractGovernmentIdsFromOverview(overviewData);
+          const profilePhotoUrl = normalizeAssetUrl(
+            extractProfilePhotoFromOverview(overviewData)
+          );
+          setProfileCreationForm((prev) => ({
+            ...prev,
+            sss: governmentIds.sss || prev.sss,
+            philhealth: governmentIds.philhealth || prev.philhealth,
+            pagibig: governmentIds.pagibig || prev.pagibig,
+            tin: governmentIds.tin || prev.tin,
+            profilePhotoUrl: profilePhotoUrl || prev.profilePhotoUrl,
+          }));
+        } catch (error) {
+          console.error(
+            `Failed to fetch government IDs for application ${entryId}:`,
+            error
+          );
+        }
+      };
+
+      loadGovernmentIds();
+    },
+    [fetchDocumentRequirements, setProfileCreationModalVisible]
+  );
+
+  const handleCloseProfileCreationModal = useCallback(() => {
+    setProfileCreationModalVisible(false);
+    setActiveProfileCreationEntry(null);
+    resetProfileCreationForm();
+  }, [resetProfileCreationForm]);
+
+  const handleProfileCreationInputChange = (field, value) => {
+    setProfileCreationForm((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      };
+
+      if (field === "dateOfBirth") {
+        next.age = calculateAgeFromBirthdate(value);
+      }
+
+      if (field === "fullName") {
+        next.companyEmail = generateCompanyEmail(value) || "";
+      }
+
+      return next;
+    });
+  };
+
+  const renderProfileSection = (title, subtitle, content) => (
+    <Card
+      key={title}
+      className="border-0 shadow-sm rounded-4 mb-4"
+      style={PROFILE_SECTION_CARD_STYLE}
+    >
+      <Card.Body className="p-4 p-lg-5">
+        <div className="d-flex align-items-start gap-3 mb-4">
+          <div style={PROFILE_SECTION_BAR_STYLE} />
+          <div>
+            <h5 className="mb-1" style={PROFILE_SECTION_TITLE_STYLE}>
+              {title}
+            </h5>
+            {subtitle ? (
+              <p className="mb-0" style={PROFILE_SECTION_SUBTITLE_STYLE}>
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {content}
+      </Card.Body>
+    </Card>
+  );
+
+  const displayedProfilePhotoUrl = useMemo(
+    () =>
+      profileCreationForm.profilePhotoUrl &&
+      profileCreationForm.profilePhotoUrl.length > 0
+        ? profileCreationForm.profilePhotoUrl
+        : PROFILE_PLACEHOLDER_IMAGE,
+    [profileCreationForm.profilePhotoUrl]
+  );
+
+  const handleProfilePhotoError = useCallback(
+    (event) => {
+      if (!event || !event.target) {
+        return;
+      }
+
+      event.target.onerror = null;
+      event.target.src = PROFILE_PLACEHOLDER_IMAGE;
+    },
+    []
+  );
+
+  const handleSaveProfileCreationForm = async () => {
+    if (!activeProfileCreationEntry || profileCreationSaving) {
+      return;
+    }
+
+    const requiredFields = [
+      "nickname",
+      "civilStatus",
+      "gender",
+      "dateOfBirth",
+      "age",
+      "phoneNumber",
+      "emergencyContactName",
+      "emergencyContactPhone",
+      "province",
+      "barangay",
+      "city",
+      "postalCode",
+      "presentAddress",
+      "position",
+      "department",
+      "employmentStatus",
+      "dateStarted",
+      "salary",
+      "tenure",
+    ];
+
+    const hasMissingRequiredFields = requiredFields.some((fieldKey) => {
+      const value = profileCreationForm[fieldKey];
+      if (value === null || value === undefined) {
+        return true;
+      }
+      if (typeof value === "string") {
+        return value.trim() === "";
+      }
+      return false;
+    });
+
+    if (hasMissingRequiredFields) {
+      alert("Please fill out all required fields before saving.");
+      return;
+    }
+
+    const applicationId = activeProfileCreationEntry.id;
+    const numericAge = Number.parseInt(profileCreationForm.age, 10);
+    const payload = {
+      full_name: profileCreationForm.fullName || activeProfileCreationEntry.name,
+      nickname: profileCreationForm.nickname,
+      civil_status: profileCreationForm.civilStatus,
+      gender: profileCreationForm.gender,
+      birth_date: profileCreationForm.dateOfBirth,
+      age: Number.isNaN(numericAge) ? 0 : numericAge,
+      company_email: profileCreationForm.companyEmail,
+      contact_number: profileCreationForm.phoneNumber,
+      emergency_contact_name: profileCreationForm.emergencyContactName,
+      emergency_contact_phone: profileCreationForm.emergencyContactPhone,
+      province: profileCreationForm.province,
+      barangay: profileCreationForm.barangay,
+      city: profileCreationForm.city,
+      postal_code: profileCreationForm.postalCode,
+      present_address: profileCreationForm.presentAddress,
+      position: profileCreationForm.position,
+      department: profileCreationForm.department,
+      employment_status: profileCreationForm.employmentStatus,
+      hire_date: profileCreationForm.dateStarted,
+      salary:
+        typeof profileCreationForm.salary === "string"
+          ? profileCreationForm.salary.replace(/,/g, "")
+          : profileCreationForm.salary,
+      tenurity: profileCreationForm.tenure,
+      sss: profileCreationForm.sss || null,
+      philhealth: profileCreationForm.philhealth || null,
+      pagibig: profileCreationForm.pagibig || null,
+      tin_no: profileCreationForm.tin || null,
+      metadata: {
+        profile_photo_url: profileCreationForm.profilePhotoUrl || null,
+      },
+    };
+
+    try {
+      setProfileCreationSaving(true);
+
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        `http://localhost:8000/api/applications/${applicationId}/profile-creation`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.data?.success) {
+        setProfileCreationQueue((prev) =>
+            prev.filter((entry) => entry.id !== applicationId)
+        );
+
+        setApplicants((prev) =>
+          prev.filter((applicationRecord) => applicationRecord.id !== applicationId)
+        );
+
+        setApplicantsDocumentStatus((prev) => {
+          if (!prev || !prev[applicationId]) {
+            return prev;
+          }
+          const updated = { ...prev };
+          delete updated[applicationId];
+          return updated;
+        });
+
+        await fetchApplicants();
+
+        alert("Personal information saved and linked to employee records.");
+        handleCloseProfileCreationModal();
+      }
+    } catch (error) {
+      console.error("Error saving personal information:", error);
+      const errorMessage =
+        error.response?.data?.message ||
+        error.response?.data?.errors?.company_email?.[0] ||
+        error.response?.data?.errors?.full_name?.[0] ||
+        "Failed to save personal information. Please try again.";
+      alert(errorMessage);
+    } finally {
+      setProfileCreationSaving(false);
+    }
+  };
+
   const handleBenefitsSubmit = async (targetStatus = null) => {
     if (!selectedApplicationForBenefits) {
       return;
@@ -3732,8 +4857,8 @@ const closeDocumentModal = useCallback(() => {
       formData.append("sss_number", benefitsForm.sssNumber || "");
       formData.append("philhealth_number", benefitsForm.philhealthNumber || "");
       formData.append("pagibig_number", benefitsForm.pagibigNumber || "");
+      formData.append("tin_number", benefitsForm.tinNumber || "");
       formData.append("enrollment_date", benefitsForm.enrollmentDate || "");
-      formData.append("notes", benefitsForm.notes || "");
 
       if (benefitsForm.membershipProof instanceof File) {
         formData.append("membership_proof", benefitsForm.membershipProof);
@@ -3811,10 +4936,6 @@ const closeDocumentModal = useCallback(() => {
       if (!benefitsForm.enrollmentDate) {
         errors.push("Enrollment date is required when submitting.");
       }
-
-      if (!benefitsForm.membershipProofName && !(benefitsForm.membershipProof instanceof File)) {
-        errors.push("Proof of membership is required when submitting.");
-      }
     }
 
     return errors;
@@ -3836,6 +4957,11 @@ const closeDocumentModal = useCallback(() => {
   }
 
   const filteredApplicants = getFilteredApplicants();
+  const isApplicantInProfileQueue = selectedApplicationForBenefits
+    ? profileCreationQueue.some(
+        (entry) => entry.id === selectedApplicationForBenefits.id
+      )
+    : false;
 
   // Debug logging
 
@@ -4062,7 +5188,17 @@ const closeDocumentModal = useCallback(() => {
                         }
                       }}
                     >
-                      {tab}
+                      <span>{tab}</span>
+                      {tab === "Profile Creation" &&
+                        profileCreationQueue.length > 0 && (
+                          <Badge
+                            bg={onboardingSubtab === tab ? "light" : "secondary"}
+                            text={onboardingSubtab === tab ? "dark" : undefined}
+                            className="ms-2"
+                          >
+                            {profileCreationQueue.length}
+                          </Badge>
+                        )}
                     </button>
                   ))}
                 </div>
@@ -4420,34 +5556,64 @@ const closeDocumentModal = useCallback(() => {
                     <div className="card border-0 shadow-sm mb-3">
                       <div className="card-body p-3">
                         <div className="d-flex flex-wrap align-items-center gap-3">
-                          <div
-                            className="flex-grow-1"
-                            style={{ minWidth: "250px" }}
-                          >
+                          <div className="flex-grow-1" style={{ minWidth: "240px" }}>
                             <div className="input-group">
                               <span className="input-group-text bg-white">
-                                <FontAwesomeIcon
-                                  icon={faSearch}
-                                  className="text-muted"
-                                />
+                                <FontAwesomeIcon icon={faSearch} className="text-muted" />
                               </span>
-
                               <input
                                 type="text"
                                 className="form-control"
-                                placeholder="Search by employee name..."
+                                placeholder="Search by employee name or email..."
                                 value={benefitsSearchTerm}
-                                onChange={(e) =>
-                                  setBenefitsSearchTerm(e.target.value)
-                                }
+                                onChange={(e) => setBenefitsSearchTerm(e.target.value)}
                                 style={{ borderLeft: "none" }}
                               />
                             </div>
                           </div>
-                          <div className="text-muted small mt-2 mt-md-0">
-                            Employees listed here have completed document
-                            submission and are ready for benefits enrollment.
+                          <div style={{ minWidth: "170px" }}>
+                            <Form.Select
+                              value={benefitsStatusFilter}
+                              onChange={(e) => setBenefitsStatusFilter(e.target.value)}
+                            >
+                              <option value="All">All Status</option>
+                              <option value="pending">Pending</option>
+                              <option value="in_progress">In Progress</option>
+                              <option value="completed">Completed</option>
+                            </Form.Select>
                           </div>
+                          <div style={{ minWidth: "170px" }}>
+                            <Form.Select
+                              value={benefitsDepartmentFilter}
+                              onChange={(e) =>
+                                setBenefitsDepartmentFilter(e.target.value)
+                              }
+                            >
+                              {benefitsFilterOptions.departments.map((option) => (
+                                <option key={`dept-${option}`} value={option}>
+                                  {option === "All" ? "All Departments" : option}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </div>
+                          <div style={{ minWidth: "170px" }}>
+                            <Form.Select
+                              value={benefitsPositionFilter}
+                              onChange={(e) =>
+                                setBenefitsPositionFilter(e.target.value)
+                              }
+                            >
+                              {benefitsFilterOptions.positions.map((option) => (
+                                <option key={`pos-${option}`} value={option}>
+                                  {option === "All" ? "All Positions" : option}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </div>
+                        </div>
+                        <div className="text-muted small mt-3">
+                          Quickly search and filter by status, department, or position to
+                          find applicants ready for benefits enrollment.
                         </div>
                       </div>
                     </div>
@@ -4487,7 +5653,35 @@ const closeDocumentModal = useCallback(() => {
                         );
                       });
 
-                      const statusFiltered = filtered.filter((applicant) => {
+                      const departmentFiltered = filtered.filter((applicant) => {
+                        if (benefitsDepartmentFilter === "All") {
+                          return true;
+                        }
+
+                        const department =
+                          applicant.jobPosting?.department ||
+                          applicant.job_posting?.department ||
+                          "";
+
+                        return department === benefitsDepartmentFilter;
+                      });
+
+                      const positionFiltered = departmentFiltered.filter(
+                        (applicant) => {
+                          if (benefitsPositionFilter === "All") {
+                            return true;
+                          }
+
+                          const position =
+                            applicant.jobPosting?.position ||
+                            applicant.job_posting?.position ||
+                            "";
+
+                          return position === benefitsPositionFilter;
+                        }
+                      );
+
+                      const statusFiltered = positionFiltered.filter((applicant) => {
                         if (benefitsStatusFilter === "All") {
                           return true;
                         }
@@ -4517,7 +5711,54 @@ const closeDocumentModal = useCallback(() => {
                         );
                       }
 
+                      const statusCounts = finalList.reduce(
+                        (acc, applicant) => {
+                          const status = (
+                            applicant.benefits_enrollment_status || "pending"
+                          ).toLowerCase();
+
+                          if (status === "completed") {
+                            acc.completed += 1;
+                          } else if (status === "in_progress") {
+                            acc.inProgress += 1;
+                          } else {
+                            acc.pending += 1;
+                          }
+
+                          return acc;
+                        },
+                        { pending: 0, completed: 0, inProgress: 0 }
+                      );
+
                       return (
+                        <>
+                          <div className="card border-0 shadow-sm mb-3">
+                            <div className="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+                              <div>
+                                <h6 className="mb-1">Enrollment Status Overview</h6>
+                                <p className="text-muted small mb-0">
+                                  Monitor applicant progress and address pending enrollments promptly.
+                                </p>
+                              </div>
+                              <div className="d-flex flex-wrap gap-2">
+                                <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light rounded">
+                                  <Badge bg="warning" text="dark">
+                                    Pending
+                                  </Badge>
+                                  <span className="fw-semibold">{statusCounts.pending}</span>
+                                </div>
+                                <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light rounded">
+                                  <Badge bg="primary">In Progress</Badge>
+                                  <span className="fw-semibold">{statusCounts.inProgress}</span>
+                                </div>
+                                <div className="d-flex align-items-center gap-2 px-3 py-2 bg-light rounded">
+                                  <Badge bg="success">Completed</Badge>
+                                  <span className="fw-semibold">{statusCounts.completed}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
                         <div className="card border-0 shadow-sm">
                           <div className="card-body p-0">
                             <div className="table-responsive">
@@ -4723,6 +5964,7 @@ const closeDocumentModal = useCallback(() => {
                             </div>
                           </div>
                         </div>
+                        </>
                       );
                     })()}
                   </>
@@ -4730,7 +5972,200 @@ const closeDocumentModal = useCallback(() => {
 
                 {/* Placeholder for upcoming onboarding subtabs */}
 
-                {["Profile Creation", "Orientation Schedule", "Start Date"].includes(
+                {onboardingSubtab === "Profile Creation" ? (
+                  profileCreationQueue.length === 0 ? (
+                    <div className="card border-0 shadow-sm">
+                      <div className="card-body text-center py-5">
+                        <h5 className="text-muted mb-2">Profile Creation</h5>
+
+                        <p className="text-muted mb-0">
+                          Mark an applicant as complete from the Benefits Enrollment modal to queue them here for profile setup.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="card border-0 shadow-sm">
+                      <div className="card-body p-0">
+                        <div className="table-responsive">
+                          <Table hover className="mb-0">
+                            <thead style={{ backgroundColor: "#f8f9fa" }}>
+                              <tr>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    fontWeight: 600,
+                                    color: "#495057",
+                                  }}
+                                >
+                                  Applicant
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    fontWeight: 600,
+                                    color: "#495057",
+                                  }}
+                                >
+                                  Department &amp; Position
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    fontWeight: 600,
+                                    color: "#495057",
+                                  }}
+                                >
+                                  Status
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    fontWeight: 600,
+                                    color: "#495057",
+                                  }}
+                                >
+                                  Create Profile
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {profileCreationQueue.map((entry) => {
+                                const normalizedStatus = (entry.enrollmentStatus || "pending").toString();
+                                const statusLabel = normalizedStatus
+                                  .split("_")
+                                  .map((segment) =>
+                                    segment.length > 0
+                                      ? segment[0].toUpperCase() + segment.slice(1)
+                                      : segment
+                                  )
+                                  .join(" ");
+
+                                let statusVariant = "warning";
+                                if (normalizedStatus === "completed") {
+                                  statusVariant = "success";
+                                } else if (normalizedStatus === "in_progress") {
+                                  statusVariant = "primary";
+                                }
+
+                                const hasProfileData = Boolean(
+                                  entry.profileDataUpdatedAt
+                                );
+                                const profileButtonLabel = hasProfileData
+                                  ? "Edit Personal Info"
+                                  : "Create Profile";
+
+                                const profilePhotoUrl =
+                                  normalizeAssetUrl(
+                                    entry.profileData?.profilePhotoUrl
+                                  ) || PROFILE_PLACEHOLDER_IMAGE;
+
+                                return (
+                                  <tr key={entry.id}>
+                                    <td
+                                      style={{
+                                        padding: "16px",
+                                        verticalAlign: "middle",
+                                      }}
+                                    >
+                                      <div className="d-flex align-items-center gap-3">
+                                        <div
+                                          style={{
+                                            width: "56px",
+                                            height: "56px",
+                                            borderRadius: "12px",
+                                            overflow: "hidden",
+                                            border:
+                                              "1px solid rgba(148, 163, 184, 0.3)",
+                                            backgroundColor: "#f8fafc",
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          <img
+                                            src={profilePhotoUrl}
+                                            alt={`${entry.name} profile`}
+                                            style={{
+                                              width: "100%",
+                                              height: "100%",
+                                              objectFit: "cover",
+                                            }}
+                                            onError={(event) => {
+                                              if (event?.target) {
+                                                event.target.onerror = null;
+                                                event.target.src =
+                                                  PROFILE_PLACEHOLDER_IMAGE;
+                                              }
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <div className="fw-semibold">
+                                            {entry.name}
+                                          </div>
+                                          <div className="small text-muted">
+                                            {entry.email}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "16px",
+                                        verticalAlign: "middle",
+                                      }}
+                                    >
+                                      <div style={{ color: "#495057" }}>
+                                        {entry.department}
+                                      </div>
+                                      {entry.position && (
+                                        <div
+                                          className="text-muted small"
+                                          style={{ fontStyle: "italic" }}
+                                        >
+                                          {entry.position}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "16px",
+                                        verticalAlign: "middle",
+                                      }}
+                                    >
+                                      <Badge
+                                        bg={statusVariant}
+                                        className="px-3 py-2"
+                                        style={{ borderRadius: "999px" }}
+                                      >
+                                        {statusLabel}
+                                      </Badge>
+                                    </td>
+                                    <td
+                                      style={{
+                                        padding: "16px",
+                                        verticalAlign: "middle",
+                                      }}
+                                    >
+                                      <Button
+                                        variant={hasProfileData ? "outline-primary" : "primary"}
+                                        size="sm"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          handleOpenProfileCreationModal(entry);
+                                        }}
+                                      >
+                                        {profileButtonLabel}
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </Table>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : ["Orientation Schedule", "Start Date"].includes(
                   onboardingSubtab
                 ) && (
                   <div className="card border-0 shadow-sm">
@@ -7142,10 +8577,6 @@ const closeDocumentModal = useCallback(() => {
 
 
         }
-
-
-
-
 
 
 
@@ -10059,7 +11490,7 @@ const closeDocumentModal = useCallback(() => {
         onHide={handleCloseFollowUpModal}
         centered
       >
-        <Modal.Header closeButton>
+    <Modal.Header closeButton style={{ borderBottom: "none" }} className="px-4 px-lg-5 pt-4">
           <Modal.Title>
             <FontAwesomeIcon icon={faEnvelope} className="me-2 text-primary" />
             {followUpActionType === "accept"
@@ -10339,18 +11770,6 @@ const closeDocumentModal = useCallback(() => {
                     </Col>
                   </Row>
 
-                  <div className="d-flex justify-content-end mb-3">
-                    <Button
-                      variant={benefitsEditable ? "outline-secondary" : "outline-primary"}
-                      size="sm"
-                      onClick={() => setBenefitsEditable((prev) => !prev)}
-                      disabled={benefitsSaving}
-                    >
-                      <FontAwesomeIcon icon={faEdit} className="me-1" />
-                      {benefitsEditable ? "Lock Fields" : "Edit Details"}
-                    </Button>
-                  </div>
-
                   <Row className="gy-3">
                     <Col md={6}>
                       <Form.Group>
@@ -10402,6 +11821,20 @@ const closeDocumentModal = useCallback(() => {
                     </Col>
                     <Col md={6}>
                       <Form.Group>
+                        <Form.Label>TIN Number</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={benefitsForm.tinNumber}
+                          onChange={(e) =>
+                            handleBenefitFieldChange("tinNumber", e.target.value)
+                          }
+                          placeholder="Enter TIN number"
+                          disabled={!benefitsEditable}
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
                         <Form.Label>Date of Enrollment</Form.Label>
                         <Form.Control
                           type="date"
@@ -10418,42 +11851,43 @@ const closeDocumentModal = useCallback(() => {
                     </Col>
                   </Row>
 
-                  <Form.Group className="mb-0">
-                    <Form.Label className="fw-semibold">Notes</Form.Label>
-                    <Form.Control
-                      as="textarea"
-                      rows={3}
-                      value={benefitsForm.notes}
-                      onChange={(e) =>
-                        handleBenefitFieldChange("notes", e.target.value)
-                      }
-                      placeholder="Additional instructions or notes..."
-                    />
-                  </Form.Group>
                 </Form>
 
-                <div className="mt-4">
-                  <Form.Label className="fw-semibold">
-                    Proof of Membership
-                  </Form.Label>
-                  <div className="d-flex flex-column flex-lg-row align-items-lg-center gap-3">
-                    <Form.Control
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] || null;
-                        handleBenefitFileChange("membershipProof", file);
-                      }}
-                      disabled={!benefitsEditable}
-                    />
-                    {benefitsForm.membershipProofName && (
+                <div className="d-flex flex-wrap justify-content-between align-items-center mt-4">
                       <div className="text-muted small">
-                        Current file:{" "}
-                        <span className="fw-semibold">
-                          {benefitsForm.membershipProofName}
-                        </span>
+                    Use Complete to queue the applicant for Profile Creation while keeping them listed here.
                       </div>
-                    )}
+                  <div className="d-flex flex-wrap gap-2">
+                    <Button
+                      variant="success"
+                      onClick={handleQueueForProfileCreation}
+                      disabled={
+                        benefitsSaving ||
+                        benefitsModalLoading ||
+                        !selectedApplicationForBenefits ||
+                        isApplicantInProfileQueue
+                      }
+                    >
+                      <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
+                      {isApplicantInProfileQueue ? "Queued" : "Complete"}
+                    </Button>
+                    <Button
+                      variant={benefitsEditable ? "outline-secondary" : "outline-primary"}
+                      onClick={() => setBenefitsEditable((prev) => !prev)}
+                      disabled={benefitsSaving}
+                    >
+                      <FontAwesomeIcon icon={faEdit} className="me-1" />
+                      {benefitsEditable ? "Lock Fields" : "Edit Details"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={() => handleBenefitsSubmit()}
+                      disabled={benefitsSaving || benefitsModalLoading}
+                    >
+                      {benefitsSaving && benefitsSubmitMode === "save"
+                        ? "Saving..."
+                        : "Save Enrollment"}
+                    </Button>
                   </div>
                 </div>
               </>
@@ -10466,15 +11900,6 @@ const closeDocumentModal = useCallback(() => {
               disabled={benefitsSaving}
             >
               Close
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleBenefitsSubmit}
-              disabled={benefitsSaving || benefitsModalLoading}
-            >
-            {benefitsSaving && benefitsSubmitMode === "save"
-              ? "Saving..."
-              : "Save Enrollment"}
             </Button>
           </Modal.Footer>
         </Modal>
@@ -10529,6 +11954,572 @@ const closeDocumentModal = useCallback(() => {
             disabled={benefitsSaving}
           >
             Confirm Submit
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal
+        show={profileCreationModalVisible}
+        onHide={handleCloseProfileCreationModal}
+        centered
+        size="xl"
+        contentClassName="border-0 overflow-hidden rounded-4"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            Personal Information{" "}
+            {activeProfileCreationEntry ? `- ${activeProfileCreationEntry.name}` : ""}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={PROFILE_MODAL_BODY_STYLE} className="px-4 px-lg-5 pb-5">
+          <div style={PROFILE_MODAL_CONTAINER_STYLE}>
+            <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between mb-4 gap-4">
+              <div className="d-flex align-items-start gap-3">
+                <div style={PROFILE_PHOTO_BOX_STYLE}>
+                  <img
+                    src={displayedProfilePhotoUrl}
+                    alt={`${
+                      profileCreationForm.fullName ||
+                      activeProfileCreationEntry?.name ||
+                      "Applicant"
+                    } profile`}
+                    style={PROFILE_PHOTO_IMAGE_STYLE}
+                    onError={handleProfilePhotoError}
+                  />
+                </div>
+                <div>
+                  <span style={PROFILE_HEADER_BADGE_STYLE}>Profile Creation</span>
+                  <h3 className="mt-3 mb-1 text-dark fw-semibold">
+                    Applicant Personal Profile
+                  </h3>
+                  <p className="text-muted mb-0">
+                    Review and confirm the applicant details before saving.
+                  </p>
+                </div>
+              </div>
+              {activeProfileCreationEntry?.name ? (
+                <div className="mt-3 mt-lg-0 text-lg-end">
+                  <div className="fw-semibold text-dark">
+                    {activeProfileCreationEntry.name}
+                  </div>
+                  {activeProfileCreationEntry.position ||
+                  activeProfileCreationEntry.department ? (
+                    <div className="text-muted small">
+                      {[activeProfileCreationEntry.position, activeProfileCreationEntry.department]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+          <Form>
+              {renderProfileSection(
+                "Personal Information",
+                "Key personal details submitted by the applicant.",
+              <Row className="gy-3">
+                <Col md={6}>
+                  <Form.Group controlId="profileFullName">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Full Name
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.fullName}
+                      readOnly
+                      placeholder="Auto-filled full name"
+                      style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group controlId="profileNickname">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Nickname
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.nickname}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "nickname",
+                            e.target.value
+                          )
+                      }
+                      placeholder="Enter nickname"
+                      style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileCivilStatus">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Civil Status
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.civilStatus}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "civilStatus",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter civil status"
+                      style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileGender">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Gender
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.gender}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "gender",
+                            e.target.value
+                          )
+                      }
+                      placeholder="Enter gender"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileDateOfBirth">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Date of Birth
+                      </Form.Label>
+                    <Form.Control
+                      type="date"
+                      value={profileCreationForm.dateOfBirth}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "dateOfBirth",
+                          e.target.value
+                        )
+                      }
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileAge">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Age
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.age}
+                      readOnly
+                      placeholder="Auto-calculated age"
+                        style={PROFILE_READONLY_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              )}
+
+              {renderProfileSection(
+                "Contact Information",
+                "Emergency contacts and ways to reach the applicant.",
+              <Row className="gy-3">
+                <Col md={4}>
+                  <Form.Group controlId="profileCompanyEmail">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Company Email
+                    </Form.Label>
+                    <Form.Control
+                      type="email"
+                      value={profileCreationForm.companyEmail}
+                      readOnly
+                      placeholder="Auto-generated company email"
+                      style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                    <div className="text-muted small mt-1">
+                      Generated from the applicant&apos;s name.
+                    </div>
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profilePhoneNumber">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Phone Number
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.phoneNumber}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "phoneNumber",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter phone number"
+                      style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileEmergencyContactName">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Emergency Contact Name
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.emergencyContactName}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "emergencyContactName",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter emergency contact name"
+                      style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileEmergencyContactPhone">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Emergency Contact Phone
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.emergencyContactPhone}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "emergencyContactPhone",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter emergency contact phone"
+                      style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              )}
+
+              {renderProfileSection(
+                "Address Information",
+                "Residential details used for records and logistics.",
+              <Row className="gy-3">
+                <Col md={3}>
+                  <Form.Group controlId="profileProvince">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Province
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.province}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "province",
+                            e.target.value
+                          )
+                      }
+                      placeholder="Enter province"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profileBarangay">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Barangay
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.barangay}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "barangay",
+                            e.target.value
+                          )
+                      }
+                      placeholder="Enter barangay"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profileCity">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        City / Municipality
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.city}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange("city", e.target.value)
+                      }
+                      placeholder="Enter city or municipality"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profilePostalCode">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Postal Code
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.postalCode}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "postalCode",
+                            e.target.value
+                          )
+                      }
+                      placeholder="Enter postal code"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={12}>
+                  <Form.Group controlId="profilePresentAddress">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Present Address
+                      </Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={profileCreationForm.presentAddress}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "presentAddress",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter present address"
+                        style={PROFILE_TEXTAREA_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              )}
+
+              {renderProfileSection(
+                "Employment Information",
+                "Placement details for onboarding and payroll.",
+              <Row className="gy-3">
+                <Col md={4}>
+                  <Form.Group controlId="profilePosition">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Position
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.position}
+                      readOnly
+                      placeholder="Auto-filled position"
+                        style={PROFILE_READONLY_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileDepartment">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Department
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.department}
+                      readOnly
+                      placeholder="Auto-filled department"
+                        style={PROFILE_READONLY_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileEmploymentStatus">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Employment Status
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.employmentStatus}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "employmentStatus",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Enter employment status"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileDateStarted">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Date Started
+                      </Form.Label>
+                    <Form.Control
+                      type="date"
+                      value={profileCreationForm.dateStarted}
+                      onChange={(e) =>
+                          handleProfileCreationInputChange(
+                            "dateStarted",
+                            e.target.value
+                          )
+                      }
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileSalary">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Salary
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.salary}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange("salary", e.target.value)
+                      }
+                      placeholder="Enter salary"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
+                  <Form.Group controlId="profileTenure">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Tenure
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.tenure}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange("tenure", e.target.value)
+                      }
+                      placeholder="Enter tenure"
+                        style={PROFILE_INPUT_STYLE}
+                      required
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+              )}
+
+              {renderProfileSection(
+                "Government Identifications",
+                "Sourced automatically from the applicant's Document Submission stage.",
+                <>
+                  <div className="text-muted small mb-3">
+                    These identifiers are view-only to preserve data integrity.
+                  </div>
+              <Row className="gy-3">
+                <Col md={3}>
+                  <Form.Group controlId="profileSss">
+                        <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                          SSS
+                        </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.sss}
+                          readOnly
+                          placeholder="Auto-filled from documents"
+                          style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profilePhilhealth">
+                        <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                          PhilHealth
+                        </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.philhealth}
+                          readOnly
+                          placeholder="Auto-filled from documents"
+                          style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profilePagibig">
+                        <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                          Pag-IBIG
+                        </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.pagibig}
+                          readOnly
+                          placeholder="Auto-filled from documents"
+                          style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={3}>
+                  <Form.Group controlId="profileTin">
+                        <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                          TIN
+                        </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.tin}
+                          readOnly
+                          placeholder="Auto-filled from documents"
+                          style={PROFILE_READONLY_INPUT_STYLE}
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+                </>
+              )}
+          </Form>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseProfileCreationModal}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveProfileCreationForm}
+            disabled={profileCreationSaving}
+          >
+            {profileCreationSaving ? (
+              <>
+                <span
+                  className="spinner-border spinner-border-sm me-2"
+                  role="status"
+                  aria-hidden="true"
+                ></span>
+                Saving...
+              </>
+            ) : (
+              "Save Personal Info"
+            )}
           </Button>
         </Modal.Footer>
       </Modal>

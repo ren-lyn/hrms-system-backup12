@@ -10,6 +10,7 @@ use App\Models\DocumentSubmission;
 use App\Models\DocumentFollowUpRequest;
 use App\Notifications\DocumentStatusChanged;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -74,6 +75,54 @@ class DocumentController extends Controller
         'fit-to-work clearance' => 'medicalCertificate',
         'vaccination records' => 'vaccinationRecords',
     ];
+
+    private const REVIEWED_STATUS_BASE_PATTERNS = [
+        'received',
+        'approved',
+        'completed',
+        'done',
+    ];
+
+    private function buildReviewedStatusClause(Builder $query): Builder
+    {
+        return $query->where(function (Builder $statusQuery) {
+            foreach (self::REVIEWED_STATUS_BASE_PATTERNS as $index => $pattern) {
+                $applyPattern = function (Builder $clause) use ($pattern) {
+                    $patternLower = strtolower($pattern);
+                    $clause
+                        ->whereRaw("LOWER(TRIM(status)) = ?", [$patternLower])
+                        ->orWhereRaw("LOWER(TRIM(status)) LIKE ?", ["{$patternLower} %"])
+                        ->orWhereRaw("LOWER(TRIM(status)) LIKE ?", ["{$patternLower}_%"]);
+                };
+
+                if ($index === 0) {
+                    $applyPattern($statusQuery);
+                } else {
+                    $statusQuery->orWhere(function (Builder $subQuery) use ($applyPattern) {
+                        $applyPattern($subQuery);
+                    });
+                }
+            }
+        });
+    }
+
+    private function applyReviewedStatusFilter(Builder $query): Builder
+    {
+        return $this->buildReviewedStatusClause($query);
+    }
+
+    private function normalizeReviewedSubmissionStatuses(int $applicationId): void
+    {
+        try {
+            $query = DocumentSubmission::query()->where('application_id', $applicationId);
+            $this->buildReviewedStatusClause($query)->update(['status' => 'received']);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to normalize document submission statuses.', [
+                'application_id' => $applicationId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 
     private const STANDARD_DOCUMENT_DEFINITIONS = [
         [
@@ -1420,10 +1469,12 @@ class DocumentController extends Controller
             $requiredIds = $requiredDocuments->pluck('id')->toArray();
 
             // Get all approved submissions
-            $approvedSubmissions = DocumentSubmission::where('application_id', $applicationId)
-                ->whereIn('document_requirement_id', $requiredIds)
-                ->where('status', 'received')
-                ->get();
+            $this->normalizeReviewedSubmissionStatuses($applicationId);
+
+            $approvedSubmissions = $this->applyReviewedStatusFilter(
+                DocumentSubmission::where('application_id', $applicationId)
+                    ->whereIn('document_requirement_id', $requiredIds)
+            )->get();
 
             $approvedIds = $approvedSubmissions->pluck('document_requirement_id')->toArray();
             $allApproved = count($approvedIds) === count($requiredIds) && 
@@ -1512,10 +1563,12 @@ class DocumentController extends Controller
                     ->where('is_required', true)
                     ->pluck('id');
 
-                $approvedCount = DocumentSubmission::where('application_id', $applicationId)
-                    ->whereIn('document_requirement_id', $requiredDocs)
-                    ->where('status', 'received')
-                    ->count();
+                $this->normalizeReviewedSubmissionStatuses($applicationId);
+
+                $approvedCount = $this->applyReviewedStatusFilter(
+                    DocumentSubmission::where('application_id', $applicationId)
+                        ->whereIn('document_requirement_id', $requiredDocs)
+                )->count();
 
                 if ($requiredDocs->count() > 0 && $approvedCount === $requiredDocs->count()) {
                     $allApproved = true;
@@ -1589,19 +1642,7 @@ class DocumentController extends Controller
                 ->where('is_required', true)
                 ->pluck('id');
 
-            if ($requiredDocs->count() > 0) {
-                $approvedCount = DocumentSubmission::where('application_id', $applicationId)
-                    ->whereIn('document_requirement_id', $requiredDocs)
-                    ->where('status', 'received')
-                    ->count();
-
-                if ($approvedCount !== $requiredDocs->count()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'All required documents must be approved before completing the submission.',
-                    ], 422);
-                }
-            }
+            $this->normalizeReviewedSubmissionStatuses($applicationId);
 
             try {
                 $this->ensureBenefitsEnrollmentTable();
@@ -1677,7 +1718,16 @@ class DocumentController extends Controller
                 'documentSubmissions',
             ]);
 
-            $overview = $this->buildDocumentOverview($application);
+            $overview = null;
+
+            try {
+                $overview = $this->buildDocumentOverview($application);
+            } catch (\Throwable $overviewException) {
+                Log::warning('Unable to build document overview after completion.', [
+                    'application_id' => $application->id,
+                    'error' => $overviewException->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
@@ -1696,7 +1746,7 @@ class DocumentController extends Controller
             Log::error('Error completing document submission: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to complete document submission.',
+                'message' => 'Unable to finalize the document submission. Please try again or contact support.',
             ], 500);
         }
     }

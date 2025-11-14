@@ -321,6 +321,59 @@ const EmployeeRecords = () => {
     fetchEmployees();
   }, [fetchEmployees]);
 
+  useEffect(() => {
+    const handleNewEmployeeRecord = (event) => {
+      const profile = event?.detail;
+
+      if (!profile) {
+        return;
+      }
+
+      fetchEmployees(true);
+
+      const userId = profile.user?.id || profile.user_id;
+
+      if (userId) {
+        setJustSavedEmployees((prev) => {
+          const next = new Set(prev);
+          next.add(userId);
+          return next;
+        });
+
+        setTimeout(() => {
+          setJustSavedEmployees((prev) => {
+            const next = new Set(prev);
+            next.delete(userId);
+            return next;
+          });
+        }, 3 * 60 * 1000);
+      }
+
+      const firstName =
+        profile.first_name || profile.user?.first_name || "New";
+      const lastName = profile.last_name || profile.user?.last_name || "Employee";
+
+      if (showSuccess) {
+        showSuccess(
+          `Employee ${firstName} ${lastName}`.trim() +
+            " has been added to Employee Records."
+        );
+      }
+    };
+
+    window.addEventListener(
+      "employee-records:new-entry",
+      handleNewEmployeeRecord
+    );
+
+    return () => {
+      window.removeEventListener(
+        "employee-records:new-entry",
+        handleNewEmployeeRecord
+      );
+    };
+  }, [fetchEmployees, showSuccess]);
+
   // Auto-clear notifications and highlighting after 2 minutes
   useEffect(() => {
     const interval = setInterval(() => {

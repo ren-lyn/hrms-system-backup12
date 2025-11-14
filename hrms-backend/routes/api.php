@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentFollowUpController;
 use App\Http\Controllers\Api\PredictiveAnalyticsController;
 use App\Http\Controllers\Api\BenefitsEnrollmentController;
+use App\Http\Controllers\Api\ProfileCreationController;
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
     Route::get('/job-postings', [JobPostingController::class, 'index']);
@@ -245,6 +246,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/', [BenefitsEnrollmentController::class, 'show']);
             Route::put('/', [BenefitsEnrollmentController::class, 'update']);
         });
+
+    Route::middleware(['role:HR Assistant,HR Staff,HR Admin'])->group(function () {
+        Route::post(
+            '/applications/{application}/profile-creation',
+            [ProfileCreationController::class, 'store']
+        );
+    });
 });
 
 Route::get('/test', function () {

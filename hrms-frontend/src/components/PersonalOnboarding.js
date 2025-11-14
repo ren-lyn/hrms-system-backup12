@@ -42,7 +42,6 @@ import {
   faIdCard,
   faGraduationCap,
   faStethoscope,
-  faFileContract,
   faCamera,
   faSignature,
   faEnvelope,
@@ -63,10 +62,8 @@ import {
   faTrophy,
   faTimes,
   faEye,
-  faShieldAlt,
   faDollarSign,
   faHome,
-  faHeartbeat,
   faBell,
   faUsers,
   faCalendarCheck,
@@ -331,37 +328,6 @@ const DEFAULT_GOVERNMENT_ID_NUMBERS = {
   pagibigDocument: "",
   tinDocument: "",
 };
-
-const BENEFITS_CARD_CONFIG = [
-  {
-    id: "benefit-sss",
-    documentKey: "sssDocument",
-    title: "SSS Membership",
-    subtitle: "Social Security System",
-    icon: faShieldAlt,
-  },
-  {
-    id: "benefit-philhealth",
-    documentKey: "philhealthDocument",
-    title: "PhilHealth Coverage",
-    subtitle: "Philippine Health Insurance",
-    icon: faHeartbeat,
-  },
-  {
-    id: "benefit-pagibig",
-    documentKey: "pagibigDocument",
-    title: "Pag-IBIG Fund",
-    subtitle: "Home Development Mutual Fund",
-    icon: faHome,
-  },
-  {
-    id: "benefit-tin",
-    documentKey: "tinDocument",
-    title: "TIN Registration",
-    subtitle: "Bureau of Internal Revenue",
-    icon: faFileContract,
-  },
-];
 
 const PersonalOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState(null);
@@ -2266,76 +2232,6 @@ const PersonalOnboarding = () => {
       return String(value);
     }
   }, []);
-
-  const benefitsOverviewCards = useMemo(() => {
-    return BENEFITS_CARD_CONFIG.map((config) => {
-      const docData = documentDataMap[config.documentKey] || null;
-      const statusKey = documentStatuses[config.documentKey] || "not_submitted";
-      const isApproved = statusKey === "approved";
-      const statusLabel = isApproved ? "Approved" : "Pending";
-      const statusVariant = isApproved ? "success" : "warning";
-
-      const idConfig = GOVERNMENT_ID_FIELD_MAP[config.documentKey] || null;
-      const membershipNumberRaw = idConfig
-        ? governmentIdNumbers[config.documentKey] ||
-          docData?.submission?.[idConfig.field] ||
-          docData?.[idConfig.field] ||
-          ""
-        : "";
-
-      const normalizedMembership =
-        membershipNumberRaw && String(membershipNumberRaw).trim() !== ""
-          ? String(membershipNumberRaw).trim()
-          : "";
-
-      const hasMembershipNumber = normalizedMembership !== "";
-      const membershipNumber = hasMembershipNumber
-        ? normalizedMembership
-        : "Not provided yet";
-
-      const submittedAt =
-        docData?.submission?.submitted_at
-          ? formatTimestampForDisplay(docData.submission.submitted_at)
-          : "";
-      const reviewedAt =
-        docData?.submission?.reviewed_at
-          ? formatTimestampForDisplay(docData.submission.reviewed_at)
-          : "";
-
-      const hrRemarks =
-        docData?.submission?.hr_response ||
-        docData?.submission?.hr_note ||
-        docData?.submission?.remarks ||
-        docData?.hr_response ||
-        docData?.hr_note ||
-        "";
-
-      const proofAvailable = Boolean(
-        docData?.submission?.proof_url ||
-          docData?.submission?.file_url ||
-          docData?.submission?.file_name ||
-          docData?.submission?.file_path
-      );
-
-      return {
-        ...config,
-        statusLabel,
-        statusVariant,
-        isApproved,
-        hasMembershipNumber,
-        membershipNumber,
-        submittedAt,
-        reviewedAt,
-        hrRemarks,
-        proofAvailable,
-      };
-    });
-  }, [
-    documentStatuses,
-    documentDataMap,
-    governmentIdNumbers,
-    formatTimestampForDisplay,
-  ]);
 
   const handleFollowUpSubmit = async (event = null) => {
     if (event) {
@@ -6817,15 +6713,6 @@ const formatStageLabel = (stage) => {
 
                 <button
                   className={`subnav-item ${
-                    activeTab === "benefits" ? "active" : ""
-                  }`}
-                  onClick={() => setActiveTab("benefits")}
-                >
-                  Benefits Overview
-                </button>
-
-                <button
-                  className={`subnav-item ${
                     activeTab === "profile" ? "active" : ""
                   }`}
                   onClick={() => setActiveTab("profile")}
@@ -7431,134 +7318,6 @@ const formatStageLabel = (stage) => {
                     </div>
                   )}
                 </>
-              )}
-
-              {activeTab === "benefits" && (
-                <div>
-                  <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3 mb-4">
-                    <div>
-                      <h4 className="mb-1">
-                        <FontAwesomeIcon
-                          icon={faGift}
-                          className="me-2 text-primary"
-                        />
-                        Benefits Overview
-                      </h4>
-                      <p className="text-muted mb-0">
-                        Review the government benefit enrollments you submitted to
-                        HR. This read-only snapshot highlights membership numbers,
-                        processing status, and any supporting notes.
-                      </p>
-                    </div>
-                    <Badge
-                      bg="light"
-                      className="rounded-pill text-uppercase fw-semibold small text-dark"
-                    >
-                      Read-Only Summary
-                    </Badge>
-                  </div>
-
-                  <div className="row g-4">
-                    {benefitsOverviewCards.map((card) => (
-                      <div
-                        key={card.id}
-                        className="col-12 col-md-6 col-xl-3 d-flex"
-                      >
-                        <div className="card border-0 shadow-sm w-100 h-100">
-                          <div className="card-body p-4 d-flex flex-column">
-                            <div className="d-flex justify-content-between align-items-start mb-3">
-                              <div className="d-flex align-items-start gap-3">
-                                <span className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary bg-opacity-10 text-primary p-3">
-                                  <FontAwesomeIcon icon={card.icon} size="lg" />
-                                </span>
-                                <div>
-                                  <h5 className="mb-1 fw-semibold">
-                                    {card.title}
-                                  </h5>
-                                  <div className="text-muted small">
-                                    {card.subtitle}
-                                  </div>
-                                </div>
-                              </div>
-                              <Badge
-                                bg={card.statusVariant}
-                                className={`rounded-pill px-3 py-2 text-uppercase small ${
-                                  card.isApproved ? "" : "text-dark"
-                                }`}
-                              >
-                                {card.statusLabel}
-                              </Badge>
-                            </div>
-
-                            <div className="mb-3">
-                              <div className="text-uppercase text-muted small fw-semibold">
-                                Membership Number
-                              </div>
-                              <div
-                                className={`fs-5 fw-semibold ${
-                                  card.hasMembershipNumber
-                                    ? "text-dark"
-                                    : "text-muted"
-                                }`}
-                              >
-                                {card.membershipNumber}
-                              </div>
-                            </div>
-
-                            {card.submittedAt && (
-                              <div className="d-flex align-items-center text-muted small mb-2">
-                                <FontAwesomeIcon
-                                  icon={faClock}
-                                  className="me-2 text-secondary"
-                                />
-                                Submitted {card.submittedAt}
-                              </div>
-                            )}
-
-                            {card.reviewedAt && (
-                              <div className="d-flex align-items-center text-muted small mb-2">
-                                <FontAwesomeIcon
-                                  icon={faCheckCircle}
-                                  className="me-2 text-success"
-                                />
-                                Approved {card.reviewedAt}
-                              </div>
-                            )}
-
-                            {card.hrRemarks && (
-                              <div className="mt-2 p-3 bg-light border rounded small text-muted">
-                                <FontAwesomeIcon
-                                  icon={faInfoCircle}
-                                  className="me-2 text-info"
-                                />
-                                {card.hrRemarks}
-                              </div>
-                            )}
-
-                            <div className="mt-auto pt-3 border-top d-flex align-items-center justify-content-between">
-                              <span className="text-muted small">
-                                Proof of membership
-                              </span>
-                              {card.proofAvailable ? (
-                                <Badge
-                                  bg="primary"
-                                  className="d-inline-flex align-items-center gap-1"
-                                >
-                                  <FontAwesomeIcon icon={faFileAlt} />
-                                  Uploaded
-                                </Badge>
-                              ) : (
-                                <span className="text-muted small">
-                                  Not provided
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
 
               {activeTab === "profile" && (
