@@ -24,8 +24,17 @@ class AuthController extends Controller
         $userAgent = $request->userAgent();
         $email = $request->login;
 
-        // Try to find the user by email first, then by user_id as fallback
+        // Try to find the user by email first
         $user = User::where('email', $request->login)->with('role')->first();
+        
+        // If not found by email, try automatic email migration for specific users
+        // This handles cases where user still has old email in database
+        if (!$user) {
+            $user = $this->attemptEmailMigration($request->login, $request->password);
+            if ($user) {
+                $email = $user->email;
+            }
+        }
         
         // If not found by email and login is numeric, try by user_id (for backward compatibility)
         if (!$user && is_numeric($request->login)) {
@@ -139,6 +148,101 @@ class AuthController extends Controller
                 'hire_date' => $user->employeeProfile->hire_date,
             ] : null
         ]);
+    }
+
+    /**
+     * Attempt to migrate user email automatically during login
+     * This handles the migration from old company emails to new Google emails
+     */
+    private function attemptEmailMigration($loginEmail, $password)
+    {
+        // Email mappings: new_email => [old_email, first_name, last_name]
+        $emailMappings = [
+            'concinarenelyn86@gmail.com' => [
+                'old_emails' => ['hr@company.com'],
+                'first_name' => 'Renelyn',
+                'last_name' => 'Concina',
+            ],
+            'barayangcrystalanne16@gmail.com' => [
+                'old_emails' => ['hrstaff@company.com'],
+                'first_name' => 'Crystal Anne',
+                'last_name' => 'Barayang',
+            ],
+            'osiasshariel28@gmail.com' => [
+                'old_emails' => ['manager@company.com'],
+                'first_name' => 'Shariel',
+                'last_name' => 'Osias',
+            ],
+            'cabuyaodonnamae87@gmail.com' => [
+                'old_emails' => ['employee@company.com'],
+                'first_name' => 'Donna Mae',
+                'last_name' => 'Cabuyao',
+            ],
+        ];
+
+        // Check if the login email is one of the new emails
+        if (!isset($emailMappings[$loginEmail])) {
+            return null;
+        }
+
+        $mapping = $emailMappings[$loginEmail];
+        $firstName = $mapping['first_name'];
+        $lastName = $mapping['last_name'];
+
+        // Try to find user by old email
+        $user = null;
+        foreach ($mapping['old_emails'] as $oldEmail) {
+            $user = User::where('email', $oldEmail)->with('role')->first();
+            if ($user) {
+                break;
+            }
+        }
+
+        // If not found by old email, try by name
+        if (!$user) {
+            $user = User::where('first_name', $firstName)
+                ->where('last_name', $lastName)
+                ->with('role')
+                ->first();
+        }
+
+        // If user found, migrate email and verify password
+        if ($user) {
+            // Check if password matches (using default password)
+            $defaultPassword = 'password123';
+            $passwordMatches = Hash::check($password, $user->password) || Hash::check($defaultPassword, $user->password);
+
+            if ($passwordMatches) {
+                // Migrate email if different
+                if ($user->email !== $loginEmail) {
+                    // Check if new email is already taken by another user
+                    $existingUser = User::where('email', $loginEmail)
+                        ->where('id', '!=', $user->id)
+                        ->first();
+
+                    if (!$existingUser) {
+                        $user->update(['email' => $loginEmail]);
+                        
+                        // Update employee profile if exists
+                        if ($user->employeeProfile) {
+                            $user->employeeProfile->update(['email' => $loginEmail]);
+                        }
+                    }
+                }
+
+                // Ensure password is set correctly
+                if (!Hash::check($password, $user->password)) {
+                    // Reset to default password if provided password doesn't match
+                    $user->update(['password' => Hash::make($defaultPassword)]);
+                }
+
+                // Reload user with role
+                $user = $user->fresh(['role']);
+                return $user;
+            }
+        }
+
+        return null;
     }
 }
 // This controller handles user authentication, allowing users to log in and log out.

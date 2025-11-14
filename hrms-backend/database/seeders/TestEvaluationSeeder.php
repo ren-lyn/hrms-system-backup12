@@ -13,7 +13,7 @@ class TestEvaluationSeeder extends Seeder
     public function run()
     {
         // Check if test data already exists
-        if (User::where('email', 'manager@company.com')->exists()) {
+        if (User::where('email', 'testmanager@company.com')->exists()) {
             echo "Test data already exists. Skipping seeding.\n";
             return;
         }
@@ -22,7 +22,7 @@ class TestEvaluationSeeder extends Seeder
         $manager = User::create([
             'first_name' => 'John',
             'last_name' => 'Manager',
-            'email' => 'manager@company.com',
+            'email' => 'testmanager@company.com',
             'role_id' => 3, // Manager role ID
             'password' => bcrypt('password123'),
         ]);
@@ -115,7 +115,7 @@ class TestEvaluationSeeder extends Seeder
         }
 
         echo "Test evaluation data created successfully!\n";
-        echo "Manager: manager@company.com (password: password123)\n";
+        echo "Manager: testmanager@company.com (password: password123)\n";
         echo "Employees: alice@company.com, bob@company.com, carol@company.com (password: password123)\n";
         echo "Active evaluation form: '{$form->title}' with {$form->questions->count()} questions\n";
     }

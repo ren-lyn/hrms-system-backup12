@@ -4,37 +4,26 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PasswordChangeRequest;
-use App\Models\AuditLog;
 use App\Models\User;
+use App\Models\AuditLog;
+use App\Mail\PasswordResetLinkMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Auth;
-use Laravel\Sanctum\PersonalAccessToken;
-use Carbon\Carbon;
-use Illuminate\Support\Str;
-use App\Notifications\PasswordChangeRequestSubmitted;
-use App\Notifications\PasswordChangeRequestStatusUpdated;
-use App\Mail\PasswordResetLinkMail;
 
 class PasswordChangeRequestController extends Controller
 {
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'full_name' => 'required|string|max:255',
+            'full_name' => 'required_without:email|string|max:255|filled',
             'employee_id' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255',
-            'reason' => 'required|string|max:2000',
-            'id_photo_1' => 'nullable|image|max:5120',
-            'id_photo_2' => 'nullable|image|max:5120',
+            'reason' => 'nullable|string|max:2000',
         ]);
 
         if ($validator->fails()) {
@@ -44,19 +33,26 @@ class PasswordChangeRequestController extends Controller
         $payload = $validator->validated();
         $user = $request->user();
 
+        // Ensure full_name is always set - required by database schema
+        $fullName = $payload['full_name'] ?? null;
+        if (empty($fullName) && $user) {
+            // Fallback to user's name if available
+            $fullName = $user->name ?? $user->full_name ?? null;
+        }
+        if (empty($fullName)) {
+            // Final fallback - use email or a default value
+            $fullName = $payload['email'] ?? 'Unknown User';
+        }
+
         $data = [
             'user_id' => $user?->id,
-            'full_name' => $payload['full_name'],
+            'full_name' => trim($fullName),
             'employee_id' => $payload['employee_id'] ?? null,
             'department' => $payload['department'] ?? null,
             'email' => $payload['email'] ?? ($user?->email),
             'reason' => $payload['reason'] ?? null,
             'status' => 'pending',
         ];
-
-        if (empty($data['email'])) {
-            return response()->json(['message' => 'A valid email address is required'], 422);
-        }
 
         // Handle up to 2 image uploads
         $paths = [];
@@ -77,283 +73,199 @@ class PasswordChangeRequestController extends Controller
 
         try {
             $requestModel = PasswordChangeRequest::create($data);
-
-            $admins = User::whereHas('role', function ($query) {
-                $query->where('name', 'Admin');
-            })->get();
-
-            if ($admins->count()) {
-                Notification::send($admins, new PasswordChangeRequestSubmitted($requestModel));
-            }
-
-            return response()->json([
-                'message' => 'Password change request submitted',
-                'id' => $requestModel->id,
-                'saved' => true,
-            ], 201);
+            return response()->json(['message' => 'Password change request submitted', 'id' => $requestModel->id, 'saved' => true], 201);
         } catch (\Throwable $e) {
-            // Graceful fallback when table is missing or any other storage error occurs
-            return response()->json(['message' => 'Password change request submitted', 'saved' => false], 201);
+            // Log the error for debugging
+            \Log::error('Password change request creation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => array_merge($data, ['id_photo_1_path' => '***', 'id_photo_2_path' => '***'])
+            ]);
+            
+            // Return error response with details in development, generic message in production
+            $message = config('app.debug') 
+                ? 'Failed to submit request: ' . $e->getMessage()
+                : 'Failed to submit request. Please try again or contact support.';
+            
+            return response()->json(['message' => $message, 'saved' => false], 500);
         }
     }
 
     public function index()
     {
-        $items = PasswordChangeRequest::with(['user:id,first_name,last_name,email', 'approver:id,first_name,last_name,email'])
-            ->latest()
-            ->take(200)
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'user_id' => $item->user_id,
-                    'full_name' => $item->full_name,
-                    'employee_id' => $item->employee_id,
-                    'department' => $item->department,
-                    'email' => $item->email,
-                    'reason' => $item->reason,
-                    'decision_notes' => $item->decision_notes,
-                    'status' => $item->status,
-                    'id_photo_1_url' => $this->buildPublicUrl($item->id_photo_1_path),
-                    'id_photo_2_url' => $this->buildPublicUrl($item->id_photo_2_path),
-                    'created_at' => $item->created_at,
-                    'updated_at' => $item->updated_at,
-                    'decision_at' => $item->decision_at,
-                    'reset_token_sent_at' => $item->reset_token_sent_at,
-                    'completed_at' => $item->completed_at,
-                    'approved_by' => $item->approved_by,
-                    'requester' => $item->user ? [
-                        'id' => $item->user->id,
-                        'name' => trim(($item->user->first_name ?? '') . ' ' . ($item->user->last_name ?? '')) ?: ($item->user->name ?? $item->user->email),
-                        'email' => $item->user->email,
-                    ] : null,
-                    'approver' => $item->approver ? [
-                        'id' => $item->approver->id,
-                        'name' => trim(($item->approver->first_name ?? '') . ' ' . ($item->approver->last_name ?? '')) ?: ($item->approver->name ?? $item->approver->email),
-                        'email' => $item->approver->email,
-                    ] : null,
-                ];
-            });
-
+        $items = PasswordChangeRequest::latest()->limit(50)->get();
+        
+        // Add URL fields for ID photos if paths exist
+        $items->transform(function ($item) {
+            if ($item->id_photo_1_path) {
+                $item->id_photo_1_url = true; // Flag to indicate photo exists
+            }
+            if ($item->id_photo_2_path) {
+                $item->id_photo_2_url = true; // Flag to indicate photo exists
+            }
+            return $item;
+        });
+        
         return response()->json($items);
     }
 
-    public function approve(Request $request, $id)
+    public function approve($id)
     {
-        $request->validate([
-            'notes' => 'nullable|string|max:2000',
-        ]);
-
-        $admin = $request->user();
-        if (!$admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+        $req = PasswordChangeRequest::findOrFail($id);
+        
+        // Find the user associated with the request
+        $user = null;
+        if ($req->user_id) {
+            $user = User::with('employeeProfile')->find($req->user_id);
+        } elseif ($req->email) {
+            // Try to find user by email from the request
+            $user = User::with('employeeProfile')->where('email', $req->email)->first();
         }
-
-        $passwordRequest = PasswordChangeRequest::findOrFail($id);
-
-        if ($passwordRequest->status === 'approved') {
-            return response()->json(['message' => 'Request already approved'], 422);
-        }
-
-        $user = $passwordRequest->user ?: User::where('email', $passwordRequest->email)->first();
+        
         if (!$user) {
-            return response()->json(['message' => 'No matching user was found for this request'], 404);
-        }
-
-        $this->ensurePasswordResetTableExists();
-        $token = Password::broker()->createToken($user);
-        $frontendBase = rtrim(config('services.frontend.url', 'http://localhost:3000'), '/');
-        $resetUrl = $frontendBase . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($user->email) . '&requestId=' . $passwordRequest->id;
-        $expiresAt = Carbon::now()->addMinutes(config('auth.passwords.users.expire', 60));
-
-        try {
-            Mail::to($passwordRequest->email)->send(
-                new PasswordResetLinkMail($user, $passwordRequest, $resetUrl, $expiresAt)
-            );
-        } catch (\Throwable $mailError) {
-            AuditLog::log($admin->id, 'Password change request approval failed (email)', 'failed', $request->ip(), $request->userAgent(), [
-                'request_id' => $passwordRequest->id,
-                'email' => $passwordRequest->email,
-                'error' => $mailError->getMessage(),
-            ]);
-
             return response()->json([
-                'message' => 'Reset email could not be sent. Please verify the mail configuration and try again.',
+                'message' => 'User not found. Cannot send password reset link.',
+                'error' => 'user_not_found'
+            ], 404);
+        }
+        
+        // Get the Gmail address for the user
+        $gmailAddress = $this->getUserGmailAddress($user);
+        
+        if (!$gmailAddress) {
+            return response()->json([
+                'message' => 'Gmail address not found for this user. Cannot send password reset link.',
+                'error' => 'gmail_not_found'
+            ], 400);
+        }
+        
+        try {
+            // Generate password reset token using Laravel's Password facade
+            // The token is stored with the user's email in the database for validation
+            $broker = Password::broker();
+            $repository = method_exists($broker, 'getRepository') ? $broker->getRepository() : null;
+            
+            if (!$repository) {
+                throw new \Exception('Password reset repository not available');
+            }
+            
+            $token = $repository->create($user);
+            
+            // Send email to Gmail address (not the stored email)
+            // The token validation will still work because it's stored with the user's email
+            Mail::to($gmailAddress)->send(new PasswordResetLinkMail($user, $token, $req->id));
+            
+            // Update request status and timestamp
+            $req->status = 'approved';
+            $req->approved_by = auth()->id();
+            $req->decision_at = now();
+            $req->reset_token_sent_at = now();
+            $req->save();
+            
+            AuditLog::log(auth()->id(), 'Password change request approved', 'success', request()->ip(), request()->userAgent(), [
+                'id' => $req->id,
+                'email' => $req->email,
+                'gmail_sent_to' => $gmailAddress,
+            ]);
+            
+            return response()->json([
+                'message' => 'Request approved. Password reset link has been sent to the user\'s Gmail account.',
+                'gmail_sent_to' => $gmailAddress
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send password reset email', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_id' => $req->id,
+                'user_id' => $user->id,
+                'gmail_address' => $gmailAddress,
+            ]);
+            
+            // Still approve the request even if email fails
+            $req->status = 'approved';
+            $req->approved_by = auth()->id();
+            $req->decision_at = now();
+            $req->save();
+            
+            return response()->json([
+                'message' => 'Request approved, but failed to send email. Please contact the user manually.',
+                'error' => 'email_send_failed',
+                'error_details' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
-
-        DB::transaction(function () use ($passwordRequest, $admin, $request) {
-            $locked = PasswordChangeRequest::where('id', $passwordRequest->id)->lockForUpdate()->first();
-            if ($locked) {
-                $locked->status = 'approved';
-                $locked->decision_notes = $request->input('notes');
-                $locked->approved_by = $admin->id;
-                $locked->decision_at = now();
-                $locked->reset_token_sent_at = now();
-                $locked->save();
+    }
+    
+    /**
+     * Get the Gmail address for a user
+     * Checks user email, then EmployeeProfile email
+     * Returns the first Gmail address found, or null if none found
+     *
+     * @param User $user
+     * @return string|null
+     */
+    private function getUserGmailAddress(User $user): ?string
+    {
+        // Check if user's email is a Gmail address
+        if ($user->email && $this->isGmailAddress($user->email)) {
+            return $user->email;
+        }
+        
+        // Check EmployeeProfile email if it exists
+        if ($user->employeeProfile && $user->employeeProfile->email) {
+            if ($this->isGmailAddress($user->employeeProfile->email)) {
+                return $user->employeeProfile->email;
             }
-        });
-
-        $passwordRequest->refresh();
-
-        $user->notify(new PasswordChangeRequestStatusUpdated($passwordRequest));
-
-        AuditLog::log($admin->id, 'Password change request approved', 'success', $request->ip(), $request->userAgent(), [
-            'request_id' => $passwordRequest->id,
-            'email' => $passwordRequest->email,
-        ]);
-
-        AuditLog::log($user->id, 'Password reset link issued', 'success', 'system', $request->userAgent(), [
-            'request_id' => $passwordRequest->id,
-        ]);
-
-        return response()->json([
-            'message' => 'Request approved and password reset email sent',
-            'reset_url' => $resetUrl,
-            'expires_at' => $expiresAt,
-        ]);
+        }
+        
+        // If no Gmail found, return null
+        // In production, you might want to log this or have a fallback mechanism
+        return null;
+    }
+    
+    /**
+     * Check if an email address is a Gmail address
+     *
+     * @param string $email
+     * @return bool
+     */
+    private function isGmailAddress(string $email): bool
+    {
+        if (empty($email)) {
+            return false;
+        }
+        
+        $email = strtolower(trim($email));
+        return str_ends_with($email, '@gmail.com');
     }
 
-    public function reject(Request $request, $id)
+    public function reject($id)
     {
-        $request->validate([
-            'notes' => 'required|string|max:2000',
+        $req = PasswordChangeRequest::findOrFail($id);
+        $req->status = 'rejected';
+        $req->save();
+        AuditLog::log(auth()->id(), 'Password change request rejected', 'success', request()->ip(), request()->userAgent(), [
+            'id' => $req->id,
+            'email' => $req->email,
         ]);
-
-        $admin = $request->user();
-        if (!$admin) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
-        $passwordRequest = PasswordChangeRequest::findOrFail($id);
-
-        if ($passwordRequest->status === 'approved') {
-            return response()->json(['message' => 'Approved requests cannot be rejected'], 422);
-        }
-
-        DB::transaction(function () use ($passwordRequest, $admin, $request) {
-            $locked = PasswordChangeRequest::where('id', $passwordRequest->id)->lockForUpdate()->first();
-            if ($locked) {
-                $locked->status = 'rejected';
-                $locked->decision_notes = $request->input('notes');
-                $locked->approved_by = $admin->id;
-                $locked->decision_at = now();
-                $locked->save();
-            }
-        });
-
-        $passwordRequest->refresh();
-
-        if ($passwordRequest->user) {
-            $passwordRequest->user->notify(new PasswordChangeRequestStatusUpdated($passwordRequest));
-        }
-
-        AuditLog::log($admin->id, 'Password change request rejected', 'success', $request->ip(), $request->userAgent(), [
-            'request_id' => $passwordRequest->id,
-            'email' => $passwordRequest->email,
-        ]);
-
-        return response()->json(['message' => 'Request rejected and user notified']);
+        return response()->json(['message' => 'Request rejected']);
     }
 
-    private function ensurePasswordResetTableExists(): void
+    public function attachment($id, $slot)
     {
-        $table = config('auth.passwords.users.table', 'password_reset_tokens');
-        $connection = config('database.default');
-        $schema = Schema::connection($connection);
-
-        if (!$schema->hasTable($table)) {
-            $schema->create($table, function (Blueprint $tableBlueprint) {
-                $tableBlueprint->string('email')->index();
-                $tableBlueprint->string('token');
-                $tableBlueprint->timestamp('created_at')->nullable();
-            });
+        $request = PasswordChangeRequest::findOrFail($id);
+        
+        $pathKey = "id_photo_{$slot}_path";
+        if (!$request->$pathKey) {
+            return response()->json(['message' => 'Attachment not found'], 404);
         }
-    }
-
-    private function buildPublicUrl(?string $path): ?string
-    {
-        if (!$path) {
-            return null;
+        
+        $path = $request->$pathKey;
+        
+        if (!Storage::disk('public')->exists($path)) {
+            return response()->json(['message' => 'File not found'], 404);
         }
-
-        $relative = Storage::disk('public')->url($path);
-
-        if (Str::startsWith($relative, ['http://', 'https://'])) {
-            return $relative;
-        }
-
-        $base = null;
-
-        if (app()->bound('request') && request()) {
-            $base = request()->getSchemeAndHttpHost();
-        }
-
-        if (!$base) {
-            $base = config('app.url');
-        }
-
-        if (!$base) {
-            $base = url('/');
-        }
-
-        $base = rtrim($base, '/');
-
-        return $base . '/' . ltrim($relative, '/');
-    }
-
-    public function attachment(Request $request, $id, $slot)
-    {
-        $user = $request->user();
-
-        if (!$user && $request->bearerToken()) {
-            $personalAccessToken = PersonalAccessToken::findToken($request->bearerToken());
-            if ($personalAccessToken) {
-                $user = $personalAccessToken->tokenable;
-                Auth::setUser($user);
-            }
-        }
-
-        if (!$user) {
-            $tokenValue = $request->query('token');
-            if ($tokenValue) {
-                $personalAccessToken = PersonalAccessToken::findToken($tokenValue);
-                if ($personalAccessToken) {
-                    $user = $personalAccessToken->tokenable;
-                    Auth::setUser($user);
-                }
-            }
-        }
-
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
-        if (!$user->role || $user->role->name !== 'Admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        $passwordRequest = PasswordChangeRequest::findOrFail($id);
-        $column = $slot === '2' ? 'id_photo_2_path' : 'id_photo_1_path';
-        $path = $passwordRequest->$column;
-
-        if (!$path || !Storage::disk('public')->exists($path)) {
-            abort(404);
-        }
-
-        $mime = Storage::disk('public')->mimeType($path) ?: 'application/octet-stream';
-        $stream = Storage::disk('public')->readStream($path);
-
-        return response()->stream(function () use ($stream) {
-            fpassthru($stream);
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-        }, 200, [
-            'Content-Type' => $mime,
-            'Cache-Control' => 'max-age=86400, public',
-            'Content-Disposition' => 'inline; filename="' . basename($path) . '"',
-        ]);
+        
+        return Storage::disk('public')->response($path);
     }
 }
 

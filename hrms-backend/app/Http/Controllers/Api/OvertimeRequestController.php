@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class OvertimeRequestController extends Controller
@@ -95,7 +96,7 @@ class OvertimeRequestController extends Controller
                 ->first();
 
             if (!$attendance) {
-                \Log::info('No attendance found', [
+                Log::info('No attendance found', [
                     'employee_id' => $employeeProfile->id,
                     'requested_date' => $request->ot_date,
                     'employee_name' => $employeeProfile->first_name . ' ' . $employeeProfile->last_name
@@ -107,7 +108,7 @@ class OvertimeRequestController extends Controller
                 ], 404);
             }
 
-            \Log::info('Attendance found for OT validation', [
+            Log::info('Attendance found for OT validation', [
                 'employee_id' => $employeeProfile->id,
                 'date' => $attendance->date,
                 'clock_in' => $attendance->clock_in,
@@ -128,7 +129,7 @@ class OvertimeRequestController extends Controller
                 $clockOutTime = strtotime($request->ot_date . ' ' . $clockOutTimeOnly);
                 $otStartTime = strtotime($request->ot_date . ' 18:00:00'); // 6 PM
                 
-                \Log::info('OT Calculation', [
+                Log::info('OT Calculation', [
                     'original_clock_out' => $attendance->clock_out,
                     'extracted_time' => $clockOutTimeOnly,
                     'clock_out_timestamp' => $clockOutTime,
@@ -146,16 +147,16 @@ class OvertimeRequestController extends Controller
                     // Example: 6:00 PM = 1 hour, 6:15 PM = 1 hour, 7:01 PM = 2 hours, 8:00 PM = 2 hours
                     $actualOTHours = max(1, ceil($hoursWorked));
                     
-                    \Log::info('OT Hours Calculated', [
+                    Log::info('OT Hours Calculated', [
                         'seconds_worked' => $secondsWorked,
                         'hours_worked' => $hoursWorked,
                         'actual_ot_hours' => $actualOTHours
                     ]);
                 } else {
-                    \Log::info('No OT - clocked out before 6 PM');
+                    Log::info('No OT - clocked out before 6 PM');
                 }
             } else {
-                \Log::info('No clock_out time in attendance record');
+                Log::info('No clock_out time in attendance record');
             }
 
             return response()->json([
@@ -202,7 +203,7 @@ class OvertimeRequestController extends Controller
 
             $user = Auth::user();
             
-            \Log::info('OT Request Store - User Info', [
+            Log::info('OT Request Store - User Info', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
                 'user_email' => $user->email
@@ -211,14 +212,14 @@ class OvertimeRequestController extends Controller
             $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
 
             if (!$employeeProfile) {
-                \Log::error('OT Request Store - Employee profile not found', ['user_id' => $user->id]);
+                Log::error('OT Request Store - Employee profile not found', ['user_id' => $user->id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Employee profile not found'
                 ], 404);
             }
             
-            \Log::info('OT Request Store - Employee Profile Found', [
+            Log::info('OT Request Store - Employee Profile Found', [
                 'employee_id' => $employeeProfile->id,
                 'employee_name' => $employeeProfile->first_name . ' ' . $employeeProfile->last_name
             ]);
@@ -317,9 +318,9 @@ class OvertimeRequestController extends Controller
                 'status' => 'pending'
             ];
             
-            \Log::info('OT Request - Data to create:', $dataToCreate);
+            Log::info('OT Request - Data to create:', $dataToCreate);
             
-            \Log::info('OT Request Store - About to create', $dataToCreate);
+            Log::info('OT Request Store - About to create', $dataToCreate);
 
             $overtimeRequest = OvertimeRequest::create($dataToCreate);
 
@@ -487,7 +488,7 @@ class OvertimeRequestController extends Controller
                         ->orderBy('date', 'desc')
                         ->first(['id', 'employee_id', 'date', 'clock_in', 'clock_out']);
                     
-                    \Log::info('OT Request Debug - No attendance found for date', [
+                    Log::info('OT Request Debug - No attendance found for date', [
                         'ot_request_id' => $request->id,
                         'employee_id' => $request->employee_id,
                         'ot_date' => $otDate,
@@ -495,7 +496,7 @@ class OvertimeRequestController extends Controller
                         'any_attendance_date' => $anyAttendance ? $anyAttendance->date : null
                     ]);
                 } else {
-                    \Log::info('OT Request Debug - Attendance found', [
+                    Log::info('OT Request Debug - Attendance found', [
                         'ot_request_id' => $request->id,
                         'employee_id' => $request->employee_id,
                         'ot_date' => $otDate,
@@ -512,7 +513,7 @@ class OvertimeRequestController extends Controller
                 'count' => $overtimeRequests->count()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Error in getAll method: ' . $e->getMessage());
+            Log::error('Error in getAll method: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch overtime requests',

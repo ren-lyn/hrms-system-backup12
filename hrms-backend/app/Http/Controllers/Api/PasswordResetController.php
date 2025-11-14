@@ -68,22 +68,38 @@ class PasswordResetController extends Controller
 
         $this->ensurePasswordResetTableExists();
 
+        // Get password_confirmation from request (not validated array, as Laravel's confirmed rule doesn't include it)
+        $passwordConfirmation = $request->input('password_confirmation');
+
         $status = Password::reset(
             [
                 'email' => $validated['email'],
                 'password' => $validated['password'],
-                'password_confirmation' => $validated['password_confirmation'],
+                'password_confirmation' => $passwordConfirmation,
                 'token' => $validated['token'],
             ],
-            function ($user) use ($request) {
+            function ($user) use ($request, $validated) {
+                // Generate new password hash - this completely replaces the old password
+                // The old password hash becomes invalid once this is saved
+                $newPasswordHash = Hash::make($validated['password']);
+                
+                // Force update the password and remember token
+                // This ensures the old password hash is completely replaced in the database
                 $user->forceFill([
-                    'password' => Hash::make($request->input('password')),
+                    'password' => $newPasswordHash,
                     'remember_token' => Str::random(60),
                 ])->save();
 
+                // Delete all existing authentication tokens to force re-authentication
+                // This ensures old sessions/tokens can't be used after password reset
                 if (method_exists($user, 'tokens')) {
                     $user->tokens()->delete();
                 }
+
+                // The old password is now invalid because:
+                // 1. The password hash in the database has been completely replaced
+                // 2. Hash::check() with the old password will fail against the new hash
+                // 3. All existing tokens have been deleted, forcing re-login
 
                 event(new PasswordReset($user));
             }

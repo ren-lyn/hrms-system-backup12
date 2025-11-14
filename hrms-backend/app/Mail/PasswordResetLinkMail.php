@@ -2,9 +2,6 @@
 
 namespace App\Mail;
 
-use App\Models\PasswordChangeRequest;
-use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -13,31 +10,48 @@ class PasswordResetLinkMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public User $user;
-    public PasswordChangeRequest $request;
-    public string $resetUrl;
-    public Carbon $expiresAt;
+    public $user;
+    public $token;
+    public $resetUrl;
+    public $requestId;
 
-    public function __construct(User $user, PasswordChangeRequest $request, string $resetUrl, Carbon $expiresAt)
+    /**
+     * Create a new message instance.
+     *
+     * @param  \App\Models\User  $user
+     * @param  string  $token
+     * @param  int|null  $requestId
+     */
+    public function __construct($user, $token, $requestId = null)
     {
         $this->user = $user;
-        $this->request = $request;
+        $this->token = $token;
+        $this->requestId = $requestId;
+        
+        // Build the reset URL
+        $frontendUrl = config('services.frontend.url', 'http://localhost:3000');
+        $resetUrl = $frontendUrl . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($user->email);
+        
+        if ($requestId) {
+            $resetUrl .= '&requestId=' . $requestId;
+        }
+        
         $this->resetUrl = $resetUrl;
-        $this->expiresAt = $expiresAt;
     }
 
-    public function build(): self
+    /**
+     * Build the message.
+     *
+     * @return $this
+     */
+    public function build()
     {
-        return $this->subject('Reset Your HRMS Account Password')
-            ->view('emails.password-reset-link')
-            ->with([
-                'user' => $this->user,
-                'request' => $this->request,
-                'resetUrl' => $this->resetUrl,
-                'expiresAt' => $this->expiresAt,
-            ]);
+        return $this->subject('Password Reset Request Approved')
+                    ->view('emails.password-reset-link')
+                    ->with([
+                        'user' => $this->user,
+                        'resetUrl' => $this->resetUrl,
+                        'token' => $this->token,
+                    ]);
     }
 }
-
-
-

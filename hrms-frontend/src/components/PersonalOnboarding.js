@@ -6686,7 +6686,7 @@ const formatStageLabel = (stage) => {
                   <div className="mt-3 text-muted small">
                     If you have any questions, please reach out to{" "}
                     {jobOfferData?.contact_person || "HR"} at{" "}
-                    <span className="fw-semibold">hr@company.com</span> or{" "}
+                    <span className="fw-semibold">concinarenelyn86@gmail.com</span> or{" "}
                     <span className="fw-semibold">
                       {jobOfferData?.contact_number || "(02) 1234-5678"}
                     </span>

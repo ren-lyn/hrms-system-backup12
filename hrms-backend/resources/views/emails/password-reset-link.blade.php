@@ -1,100 +1,96 @@
-@php
-    $greetingName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
-    if ($greetingName === '') {
-        $greetingName = $user->email;
-    }
-@endphp
-
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Password Reset Instructions</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset Request Approved</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #f5f7fb;
-            color: #1f2933;
-            margin: 0;
-            padding: 0;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
         }
         .container {
-            max-width: 600px;
-            margin: 30px auto;
-            background: #ffffff;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 30px;
+            border: 1px solid #e0e0e0;
         }
         .header {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: #ffffff;
-            padding: 24px 32px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 24px;
         }
         .content {
-            padding: 32px;
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 5px;
+            margin-bottom: 20px;
         }
         .button {
             display: inline-block;
-            padding: 14px 28px;
-            background: #2563eb;
+            padding: 12px 30px;
+            background-color: #3498db;
             color: #ffffff;
             text-decoration: none;
-            border-radius: 8px;
+            border-radius: 5px;
+            margin: 20px 0;
             font-weight: bold;
-            margin: 24px 0;
         }
-        .details {
-            background: #f8fafc;
-            border-radius: 8px;
-            padding: 16px;
-            margin-top: 16px;
+        .button:hover {
+            background-color: #2980b9;
         }
         .footer {
-            padding: 20px 32px;
-            font-size: 12px;
-            color: #64748b;
-            background: #f8fafc;
             text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 30px;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Reset your HRMS password</h1>
+            <h1>Password Reset Request Approved</h1>
         </div>
+        
         <div class="content">
-            <p>Hi {{ $greetingName }},</p>
-
-            <p>We received a password reset request for your HRMS account. Click the button below to create a new password.</p>
-
-            <p style="text-align: center;">
-                <a class="button" href="{{ $resetUrl }}">Reset Password</a>
-            </p>
-
-            <p>For security, this link will expire on <strong>{{ $expiresAt->timezone(config('app.timezone', 'UTC'))->format('F j, Y g:i A') }}</strong>.</p>
-
-            <div class="details">
-                <p><strong>Request Details</strong></p>
-                <ul style="padding-left: 18px; margin: 0;">
-                    <li>Email: {{ $request->email }}</li>
-                    <li>Requested by: {{ $request->full_name }}</li>
-                    <li>Department: {{ $request->department ?? 'Not provided' }}</li>
-                    <li>Submitted on: {{ optional($request->created_at)->format('F j, Y g:i A') }}</li>
-                </ul>
+            <p>Hello {{ $user->first_name ?? $user->name ?? 'User' }},</p>
+            
+            <p>Your password reset request has been approved by the administrator. You can now reset your password using the link below.</p>
+            
+            <div style="text-align: center;">
+                <a href="{{ $resetUrl }}" class="button">Reset Password</a>
             </div>
-
-            <p>If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
-
-            <p>Stay secure,<br />CCDC HRMS Team</p>
+            
+            <p>If the button above doesn't work, you can copy and paste the following link into your browser:</p>
+            <p style="word-break: break-all; color: #3498db;">{{ $resetUrl }}</p>
+            
+            <div class="warning">
+                <strong>Important:</strong> This link will expire after a certain period for security reasons. If the link has expired, please submit a new password reset request.
+            </div>
+            
+            <p>If you did not request a password reset, please contact your administrator immediately.</p>
         </div>
+        
         <div class="footer">
-            <p>This email was sent automatically because a password reset was approved by an administrator. Please do not reply.</p>
+            <p>This is an automated message from the HRMS System. Please do not reply to this email.</p>
+            <p>&copy; {{ date('Y') }} HRMS System. All rights reserved.</p>
         </div>
     </div>
 </body>
 </html>
-
-
-

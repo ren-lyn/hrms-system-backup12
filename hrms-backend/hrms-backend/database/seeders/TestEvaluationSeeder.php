@@ -15,7 +15,7 @@ class TestEvaluationSeeder extends Seeder
         // Create a manager
         $manager = User::create([
             'name' => 'John Manager',
-            'email' => 'manager@company.com',
+            'email' => 'testmanager@company.com',
             'role' => 'Manager',
             'password' => bcrypt('password123'),
         ]);
@@ -105,7 +105,7 @@ class TestEvaluationSeeder extends Seeder
         }
 
         echo "Test evaluation data created successfully!\n";
-        echo "Manager: manager@company.com (password: password123)\n";
+        echo "Manager: testmanager@company.com (password: password123)\n";
         echo "Employees: alice@company.com, bob@company.com, carol@company.com (password: password123)\n";
         echo "Active evaluation form: '{$form->title}' with {$form->questions->count()} questions\n";
     }

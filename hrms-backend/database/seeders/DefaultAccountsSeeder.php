@@ -20,9 +20,41 @@ class DefaultAccountsSeeder extends Seeder
         // Resolve role IDs by name to avoid relying on order
         $roles = Role::pluck('id', 'name');
 
-        // HR Staff
+        // HR Staff - Migrate from old email if exists
+        $oldHrStaffEmail = 'hrstaff@company.com';
+        $newHrStaffEmail = 'barayangcrystalanne16@gmail.com';
+        
+        // First, try to find user by old email
+        $existingHrStaff = User::where('email', $oldHrStaffEmail)->first();
+        
+        // If not found by old email, try to find by name
+        if (!$existingHrStaff) {
+            $existingHrStaff = User::where('first_name', 'Crystal Anne')
+                ->where('last_name', 'Barayang')
+                ->first();
+        }
+        
+        if ($existingHrStaff) {
+            $userWithNewEmail = User::where('email', $newHrStaffEmail)->where('id', '!=', $existingHrStaff->id)->first();
+            if ($userWithNewEmail) {
+                $this->command->warn("Cannot migrate HR Staff: {$newHrStaffEmail} is already in use by another user.");
+            } else {
+                // Store old email before updating
+                $oldEmailValue = $existingHrStaff->email;
+                // Update email and ensure password is correct
+                $existingHrStaff->update([
+                    'email' => $newHrStaffEmail,
+                    'first_name' => 'Crystal Anne',
+                    'last_name' => 'Barayang',
+                    'password' => Hash::make('password123'),
+                    'role_id' => $roles['HR Staff'] ?? 2,
+                ]);
+                $this->command->info("Migrated HR Staff from {$oldEmailValue} to {$newHrStaffEmail}.");
+            }
+        }
+        
         $hrStaff = User::firstOrCreate(
-            ['email' => 'hrstaff@company.com'],
+            ['email' => $newHrStaffEmail],
             [
                 'first_name' => 'Crystal Anne',
                 'last_name' => 'Barayang',
@@ -30,11 +62,17 @@ class DefaultAccountsSeeder extends Seeder
                 'role_id' => $roles['HR Staff'] ?? 2,
             ]
         );
+        
+        // Ensure password is correct even if user already existed
+        if ($hrStaff->email === $newHrStaffEmail && !Hash::check('password123', $hrStaff->password)) {
+            $hrStaff->update(['password' => Hash::make('password123')]);
+            $this->command->info("Updated password for HR Staff with email {$newHrStaffEmail}.");
+        }
         $hrStaff->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1003',
             'first_name' => 'Crystal Anne',
             'last_name' => 'Barayang',
-            'email' => 'hrstaff@company.com',
+            'email' => $newHrStaffEmail,
             'position' => 'HR Staff',
             'department' => 'HR Department',
             'employment_status' => 'Full Time',
@@ -43,9 +81,41 @@ class DefaultAccountsSeeder extends Seeder
             'status' => 'active', // Explicitly set status to active
         ]);
 
-        // Manager
+        // Manager - Migrate from old email if exists
+        $oldManagerEmail = 'manager@company.com';
+        $newManagerEmail = 'osiasshariel28@gmail.com';
+        
+        // First, try to find user by old email
+        $existingManager = User::where('email', $oldManagerEmail)->first();
+        
+        // If not found by old email, try to find by name
+        if (!$existingManager) {
+            $existingManager = User::where('first_name', 'Shariel')
+                ->where('last_name', 'Osias')
+                ->first();
+        }
+        
+        if ($existingManager) {
+            $userWithNewEmail = User::where('email', $newManagerEmail)->where('id', '!=', $existingManager->id)->first();
+            if ($userWithNewEmail) {
+                $this->command->warn("Cannot migrate Manager: {$newManagerEmail} is already in use by another user.");
+            } else {
+                // Store old email before updating
+                $oldEmailValue = $existingManager->email;
+                // Update email and ensure password is correct
+                $existingManager->update([
+                    'email' => $newManagerEmail,
+                    'first_name' => 'Shariel',
+                    'last_name' => 'Osias',
+                    'password' => Hash::make('password123'),
+                    'role_id' => $roles['Manager'] ?? 3,
+                ]);
+                $this->command->info("Migrated Manager from {$oldEmailValue} to {$newManagerEmail}.");
+            }
+        }
+        
         $manager = User::firstOrCreate(
-            ['email' => 'manager@company.com'],
+            ['email' => $newManagerEmail],
             [
                 'first_name' => 'Shariel',
                 'last_name' => 'Osias',
@@ -53,11 +123,17 @@ class DefaultAccountsSeeder extends Seeder
                 'role_id' => $roles['Manager'] ?? 3,
             ]
         );
+        
+        // Ensure password is correct even if user already existed
+        if ($manager->email === $newManagerEmail && !Hash::check('password123', $manager->password)) {
+            $manager->update(['password' => Hash::make('password123')]);
+            $this->command->info("Updated password for Manager with email {$newManagerEmail}.");
+        }
         $manager->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1004',
             'first_name' => 'Shariel',
             'last_name' => 'Osias',
-            'email' => 'manager@company.com',
+            'email' => $newManagerEmail,
             'position' => 'Manager',
             'department' => 'Operations',
             'employment_status' => 'Full Time',
@@ -66,9 +142,41 @@ class DefaultAccountsSeeder extends Seeder
             'status' => 'active', // Explicitly set status to active
         ]);
 
-        // Employee
+        // Employee - Migrate from old email if exists
+        $oldEmployeeEmail = 'employee@company.com';
+        $newEmployeeEmail = 'cabuyaodonnamae87@gmail.com';
+        
+        // First, try to find user by old email
+        $existingEmployee = User::where('email', $oldEmployeeEmail)->first();
+        
+        // If not found by old email, try to find by name
+        if (!$existingEmployee) {
+            $existingEmployee = User::where('first_name', 'Donna Mae')
+                ->where('last_name', 'Cabuyao')
+                ->first();
+        }
+        
+        if ($existingEmployee) {
+            $userWithNewEmail = User::where('email', $newEmployeeEmail)->where('id', '!=', $existingEmployee->id)->first();
+            if ($userWithNewEmail) {
+                $this->command->warn("Cannot migrate Employee: {$newEmployeeEmail} is already in use by another user.");
+            } else {
+                // Store old email before updating
+                $oldEmailValue = $existingEmployee->email;
+                // Update email and ensure password is correct
+                $existingEmployee->update([
+                    'email' => $newEmployeeEmail,
+                    'first_name' => 'Donna Mae',
+                    'last_name' => 'Cabuyao',
+                    'password' => Hash::make('password123'),
+                    'role_id' => $roles['Employee'] ?? 4,
+                ]);
+                $this->command->info("Migrated Employee from {$oldEmailValue} to {$newEmployeeEmail}.");
+            }
+        }
+        
         $employee = User::firstOrCreate(
-            ['email' => 'employee@company.com'],
+            ['email' => $newEmployeeEmail],
             [
                 'first_name' => 'Donna Mae',
                 'last_name' => 'Cabuyao',
@@ -76,11 +184,17 @@ class DefaultAccountsSeeder extends Seeder
                 'role_id' => $roles['Employee'] ?? 4,
             ]
         );
+        
+        // Ensure password is correct even if user already existed
+        if ($employee->email === $newEmployeeEmail && !Hash::check('password123', $employee->password)) {
+            $employee->update(['password' => Hash::make('password123')]);
+            $this->command->info("Updated password for Employee with email {$newEmployeeEmail}.");
+        }
         $employee->employeeProfile()->updateOrCreate([], [
             'employee_id' => 'EM1005',
             'first_name' => 'Donna Mae',
             'last_name' => 'Cabuyao',
-            'email' => 'employee@company.com',
+            'email' => $newEmployeeEmail,
             'position' => 'Staff',
             'department' => 'Operations',
             'employment_status' => 'Full Time',
@@ -113,7 +227,7 @@ class DefaultAccountsSeeder extends Seeder
         $this->command?->info('Default accounts created: HR Staff, Manager, Employee, Applicant (password: password123)');
         
         // Get the HR Assistant from UserSeeder as well
-        $hrAssistant = User::where('email', 'hr@company.com')->first();
+        $hrAssistant = User::where('email', 'concinarenelyn86@gmail.com')->first();
         
         // Create evaluation results for employees (filter out nulls in case hrAssistant doesn't exist)
         $this->createEvaluationResults(array_filter([$hrStaff, $manager, $employee, $hrAssistant]));

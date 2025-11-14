@@ -22,9 +22,43 @@ class UserSeeder extends Seeder
             return;
         }
         
+        // Check if user exists with old email and migrate to new email
+        $oldEmail = 'hr@company.com';
+        $newEmail = 'concinarenelyn86@gmail.com';
+        
+        // First, try to find user by old email
+        $existingUserWithOldEmail = User::where('email', $oldEmail)->first();
+        
+        // If not found by old email, try to find by name
+        if (!$existingUserWithOldEmail) {
+            $existingUserWithOldEmail = User::where('first_name', 'Renelyn')
+                ->where('last_name', 'Concina')
+                ->first();
+        }
+        
+        if ($existingUserWithOldEmail) {
+            // Check if new email is already taken by another user
+            $userWithNewEmail = User::where('email', $newEmail)->where('id', '!=', $existingUserWithOldEmail->id)->first();
+            if ($userWithNewEmail) {
+                $this->command->warn("Cannot migrate: {$newEmail} is already in use by another user.");
+            } else {
+                // Store old email before updating
+                $oldEmailValue = $existingUserWithOldEmail->email;
+                // Migrate user from old email to new email and ensure password is correct
+                $existingUserWithOldEmail->update([
+                    'email' => $newEmail,
+                    'first_name' => 'Renelyn',
+                    'last_name' => 'Concina',
+                    'password' => Hash::make('password123'),
+                    'role_id' => $hrAssistantRole->id,
+                ]);
+                $this->command->info("Migrated user from {$oldEmailValue} to {$newEmail}.");
+            }
+        }
+        
         // Use firstOrCreate to handle existing users and update role if needed
         $hrUser = User::firstOrCreate(
-            ['email' => 'hr@company.com'],
+            ['email' => $newEmail],
             [
                 'first_name' => 'Renelyn',
                 'last_name' => 'Concina',
@@ -38,6 +72,12 @@ class UserSeeder extends Seeder
             $hrUser->update(['role_id' => $hrAssistantRole->id]);
             $this->command->info('Updated HR Assistant role for existing user.');
         }
+        
+        // Ensure password is correct even if user already existed
+        if ($hrUser->email === $newEmail && !Hash::check('password123', $hrUser->password)) {
+            $hrUser->update(['password' => Hash::make('password123')]);
+            $this->command->info("Updated password for HR Assistant with email {$newEmail}.");
+        }
 
         // Create comprehensive employee profile for HR Assistant
         $hrUser->employeeProfile()->updateOrCreate(
@@ -48,7 +88,7 @@ class UserSeeder extends Seeder
             'first_name' => 'Renelyn',
             'last_name' => 'Concina',
             'nickname' => 'Renelyn',
-            'email' => 'hr@company.com',
+            'email' => $newEmail,
             'civil_status' => 'Single',
             'gender' => 'Female',
             'place_of_birth' => 'Laguna',
