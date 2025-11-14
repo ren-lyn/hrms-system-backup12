@@ -4794,6 +4794,16 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       );
 
       if (response.data?.success) {
+        const createdEmployeeProfile = response.data?.employee_profile;
+
+        if (createdEmployeeProfile) {
+          window.dispatchEvent(
+            new CustomEvent("employee-records:new-entry", {
+              detail: createdEmployeeProfile,
+            })
+          );
+        }
+
         setProfileCreationQueue((prev) =>
             prev.filter((entry) => entry.id !== applicationId)
         );
