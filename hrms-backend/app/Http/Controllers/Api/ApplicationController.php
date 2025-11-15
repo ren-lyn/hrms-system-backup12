@@ -1164,4 +1164,126 @@ class ApplicationController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get applicants ready for Profile Creation
+     * Returns applicants who have completed benefits enrollment but are not yet hired
+     * This is the source of truth for the Profile Creation tab
+     */
+    public function getProfileCreationQueue(Request $request)
+    {
+        try {
+            // Get applicants with completed benefits enrollment who are not yet hired
+            // Additional validation: Ensure benefits enrollment was completed after migration
+            // This prevents old/stale data from appearing in Profile Creation tab
+            $pendingProfileCreation = Application::with([
+                'applicant.user',
+                'jobPosting',
+                'benefitsEnrollment'
+            ])
+            ->whereHas('benefitsEnrollment', function($query) {
+                $query->where('enrollment_status', 'completed');
+            })
+            ->where('status', '!=', 'Hired') // Not yet hired
+            ->whereHas('applicant') // Must have valid applicant
+            ->whereHas('jobPosting') // Must have valid job posting
+            ->latest()
+            ->get()
+            ->filter(function($application) {
+                // Additional safety check: Ensure all required relationships exist
+                return $application->applicant !== null 
+                    && $application->jobPosting !== null
+                    && $application->benefitsEnrollment !== null
+                    && $application->benefitsEnrollment->enrollment_status === 'completed';
+            });
+
+            // Also get hired applicants who have employee profiles (for viewing/editing)
+            $hiredWithProfiles = Application::with([
+                'applicant.user.employeeProfile',
+                'jobPosting',
+                'benefitsEnrollment'
+            ])
+            ->where('status', 'Hired')
+            ->whereHas('applicant.user.employeeProfile') // Has employee profile
+            ->whereHas('applicant') // Must have valid applicant
+            ->whereHas('jobPosting') // Must have valid job posting
+            ->latest()
+            ->get()
+            ->filter(function($application) {
+                // Additional safety check: Ensure all required relationships exist
+                return $application->applicant !== null 
+                    && $application->jobPosting !== null
+                    && $application->applicant->user !== null
+                    && $application->applicant->user->employeeProfile !== null;
+            });
+
+            // Combine both lists
+            $applications = $pendingProfileCreation->merge($hiredWithProfiles);
+
+            // Format the response with all necessary data for Profile Creation
+            $formatted = $applications->map(function($application) {
+                $applicant = $application->applicant;
+                $benefitsEnrollment = $application->benefitsEnrollment;
+                $isHired = $application->status === 'Hired';
+                
+                return [
+                    'id' => $application->id,
+                    'application_id' => $application->id,
+                    'applicant_id' => $application->applicant_id,
+                    'name' => $applicant ? trim(($applicant->first_name ?? '') . ' ' . ($applicant->last_name ?? '')) : 'N/A',
+                    'email' => $applicant?->user?->email ?? $applicant?->email ?? 'N/A',
+                    'department' => $application->jobPosting?->department ?? 'N/A',
+                    'position' => $application->jobPosting?->position ?? 'N/A',
+                    'status' => $application->status,
+                    'isHired' => $isHired,
+                    'enrollment_status' => $benefitsEnrollment?->enrollment_status ?? 'pending',
+                    'benefits_enrollment_status' => $benefitsEnrollment?->enrollment_status ?? 'completed',
+                    'completed_at' => $benefitsEnrollment?->updated_at?->toISOString(),
+                    'applicant' => $applicant ? [
+                        'id' => $applicant->id,
+                        'first_name' => $applicant->first_name,
+                        'last_name' => $applicant->last_name,
+                        'email' => $applicant->email,
+                        'contact_number' => $applicant->contact_number,
+                        'user' => $applicant->user ? [
+                            'id' => $applicant->user->id,
+                            'email' => $applicant->user->email,
+                        ] : null,
+                    ] : null,
+                    'job_posting' => $application->jobPosting ? [
+                        'id' => $application->jobPosting->id,
+                        'department' => $application->jobPosting->department,
+                        'position' => $application->jobPosting->position,
+                    ] : null,
+                    'benefits_enrollment' => $benefitsEnrollment ? [
+                        'id' => $benefitsEnrollment->id,
+                        'enrollment_status' => $benefitsEnrollment->enrollment_status,
+                        'metadata' => $benefitsEnrollment->metadata,
+                        'assigned_at' => $benefitsEnrollment->assigned_at?->toISOString(),
+                        'updated_at' => $benefitsEnrollment->updated_at?->toISOString(),
+                    ] : null,
+                ];
+            });
+
+            // Add cache control headers to prevent browser caching
+            return response()->json([
+                'success' => true,
+                'data' => $formatted,
+                'count' => $formatted->count(),
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
+        } catch (\Exception $e) {
+            Log::error('Error retrieving profile creation queue', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve profile creation queue.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

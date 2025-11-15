@@ -779,10 +779,15 @@ const OnboardingDashboard = () => {
     }
 
     try {
+      // If queue is empty, clear localStorage to ensure clean state
+      if (profileCreationQueue.length === 0) {
+        window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+      } else {
       window.localStorage.setItem(
         PROFILE_CREATION_QUEUE_STORAGE_KEY,
         JSON.stringify(profileCreationQueue)
       );
+      }
     } catch (error) {
       console.error("Failed to persist profile creation queue:", error);
     }
@@ -1723,8 +1728,44 @@ const closeDocumentModal = useCallback(() => {
     }
   };
 
+  // Fetch profile creation queue from API and sync with localStorage
+  const fetchProfileCreationQueue = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:8000/api/applications/profile-creation-queue",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data && response.data.success) {
+        const apiQueue = response.data.data || [];
+        
+        // If API returns empty, clear localStorage
+        if (apiQueue.length === 0) {
+          setProfileCreationQueue([]);
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+          }
+        } else {
+          // Sync with API data - use API as source of truth
+          setProfileCreationQueue(apiQueue);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching profile creation queue:", error);
+      // On error, clear localStorage to ensure clean state
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+        setProfileCreationQueue([]);
+      }
+    }
+  };
+
   useEffect(() => {
     fetchApplicants();
+    fetchProfileCreationQueue(); // Fetch and sync profile creation queue
 
     // Add debug function to window for testing
 
@@ -4465,7 +4506,7 @@ const closeDocumentModal = useCallback(() => {
     }
   };
 
-  const handleQueueForProfileCreation = () => {
+  const handleQueueForProfileCreation = async () => {
     if (!selectedApplicationForBenefits) {
       alert("Select an applicant before marking benefits as complete.");
       return;
@@ -4474,91 +4515,99 @@ const closeDocumentModal = useCallback(() => {
     const applicantRecord = selectedApplicationForBenefits;
     const applicantId = applicantRecord.id;
 
-    if (profileCreationQueue.some((entry) => entry.id === applicantId)) {
-      alert("This applicant is already listed in the Profile Creation tab.");
-      handleCloseBenefitsModal();
-      setActiveTab("Onboarding");
-      setOnboardingSubtab("Profile Creation");
-      return;
+    try {
+      // First, update benefits enrollment status to "completed" in the backend
+      const token = localStorage.getItem("token");
+      
+      // Check if we have a file - if yes, use FormData, otherwise use plain object
+      const hasFile = benefitsForm.membershipProof instanceof File;
+      
+      let requestData;
+      let headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      if (hasFile) {
+        // Use FormData if there's a file
+        const formData = new FormData();
+        formData.append("enrollment_status", "completed");
+        formData.append("sss_number", benefitsForm.sssNumber || "");
+        formData.append("philhealth_number", benefitsForm.philhealthNumber || "");
+        formData.append("pagibig_number", benefitsForm.pagibigNumber || "");
+        formData.append("membership_proof", benefitsForm.membershipProof);
+        requestData = formData;
+        // Let axios set Content-Type automatically for FormData
+      } else {
+        // Use plain object (JSON) if no file - works better with PUT
+        requestData = {
+          enrollment_status: "completed",
+          sss_number: benefitsForm.sssNumber || "",
+          philhealth_number: benefitsForm.philhealthNumber || "",
+          pagibig_number: benefitsForm.pagibigNumber || "",
+        };
+        headers["Content-Type"] = "application/json";
+      }
+
+      // Update benefits enrollment status to completed using PUT method
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicantId}/benefits-enrollment`,
+        requestData,
+        { headers }
+      );
+
+      if (response.data?.success) {
+        // Update local state - preserve is_in_benefits_enrollment so applicant
+        // remains visible in Benefits Enrollment tab
+        setBenefitsEnrollmentStatus("completed");
+        setApplicants((prev) =>
+          prev.map((applicationRecord) =>
+            applicationRecord.id === applicantId
+              ? {
+                  ...applicationRecord,
+                  benefits_enrollment_status: "completed",
+                  is_in_benefits_enrollment: true, // Keep in Benefits Enrollment tab
+                }
+              : applicationRecord
+          )
+        );
+
+        setSelectedApplicationForBenefits((prev) =>
+          prev
+            ? {
+                ...prev,
+                benefits_enrollment_status: "completed",
+                is_in_benefits_enrollment: true, // Keep in Benefits Enrollment tab
+              }
+            : prev
+        );
+
+        // Refresh applicants list to get latest data from backend
+        await fetchApplicants();
+
+        // Refresh Profile Creation queue from API - this will automatically include
+        // the applicant since they now have completed benefits enrollment
+        await fetchProfileCreationQueue();
+
+        // Close modal silently - applicant will appear in Profile Creation tab
+        handleCloseBenefitsModal();
+      } else {
+        // Silently fail - log error for debugging
+        console.error("Benefits enrollment update failed:", response.data);
+      }
+    } catch (error) {
+      console.error("Error completing benefits enrollment:", error);
+      
+      // Log detailed error for debugging
+      if (error.response?.data) {
+        console.error("Error response:", error.response.data);
+        if (error.response.data.errors) {
+          console.error("Validation errors:", error.response.data.errors);
+        }
+      }
+      
+      // Silently fail - don't show alert as requested
+      // The user can try again if needed
     }
-
-    const resolvedName =
-      benefitsApplicantInfo?.name ||
-      (applicantRecord.applicant
-        ? `${applicantRecord.applicant.first_name || ""} ${
-            applicantRecord.applicant.last_name || ""
-          }`.trim()
-        : applicantRecord.employee_name || "N/A");
-
-    const resolvedEmail =
-      benefitsApplicantInfo?.email ||
-      applicantRecord.applicant?.email ||
-      applicantRecord.employee_email ||
-      "N/A";
-
-    const resolvedDepartment =
-      benefitsApplicantInfo?.department ||
-      applicantRecord.jobPosting?.department ||
-      applicantRecord.job_posting?.department ||
-      "N/A";
-
-    const resolvedPosition =
-      benefitsApplicantInfo?.position ||
-      applicantRecord.jobPosting?.position ||
-      applicantRecord.job_posting?.position ||
-      "N/A";
-
-    const documentsForOverview = Array.isArray(
-      benefitsDocumentOverview?.documents
-    )
-      ? benefitsDocumentOverview.documents
-      : Array.isArray(benefitsDocumentOverview)
-      ? benefitsDocumentOverview
-      : [];
-
-    const overviewPhotoUrl = normalizeAssetUrl(
-      extractProfilePhotoFromDocuments(documentsForOverview)
-    );
-
-    const fallbackPhotoCandidates = [
-      benefitsApplicantInfo?.profile_photo_url,
-      benefitsApplicantInfo?.photo_url,
-      applicantRecord.applicant?.profile_photo_url,
-      applicantRecord.applicant?.photo_url,
-      applicantRecord.profile_photo_url,
-      applicantRecord.photo_url,
-    ];
-
-    const fallbackPhotoUrl =
-      fallbackPhotoCandidates
-        .map((candidate) => normalizeAssetUrl(candidate))
-        .find((candidate) => candidate && candidate.length > 0) || "";
-
-    const resolvedProfilePhotoUrl = overviewPhotoUrl || fallbackPhotoUrl;
-
-    const profileData = {
-      fullName: resolvedName,
-      companyEmail: generateCompanyEmail(resolvedName),
-      profilePhotoUrl: resolvedProfilePhotoUrl,
-    };
-
-    const queueEntry = {
-      id: applicantId,
-      name: resolvedName,
-      email: resolvedEmail,
-      department: resolvedDepartment,
-      position: resolvedPosition,
-      enrollmentStatus: benefitsEnrollmentStatus,
-      addedAt: new Date().toISOString(),
-      profileData,
-      profileDataUpdatedAt: null,
-    };
-
-    setProfileCreationQueue((prev) => [...prev, queueEntry]);
-    alert("Applicant added to the Profile Creation tab.");
-    handleCloseBenefitsModal();
-    setActiveTab("Onboarding");
-    setOnboardingSubtab("Profile Creation");
   };
 
   const resetProfileCreationForm = useCallback(() => {
@@ -4575,12 +4624,14 @@ const closeDocumentModal = useCallback(() => {
       const defaults = createEmptyProfileForm();
       const existing = entry.profileData || {};
       const resolvedFullName = resolveProfileFullName(entry, existing);
-      const generatedCompanyEmail = generateCompanyEmail(resolvedFullName);
-      const initialCompanyEmail =
-        existing.companyEmail ||
-        generatedCompanyEmail ||
-        existing.email ||
-        entry.email ||
+      
+      // Display original applicant email for information only - DO NOT change it
+      // This is just for HR to see what email the applicant registered with
+      const originalApplicantEmail = 
+        entry.applicant?.user?.email || // Original registration email
+        entry.applicant?.email || // Fallback to applicant email
+        entry.applicant_email || // Fallback
+        entry.email || // Fallback
         "";
       const initialProfilePhotoUrl =
         normalizeAssetUrl(
@@ -4593,7 +4644,7 @@ const closeDocumentModal = useCallback(() => {
         ...defaults,
         ...existing,
         fullName: resolvedFullName,
-        companyEmail: initialCompanyEmail,
+        companyEmail: originalApplicantEmail, // Display original email only, not for changing
         profilePhotoUrl: initialProfilePhotoUrl,
         position: existing.position || entry.position || "",
         department: existing.department || entry.department || "",
@@ -4669,9 +4720,11 @@ const closeDocumentModal = useCallback(() => {
         next.age = calculateAgeFromBirthdate(value);
       }
 
-      if (field === "fullName") {
-        next.companyEmail = generateCompanyEmail(value) || "";
-      }
+      // Do NOT regenerate email when fullName changes
+      // The email field is display-only and shows the original applicant email
+      // if (field === "fullName") {
+      //   next.companyEmail = generateCompanyEmail(value) || "";
+      // }
 
       return next;
     });
@@ -4775,7 +4828,8 @@ const closeDocumentModal = useCallback(() => {
       gender: profileCreationForm.gender,
       birth_date: profileCreationForm.dateOfBirth,
       age: Number.isNaN(numericAge) ? 0 : numericAge,
-      company_email: profileCreationForm.companyEmail,
+      // Do NOT send company_email - it's display only
+      // company_email: profileCreationForm.companyEmail,
       contact_number: profileCreationForm.phoneNumber,
       emergency_contact_name: profileCreationForm.emergencyContactName,
       emergency_contact_phone: profileCreationForm.emergencyContactPhone,
@@ -4921,6 +4975,12 @@ const closeDocumentModal = useCallback(() => {
         );
 
         await fetchApplicants();
+
+        // If benefits enrollment was completed, refresh Profile Creation queue
+        // so the applicant appears in Profile Creation tab
+        if (nextStatus === "completed") {
+          await fetchProfileCreationQueue();
+        }
 
         alert("Benefit enrolled successfully.");
         setBenefitsValidationErrors([]);
@@ -12505,17 +12565,23 @@ const closeDocumentModal = useCallback(() => {
                 <Col md={4}>
                   <Form.Group controlId="assistantProfileCompanyEmail">
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
-                      Company Email
+                      Applicant Email (Information Only)
                     </Form.Label>
                     <Form.Control
                       type="email"
-                      value={profileCreationForm.companyEmail}
+                      value={activeProfileCreationEntry?.applicant?.user?.email ||
+                        activeProfileCreationEntry?.applicant?.email ||
+                        activeProfileCreationEntry?.applicant_email ||
+                        activeProfileCreationEntry?.email ||
+                        profileCreationForm.companyEmail ||
+                        ""}
                       readOnly
-                      placeholder="Auto-generated company email"
+                      disabled
+                      placeholder="Applicant's original registration email"
                       style={PROFILE_READONLY_INPUT_STYLE}
                     />
                     <div className="text-muted small mt-1">
-                      Generated from the applicant&apos;s name.
+                      Display only - Original email the applicant used for registration. This email is used for JobPortal access only.
                     </div>
                   </Form.Group>
                 </Col>
