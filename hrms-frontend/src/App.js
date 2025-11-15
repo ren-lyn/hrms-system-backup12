@@ -9,6 +9,7 @@ import 'react-toastify/dist/ReactToastify.css';
 // Lazy load components for better performance
 const Login = lazy(() => import('./pages/Login'));
 const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
+const EmailVerification = lazy(() => import('./pages/EmailVerification'));
 const JobPortal = lazy(() => import('./components/JobPortal'));
 const HrStaffDashboard = lazy(() => import('./pages/HrStaffDashboard'));
 const ManagerDashboard = lazy(() => import('./pages/ManagerDashboard'));
@@ -90,6 +91,7 @@ function App() {
         <Route path="/" element={<JobPortal />} /> {/* Changed from Login to JobPortal */}
         <Route path="/login" element={<Login />} /> {/* Moved Login to /login route */}
         <Route path="/register" element={<RegisterApplicant />} />
+        <Route path="/verify-email" element={<EmailVerification />} />
          <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/unauthorized" element={<h2>Unauthorized Access</h2>} />
 

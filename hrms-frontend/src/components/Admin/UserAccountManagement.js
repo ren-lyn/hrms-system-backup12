@@ -393,10 +393,6 @@ const UserAccountManagement = () => {
           <h1>User Account Management</h1>
           <p>Manage user accounts, roles, and permissions</p>
         </div>
-        <button type="button" className="add-user-btn" onClick={handleAddUser}>
-          <FontAwesomeIcon icon={faPlus} />
-          Add User
-        </button>
       </div>
 
       <div className="user-management-filters">
@@ -485,14 +481,6 @@ const UserAccountManagement = () => {
                       title="Edit User"
                     >
                       <FontAwesomeIcon icon={faEdit} />
-                    </button>
-                    <button
-                      type="button"
-                      className="action-btn password-btn"
-                      onClick={() => handleResetPassword(user)}
-                      title="Reset Password"
-                    >
-                      <FontAwesomeIcon icon={faKey} />
                     </button>
                     <button
                       type="button"

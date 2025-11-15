@@ -86,20 +86,39 @@ const RegisterApplicant = () => {
     try {
       const response = await axios.post('http://localhost:8000/api/register', form);
       
-      // Store user data in localStorage for immediate access
-      const userData = {
-        first_name: form.first_name,
-        last_name: form.last_name,
-        name: `${form.first_name} ${form.last_name}`.trim(),
-        email: form.email,
-        phone: form.phone
-      };
-      
-      localStorage.setItem('user', JSON.stringify(userData));
-      console.log('User data stored in localStorage:', userData);
-      
-      setSuccess('Registration successful! Redirecting to login...');
-      setTimeout(() => navigate('/login'), 2000);
+      // Check if verification is required (2FA enabled)
+      if (response.data && response.data.requires_verification === true) {
+        // Store email for verification page
+        localStorage.setItem('pendingVerificationEmail', form.email);
+        
+        // Show success message
+        setSuccess('Verification code has been sent to your email address. Please verify to complete registration.');
+        
+        // Redirect to verification page after a short delay
+        setTimeout(() => {
+          navigate('/verify-email', { 
+            state: { 
+              email: form.email,
+              message: 'Verification code has been sent to your email address.' 
+            } 
+          });
+        }, 1500);
+      } else {
+        // 2FA is disabled - registration completed, redirect to login
+        setSuccess('Registration completed successfully! Redirecting to login...');
+        
+        // Clear any pending verification email
+        localStorage.removeItem('pendingVerificationEmail');
+        
+        // Redirect to login after a short delay
+        setTimeout(() => {
+          navigate('/login', { 
+            state: { 
+              message: 'Registration successful! Please login with your credentials.' 
+            } 
+          });
+        }, 2000);
+      }
     } catch (err) {
       if (err.response?.data?.message) {
         setError(err.response.data.message);

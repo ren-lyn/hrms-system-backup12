@@ -15,6 +15,16 @@ const Login = () => {
   const [isHoveringText, setIsHoveringText] = useState(false);
    const [showForgotModal, setShowForgotModal] = useState(false);
   const [showResetForm, setShowResetForm] = useState(false);
+  const [showVerificationStep, setShowVerificationStep] = useState(false);
+  const [verificationCode, setVerificationCode] = useState(['', '', '', '', '', '']);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [verificationSuccess, setVerificationSuccess] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [isResending, setIsResending] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verifiedCode, setVerifiedCode] = useState('');
   const [reason, setReason] = useState('');
   const [fullName, setFullName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -26,6 +36,13 @@ const Login = () => {
   const resetForgotState = () => {
     setShowForgotModal(false);
     setShowResetForm(false);
+    setShowVerificationStep(false);
+    setVerificationCode(['', '', '', '', '', '']);
+    setVerificationError('');
+    setVerificationSuccess('');
+    setEmailVerified(false);
+    setVerifiedCode('');
+    setResendCooldown(0);
     setReason('');
     setFullName('');
     setEmployeeId('');
@@ -34,6 +51,165 @@ const Login = () => {
     idPhotoPreviews.forEach((url) => URL.revokeObjectURL(url));
     setIdPhotos([]);
     setIdPhotoPreviews([]);
+  };
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown(resendCooldown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
+
+  const handleVerificationCodeChange = (index, value) => {
+    if (value.length > 1) return;
+    const newCode = [...verificationCode];
+    newCode[index] = value.replace(/\D/g, '');
+    setVerificationCode(newCode);
+    setVerificationError('');
+
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`verification-code-${index + 1}`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  const handleVerificationKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
+      const prevInput = document.getElementById(`verification-code-${index - 1}`);
+      if (prevInput) prevInput.focus();
+    }
+  };
+
+  const handleVerificationPaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (pastedData.length === 6) {
+      const newCode = pastedData.split('');
+      setVerificationCode(newCode);
+      setVerificationError('');
+      const lastInput = document.getElementById('verification-code-5');
+      if (lastInput) lastInput.focus();
+    }
+  };
+
+
+  const handleSendVerificationCode = async () => {
+    if (!resetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
+      toast.error('Please enter a valid email address.', { position: 'top-right' });
+      return;
+    }
+
+    setIsSendingCode(true);
+    setVerificationError('');
+    setVerificationSuccess('');
+
+    try {
+      const response = await axios.post('http://localhost:8000/api/password-change-requests/send-verification', {
+        email: resetEmail,
+      });
+
+      setVerificationSuccess('Verification code has been sent to your email address.');
+      setShowVerificationStep(true);
+      setResendCooldown(60);
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.errors?.email?.[0] || 'Failed to send verification code. Please try again.';
+      setVerificationError(errorMsg);
+      toast.error(errorMsg, { position: 'top-right' });
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    const code = verificationCode.join('');
+    if (code.length !== 6) {
+      setVerificationError('Please enter the complete 6-digit verification code.');
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    setVerificationError('');
+    setVerificationSuccess('');
+
+    try {
+      const response = await axios.post('http://localhost:8000/api/password-change-requests/verify-verification', {
+        email: resetEmail,
+        verification_code: code,
+      });
+
+      setVerificationSuccess('Email verified successfully! Submitting your request...');
+      setEmailVerified(true);
+      setVerifiedCode(code);
+      
+      // Automatically submit the form after verification
+      setTimeout(async () => {
+        try {
+          const form = new FormData();
+          form.append('full_name', fullName);
+          form.append('employee_id', employeeId);
+          form.append('department', department);
+          form.append('reason', reason);
+          form.append('email', resetEmail || email);
+          form.append('verification_code', code);
+          // Attach up to 2 selected ID photos if provided
+          if (idPhotos[0]) form.append('id_photo_1', idPhotos[0]);
+          if (idPhotos[1]) form.append('id_photo_2', idPhotos[1]);
+          const token = localStorage.getItem('token');
+          const resp = await axios.post('http://localhost:8000/api/password-change-requests', form, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          const saved = resp?.data?.saved;
+          if (resp.status === 201) {
+            toast.success(saved ? 'Request submitted and recorded.' : 'Request submitted; awaiting recording.', { position: 'top-right' });
+          } else {
+            toast.info('Request submitted. Please wait for confirmation.', { position: 'top-right' });
+          }
+          resetForgotState();
+        } catch (err) {
+          const msg = err.response?.data?.message || 'Failed to submit request';
+          toast.error(msg, { position: 'top-right' });
+        }
+      }, 500);
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.response?.data?.errors?.verification_code?.[0] || 'Invalid verification code. Please try again.';
+      setVerificationError(errorMsg);
+      setVerificationCode(['', '', '', '', '', '']);
+      const firstInput = document.getElementById('verification-code-0');
+      if (firstInput) firstInput.focus();
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (resendCooldown > 0 || isResending) return;
+
+    setIsResending(true);
+    setVerificationError('');
+    setVerificationSuccess('');
+
+    try {
+      await axios.post('http://localhost:8000/api/password-change-requests/resend-verification', {
+        email: resetEmail,
+      });
+
+      setVerificationSuccess('Verification code has been resent to your email address.');
+      setResendCooldown(60);
+      setVerificationCode(['', '', '', '', '', '']);
+      const firstInput = document.getElementById('verification-code-0');
+      if (firstInput) firstInput.focus();
+      toast.success('Verification code resent!', { position: 'top-right' });
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || 'Failed to resend verification code. Please try again.';
+      setVerificationError(errorMsg);
+      toast.error(errorMsg, { position: 'top-right' });
+    } finally {
+      setIsResending(false);
+    }
   };
 
   const handleIdPhotosChange = (e) => {
@@ -121,6 +297,7 @@ const Login = () => {
         password,
       });
 
+      // Normal login flow
       const { access_token, user } = response.data;
 
       const normalizedName = () => {
@@ -760,90 +937,90 @@ const Login = () => {
             </AnimatePresence>
 
             <form onSubmit={handleLogin} autoComplete="off">
-              <motion.div 
-                className="form-group"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.6 }}
-              >
-                <label className="form-label">Email Address</label>
-                <div className="input-wrapper">
-                  <i className="bi bi-envelope-fill input-icon"></i>
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="example@gmail.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="off"
-                    required
-                  />
-                </div>
-              </motion.div>
+                <motion.div 
+                  className="form-group"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.5, delay: 0.6 }}
+                >
+                  <label className="form-label">Email Address</label>
+                  <div className="input-wrapper">
+                    <i className="bi bi-envelope-fill input-icon"></i>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="example@gmail.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="off"
+                      required
+                    />
+                  </div>
+                </motion.div>
 
-              <motion.div 
-                className="form-group"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.5, delay: 0.7 }}
-              >
-                <label className="form-label">Password</label>
-                <div className="input-wrapper">
-                  <i className="bi bi-lock-fill input-icon"></i>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input password-field"
-                    placeholder="Enter your Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="off"
-                    required
-                  />
-                  <motion.button
-                    type="button"
-                    className="toggle-password-btn"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    onClick={() => setShowPassword((v) => !v)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                  >
-                    <i className={`bi ${showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
-                  </motion.button>
-                </div>
-                <div style={{ marginTop: '8px', textAlign: 'right' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setShowForgotModal(true); setShowResetForm(false); }}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#1e40af',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
+                <motion.div 
+                  className="form-group"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.5, delay: 0.7 }}
+                >
+                  <label className="form-label">Password</label>
+                  <div className="input-wrapper">
+                    <i className="bi bi-lock-fill input-icon"></i>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className="form-input password-field"
+                      placeholder="Enter your Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="off"
+                      required
+                    />
+                    <motion.button
+                      type="button"
+                      className="toggle-password-btn"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((v) => !v)}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                    >
+                      <i className={`bi ${showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`}></i>
+                    </motion.button>
+                  </div>
+                  <div style={{ marginTop: '8px', textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowForgotModal(true); setShowResetForm(false); }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#1e40af',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
 
-              </motion.div>
+                </motion.div>
 
-              <motion.button 
-                type="submit" 
-                className="login-button"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.8 }}
-                whileHover={{ 
-                  scale: 1.02,
-                  boxShadow: "0 12px 30px rgba(0, 51, 255, 0.4)"
-                }}
-                whileTap={{ scale: 0.98 }}
-              >
-                LOGIN
-              </motion.button>
-            </form>
+                <motion.button 
+                  type="submit" 
+                  className="login-button"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.8 }}
+                  whileHover={{ 
+                    scale: 1.02,
+                    boxShadow: "0 12px 30px rgba(0, 51, 255, 0.4)"
+                  }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  LOGIN
+                </motion.button>
+              </form>
 
             <motion.div 
               className="register-link"
@@ -866,26 +1043,207 @@ const Login = () => {
               <button className="fp-close" onClick={() => setShowForgotModal(false)} aria-label="Close">✕</button>
             </div>
             <div className="fp-body">
-              {!showResetForm ? (
+              {showVerificationStep ? (
+                <>
+                  <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                    <div style={{
+                      width: '60px',
+                      height: '60px',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 15px',
+                      boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)'
+                    }}>
+                      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                        <polyline points="22,6 12,13 2,6" />
+                      </svg>
+                    </div>
+                    <h4 style={{ color: '#00033d', marginBottom: '10px', fontSize: '1.3rem', fontWeight: '700' }}>
+                      Verify Your Email
+                    </h4>
+                    <p className="fp-desc" style={{ marginBottom: '0' }}>
+                      We sent a verification code to <strong>{resetEmail}</strong>. Please enter it below to verify your account.
+                    </p>
+                  </div>
+
+                  {verificationSuccess && (
+                    <div style={{ marginBottom: '20px', padding: '12px', background: '#f0fdf4', borderRadius: '8px', textAlign: 'center' }}>
+                      <p style={{ margin: 0, color: '#059669', fontWeight: '600' }}>
+                        Verification code sent to
+                      </p>
+                      <p style={{ margin: '5px 0 0 0', color: '#10b981', fontWeight: '700', fontSize: '1.1rem' }}>
+                        {resetEmail}
+                      </p>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '20px' }}>
+                    <label className="form-label" style={{ textAlign: 'center', display: 'block', marginBottom: '10px' }}>
+                      Verification Code
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '10px' }} onPaste={handleVerificationPaste}>
+                      {verificationCode.map((digit, index) => (
+                        <input
+                          key={index}
+                          id={`verification-code-${index}`}
+                          type="text"
+                          maxLength="1"
+                          value={digit}
+                          onChange={(e) => handleVerificationCodeChange(index, e.target.value)}
+                          onKeyDown={(e) => handleVerificationKeyDown(index, e)}
+                          style={{
+                            width: '50px',
+                            height: '60px',
+                            textAlign: 'center',
+                            fontSize: '28px',
+                            fontWeight: '700',
+                            border: '2px solid #e5e7eb',
+                            borderRadius: '12px',
+                            background: '#f9fafb',
+                            fontFamily: 'monospace',
+                            transition: 'all 0.3s ease'
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = '#3b82f6';
+                            e.target.style.background = 'white';
+                            e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = '#e5e7eb';
+                            e.target.style.background = '#f9fafb';
+                            e.target.style.boxShadow = 'none';
+                          }}
+                          autoFocus={index === 0}
+                        />
+                      ))}
+                    </div>
+                    <p style={{ textAlign: 'center', marginTop: '10px', color: '#6b7280', fontSize: '0.85rem' }}>
+                      Enter the 6-digit code sent to your email
+                    </p>
+                    <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                      <button
+                        type="button"
+                        className="fp-primary"
+                        onClick={handleVerifyCode}
+                        disabled={isVerifyingCode || verificationCode.join('').length !== 6}
+                        style={{ 
+                          minWidth: '180px',
+                          padding: '15px',
+                          fontSize: '16px',
+                          fontWeight: '700',
+                          background: '#10b981',
+                          border: 'none',
+                          borderRadius: '12px',
+                          color: 'white',
+                          cursor: isVerifyingCode || verificationCode.join('').length !== 6 ? 'not-allowed' : 'pointer',
+                          opacity: isVerifyingCode || verificationCode.join('').length !== 6 ? 0.6 : 1
+                        }}
+                      >
+                        {isVerifyingCode ? 'Verifying...' : 'Verify Code'}
+                      </button>
+                    </div>
+                    <div style={{ textAlign: 'center', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
+                      <p style={{ color: '#6b7280', marginBottom: '10px', fontSize: '0.9rem' }}>
+                        DIDN'T RECEIVE THE CODE?
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleResendVerification}
+                        disabled={resendCooldown > 0 || isResending}
+                        style={{
+                          background: '#f3f4f6',
+                          border: 'none',
+                          color: '#6b7280',
+                          padding: '10px 20px',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: resendCooldown > 0 || isResending ? 'not-allowed' : 'pointer',
+                          opacity: resendCooldown > 0 || isResending ? 0.5 : 1
+                        }}
+                      >
+                        {isResending
+                          ? 'Sending...'
+                          : resendCooldown > 0
+                          ? `Resend code in ${resendCooldown} seconds`
+                          : 'Resend Code'}
+                      </button>
+                    </div>
+                    {verificationError && (
+                      <div style={{ marginTop: '15px', padding: '12px', background: '#fee', color: '#c33', borderRadius: '8px', fontSize: '14px', textAlign: 'center' }}>
+                        {verificationError}
+                      </div>
+                    )}
+                  </div>
+                  <div className="fp-actions" style={{ padding: 0, marginTop: 20 }}>
+                    <button 
+                      className="fp-secondary" 
+                      onClick={() => {
+                        setShowVerificationStep(false);
+                        setVerificationCode(['', '', '', '', '', '']);
+                        setVerificationError('');
+                        setVerificationSuccess('');
+                        setEmailVerified(false);
+                        setVerifiedCode('');
+                      }}
+                    >
+                      Back to Form
+                    </button>
+                  </div>
+                </>
+              ) : !showResetForm ? (
                 <>
                   <p className="fp-desc">
-                    You are requesting a password change for your account. If you continue, Please provide your full name, Employee ID, 
-                    your department, reason and attach photos of your Employee ID (front and back sides). This does not change your data access or
-                    permissions.
+                    You are requesting a password change for your account. Please provide your full name, Employee ID, 
+                    department, reason, and attach photos of your Employee ID (front and back sides). If two-factor authentication is enabled, a verification code will be sent to your email after you submit.
                   </p>
+                  <div className="form-group" style={{ marginTop: '20px' }}>
+                    <label className="form-label">Email Address</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="Enter your registered email address"
+                      required
+                    />
+                  </div>
                   <div className="fp-actions" style={{ padding: 0, marginTop: 8 }}>
                     <button className="fp-secondary" onClick={() => setShowForgotModal(false)}>Cancel</button>
-                    <button className="fp-primary" onClick={() => setShowResetForm(true)}>Request Change Password</button>
+                    <button 
+                      className="fp-primary" 
+                      onClick={() => {
+                        if (!resetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
+                          toast.error('Please enter a valid email address.', { position: 'top-right' });
+                          return;
+                        }
+                        setShowResetForm(true);
+                      }}
+                    >
+                      Continue
+                    </button>
                   </div>
                 </>
               ) : (
                 <form className="fp-form" onSubmit={async (e) => { 
                   e.preventDefault(); 
+                  
+                  // If email is not verified yet, send verification code and show verification step
+                  if (!emailVerified) {
                   // Basic validations
                   if (!resetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail)) {
                     toast.error('Please enter a valid email address.', { position: 'top-right' });
                     return;
                   }
+
+                    if (!fullName || !employeeId || !department || !reason) {
+                      toast.error('Please fill in all required fields.', { position: 'top-right' });
+                      return;
+                    }
 
                   // Validate employee details against database
                   try {
@@ -914,6 +1272,41 @@ const Login = () => {
                     // If validation endpoint fails, proceed to submit and let backend validate
                   }
 
+                    // Check if verification is required (2FA enabled)
+                    setIsSendingCode(true);
+                    setVerificationError('');
+                    setVerificationSuccess('');
+
+                    try {
+                      const response = await axios.post('http://localhost:8000/api/password-change-requests/send-verification', {
+                        email: resetEmail,
+                      });
+
+                      // Check if verification is required
+                      if (response.data && response.data.requires_verification === true) {
+                        setVerificationSuccess('Verification code has been sent to your email address.');
+                        setShowVerificationStep(true);
+                        setResendCooldown(60);
+                        toast.success('Verification code sent! Please check your email.', { position: 'top-right' });
+                        setIsSendingCode(false);
+                        return;
+                      } else {
+                        // 2FA is disabled - skip verification and proceed directly to submit
+                        setEmailVerified(true);
+                        setVerifiedCode(''); // No verification code needed
+                        setIsSendingCode(false);
+                        // Continue to form submission below
+                      }
+                    } catch (err) {
+                      const errorMsg = err.response?.data?.message || err.response?.data?.errors?.email?.[0] || 'Failed to send verification code. Please try again.';
+                      setVerificationError(errorMsg);
+                      toast.error(errorMsg, { position: 'top-right' });
+                      setIsSendingCode(false);
+                      return;
+                    }
+                  }
+
+                  // If email is verified (or 2FA is disabled), submit the request
                   try {
                     const form = new FormData();
                     form.append('full_name', fullName);
@@ -921,6 +1314,10 @@ const Login = () => {
                     form.append('department', department);
                     form.append('reason', reason);
                     form.append('email', resetEmail || email);
+                    // Only append verification_code if it exists (2FA enabled)
+                    if (verifiedCode) {
+                      form.append('verification_code', verifiedCode);
+                    }
                     // Attach up to 2 selected ID photos if provided
                     if (idPhotos[0]) form.append('id_photo_1', idPhotos[0]);
                     if (idPhotos[1]) form.append('id_photo_2', idPhotos[1]);
@@ -947,8 +1344,10 @@ const Login = () => {
                       className="form-input"
                       value={resetEmail}
                       onChange={(e) => setResetEmail(e.target.value)}
-                      placeholder="Enter your email"
+                      placeholder="Enter your registered email address"
                       required
+                      disabled={emailVerified}
+                      style={emailVerified ? { background: '#f3f4f6', cursor: 'not-allowed' } : {}}
                     />
                   </div>
                   <div className="fp-row" style={{ marginBottom: 8 }}>

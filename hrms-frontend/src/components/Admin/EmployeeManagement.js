@@ -1036,10 +1036,6 @@ const EmployeeManagement = () => {
               <FontAwesomeIcon icon={faFileAlt} />
             </button>
           </div>
-          <button type="button" className="add-employee-btn" onClick={handleAddEmployee}>
-            <FontAwesomeIcon icon={faPlus} />
-            Add Employee
-          </button>
         </div>
       </div>
 

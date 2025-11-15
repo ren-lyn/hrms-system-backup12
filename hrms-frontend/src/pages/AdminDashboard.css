@@ -137,11 +137,12 @@
 .admin-nav-link {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   padding: 12px 20px;
   background: none;
   border: none;
   text-align: left;
+  justify-content: flex-start;
   font-size: 14px;
   font-weight: 500;
   color: #6b7280;
@@ -164,6 +165,7 @@
 .admin-nav-link svg {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
 }
 
 /* Sidebar Footer */
@@ -175,7 +177,7 @@
 .admin-logout-btn {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   width: 100%;
   padding: 12px;
   background: #ef4444;
@@ -186,6 +188,7 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  justify-content: flex-start;
 }
 
 .admin-logout-btn:hover {

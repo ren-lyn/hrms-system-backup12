@@ -46,10 +46,35 @@ const UncontrolledInput = ({ type, defaultValue, onBlur, required, placeholder, 
     <input
       ref={inputRef}
       type={type}
+      name={fieldName}
       defaultValue={defaultValue}
       onBlur={handleBlur}
       required={required}
       placeholder={placeholder}
+      {...props}
+    />
+  );
+};
+
+// Uncontrolled textarea component using refs to prevent re-render issues
+const UncontrolledTextarea = ({ defaultValue, onBlur, required, placeholder, fieldName, rows, ...props }) => {
+  const textareaRef = useRef(null);
+  
+  const handleBlur = () => {
+    if (onBlur && textareaRef.current) {
+      onBlur(fieldName, textareaRef.current.value);
+    }
+  };
+
+  return (
+    <textarea
+      ref={textareaRef}
+      name={fieldName}
+      defaultValue={defaultValue}
+      onBlur={handleBlur}
+      required={required}
+      placeholder={placeholder}
+      rows={rows}
       {...props}
     />
   );
@@ -69,6 +94,7 @@ const DepartmentPositionManagement = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [saving, setSaving] = useState(false);
   const [expandedDepts, setExpandedDepts] = useState(new Set());
+  const deleteItemRef = useRef(null); // Ref to store item for immediate access
 
   // Form states
   const [deptFormData, setDeptFormData] = useState({
@@ -137,6 +163,7 @@ const DepartmentPositionManagement = () => {
   };
 
   const handleDeleteDepartment = (department) => {
+    deleteItemRef.current = department; // Store in ref for immediate access
     setSelectedItem(department);
     setShowDeleteDeptModal(true);
   };
@@ -161,6 +188,7 @@ const DepartmentPositionManagement = () => {
   };
 
   const handleDeletePosition = (position) => {
+    deleteItemRef.current = position; // Store in ref for immediate access
     setSelectedItem(position);
     setShowDeletePosModal(true);
   };
@@ -184,10 +212,17 @@ const DepartmentPositionManagement = () => {
     try {
       setSaving(true);
       
+      // Read current form values directly from the form to ensure we get the latest values
+      const formData = new FormData(e.target);
+      const currentFormData = {
+        name: formData.get('name') || deptFormData.name || '',
+        description: formData.get('description') || deptFormData.description || ''
+      };
+      
       if (showAddDeptModal) {
-        await axios.post('http://localhost:8000/api/departments', deptFormData);
+        await axios.post('http://localhost:8000/api/departments', currentFormData);
       } else if (showEditDeptModal) {
-        await axios.put(`http://localhost:8000/api/departments/${selectedItem.id}`, deptFormData);
+        await axios.put(`http://localhost:8000/api/departments/${selectedItem.id}`, currentFormData);
       }
       
       await fetchDepartments();
@@ -224,12 +259,20 @@ const DepartmentPositionManagement = () => {
   };
 
   const handleDeleteDepartmentConfirm = async () => {
+    // Use ref first (immediate), fallback to state if ref is not set
+    const itemToDelete = deleteItemRef.current || selectedItem;
+    if (!itemToDelete || !itemToDelete.id) return;
+    
+    const itemId = itemToDelete.id;
+    
     try {
       setSaving(true);
-      await axios.delete(`http://localhost:8000/api/departments/${selectedItem.id}`);
+      await axios.delete(`http://localhost:8000/api/departments/${itemId}`);
       await fetchDepartments();
       await fetchPositions();
       setShowDeleteDeptModal(false);
+      setSelectedItem(null);
+      deleteItemRef.current = null; // Clear ref after delete
     } catch (error) {
       console.error('Error deleting department:', error);
     } finally {
@@ -238,11 +281,19 @@ const DepartmentPositionManagement = () => {
   };
 
   const handleDeletePositionConfirm = async () => {
+    // Use ref first (immediate), fallback to state if ref is not set
+    const itemToDelete = deleteItemRef.current || selectedItem;
+    if (!itemToDelete || !itemToDelete.id) return;
+    
+    const itemId = itemToDelete.id;
+    
     try {
       setSaving(true);
-      await axios.delete(`http://localhost:8000/api/positions/${selectedItem.id}`);
+      await axios.delete(`http://localhost:8000/api/positions/${itemId}`);
       await fetchPositions();
       setShowDeletePosModal(false);
+      setSelectedItem(null);
+      deleteItemRef.current = null; // Clear ref after delete
     } catch (error) {
       console.error('Error deleting position:', error);
     } finally {
@@ -416,10 +467,6 @@ const DepartmentPositionManagement = () => {
               <div className="no-departments">
                 <FontAwesomeIcon icon={faBuilding} />
                 <p>No departments found</p>
-                <button type="button" className="add-first-dept-btn" onClick={handleAddDepartment}>
-                  <FontAwesomeIcon icon={faPlus} />
-                  Add First Department
-                </button>
               </div>
             )}
           </div>
@@ -469,9 +516,10 @@ const DepartmentPositionManagement = () => {
           
           <div className="form-group">
             <label>Description</label>
-            <textarea
-              value={deptFormData.description}
-              onChange={(e) => setDeptFormData({ ...deptFormData, description: e.target.value })}
+            <UncontrolledTextarea
+              defaultValue={deptFormData.description}
+              onBlur={handleDeptInputBlur}
+              fieldName="description"
               placeholder="Enter department description"
               rows="3"
             />
@@ -564,7 +612,10 @@ const DepartmentPositionManagement = () => {
       {/* Delete Department Modal */}
       <Modal
         isOpen={showDeleteDeptModal}
-        onClose={() => setShowDeleteDeptModal(false)}
+        onClose={() => {
+          setShowDeleteDeptModal(false);
+          deleteItemRef.current = null; // Clear ref when modal closes
+        }}
         title="Delete Department"
       >
         <div className="delete-confirmation">
@@ -574,14 +625,23 @@ const DepartmentPositionManagement = () => {
             <button
               type="button"
               className="cancel-btn"
-              onClick={() => setShowDeleteDeptModal(false)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowDeleteDeptModal(false);
+                deleteItemRef.current = null; // Clear ref on cancel
+              }}
             >
               Cancel
             </button>
             <button
               type="button"
               className="delete-btn"
-              onClick={handleDeleteDepartmentConfirm}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteDepartmentConfirm();
+              }}
               disabled={saving}
             >
               {saving ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faTrash} />}
@@ -594,7 +654,10 @@ const DepartmentPositionManagement = () => {
       {/* Delete Position Modal */}
       <Modal
         isOpen={showDeletePosModal}
-        onClose={() => setShowDeletePosModal(false)}
+        onClose={() => {
+          setShowDeletePosModal(false);
+          deleteItemRef.current = null; // Clear ref when modal closes
+        }}
         title="Delete Position"
       >
         <div className="delete-confirmation">
@@ -604,14 +667,23 @@ const DepartmentPositionManagement = () => {
             <button
               type="button"
               className="cancel-btn"
-              onClick={() => setShowDeletePosModal(false)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowDeletePosModal(false);
+                deleteItemRef.current = null; // Clear ref on cancel
+              }}
             >
               Cancel
             </button>
             <button
               type="button"
               className="delete-btn"
-              onClick={handleDeletePositionConfirm}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeletePositionConfirm();
+              }}
               disabled={saving}
             >
               {saving ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faTrash} />}

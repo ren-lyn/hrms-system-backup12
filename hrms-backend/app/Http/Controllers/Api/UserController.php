@@ -87,7 +87,10 @@ class UserController extends Controller
 
         $user->update($updateData);
 
-        return response()->json($user->load('role'));
+        // Refresh the user from database to ensure we get the latest role relationship
+        $user = $user->fresh(['role']);
+
+        return response()->json($user);
     }
 
     /**

@@ -117,7 +117,12 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/register', [ApplicantController::class, 'register']);
+Route::post('/verify-email', [ApplicantController::class, 'verify']);
+Route::post('/resend-verification', [ApplicantController::class, 'resend']);
 // Password change request (public or authenticated)
+Route::post('/password-change-requests/send-verification', [PasswordChangeRequestController::class, 'sendVerification']);
+Route::post('/password-change-requests/verify-verification', [PasswordChangeRequestController::class, 'verifyVerification']);
+Route::post('/password-change-requests/resend-verification', [PasswordChangeRequestController::class, 'resendVerification']);
 Route::post('/password-change-requests', [PasswordChangeRequestController::class, 'store']);
 Route::middleware(['auth:sanctum', 'role:Admin'])->group(function () {
     Route::get('/password-change-requests', [PasswordChangeRequestController::class, 'index']);

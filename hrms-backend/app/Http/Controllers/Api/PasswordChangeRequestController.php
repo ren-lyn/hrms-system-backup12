@@ -4,30 +4,70 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PasswordChangeRequest;
+use App\Models\PasswordAssistanceVerification;
 use App\Models\User;
 use App\Models\AuditLog;
+use App\Models\SecuritySettings;
 use App\Mail\PasswordResetLinkMail;
+use App\Mail\PasswordAssistanceVerificationCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class PasswordChangeRequestController extends Controller
 {
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        // Check if 2FA is enabled
+        $settings = SecuritySettings::getSettings();
+        $twoFactorEnabled = $settings->two_factor_auth === true;
+
+        // Make verification_code required only if 2FA is enabled
+        $validationRules = [
             'full_name' => 'required_without:email|string|max:255|filled',
             'employee_id' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
+            'email' => 'required|email|max:255',
             'reason' => 'nullable|string|max:2000',
-        ]);
+        ];
+
+        if ($twoFactorEnabled) {
+            $validationRules['verification_code'] = 'required|string|size:6';
+        } else {
+            $validationRules['verification_code'] = 'nullable|string|size:6';
+        }
+
+        $validator = Validator::make($request->all(), $validationRules);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Verify email verification code only if 2FA is enabled
+        if ($twoFactorEnabled) {
+            $emailVerification = PasswordAssistanceVerification::where('email', $request->email)
+                ->where('verification_code', $request->verification_code)
+                ->where('verified', true)
+                ->first();
+
+            if (!$emailVerification) {
+                return response()->json([
+                    'message' => 'Invalid or missing verification code. Please verify your email first.',
+                    'errors' => ['verification_code' => ['Invalid or missing verification code. Please verify your email first.']]
+                ], 422);
+            }
+
+            if ($emailVerification->isExpired()) {
+                return response()->json([
+                    'message' => 'Verification code has expired. Please request a new code.',
+                    'errors' => ['verification_code' => ['Verification code has expired.']]
+                ], 422);
+            }
         }
 
         $payload = $validator->validated();
@@ -76,7 +116,7 @@ class PasswordChangeRequestController extends Controller
             return response()->json(['message' => 'Password change request submitted', 'id' => $requestModel->id, 'saved' => true], 201);
         } catch (\Throwable $e) {
             // Log the error for debugging
-            \Log::error('Password change request creation failed', [
+            Log::error('Password change request creation failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'data' => array_merge($data, ['id_photo_1_path' => '***', 'id_photo_2_path' => '***'])
@@ -143,7 +183,15 @@ class PasswordChangeRequestController extends Controller
             // Generate password reset token using Laravel's Password facade
             // The token is stored with the user's email in the database for validation
             $broker = Password::broker();
-            $repository = method_exists($broker, 'getRepository') ? $broker->getRepository() : null;
+            /** @var \Illuminate\Auth\Passwords\TokenRepositoryInterface|null $repository */
+            $repository = null;
+            if (method_exists($broker, 'getRepository')) {
+                // This method exists at runtime but Intelephense doesn't recognize it
+                // Using variable assignment to avoid direct method call error
+                $methodName = 'getRepository';
+                /** @var \Illuminate\Auth\Passwords\TokenRepositoryInterface $repository */
+                $repository = $broker->$methodName();
+            }
             
             if (!$repository) {
                 throw new \Exception('Password reset repository not available');
@@ -157,12 +205,12 @@ class PasswordChangeRequestController extends Controller
             
             // Update request status and timestamp
             $req->status = 'approved';
-            $req->approved_by = auth()->id();
+            $req->approved_by = Auth::id();
             $req->decision_at = now();
             $req->reset_token_sent_at = now();
             $req->save();
             
-            AuditLog::log(auth()->id(), 'Password change request approved', 'success', request()->ip(), request()->userAgent(), [
+            AuditLog::log(Auth::id(), 'Password change request approved', 'success', request()->ip(), request()->userAgent(), [
                 'id' => $req->id,
                 'email' => $req->email,
                 'gmail_sent_to' => $gmailAddress,
@@ -183,7 +231,7 @@ class PasswordChangeRequestController extends Controller
             
             // Still approve the request even if email fails
             $req->status = 'approved';
-            $req->approved_by = auth()->id();
+            $req->approved_by = Auth::id();
             $req->decision_at = now();
             $req->save();
             
@@ -223,6 +271,205 @@ class PasswordChangeRequestController extends Controller
     }
     
     /**
+     * Send verification code for password assistance
+     */
+    public function sendVerification(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|max:255',
+        ]);
+
+        // Check if 2FA is enabled
+        $settings = SecuritySettings::getSettings();
+        if ($settings->two_factor_auth !== true) {
+            return response()->json([
+                'message' => 'Two-factor authentication is not enabled. Verification code is not required.',
+                'requires_verification' => false
+            ], 200);
+        }
+
+        // Check if email exists in the system
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            // Also check employee profile
+            $user = User::whereHas('employeeProfile', function($query) use ($request) {
+                $query->where('email', $request->email);
+            })->first();
+        }
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Email address not found in our system.',
+                'errors' => ['email' => ['This email address is not registered.']]
+            ], 404);
+        }
+
+        // Check if there's an existing unverified verification for this email
+        $existingVerification = PasswordAssistanceVerification::where('email', $request->email)
+            ->where('verified', false)
+            ->where('expires_at', '>', now())
+            ->first();
+
+        // Generate a 6-digit verification code
+        $verificationCode = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Create or update email verification record
+        if ($existingVerification) {
+            $existingVerification->update([
+                'verification_code' => $verificationCode,
+                'expires_at' => Carbon::now()->addMinutes(15),
+                'verified' => false,
+                'verified_at' => null,
+            ]);
+            $emailVerification = $existingVerification;
+        } else {
+            $emailVerification = PasswordAssistanceVerification::create([
+                'email' => $request->email,
+                'verification_code' => $verificationCode,
+                'expires_at' => Carbon::now()->addMinutes(15),
+                'verified' => false,
+            ]);
+        }
+
+        // Send verification code email
+        try {
+            $userName = $user->first_name ?? $user->name ?? null;
+            Mail::to($request->email)->send(new PasswordAssistanceVerificationCode(
+                $request->email,
+                $verificationCode,
+                $userName
+            ));
+        } catch (\Exception $e) {
+            Log::error('Failed to send password assistance verification email', [
+                'error' => $e->getMessage(),
+                'email' => $request->email,
+            ]);
+            return response()->json([
+                'message' => 'Failed to send verification email. Please try again.',
+                'errors' => ['email' => ['Email sending failed. Please check your email address and try again.']]
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => 'Verification code has been sent to your email address.',
+            'email' => $request->email,
+            'requires_verification' => true
+        ], 200);
+    }
+
+    /**
+     * Verify the verification code for password assistance
+     */
+    public function verifyVerification(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|max:255',
+            'verification_code' => 'required|string|size:6',
+        ]);
+
+        $emailVerification = PasswordAssistanceVerification::where('email', $request->email)
+            ->where('verification_code', $request->verification_code)
+            ->where('verified', false)
+            ->first();
+
+        if (!$emailVerification) {
+            return response()->json([
+                'message' => 'Invalid verification code or email address.',
+                'errors' => ['verification_code' => ['The verification code is invalid or has already been used.']]
+            ], 422);
+        }
+
+        if ($emailVerification->isExpired()) {
+            return response()->json([
+                'message' => 'Verification code has expired. Please request a new code.',
+                'errors' => ['verification_code' => ['The verification code has expired.']]
+            ], 422);
+        }
+
+        // Mark verification as verified (but don't mark as used yet - that happens on form submission)
+        // We'll check if it's verified when submitting the form
+        $emailVerification->markAsVerified();
+
+        return response()->json([
+            'message' => 'Email verified successfully. You can now proceed with your password assistance request.',
+        ], 200);
+    }
+
+    /**
+     * Resend verification code for password assistance
+     */
+    public function resendVerification(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|max:255',
+        ]);
+
+        // Check if email exists in the system
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            $user = User::whereHas('employeeProfile', function($query) use ($request) {
+                $query->where('email', $request->email);
+            })->first();
+        }
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Email address not found in our system.',
+                'errors' => ['email' => ['This email address is not registered.']]
+            ], 404);
+        }
+
+        $emailVerification = PasswordAssistanceVerification::where('email', $request->email)
+            ->where('verified', false)
+            ->first();
+
+        if (!$emailVerification) {
+            // Create a new verification if none exists
+            $verificationCode = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+            $emailVerification = PasswordAssistanceVerification::create([
+                'email' => $request->email,
+                'verification_code' => $verificationCode,
+                'expires_at' => Carbon::now()->addMinutes(15),
+                'verified' => false,
+            ]);
+        } else {
+            // Generate a new 6-digit verification code
+            $verificationCode = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+
+            // Update verification record
+            $emailVerification->update([
+                'verification_code' => $verificationCode,
+                'expires_at' => Carbon::now()->addMinutes(15),
+                'verified' => false,
+                'verified_at' => null,
+            ]);
+        }
+
+        // Send verification code email
+        try {
+            $userName = $user->first_name ?? $user->name ?? null;
+            Mail::to($request->email)->send(new PasswordAssistanceVerificationCode(
+                $request->email,
+                $verificationCode,
+                $userName
+            ));
+        } catch (\Exception $e) {
+            Log::error('Failed to resend password assistance verification email', [
+                'error' => $e->getMessage(),
+                'email' => $request->email,
+            ]);
+            return response()->json([
+                'message' => 'Failed to send verification email. Please try again.',
+                'errors' => ['email' => ['Email sending failed. Please check your email address and try again.']]
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => 'Verification code has been resent to your email address.',
+        ], 200);
+    }
+
+    /**
      * Check if an email address is a Gmail address
      *
      * @param string $email
@@ -243,7 +490,7 @@ class PasswordChangeRequestController extends Controller
         $req = PasswordChangeRequest::findOrFail($id);
         $req->status = 'rejected';
         $req->save();
-        AuditLog::log(auth()->id(), 'Password change request rejected', 'success', request()->ip(), request()->userAgent(), [
+        AuditLog::log(Auth::id(), 'Password change request rejected', 'success', request()->ip(), request()->userAgent(), [
             'id' => $req->id,
             'email' => $req->email,
         ]);
@@ -265,7 +512,8 @@ class PasswordChangeRequestController extends Controller
             return response()->json(['message' => 'File not found'], 404);
         }
         
-        return Storage::disk('public')->response($path);
+        $fullPath = Storage::disk('public')->path($path);
+        return response()->file($fullPath);
     }
 }
 

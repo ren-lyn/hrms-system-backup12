@@ -91,6 +91,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'You cannot log in because your account is inactive.'], 403);
         }
 
+        // Proceed with normal login (2FA verification removed from login flow)
         // Record successful login
         LoginAttempt::recordAttempt($email, $ipAddress, $userAgent, true);
         AuditLog::log($user->id, 'Login successful', 'success', $ipAddress, $userAgent);
@@ -115,7 +116,7 @@ class AuthController extends Controller
             ]
         ]);
     }
-
+    
 
     public function logout(Request $request)
     {
