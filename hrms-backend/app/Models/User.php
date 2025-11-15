@@ -37,7 +37,7 @@ class User extends Authenticatable
 
     public function leaves()
 {
-    return $this->hasMany(Leave::class, 'employee_id');
+    return $this->hasMany(LeaveRequest::class, 'employee_id');
 }
 
     // Accessor for full name
