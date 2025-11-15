@@ -6,7 +6,7 @@ import JobPostings from "../components/JobPostings";
 import EmployeeRecords from './HrAssistant/EmployeeRecords';
 import EvaluationAdministration from '../components/EvaluationAdministration';
 import HrStaffProfile from '../components/HrStaff/HrStaffProfile';
-import OnboardingDashboard from "../components/HrStaff/Onboarding";
+import Onboarding from "../components/HrStaff/Onboarding";
 import StaffCalendar from '../components/HrAssistant/StaffCalendar';
 import DisciplinaryManagement from '../components/HrAssistant/DisciplinaryManagement';
 import LeaveManagement from '../components/HrAssistant/LeaveManagement';
@@ -1432,7 +1432,7 @@ const HrStaffDashboard = () => {
     }
 
     if (activeView === "onboarding") {
-      return <OnboardingDashboard />;
+      return <Onboarding />;
     }
 
     if (activeView === "profile") {

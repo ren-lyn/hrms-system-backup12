@@ -49,6 +49,7 @@ import {
   faExternalLinkAlt,
   faBuilding,
   faLightbulb,
+  faExclamationTriangle,
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
@@ -815,6 +816,18 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       };
     });
   }, [profileCreationForm.dateOfBirth]);
+
+  // Orientation scheduling state
+  const [showOrientationModal, setShowOrientationModal] = useState(false);
+  const [selectedApplicantForOrientation, setSelectedApplicantForOrientation] = useState(null);
+  const [orientationForm, setOrientationForm] = useState({
+    orientation_date: '',
+    orientation_time: '',
+    location: '',
+    orientation_type: 'In-person',
+    additional_notes: ''
+  });
+  const [orientationSaving, setOrientationSaving] = useState(false);
 
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
@@ -4709,6 +4722,116 @@ const closeDocumentModal = useCallback(() => {
     resetProfileCreationForm();
   }, [resetProfileCreationForm]);
 
+  // Orientation scheduling handlers
+  const handleOpenOrientationModal = (applicant) => {
+    setSelectedApplicantForOrientation(applicant);
+    setOrientationForm({
+      orientation_date: '',
+      orientation_time: '',
+      location: '',
+      orientation_type: 'In-person',
+      additional_notes: ''
+    });
+    setShowOrientationModal(true);
+  };
+
+  const handleCloseOrientationModal = () => {
+    setShowOrientationModal(false);
+    setSelectedApplicantForOrientation(null);
+    setOrientationForm({
+      orientation_date: '',
+      orientation_time: '',
+      location: '',
+      orientation_type: 'In-person',
+      additional_notes: ''
+    });
+  };
+
+  const handleScheduleOrientation = async () => {
+    if (!selectedApplicantForOrientation || orientationSaving) {
+      return;
+    }
+
+    // Validation
+    if (!orientationForm.orientation_date || !orientationForm.orientation_time || !orientationForm.location) {
+      alert("Please fill in all required fields (Date, Time, and Location).");
+      return;
+    }
+
+    try {
+      setOrientationSaving(true);
+      const token = localStorage.getItem("token");
+      const applicationId = selectedApplicantForOrientation.id;
+
+      if (!applicationId) {
+        alert("Error: Application ID not found. Please try again.");
+        return;
+      }
+
+      // Prepare request payload
+      const payload = {
+          orientation_date: orientationForm.orientation_date,
+          orientation_time: orientationForm.orientation_time,
+          location: orientationForm.location,
+        orientation_type: orientationForm.orientation_type || 'In-person',
+          additional_notes: orientationForm.additional_notes || null,
+          onboarding_status: 'orientation_scheduled'
+      };
+
+      console.log("📤 [HR Assistant] Scheduling orientation:", {
+        applicationId,
+        payload
+      });
+
+      // Update onboarding record with orientation details
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicationId}/onboarding-record`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log("📥 [HR Assistant] Orientation scheduling response:", response.data);
+
+      if (response.data?.success || response.status === 200) {
+        // Success - fetch updated data and close modal
+        await fetchApplicants();
+        handleCloseOrientationModal();
+        
+        // Show success message
+        alert("Successfully set orientation");
+      } else {
+        throw new Error(response.data?.message || 'Failed to schedule orientation');
+      }
+    } catch (error) {
+      console.error("❌ [HR Assistant] Error scheduling orientation:", {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      
+      let errorMessage = "Failed to schedule orientation. Please try again.";
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.errors) {
+        const errors = Object.values(error.response.data.errors).flat();
+        errorMessage = errors.join(', ') || errorMessage;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setOrientationSaving(false);
+    }
+  };
+
   const handleProfileCreationInputChange = (field, value) => {
     setProfileCreationForm((prev) => {
       const next = {
@@ -4886,7 +5009,7 @@ const closeDocumentModal = useCallback(() => {
 
         await fetchApplicants();
 
-        alert("Personal information saved and linked to employee records.");
+        alert("Personal information saved and linked to employee records. The applicant's status has been updated to 'Hired' and they now appear in the Orientation Schedule tab.");
         handleCloseProfileCreationModal();
       }
     } catch (error) {
@@ -6568,13 +6691,187 @@ const closeDocumentModal = useCallback(() => {
                     </div>
                     );
                   })()
-                ) : ["Orientation Schedule", "Start Date"].includes(
-                  onboardingSubtab
-                ) && (
+                ) : onboardingSubtab === "Orientation Schedule" ? (
+                  (() => {
+                    // Get all hired applicants (status === "Hired")
+                    const hiredApplicants = applicants.filter(
+                      (app) => app.status === "Hired"
+                    );
+
+                    if (hiredApplicants.length === 0) {
+                      return (
+                        <div className="card border-0 shadow-sm">
+                          <div className="card-body text-center py-5">
+                            <h5 className="text-muted mb-2">Orientation Schedule</h5>
+                            <p className="text-muted mb-0">
+                              No hired applicants available for orientation scheduling. Hire applicants by completing their Profile Creation.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="card border-0 shadow-sm">
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <Table hover className="mb-0">
+                              <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                <tr>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Employee
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Position & Department
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Status
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Actions
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hiredApplicants.map((applicant) => {
+                                  const applicantName = applicant.applicant
+                                    ? `${applicant.applicant.first_name || ""} ${applicant.applicant.last_name || ""}`.trim()
+                                    : applicant.employee_name || applicant.name || "N/A";
+                                  const applicantEmail = applicant.applicant?.email || applicant.employee_email || applicant.email || "N/A";
+                                  const department = applicant.jobPosting?.department || applicant.job_posting?.department || "N/A";
+                                  const position = applicant.jobPosting?.position || applicant.job_posting?.position || "N/A";
+                                  
+                                  // Check if orientation is already scheduled (from onboarding_record)
+                                  const hasOrientationScheduled = applicant.onboarding_record?.orientation_date || false;
+
+                                  return (
+                                    <tr key={applicant.id}>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div
+                                            style={{
+                                              width: "48px",
+                                              height: "48px",
+                                              borderRadius: "50%",
+                                              overflow: "hidden",
+                                              backgroundColor: "#f8f9fa",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center",
+                                            }}
+                                          >
+                                            <FontAwesomeIcon
+                                              icon={faUserTie}
+                                              style={{ fontSize: "24px", color: "#6c757d" }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="fw-semibold">
+                                              {applicantName}
+                                            </div>
+                                            <div className="small text-muted">
+                                              {applicantEmail}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div style={{ color: "#495057" }}>
+                                          {position}
+                                        </div>
+                                        <div className="small text-muted">
+                                          {department}
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        {hasOrientationScheduled ? (
+                                          <Badge
+                                            bg="success"
+                                            className="px-3 py-2"
+                                            style={{ borderRadius: "999px" }}
+                                          >
+                                            <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
+                                            Scheduled
+                                          </Badge>
+                                        ) : (
+                                          <Badge
+                                            bg="warning"
+                                            className="px-3 py-2"
+                                            style={{ borderRadius: "999px" }}
+                                          >
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="me-1" />
+                                            Needs Scheduling
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <Button
+                                          variant={hasOrientationScheduled ? "outline-primary" : "primary"}
+                                          size="sm"
+                                          onClick={() => handleOpenOrientationModal(applicant)}
+                                        >
+                                          <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                                          {hasOrientationScheduled ? "Edit Schedule" : "Schedule Orientation"}
+                                        </Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : onboardingSubtab === "Start Date" && (
                   <div className="card border-0 shadow-sm">
                     <div className="card-body text-center py-5">
                       <h5 className="text-muted mb-2">{onboardingSubtab}</h5>
-
                       <p className="text-muted mb-0">
                         {onboardingTabDescriptions[onboardingSubtab] ||
                           "This section is coming soon."}
@@ -12944,6 +13241,164 @@ const closeDocumentModal = useCallback(() => {
               </>
             ) : (
               "Save Personal Info"
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Orientation Scheduling Modal */}
+      <Modal
+        show={showOrientationModal}
+        onHide={handleCloseOrientationModal}
+        centered
+        size="lg"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" />
+            Schedule Orientation
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedApplicantForOrientation && (
+            <>
+              {/* Employee Info */}
+              <div className="mb-4 p-3 bg-light rounded">
+                <div className="d-flex align-items-center">
+                  <div
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      backgroundColor: "#f8f9fa",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: "15px",
+                    }}
+                  >
+                    <FontAwesomeIcon
+                      icon={faUserTie}
+                      style={{ fontSize: "30px", color: "#6c757d" }}
+                    />
+                  </div>
+                  <div>
+                    <h6 className="mb-1">
+                      {selectedApplicantForOrientation.applicant
+                        ? `${selectedApplicantForOrientation.applicant.first_name || ""} ${selectedApplicantForOrientation.applicant.last_name || ""}`.trim()
+                        : selectedApplicantForOrientation.employee_name || selectedApplicantForOrientation.name || "N/A"}
+                    </h6>
+                    <p className="mb-1 text-muted small">
+                      {selectedApplicantForOrientation.jobPosting?.position || selectedApplicantForOrientation.job_posting?.position || "N/A"}
+                    </p>
+                    <small className="text-muted">
+                      {selectedApplicantForOrientation.jobPosting?.department || selectedApplicantForOrientation.job_posting?.department || "N/A"}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scheduling Form */}
+              <Form>
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                        Date of Orientation *
+                      </Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={orientationForm.orientation_date}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_date: e.target.value})}
+                        min={new Date().toISOString().split('T')[0]}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faClock} className="me-1" />
+                        Time *
+                      </Form.Label>
+                      <Form.Control
+                        type="time"
+                        value={orientationForm.orientation_time}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_time: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Row>
+                  <Col md={8}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faMapMarkerAlt} className="me-1" />
+                        Location/Venue *
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="e.g., Main Conference Room, Building A"
+                        value={orientationForm.location}
+                        onChange={(e) => setOrientationForm({...orientationForm, location: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={4}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faUsers} className="me-1" />
+                        Orientation Type *
+                      </Form.Label>
+                      <Form.Select
+                        value={orientationForm.orientation_type}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_type: e.target.value})}
+                      >
+                        <option value="In-person">In-person</option>
+                        <option value="Virtual/Online">Virtual/Online</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Additional Notes (Optional)</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    placeholder="e.g., Bring laptop, ID required, Dress code: Business casual"
+                    value={orientationForm.additional_notes}
+                    onChange={(e) => setOrientationForm({...orientationForm, additional_notes: e.target.value})}
+                  />
+                </Form.Group>
+              </Form>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseOrientationModal}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleScheduleOrientation}
+            disabled={orientationSaving}
+          >
+            {orientationSaving ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Scheduling...
+              </>
+            ) : (
+              <>
+                <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                Schedule Orientation
+              </>
             )}
           </Button>
         </Modal.Footer>

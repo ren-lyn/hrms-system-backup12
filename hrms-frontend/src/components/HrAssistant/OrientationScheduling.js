@@ -125,61 +125,83 @@ const OrientationScheduling = () => {
       return;
     }
 
+    if (!selectedEmployee?.application_id) {
+      console.error('Error: Application ID not found for employee');
+      return;
+    }
+
     setScheduling(true);
     try {
       const token = localStorage.getItem('token');
       
-      // Update onboarding record with orientation details
-      await axios.put(`http://localhost:8000/api/onboarding-records/${selectedEmployee.id}`, 
+      // Update onboarding record with orientation details using the correct endpoint
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${selectedEmployee.application_id}/onboarding-record`, 
         {
           orientation_date: formData.orientation_date,
           orientation_time: formData.orientation_time,
           location: formData.location,
           orientation_type: formData.orientation_type,
           additional_notes: formData.additional_notes,
-          status: 'orientation_scheduled'
+          onboarding_status: 'orientation_scheduled'
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
 
-      // Send notification to employee
-      await axios.post(`http://localhost:8000/api/notifications`, 
-        {
-          user_id: selectedEmployee.user_id,
-          type: 'orientation_scheduled',
-          title: 'Orientation Scheduled',
-          message: `Your orientation has been scheduled for ${new Date(formData.orientation_date).toLocaleDateString()} at ${formData.orientation_time} in ${formData.location}.`,
-          data: {
-            orientation_date: formData.orientation_date,
-            orientation_time: formData.orientation_time,
-            location: formData.location,
-            orientation_type: formData.orientation_type
+      if (response.data?.success || response.status === 200) {
+        // Try to send notification to employee (optional, don't fail if this fails)
+        if (selectedEmployee.user_id) {
+          try {
+            await axios.post(`http://localhost:8000/api/notifications`, 
+              {
+                user_id: selectedEmployee.user_id,
+                type: 'orientation_scheduled',
+                title: 'Orientation Scheduled',
+                message: `Your orientation has been scheduled for ${new Date(formData.orientation_date).toLocaleDateString()} at ${formData.orientation_time} in ${formData.location}.`,
+                data: {
+                  orientation_date: formData.orientation_date,
+                  orientation_time: formData.orientation_time,
+                  location: formData.location,
+                  orientation_type: formData.orientation_type
+                }
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } catch (notifError) {
+            console.warn('Failed to send notification, but orientation was scheduled:', notifError);
           }
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      // Show success message
-      alert(`Orientation scheduled successfully for ${selectedEmployee.employee_name}!`);
-      
-      // Reset form and close modal
-      setFormData({
-        orientation_date: '',
-        orientation_time: '',
-        location: '',
-        orientation_type: 'In-person',
-        additional_notes: ''
-      });
-      setErrors({});
-      setShowSchedulingModal(false);
-      setSelectedEmployee(null);
-      
-      // Refresh data
-      fetchOrientationData();
+        }
+        
+        // Success - refresh data and close modal
+        fetchOrientationData();
+        
+        // Reset form and close modal
+        setFormData({
+          orientation_date: '',
+          orientation_time: '',
+          location: '',
+          orientation_type: 'In-person',
+          additional_notes: ''
+        });
+        setErrors({});
+        setShowSchedulingModal(false);
+        setSelectedEmployee(null);
+        
+        // Show success message
+        alert("Successfully set orientation");
+      } else {
+        throw new Error(response.data?.message || 'Failed to schedule orientation');
+      }
       
     } catch (error) {
       console.error('Error scheduling orientation:', error);
-      alert('Error scheduling orientation. Please try again.');
+      const errorMessage = error.response?.data?.message || "Failed to schedule orientation. Please try again.";
+      alert(errorMessage);
     } finally {
       setScheduling(false);
     }
