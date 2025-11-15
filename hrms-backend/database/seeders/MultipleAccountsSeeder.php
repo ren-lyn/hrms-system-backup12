@@ -86,6 +86,12 @@ class MultipleAccountsSeeder extends Seeder
 
             // Only create employee profile for non-Applicants and non-Admins
             if ($u['role'] !== 'Applicant' && $u['role'] !== 'Admin') {
+                // Generate unique government ID numbers in proper Philippine formats
+                $sssNumber = sprintf('%02d-%07d-%d', rand(10, 99), rand(1000000, 9999999), rand(0, 9));
+                $philhealthNumber = 'PH-' . sprintf('%09d', rand(100000000, 999999999));
+                $pagibigNumber = 'PG-' . sprintf('%09d', rand(100000000, 999999999));
+                $tinNumber = sprintf('%03d-%03d-%03d-%03d', rand(100, 999), rand(100, 999), rand(100, 999), rand(100, 999));
+                
                 $profile = $user->employeeProfile()->updateOrCreate([], [
                     'employee_id' => 'EM' . $employeeCounter,
                     'first_name' => $u['first_name'],
@@ -97,6 +103,10 @@ class MultipleAccountsSeeder extends Seeder
                     'hire_date' => now()->subDays(120)->toDateString(),
                     'salary' => $u['salary'] ?? 13520, // Use provided salary or default to 13520
                     'status' => 'active', // Explicitly set status to active
+                    'sss' => $sssNumber,
+                    'philhealth' => $philhealthNumber,
+                    'pagibig' => $pagibigNumber,
+                    'tin_no' => $tinNumber,
                 ]);
                 $createdUsers[] = $user;
                 $employeeCounter++;

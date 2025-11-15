@@ -22,6 +22,7 @@ const Sidebar = () => {
   const [isJobOnboardingDropdownOpen, setIsJobOnboardingDropdownOpen] = useState(false);
   const [isCashAdvanceDropdownOpen, setIsCashAdvanceDropdownOpen] = useState(false);
   const [isEvaluationDropdownOpen, setIsEvaluationDropdownOpen] = useState(false);
+  const [isPayrollDropdownOpen, setIsPayrollDropdownOpen] = useState(false);
 
    // Keep dropdowns open when on child routes
   useEffect(() => {
@@ -39,6 +40,9 @@ const Sidebar = () => {
     }
     if (location.pathname.includes('/evaluation')) {
       setIsEvaluationDropdownOpen(true);
+    }
+    if (location.pathname.includes('/payroll') || location.pathname.includes('/benefits-management')) {
+      setIsPayrollDropdownOpen(true);
     }
   }, [location.pathname]);
 
@@ -73,6 +77,10 @@ const Sidebar = () => {
     setIsEvaluationDropdownOpen(!isEvaluationDropdownOpen);
   };
 
+  const togglePayrollDropdown = () => {
+    setIsPayrollDropdownOpen(!isPayrollDropdownOpen);
+  };
+
   return (
     <>
       <div>
@@ -92,12 +100,36 @@ const Sidebar = () => {
         >
           <FaUsers /> <span>Employee Records</span>
         </NavLink>
-        <NavLink
-          to="payroll"
-          className={({ isActive }) => `hrms-unified-nav-link ${isActive ? 'hrms-unified-active' : ''}`}
-        >
-          <FaMoneyCheckAlt /> <span>Payroll</span>
-        </NavLink>
+        {/* Payroll and Compensation Dropdown */}
+        <div className="hrms-dropdown-container">
+          <button
+            className={`hrms-unified-nav-link hrms-dropdown-toggle ${
+              location.pathname.includes('/payroll') || location.pathname.includes('/benefits-management') ? 'hrms-unified-active' : ''
+            }`}
+            onClick={togglePayrollDropdown}
+          >
+            <FaMoneyCheckAlt />
+            <span>Payroll and Compensation</span>
+            {isPayrollDropdownOpen ? <FaChevronDown className="ms-auto" size={12} /> : <FaChevronRight className="ms-auto" size={12} />}
+          </button>
+          
+          <div className={`hrms-dropdown-menu ${isPayrollDropdownOpen ? 'hrms-dropdown-open' : ''}`}>
+            <NavLink
+              to="payroll"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsPayrollDropdownOpen(false)}
+            >
+              <FaMoneyCheckAlt /> <span>Payroll</span>
+            </NavLink>
+            <NavLink
+              to="benefits-management"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsPayrollDropdownOpen(false)}
+            >
+              <FaDollarSign /> <span>Benefits Management</span>
+            </NavLink>
+          </div>
+        </div>
         {/* Attendance Management Dropdown */}
         <div className="hrms-dropdown-container">
           <button

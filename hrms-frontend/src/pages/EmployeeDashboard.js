@@ -32,7 +32,8 @@ import {
   faChevronDown,
   faChevronRight,
   faEdit,
-  faEye
+  faEye,
+  faFileAlt
 } from '@fortawesome/free-solid-svg-icons';
 
 // Lazy load components for better performance
@@ -48,6 +49,7 @@ const CashAdvanceHistory = React.lazy(() => import('../components/Employee/CashA
 
 const RequestEditAttendance = React.lazy(() => import('../components/Employee/RequestEditAttendance'));
 const ViewAttendanceRecords = React.lazy(() => import('../components/Employee/ViewAttendanceRecords'));
+const FileBenefitClaim = React.lazy(() => import('../components/Employee/FileBenefitClaim'));
 
 
 const EmployeeDashboard = () => {
@@ -249,6 +251,7 @@ const EmployeeDashboard = () => {
       case 'view-attendance-records': return 'My Attendance Records';
       case 'request-edit-attendance': return 'Request Edit Attendance';
       case 'overtime-request': return 'Overtime Request';
+      case 'file-benefit-claim': return 'File Benefit Claim Request';
       default: return 'Dashboard';
     }
   };
@@ -662,6 +665,12 @@ const EmployeeDashboard = () => {
             <RequestEditAttendance />
           </Suspense>
         );
+      case 'file-benefit-claim':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading benefit claim form..." />}>
+            <FileBenefitClaim />
+          </Suspense>
+        );
       default:
         return (
           <div className="card p-4">
@@ -712,6 +721,13 @@ const EmployeeDashboard = () => {
             >
               <FontAwesomeIcon icon={faCalendarAlt} />
               <span>My Calendar</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'file-benefit-claim' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('file-benefit-claim')}
+            >
+              <FontAwesomeIcon icon={faFileAlt} />
+              <span>File Benefit Claim Request</span>
             </button>
             
             {/* Cash Advance with Dropdown */}
@@ -887,6 +903,9 @@ const EmployeeDashboard = () => {
                   onOpenCalendar={(eventId, notificationData) => {
                     setCalendarNotificationData(notificationData);
                     setActiveView('my-calendar');
+                  }}
+                  onOpenBenefitClaim={(benefitClaimId, notificationData) => {
+                    setActiveView('file-benefit-claim');
                   }}
                 />
                 <span className="fw-semibold text-dark text-responsive-md hide-on-mobile">{employeeName || 'Employee'}</span>

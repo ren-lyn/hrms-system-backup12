@@ -33,6 +33,31 @@ class ApplicationController extends Controller
             ->latest()
             ->get();
 
+        // Load onboarding records for each application
+        if (Schema::hasTable('onboarding_records')) {
+            $applicationIds = $applications->pluck('id')->toArray();
+            $onboardingRecords = DB::table('onboarding_records')
+                ->whereIn('application_id', $applicationIds)
+                ->get()
+                ->keyBy('application_id');
+
+            // Attach onboarding records to applications
+            $applications->transform(function ($application) use ($onboardingRecords) {
+                $onboardingRecord = $onboardingRecords->get($application->id);
+                if ($onboardingRecord) {
+                    $application->onboarding_record = (object) [
+                        'orientation_date' => $onboardingRecord->orientation_date ?? null,
+                        'orientation_time' => $onboardingRecord->orientation_time ?? null,
+                        'location' => $onboardingRecord->location ?? null,
+                        'orientation_type' => $onboardingRecord->orientation_type ?? null,
+                        'additional_notes' => $onboardingRecord->additional_notes ?? null,
+                        'onboarding_status' => $onboardingRecord->onboarding_status ?? null,
+                    ];
+                }
+                return $application;
+            });
+        }
+
         // Debug logging
         Log::info('Applications API called', [
             'count' => $applications->count(),
@@ -1081,6 +1106,84 @@ class ApplicationController extends Controller
             })
             ->latest()
             ->get();
+
+        Log::info('myApplications called', [
+            'user_id' => $user->id,
+            'applications_count' => $applications->count(),
+            'application_ids' => $applications->pluck('id')->toArray()
+        ]);
+
+        // Load onboarding records for each application
+        if (Schema::hasTable('onboarding_records')) {
+            $applicationIds = $applications->pluck('id')->toArray();
+            
+            if (!empty($applicationIds)) {
+                $onboardingRecords = DB::table('onboarding_records')
+                    ->whereIn('application_id', $applicationIds)
+                    ->get()
+                    ->keyBy('application_id');
+
+                Log::info('Onboarding records fetched', [
+                    'application_ids' => $applicationIds,
+                    'onboarding_records_count' => $onboardingRecords->count(),
+                    'onboarding_records' => $onboardingRecords->map(function($record) {
+                        return [
+                            'application_id' => $record->application_id,
+                            'orientation_date' => $record->orientation_date,
+                            'orientation_time' => $record->orientation_time,
+                            'location' => $record->location,
+                            'orientation_type' => $record->orientation_type,
+                        ];
+                    })->values()->toArray()
+                ]);
+
+                // Attach onboarding records to applications
+                $applications->transform(function ($application) use ($onboardingRecords) {
+                    $onboardingRecord = $onboardingRecords->get($application->id);
+                    if ($onboardingRecord) {
+                        $application->onboarding_record = (object) [
+                            'orientation_date' => $onboardingRecord->orientation_date ?? null,
+                            'orientation_time' => $onboardingRecord->orientation_time ?? null,
+                            'location' => $onboardingRecord->location ?? null,
+                            'orientation_type' => $onboardingRecord->orientation_type ?? null,
+                            'additional_notes' => $onboardingRecord->additional_notes ?? null,
+                            'onboarding_status' => $onboardingRecord->onboarding_status ?? null,
+                        ];
+                        
+                        Log::info('Onboarding record attached to application', [
+                            'application_id' => $application->id,
+                            'has_orientation_date' => !empty($onboardingRecord->orientation_date),
+                            'orientation_date' => $onboardingRecord->orientation_date,
+                        ]);
+                    } else {
+                        Log::info('No onboarding record found for application', [
+                            'application_id' => $application->id,
+                            'status' => $application->status
+                        ]);
+                    }
+                    return $application;
+                });
+            } else {
+                Log::info('No application IDs to fetch onboarding records for');
+            }
+        } else {
+            Log::warning('onboarding_records table does not exist');
+        }
+        
+        // Log final response structure
+        $responseData = $applications->map(function($app) {
+            return [
+                'id' => $app->id,
+                'status' => $app->status,
+                'has_onboarding_record' => isset($app->onboarding_record),
+                'orientation_date' => $app->onboarding_record->orientation_date ?? null,
+            ];
+        })->toArray();
+        
+        Log::info('myApplications response prepared', [
+            'applications_with_onboarding' => count(array_filter($responseData, fn($a) => $a['has_onboarding_record'])),
+            'response_summary' => $responseData
+        ]);
         
         return response()->json($applications);
     }
@@ -1161,6 +1264,272 @@ class ApplicationController extends Controller
             return response()->json([
                 'message' => 'Failed to retrieve job offer.',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get applicants ready for Profile Creation
+     * Returns applicants who have completed benefits enrollment but are not yet hired
+     * This is the source of truth for the Profile Creation tab
+     */
+    public function getProfileCreationQueue(Request $request)
+    {
+        try {
+            // Get applicants with completed benefits enrollment who are not yet hired
+            // Additional validation: Ensure benefits enrollment was completed after migration
+            // This prevents old/stale data from appearing in Profile Creation tab
+            $pendingProfileCreation = Application::with([
+                'applicant.user',
+                'jobPosting',
+                'benefitsEnrollment'
+            ])
+            ->whereHas('benefitsEnrollment', function($query) {
+                $query->where('enrollment_status', 'completed');
+            })
+            ->where('status', '!=', 'Hired') // Not yet hired
+            ->whereHas('applicant') // Must have valid applicant
+            ->whereHas('jobPosting') // Must have valid job posting
+            ->latest()
+            ->get()
+            ->filter(function($application) {
+                // Additional safety check: Ensure all required relationships exist
+                return $application->applicant !== null 
+                    && $application->jobPosting !== null
+                    && $application->benefitsEnrollment !== null
+                    && $application->benefitsEnrollment->enrollment_status === 'completed';
+            });
+
+            // Also get hired applicants who have employee profiles (for viewing/editing)
+            $hiredWithProfiles = Application::with([
+                'applicant.user.employeeProfile',
+                'jobPosting',
+                'benefitsEnrollment'
+            ])
+            ->where('status', 'Hired')
+            ->whereHas('applicant.user.employeeProfile') // Has employee profile
+            ->whereHas('applicant') // Must have valid applicant
+            ->whereHas('jobPosting') // Must have valid job posting
+            ->latest()
+            ->get()
+            ->filter(function($application) {
+                // Additional safety check: Ensure all required relationships exist
+                return $application->applicant !== null 
+                    && $application->jobPosting !== null
+                    && $application->applicant->user !== null
+                    && $application->applicant->user->employeeProfile !== null;
+            });
+
+            // Combine both lists
+            $applications = $pendingProfileCreation->merge($hiredWithProfiles);
+
+            // Format the response with all necessary data for Profile Creation
+            $formatted = $applications->map(function($application) {
+                $applicant = $application->applicant;
+                $benefitsEnrollment = $application->benefitsEnrollment;
+                $isHired = $application->status === 'Hired';
+                
+                return [
+                    'id' => $application->id,
+                    'application_id' => $application->id,
+                    'applicant_id' => $application->applicant_id,
+                    'name' => $applicant ? trim(($applicant->first_name ?? '') . ' ' . ($applicant->last_name ?? '')) : 'N/A',
+                    'email' => $applicant?->user?->email ?? $applicant?->email ?? 'N/A',
+                    'department' => $application->jobPosting?->department ?? 'N/A',
+                    'position' => $application->jobPosting?->position ?? 'N/A',
+                    'status' => $application->status,
+                    'isHired' => $isHired,
+                    'enrollment_status' => $benefitsEnrollment?->enrollment_status ?? 'pending',
+                    'benefits_enrollment_status' => $benefitsEnrollment?->enrollment_status ?? 'completed',
+                    'completed_at' => $benefitsEnrollment?->updated_at?->toISOString(),
+                    'applicant' => $applicant ? [
+                        'id' => $applicant->id,
+                        'first_name' => $applicant->first_name,
+                        'last_name' => $applicant->last_name,
+                        'email' => $applicant->email,
+                        'contact_number' => $applicant->contact_number,
+                        'user' => $applicant->user ? [
+                            'id' => $applicant->user->id,
+                            'email' => $applicant->user->email,
+                        ] : null,
+                    ] : null,
+                    'job_posting' => $application->jobPosting ? [
+                        'id' => $application->jobPosting->id,
+                        'department' => $application->jobPosting->department,
+                        'position' => $application->jobPosting->position,
+                    ] : null,
+                    'benefits_enrollment' => $benefitsEnrollment ? [
+                        'id' => $benefitsEnrollment->id,
+                        'enrollment_status' => $benefitsEnrollment->enrollment_status,
+                        'metadata' => $benefitsEnrollment->metadata,
+                        'assigned_at' => $benefitsEnrollment->assigned_at?->toISOString(),
+                        'updated_at' => $benefitsEnrollment->updated_at?->toISOString(),
+                    ] : null,
+                ];
+            });
+
+            // Add cache control headers to prevent browser caching
+            return response()->json([
+                'success' => true,
+                'data' => $formatted,
+                'count' => $formatted->count(),
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+              ->header('Pragma', 'no-cache')
+              ->header('Expires', '0');
+        } catch (\Exception $e) {
+            Log::error('Error retrieving profile creation queue', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve profile creation queue.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update onboarding record with orientation details
+     */
+    public function updateOnboardingRecord(Request $request, Application $application)
+    {
+        try {
+            // Verify application exists
+            if (!$application) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Application not found.',
+                ], 404);
+            }
+
+            $validated = $request->validate([
+                'orientation_date' => ['required', 'date'],
+                'orientation_time' => ['required', 'string', 'max:255'],
+                'location' => ['required', 'string', 'max:255'],
+                'orientation_type' => ['required', 'string', 'in:In-person,Virtual/Online'],
+                'additional_notes' => ['nullable', 'string', 'max:1000'],
+                'onboarding_status' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            if (!Schema::hasTable('onboarding_records')) {
+                Log::error('Onboarding records table does not exist');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Onboarding records table does not exist.',
+                ], 500);
+            }
+
+            // Load application relationships
+            $application->load(['applicant', 'jobPosting']);
+
+            // Verify applicant exists
+            if (!$application->applicant) {
+                Log::error('Application missing applicant relationship', [
+                    'application_id' => $application->id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Application is missing applicant information.',
+                ], 400);
+            }
+
+            // Check if onboarding record exists
+            $existingRecord = DB::table('onboarding_records')
+                ->where('application_id', $application->id)
+                ->first();
+
+            // Prepare data for update/insert
+            $updateData = [
+                'orientation_date' => $validated['orientation_date'],
+                'orientation_time' => $validated['orientation_time'],
+                'location' => $validated['location'],
+                'orientation_type' => $validated['orientation_type'],
+                'additional_notes' => $validated['additional_notes'] ?? null,
+                'onboarding_status' => $validated['onboarding_status'] ?? 'orientation_scheduled',
+                'updated_at' => Carbon::now(),
+            ];
+
+            if ($existingRecord) {
+                // Update existing record
+                DB::table('onboarding_records')
+                    ->where('application_id', $application->id)
+                    ->update($updateData);
+            } else {
+                // Create new record with all required fields
+                $applicant = $application->applicant;
+                $jobPosting = $application->jobPosting;
+                
+                $insertData = array_merge($updateData, [
+                    'application_id' => $application->id,
+                    'employee_name' => ($applicant ? ($applicant->first_name . ' ' . $applicant->last_name) : 'N/A'),
+                    'employee_email' => ($applicant ? $applicant->email : 'N/A'),
+                    'position' => ($jobPosting ? $jobPosting->position : null),
+                    'department' => ($jobPosting ? $jobPosting->department : null),
+                    'progress' => 0,
+                    'notes' => 'Created when orientation was scheduled',
+                    'created_at' => Carbon::now(),
+                ]);
+
+                DB::table('onboarding_records')->insert($insertData);
+            }
+
+            // Fetch the updated onboarding record to return
+            $onboardingRecord = DB::table('onboarding_records')
+                ->where('application_id', $application->id)
+                ->first();
+
+            if (!$onboardingRecord) {
+                throw new \Exception('Failed to retrieve onboarding record after update');
+            }
+
+            Log::info('Onboarding record updated with orientation details', [
+                'application_id' => $application->id,
+                'applicant_id' => $application->applicant_id,
+                'applicant_user_id' => $application->applicant->user_id ?? null,
+                'orientation_date' => $validated['orientation_date'],
+                'orientation_time' => $validated['orientation_time'],
+                'location' => $validated['location'],
+                'orientation_type' => $validated['orientation_type'],
+                'record_exists' => $existingRecord ? 'yes' : 'no (created)',
+                'onboarding_record_id' => $onboardingRecord->id ?? null,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Orientation scheduled successfully.',
+                'data' => [
+                    'orientation_date' => $onboardingRecord->orientation_date,
+                    'orientation_time' => $onboardingRecord->orientation_time,
+                    'location' => $onboardingRecord->location,
+                    'orientation_type' => $onboardingRecord->orientation_type,
+                    'additional_notes' => $onboardingRecord->additional_notes,
+                    'onboarding_status' => $onboardingRecord->onboarding_status,
+                ]
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Validation error updating onboarding record', [
+                'application_id' => $application->id,
+                'errors' => $e->errors(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed. Please check all required fields are filled correctly.',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating onboarding record', [
+                'application_id' => $application->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while scheduling orientation. Please try again.',
+                'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }

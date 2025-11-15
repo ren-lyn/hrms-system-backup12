@@ -4,7 +4,7 @@ import { fetchNotifications, markNotificationRead, getNotificationAction, getNot
 import { getRelativeTime } from '../../utils/timeUtils';
 import { useNotificationManager } from '../../hooks/useNotificationManager';
 
-const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation, onOpenCalendar, onOpenJobApplications, onOpenJobPostings }) => {
+const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvaluation, onOpenCalendar, onOpenJobApplications, onOpenJobPostings, onOpenBenefitClaim }) => {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -120,6 +120,11 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
         case 'OPEN_JOB_POSTINGS':
           if (onOpenJobPostings) {
             onOpenJobPostings(notificationAction.id, notificationAction.data);
+          }
+          break;
+        case 'OPEN_BENEFIT_CLAIM':
+          if (onOpenBenefitClaim) {
+            onOpenBenefitClaim(notificationAction.id, notificationAction.data);
           }
           break;
         default:

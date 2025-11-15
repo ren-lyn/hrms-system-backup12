@@ -689,8 +689,13 @@ class AttendanceImportService
         $standardOut = Carbon::parse('17:00:00');
         $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
 
-        // Check if clocked in late (after 8:00 AM)
-        $isLate = $clockInTime->gt($standardIn);
+        // Check if clocked in late (with 15-minute grace period)
+        // Employees are marked as late only if they clock in at 8:16 AM or later
+        // Grace period: 8:00 AM to 8:15 AM (15 minutes) = not late
+        // Late threshold: 8:16 AM and above
+        $gracePeriodMinutes = 15;
+        $lateThreshold = $standardIn->copy()->addMinutes($gracePeriodMinutes + 1); // 8:00 AM + 16 minutes = 8:16 AM
+        $isLate = $clockInTime->gte($lateThreshold); // >= 8:16:00
         
         // Check if clocked out early (before 5:00 PM)
         $isEarlyOut = $clockOutTime->lt($standardOut);
@@ -772,8 +777,13 @@ class AttendanceImportService
         $standardOut = Carbon::parse('17:00:00');
         $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
 
-        // Check if clocked in late (after 8:00 AM)
-        $isLate = $clockInTime->gt($standardIn);
+        // Check if clocked in late (with 15-minute grace period)
+        // Employees are marked as late only if they clock in at 8:16 AM or later
+        // Grace period: 8:00 AM to 8:15 AM (15 minutes) = not late
+        // Late threshold: 8:16 AM and above
+        $gracePeriodMinutes = 15;
+        $lateThreshold = $standardIn->copy()->addMinutes($gracePeriodMinutes + 1); // 8:00 AM + 16 minutes = 8:16 AM
+        $isLate = $clockInTime->gte($lateThreshold); // >= 8:16:00
         
         // Check if clocked out early (before 5:00 PM)
         $isEarlyOut = $clockOutTime->lt($standardOut);
@@ -1249,7 +1259,13 @@ class AttendanceImportService
         $clockInTime = Carbon::parse($clockIn);
         $standardTime = Carbon::parse('08:00:00');
         
-        $isLate = $clockInTime->gt($standardTime);
+        // Check if clocked in late (with 15-minute grace period)
+        // Employees are marked as late only if they clock in at 8:16 AM or later
+        // Grace period: 8:00 AM to 8:15 AM (15 minutes) = not late
+        // Late threshold: 8:16 AM and above
+        $gracePeriodMinutes = 15;
+        $lateThreshold = $standardTime->copy()->addMinutes($gracePeriodMinutes + 1); // 8:00 AM + 16 minutes = 8:16 AM
+        $isLate = $clockInTime->gte($lateThreshold); // >= 8:16:00
         
         // Check if overtime (clock out at 6 PM or later)
         if ($clockOut) {

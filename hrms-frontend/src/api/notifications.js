@@ -21,7 +21,8 @@ export const getNotificationTypes = () => ({
   JOB_APPLICATION_STATUS_CHANGED: 'job_application_status_changed',
   JOB_POSTING_CREATED: 'job_posting_created',
   LEAVE_REQUEST_SUBMITTED_HR: 'leave_request_submitted_hr',
-  INVESTIGATION_ASSIGNED: 'investigation_assigned'
+  INVESTIGATION_ASSIGNED: 'investigation_assigned',
+  BENEFIT_CLAIM_STATUS_CHANGED: 'benefit_claim_status_changed'
 });
 
 // Helper function to get notification icon
@@ -50,6 +51,8 @@ export const getNotificationIcon = (type) => {
     case types.JOB_APPLICATION_STATUS_CHANGED:
     case types.JOB_POSTING_CREATED:
       return '💼';
+    case types.BENEFIT_CLAIM_STATUS_CHANGED:
+      return '📋';
     default:
       return '📢';
   }
@@ -155,6 +158,12 @@ export const getNotificationAction = (notification) => {
       return {
         action: 'OPEN_JOB_POSTINGS',
         id: notification.job_posting_id,
+        data: notification
+      };
+    case types.BENEFIT_CLAIM_STATUS_CHANGED:
+      return {
+        action: 'OPEN_BENEFIT_CLAIM',
+        id: notification.benefit_claim_id,
         data: notification
       };
     default:

@@ -47,6 +47,12 @@ class NotificationController extends Controller
                     'interviewer' => $n->data['interviewer'] ?? null,
                     'notes' => $n->data['notes'] ?? null,
                     'position' => $n->data['position'] ?? null,
+                    // Benefit claim specific fields
+                    'benefit_claim_id' => $n->data['benefit_claim_id'] ?? null,
+                    'claim_id' => $n->data['claim_id'] ?? null,
+                    'benefit_type' => $n->data['benefit_type'] ?? null,
+                    'claim_type' => $n->data['claim_type'] ?? null,
+                    'rejection_reason' => $n->data['rejection_reason'] ?? null,
                     'read_at' => $n->read_at,
                     'created_at' => $n->created_at,
                 ];
@@ -137,6 +143,9 @@ class NotificationController extends Controller
                 return 'Password Reset Request';
             case 'password_change_request_status':
                 return 'Password Reset Request Update';
+            case 'benefit_claim_status_changed':
+                $status = ucfirst($data['status'] ?? 'updated');
+                return "Benefit Claim {$status}";
             default:
                 return $data['title'] ?? 'Notification';
         }
@@ -228,6 +237,10 @@ class NotificationController extends Controller
                     return 'Your password reset request was declined. Review the administrator notes.';
                 }
                 return $data['message'] ?? 'Your password reset request status was updated.';
+            
+            case 'benefit_claim_status_changed':
+                // Use the message from the notification data (already formatted in BenefitClaimStatusChanged)
+                return $data['message'] ?? 'Your benefit claim status has been updated.';
             
             default:
                 return $data['message'] ?? 'You have a new notification.';

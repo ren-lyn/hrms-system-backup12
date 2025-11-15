@@ -20,12 +20,11 @@ class EmployeeController extends Controller
         
         // Cache employees data for 10 minutes
         $employees = Cache::remember('employees_list', 600, function () {
-            // Get Applicant role ID dynamically
-            $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
-            
+            // Include ALL users who have an EmployeeProfile, regardless of role
+            // This allows applicants with EmployeeProfile to appear in Employee Records
+            // while still maintaining their Applicant role (no employee system access)
             return User::with(['employeeProfile', 'role:id,name'])
                 ->select('id', 'first_name', 'last_name', 'email', 'role_id')
-                ->where('role_id', '!=', $applicantRoleId) // Exclude Applicants
                 ->whereHas('employeeProfile') // Must have an employee profile
                 ->get();
         });

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Chart from 'chart.js/auto';
+import axios from 'axios';
 import useEmployeeCount from '../../../hooks/useEmployeeCount';
 
 export default function StandaloneAssistantDashboard() {
@@ -37,6 +38,14 @@ export default function StandaloneAssistantDashboard() {
     .hrasst-divider { height:1px; background: var(--hrasst-border); margin: 4px 0 8px; }
 
     .hrasst-revenue-canvas-wrap { position:relative; flex:1 1 auto; min-height:180px; }
+    .hrasst-performance-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; }
+    .hrasst-performance-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px; border:1px solid var(--hrasst-border); border-radius:10px; background:#fafcff; }
+    .hrasst-performance-name { font-weight:600; font-size:12px; color:var(--hrasst-primary-900); }
+    .hrasst-performance-score { font-size:12px; font-weight:700; padding:4px 8px; border-radius:6px; }
+    .hrasst-performance-score.top { color:#0b4c24; background:#d1fae5; border:1px solid #bbf7d0; }
+    .hrasst-performance-score.bottom { color:#991b1b; background:#fee2e2; border:1px solid #fecaca; }
+    .hrasst-performance-section { display:flex; flex-direction:column; gap:12px; }
+    .hrasst-performance-section-title { font-size:11px; font-weight:700; color:var(--hrasst-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
 
     .hrasst-calendar { display:grid; grid-template-rows:auto 1fr; row-gap:8px; flex:1 1 auto; }
     .hrasst-calendar-header { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border:1px solid var(--hrasst-border); border-radius:10px; background:#f8fbff; color:var(--hrasst-primary-900); font-weight:600; }
@@ -49,13 +58,7 @@ export default function StandaloneAssistantDashboard() {
     .hrasst-cal-cell.is-today { border-color:var(--hrasst-primary); box-shadow: 0 0 0 3px var(--hrasst-ring) inset; font-weight:700; color:var(--hrasst-primary-900); }
     .hrasst-cal-cell.is-selected { border-color: var(--hrasst-primary-600); background: #eef2ff; font-weight:700; color:var(--hrasst-primary-900); }
 
-    .hrasst-absent-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; overflow:hidden auto; }
-    .hrasst-absent-item { display:grid; grid-template-columns:24px 1fr auto; align-items:center; gap:10px; padding:10px; border:1px solid var(--hrasst-border); border-radius:12px; background:#fafcff; }
-    .hrasst-avatar { width:24px; height:24px; border-radius:50%; background: linear-gradient(135deg, #93c5fd, #1d4ed8); box-shadow: 0 2px 6px rgba(29,78,216,.25); }
-    .hrasst-absent-meta { display:flex; flex-direction:column; line-height:1.15; }
-    .hrasst-absent-name { font-weight:600; font-size:13px; }
-    .hrasst-absent-date { font-size:12px; color:var(--hrasst-muted); }
-    .hrasst-badge { font-size:11px; font-weight:700; letter-spacing:.3px; padding:6px 8px; border-radius:999px; white-space:nowrap; color:#0b4c24; background:#d1fae5; border:1px solid #bbf7d0; }
+    .hrasst-attendance-canvas-wrap { position:relative; flex:1 1 auto; min-height:180px; }
 
     .hrasst-total-wrap { display:grid; grid-template-columns:1fr auto; align-items:end; gap:8px; }
     .hrasst-total-num { font-size: clamp(36px, 4.8vw, 48px); font-weight:800; color:var(--hrasst-primary-900); line-height:1; }
@@ -83,20 +86,25 @@ export default function StandaloneAssistantDashboard() {
   `, []);
 
   // ---------- State ----------
-  const [revenue, setRevenue] = useState({
-    labels: ['Jan','Feb','Mar','Apr','May','Jun'],
-    values: [12000, 15000, 10000, 17000, 14000, 20000]
+  const [performance, setPerformance] = useState({
+    topPerformers: [],
+    bottomPerformers: [],
+    loading: false,
+    error: null
   });
-  const [absentees, setAbsentees] = useState([
-    { name: 'Barayang, Crystal Anne A.', date: 'Feb 15', status: 'On Leave' },
-    { name: 'Cabuyao, Donna Mae N.', date: 'Feb 15', status: 'On Leave' },
-    { name: 'Concina, Renelyn S.', date: 'Feb 15–18', status: 'Sick Leave' },
-    { name: 'Osias, Shariel D.', date: 'Feb 15–20', status: 'Vacation Leave' },
-  ]);
+  const [attendanceTrend, setAttendanceTrend] = useState({
+    labels: [],
+    present: [],
+    absent: [],
+    late: [],
+    onLeave: [],
+    loading: false,
+    error: null
+  });
   // Use real employee count data
   const { total, fullTime, training, loading: employeeCountLoading, error: employeeCountError } = useEmployeeCount();
   const [totals, setTotals] = useState({ total: 0, fullTime: 0, training: 0, trendText: '▲ +5%' });
-  const [modalKind, setModalKind] = useState(null); // 'revenue' | 'calendar' | 'absent' | 'employees' | null
+  const [modalKind, setModalKind] = useState(null); // 'performance' | 'calendar' | 'attendance' | 'employees' | null
 
   // Update totals when employee count data changes
   useEffect(() => {
@@ -111,87 +119,444 @@ export default function StandaloneAssistantDashboard() {
   }, [total, fullTime, training, employeeCountLoading, employeeCountError]);
 
   // ---------- Chart refs ----------
-  const revenueCanvasRef = useRef(null);
-  const revenueChartRef = useRef(null);
-  const revenueModalCanvasRef = useRef(null);
-  const revenueModalChartRef = useRef(null);
   const empSparkRef = useRef(null);
   const empSparkChartRef = useRef(null);
+  const attendanceTrendCanvasRef = useRef(null);
+  const attendanceTrendChartRef = useRef(null);
+  const attendanceModalCanvasRef = useRef(null);
+  const attendanceModalChartRef = useRef(null);
 
-  // ---------- Init revenue chart (no loop) ----------
+  // ---------- Fetch Performance Data ----------
   useEffect(() => {
-    if (!revenueCanvasRef.current) return;
-    // Clean-up if needed
-    if (revenueChartRef.current) {
-      revenueChartRef.current.destroy();
-      revenueChartRef.current = null;
+    const fetchPerformanceData = async () => {
+      setPerformance(prev => ({ ...prev, loading: true, error: null }));
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        
+        // Get performance report data (last 6 months by default)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 6);
+        
+        const response = await axios.get('http://localhost:8000/api/reports/performance', {
+          headers,
+          params: {
+            start_date: startDate.toISOString().split('T')[0],
+            end_date: endDate.toISOString().split('T')[0]
+          }
+        });
+
+        if (response.data.success && response.data.data.analytics) {
+          const analytics = response.data.data.analytics;
+          setPerformance({
+            topPerformers: analytics.top_performers || [],
+            bottomPerformers: analytics.bottom_performers || [],
+            loading: false,
+            error: null
+          });
+        } else {
+          setPerformance(prev => ({ ...prev, loading: false, error: 'No performance data available' }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch performance data:', error);
+        setPerformance(prev => ({ 
+          ...prev, 
+          loading: false, 
+          error: error.response?.data?.message || 'Failed to load performance data' 
+        }));
+      }
+    };
+
+    fetchPerformanceData();
+  }, []);
+
+  // ---------- Fetch Attendance Trend Data ----------
+  useEffect(() => {
+    const fetchAttendanceTrend = async () => {
+      setAttendanceTrend(prev => ({ ...prev, loading: true, error: null }));
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        
+        // Get last 7 days of attendance data (or latest available period)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 6); // Last 7 days including today
+        
+        // Format dates properly for API (YYYY-MM-DD)
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
+        console.log('Fetching attendance data from', startDateStr, 'to', endDateStr);
+        
+        const response = await axios.get('http://localhost:8000/api/attendance/dashboard', {
+          headers,
+          params: {
+            date_from: startDateStr,
+            date_to: endDateStr
+          }
+        });
+        
+        console.log('API Response:', response.data);
+        
+        // Use auto-adjusted date range if available (when API adjusts to latest import period)
+        let actualStartDate = startDateStr;
+        let actualEndDate = endDateStr;
+        
+        if (response.data.data?.auto_adjusted_to_latest_import && response.data.data?.date_range) {
+          const adjustedRange = response.data.data.date_range;
+          actualStartDate = adjustedRange.from;
+          actualEndDate = adjustedRange.to;
+          console.log('API auto-adjusted date range to:', actualStartDate, 'to', actualEndDate);
+        }
+
+        if (response.data.success && response.data.data.daily_summary) {
+          const dailySummary = response.data.data.daily_summary;
+          
+          // Debug: log the daily_summary structure
+          console.log('Daily Summary from API:', dailySummary);
+          console.log('Daily Summary keys:', Object.keys(dailySummary));
+          
+          // Process daily summary using the same logic as report generation
+          // This ensures consistency between dashboard and reports
+          const buildAttendanceSummary = (dailySummary) => {
+            if (!dailySummary) {
+              return [];
+            }
+
+            const summaryEntries = Object.entries(dailySummary).map(([date, items]) => {
+              // Normalize date key - Laravel might return dates in different formats
+              let normalizedDate = date;
+              
+              // If date is an object or has a toString method, convert it
+              if (date && typeof date === 'object') {
+                normalizedDate = date.toString();
+              }
+              
+              // Clean date string - remove time components if present
+              if (typeof normalizedDate === 'string') {
+                normalizedDate = normalizedDate.split(' ')[0].split('T')[0];
+              }
+              
+              const counts = Array.isArray(items)
+                ? items.reduce((acc, item) => {
+                    const status = item.status || 'Unknown';
+                    acc[status] = (acc[status] || 0) + Number(item.count ?? 0);
+                    return acc;
+                  }, {})
+                : {};
+
+              const presentStatuses = ['Present', 'Late', 'Overtime', 'Undertime', 'Holiday (Worked)'];
+              const presentTotal = presentStatuses.reduce((total, status) => total + (counts[status] || 0), 0);
+
+              return {
+                date: normalizedDate,
+                present: presentTotal,
+                absent: counts['Absent'] || 0,
+                late: counts['Late'] || 0,
+                onLeave: counts['On Leave'] || 0,
+                overtime: counts['Overtime'] || 0,
+                undertime: counts['Undertime'] || 0,
+                holiday: counts['Holiday (No Work)'] || 0,
+                rawCounts: counts,
+              };
+            });
+
+            return summaryEntries.sort((a, b) => {
+              const dateA = new Date(a.date);
+              const dateB = new Date(b.date);
+              return dateA - dateB;
+            });
+          };
+
+          const attendanceSummary = buildAttendanceSummary(dailySummary);
+          
+          console.log('Processed attendance summary:', attendanceSummary);
+          
+          // Extract data for chart (matching report generation format)
+          // Use the same formatDate logic as report generation
+          const formatDate = (value) => {
+            if (!value) return '—';
+            
+            const date = new Date(value);
+            
+            if (Number.isNaN(date.getTime())) {
+              // If direct parsing fails, try cleaning the date string
+              if (typeof value === 'string') {
+                const cleanDate = value.split(' ')[0].split('T')[0];
+                const cleanedDate = new Date(cleanDate);
+                if (!Number.isNaN(cleanedDate.getTime())) {
+                  return cleanedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                }
+              }
+              console.warn('Invalid date value:', value);
+              return value; // Return original value if can't parse
+            }
+            
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          };
+          
+          const labels = attendanceSummary.map((item) => formatDate(item.date));
+          const present = attendanceSummary.map((item) => item.present || 0);
+          const absent = attendanceSummary.map((item) => item.absent || 0);
+          const late = attendanceSummary.map((item) => item.late || 0);
+          const onLeave = attendanceSummary.map((item) => item.onLeave || 0);
+          
+          // Debug: log processed data
+          console.log('Processed attendance data:', { labels, present, absent, late, onLeave });
+          
+          setAttendanceTrend({
+            labels,
+            present,
+            absent,
+            late,
+            onLeave,
+            loading: false,
+            error: null
+          });
+        } else {
+          setAttendanceTrend(prev => ({ ...prev, loading: false, error: 'No attendance data available' }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch attendance trend:', error);
+        setAttendanceTrend(prev => ({ 
+          ...prev, 
+          loading: false, 
+          error: error.response?.data?.message || 'Failed to load attendance data' 
+        }));
+      }
+    };
+
+    fetchAttendanceTrend();
+  }, []);
+
+  // ---------- Init Attendance Trend Chart ----------
+  useEffect(() => {
+    if (!attendanceTrendCanvasRef.current || attendanceTrend.loading) return;
+    
+    if (attendanceTrendChartRef.current) {
+      attendanceTrendChartRef.current.destroy();
+      attendanceTrendChartRef.current = null;
     }
-    const ctx = revenueCanvasRef.current.getContext('2d');
-    revenueChartRef.current = new Chart(ctx, {
-      type: 'bar',
+    
+    if (attendanceTrend.labels.length === 0) return;
+    
+    const ctx = attendanceTrendCanvasRef.current.getContext('2d');
+    attendanceTrendChartRef.current = new Chart(ctx, {
+      type: 'line',
       data: {
-        labels: revenue.labels,
-        datasets: [{
-          label: 'Sales (₱)',
-          data: revenue.values,
-          backgroundColor: '#60a5fa',
-          hoverBackgroundColor: '#3b82f6',
-          borderColor: '#2563eb',
-          borderWidth: 1,
-          borderRadius: 6,
-          barPercentage: 0.6,
-          categoryPercentage: 0.6
-        }]
+        labels: attendanceTrend.labels,
+        datasets: [
+          {
+            label: 'Present',
+            data: attendanceTrend.present,
+            borderColor: '#16a34a',
+            backgroundColor: 'rgba(22, 163, 74, 0.1)',
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+          },
+          {
+            label: 'Absent',
+            data: attendanceTrend.absent,
+            borderColor: '#dc2626',
+            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+          },
+          {
+            label: 'Late',
+            data: attendanceTrend.late,
+            borderColor: '#eab308',
+            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+          },
+          {
+            label: 'On Leave',
+            data: attendanceTrend.onLeave,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: { duration: 700, loop: false },
-        scales: {
-          x: { grid: { color: 'rgba(17,24,39,.06)' }, ticks: { color: '#1f2937', font: { weight: 600 } } },
-          y: { grid: { color: 'rgba(17,24,39,.06)' }, ticks: { color: '#374151', callback: v => new Intl.NumberFormat('en-PH').format(v) } }
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              boxWidth: 12,
+              padding: 8,
+              font: { size: 11 }
+            }
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false
+          }
         },
-        plugins: { legend: { display: false } }
+        scales: {
+          x: {
+            grid: { color: 'rgba(17,24,39,.06)' },
+            ticks: { color: '#1f2937', font: { size: 10 } }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(17,24,39,.06)' },
+            ticks: { 
+              color: '#374151',
+              stepSize: 5,
+              font: { size: 10 }
+            }
+          }
+        }
       }
     });
-    return () => { revenueChartRef.current?.destroy(); revenueChartRef.current = null; };
-  }, [revenue.labels, revenue.values]);
+    
+    return () => {
+      if (attendanceTrendChartRef.current) {
+        attendanceTrendChartRef.current.destroy();
+        attendanceTrendChartRef.current = null;
+      }
+    };
+  }, [attendanceTrend.labels, attendanceTrend.present, attendanceTrend.absent, attendanceTrend.late, attendanceTrend.onLeave, attendanceTrend.loading]);
 
-  // When modal opens for revenue, create a separate chart instance (also non-looping)
+  // ---------- Init Attendance Modal Chart ----------
   useEffect(() => {
-    if (modalKind !== 'revenue') { // destroy if it exists
-      revenueModalChartRef.current?.destroy();
-      revenueModalChartRef.current = null;
+    if (modalKind !== 'attendance') {
+      if (attendanceModalChartRef.current) {
+        attendanceModalChartRef.current.destroy();
+        attendanceModalChartRef.current = null;
+      }
       return;
     }
-    if (!revenueModalCanvasRef.current) return;
-    const ctx = revenueModalCanvasRef.current.getContext('2d');
-    revenueModalChartRef.current?.destroy();
-    revenueModalChartRef.current = new Chart(ctx, {
-      type: 'bar',
+    
+    if (!attendanceModalCanvasRef.current || attendanceTrend.loading || attendanceTrend.labels.length === 0) return;
+    
+    const ctx = attendanceModalCanvasRef.current.getContext('2d');
+    if (attendanceModalChartRef.current) {
+      attendanceModalChartRef.current.destroy();
+    }
+    
+    attendanceModalChartRef.current = new Chart(ctx, {
+      type: 'line',
       data: {
-        labels: revenue.labels,
-        datasets: [{
-          label: 'Sales (₱)',
-          data: revenue.values,
-          backgroundColor: '#93c5fd',
-          borderColor: '#2563eb',
-          borderWidth: 1,
-          borderRadius: 8
-        }]
+        labels: attendanceTrend.labels,
+        datasets: [
+          {
+            label: 'Present',
+            data: attendanceTrend.present,
+            borderColor: '#16a34a',
+            backgroundColor: 'rgba(22, 163, 74, 0.15)',
+            fill: true,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'Absent',
+            data: attendanceTrend.absent,
+            borderColor: '#dc2626',
+            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'Late',
+            data: attendanceTrend.late,
+            borderColor: '#eab308',
+            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'On Leave',
+            data: attendanceTrend.onLeave,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: false,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: { duration: 500, loop: false },
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              boxWidth: 15,
+              padding: 12,
+              font: { size: 12, weight: '600' }
+            }
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false
+          },
+          title: {
+            display: true,
+            text: 'DAILY TREND',
+            font: { size: 16, weight: 'bold' },
+            padding: { bottom: 10 }
+          }
+        },
         scales: {
-          x: { grid: { color: 'rgba(17,24,39,.06)' } },
-          y: { grid: { color: 'rgba(17,24,39,.06)' }, ticks: { callback: v => '₱ ' + new Intl.NumberFormat('en-PH').format(v) } }
+          x: {
+            grid: { color: 'rgba(17,24,39,.06)' },
+            ticks: { color: '#1f2937', font: { size: 11 } }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(17,24,39,.06)' },
+            ticks: { 
+              color: '#374151',
+              stepSize: 5,
+              font: { size: 11 }
+            }
+          }
         }
       }
     });
-  }, [modalKind, revenue.labels, revenue.values]);
+    
+    return () => {
+      if (attendanceModalChartRef.current) {
+        attendanceModalChartRef.current.destroy();
+        attendanceModalChartRef.current = null;
+      }
+    };
+  }, [modalKind, attendanceTrend.labels, attendanceTrend.present, attendanceTrend.absent, attendanceTrend.late, attendanceTrend.onLeave, attendanceTrend.loading]);
 
   // Tiny headcount sparkline in Total Employees card
   useEffect(() => {
@@ -306,11 +671,6 @@ export default function StandaloneAssistantDashboard() {
 
   useEffect(() => {
     window.hraDashboardReact = {
-      updateRevenue: (values, labels) => {
-        if (!Array.isArray(values) || values.length === 0) return;
-        setRevenue(r => ({ labels: Array.isArray(labels) && labels.length === values.length ? labels.slice() : r.labels, values: values.slice() }));
-      },
-      setAbsentList: (list) => { if (Array.isArray(list)) setAbsentees(list.slice()); },
       setEmployeeTotals: (payload) => {
         if (!payload) return;
         setTotals(t => ({
@@ -332,15 +692,56 @@ export default function StandaloneAssistantDashboard() {
 
 
       <section className="hrasst-grid" aria-label="Dashboard Grid">
-        {/* Revenue Report */}
-        <article className="hrasst-card" tabIndex={0} role="button" onClick={() => setModalKind('revenue')} onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setModalKind('revenue'); } }} aria-label="Open Revenue Report details">
+        {/* Performance Report */}
+        <article className="hrasst-card" tabIndex={0} role="button" onClick={() => setModalKind('performance')} onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setModalKind('performance'); } }} aria-label="Open Performance Report details">
           <div className="hrasst-card-header">
-            <h2 className="hrasst-card-title">Revenue Report</h2>
-            <span className="hrasst-kicker">Sales (₱)</span>
+            <h2 className="hrasst-card-title">Performance Report</h2>
+            <span className="hrasst-kicker">Top & Least Performers</span>
           </div>
           <div className="hrasst-divider" />
-          <div className="hrasst-revenue-canvas-wrap">
-            <canvas ref={revenueCanvasRef} aria-label="Revenue chart" role="img" />
+          <div className="hrasst-performance-section">
+            {performance.loading ? (
+              <div style={{textAlign:'center',padding:'20px',color:'var(--hrasst-muted)',fontSize:'12px'}}>Loading performance data...</div>
+            ) : performance.error ? (
+              <div style={{textAlign:'center',padding:'20px',color:'#ef4444',fontSize:'12px'}}>{performance.error}</div>
+            ) : (
+              <>
+                <div>
+                  <div className="hrasst-performance-section-title">Top Performers</div>
+                  <ul className="hrasst-performance-list">
+                    {performance.topPerformers.slice(0, 3).map((performer, idx) => {
+                      const score = typeof performer.percentage_score === 'number' ? performer.percentage_score : parseFloat(performer.percentage_score) || 0;
+                      return (
+                        <li key={idx} className="hrasst-performance-item">
+                          <span className="hrasst-performance-name">{performer.employee_name || 'N/A'}</span>
+                          <span className="hrasst-performance-score top">{score.toFixed(1)}%</span>
+                        </li>
+                      );
+                    })}
+                    {performance.topPerformers.length === 0 && (
+                      <li style={{padding:'8px',color:'var(--hrasst-muted)',fontSize:'12px',textAlign:'center'}}>No data available</li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <div className="hrasst-performance-section-title">Least Performers</div>
+                  <ul className="hrasst-performance-list">
+                    {performance.bottomPerformers.slice(0, 3).map((performer, idx) => {
+                      const score = typeof performer.percentage_score === 'number' ? performer.percentage_score : parseFloat(performer.percentage_score) || 0;
+                      return (
+                        <li key={idx} className="hrasst-performance-item">
+                          <span className="hrasst-performance-name">{performer.employee_name || 'N/A'}</span>
+                          <span className="hrasst-performance-score bottom">{score.toFixed(1)}%</span>
+                        </li>
+                      );
+                    })}
+                    {performance.bottomPerformers.length === 0 && (
+                      <li style={{padding:'8px',color:'var(--hrasst-muted)',fontSize:'12px',textAlign:'center'}}>No data available</li>
+                    )}
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
         </article>
 
@@ -386,25 +787,24 @@ export default function StandaloneAssistantDashboard() {
           </div>
         </article>
 
-        {/* Absent Employees */}
-        <article className="hrasst-card" tabIndex={0} role="button" onClick={() => setModalKind('absent')} onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setModalKind('absent'); } }} aria-label="Open Absent Employees details">
+        {/* Weekly Attendance Trend */}
+        <article className="hrasst-card" tabIndex={0} role="button" onClick={() => setModalKind('attendance')} onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' ') { e.preventDefault(); setModalKind('attendance'); } }} aria-label="Open Weekly Attendance Trend details">
           <div className="hrasst-card-header">
-            <h2 className="hrasst-card-title">Absent Employees</h2>
-            <span className="hrasst-kicker">Updated {new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} / {new Date().toLocaleDateString()}</span>
+            <h2 className="hrasst-card-title">Weekly Trend</h2>
+            <span className="hrasst-kicker">Last 7 Days</span>
           </div>
           <div className="hrasst-divider" />
-          <ul className="hrasst-absent-list" aria-label="Absent employees list">
-            {absentees.map((p, idx) => (
-              <li key={idx} className="hrasst-absent-item">
-                <span className="hrasst-avatar" aria-hidden="true"></span>
-                <span className="hrasst-absent-meta">
-                  <span className="hrasst-absent-name">{p.name}</span>
-                  <span className="hrasst-absent-date">{p.date}</span>
-                </span>
-                <span className="hrasst-badge">{p.status}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="hrasst-attendance-canvas-wrap">
+            {attendanceTrend.loading ? (
+              <div style={{textAlign:'center',padding:'60px 20px',color:'var(--hrasst-muted)',fontSize:'12px'}}>Loading attendance data...</div>
+            ) : attendanceTrend.error ? (
+              <div style={{textAlign:'center',padding:'60px 20px',color:'#ef4444',fontSize:'12px'}}>{attendanceTrend.error}</div>
+            ) : attendanceTrend.labels.length === 0 ? (
+              <div style={{textAlign:'center',padding:'60px 20px',color:'var(--hrasst-muted)',fontSize:'12px'}}>No attendance data available</div>
+            ) : (
+              <canvas ref={attendanceTrendCanvasRef} aria-label="Weekly attendance trend chart" role="img" />
+            )}
+          </div>
         </article>
 
         {/* Total Employees */}
@@ -440,26 +840,72 @@ export default function StandaloneAssistantDashboard() {
         <div className="hrasst-dialog">
           <header className="hrasst-dialog-hd">
             <h3 className="hrasst-dialog-title" id="hrasst-modal-title">
-              {modalKind === 'revenue' && 'Revenue Report – Details'}
+              {modalKind === 'performance' && 'Performance Report – Details'}
               {modalKind === 'calendar' && 'Calendar – Month View'}
-              {modalKind === 'absent' && 'Absent Employees – Details'}
+              {modalKind === 'attendance' && 'Weekly Attendance Trend – Details'}
               {modalKind === 'employees' && 'Total Employees – Breakdown'}
             </h3>
             <button type="button" className="hrasst-close" onClick={closeModal}>Close</button>
           </header>
           <div className="hrasst-dialog-bd">
-            {modalKind === 'revenue' && (
+            {modalKind === 'performance' && (
               <div style={{minHeight: 360}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
                   <div>
-                    <div style={{fontWeight:700,color:'var(--hrasst-primary-900)'}}>YTD Sales Overview</div>
-                    <div style={{fontSize:12,color:'var(--hrasst-muted)'}}>Clean, non-looping visualization for clear decision-making</div>
+                    <div style={{fontWeight:700,color:'var(--hrasst-primary-900)'}}>Employee Performance Overview</div>
+                    <div style={{fontSize:12,color:'var(--hrasst-muted)'}}>Top and least performers based on recent evaluations</div>
                   </div>
-                  <div style={{fontSize:12,color:'var(--hrasst-muted)'}}>Currency: PHP</div>
                 </div>
-                <div style={{position:'relative',height:340}}>
-                  <canvas ref={revenueModalCanvasRef} />
-                </div>
+                {performance.loading ? (
+                  <div style={{textAlign:'center',padding:'40px',color:'var(--hrasst-muted)'}}>Loading performance data...</div>
+                ) : performance.error ? (
+                  <div style={{textAlign:'center',padding:'40px',color:'#ef4444'}}>{performance.error}</div>
+                ) : (
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+                    <div>
+                      <div style={{fontWeight:700,color:'#0b4c24',marginBottom:12,fontSize:14}}>Top 5 Performers</div>
+                      <ul className="hrasst-performance-list" style={{maxHeight:'none'}}>
+                        {performance.topPerformers.length > 0 ? (
+                          performance.topPerformers.map((performer, idx) => {
+                            const score = typeof performer.percentage_score === 'number' ? performer.percentage_score : parseFloat(performer.percentage_score) || 0;
+                            return (
+                              <li key={idx} className="hrasst-performance-item" style={{padding:'12px'}}>
+                                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                                  <span className="hrasst-performance-name" style={{fontSize:13}}>{performer.employee_name || 'N/A'}</span>
+                                  <span style={{fontSize:11,color:'var(--hrasst-muted)'}}>{performer.department || 'N/A'} • {performer.position || 'N/A'}</span>
+                                </div>
+                                <span className="hrasst-performance-score top" style={{fontSize:14}}>{score.toFixed(1)}%</span>
+                              </li>
+                            );
+                          })
+                        ) : (
+                          <li style={{padding:'20px',color:'var(--hrasst-muted)',fontSize:12,textAlign:'center'}}>No top performers data available</li>
+                        )}
+                      </ul>
+                    </div>
+                    <div>
+                      <div style={{fontWeight:700,color:'#991b1b',marginBottom:12,fontSize:14}}>Least 5 Performers</div>
+                      <ul className="hrasst-performance-list" style={{maxHeight:'none'}}>
+                        {performance.bottomPerformers.length > 0 ? (
+                          performance.bottomPerformers.map((performer, idx) => {
+                            const score = typeof performer.percentage_score === 'number' ? performer.percentage_score : parseFloat(performer.percentage_score) || 0;
+                            return (
+                              <li key={idx} className="hrasst-performance-item" style={{padding:'12px'}}>
+                                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                                  <span className="hrasst-performance-name" style={{fontSize:13}}>{performer.employee_name || 'N/A'}</span>
+                                  <span style={{fontSize:11,color:'var(--hrasst-muted)'}}>{performer.department || 'N/A'} • {performer.position || 'N/A'}</span>
+                                </div>
+                                <span className="hrasst-performance-score bottom" style={{fontSize:14}}>{score.toFixed(1)}%</span>
+                              </li>
+                            );
+                          })
+                        ) : (
+                          <li style={{padding:'20px',color:'var(--hrasst-muted)',fontSize:12,textAlign:'center'}}>No least performers data available</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {modalKind === 'calendar' && (
@@ -484,19 +930,26 @@ export default function StandaloneAssistantDashboard() {
                 </div>
               </div>
             )}
-            {modalKind === 'absent' && (
-              <ul className="hrasst-absent-list">
-                {absentees.map((p, idx) => (
-                  <li key={'m-'+idx} className="hrasst-absent-item">
-                    <span className="hrasst-avatar"></span>
-                    <span className="hrasst-absent-meta">
-                      <span className="hrasst-absent-name">{p.name}</span>
-                      <span className="hrasst-absent-date">{p.date}</span>
-                    </span>
-                    <span className="hrasst-badge">{p.status}</span>
-                  </li>
-                ))}
-              </ul>
+            {modalKind === 'attendance' && (
+              <div style={{minHeight: 360}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                  <div>
+                    <div style={{fontWeight:700,color:'var(--hrasst-primary-900)'}}>DAILY TREND</div>
+                    <div style={{fontSize:12,color:'var(--hrasst-muted)'}}>Present vs Absent vs Late vs On Leave across the selected range</div>
+                  </div>
+                </div>
+                {attendanceTrend.loading ? (
+                  <div style={{textAlign:'center',padding:'40px',color:'var(--hrasst-muted)'}}>Loading attendance data...</div>
+                ) : attendanceTrend.error ? (
+                  <div style={{textAlign:'center',padding:'40px',color:'#ef4444'}}>{attendanceTrend.error}</div>
+                ) : attendanceTrend.labels.length === 0 ? (
+                  <div style={{textAlign:'center',padding:'40px',color:'var(--hrasst-muted)'}}>No attendance data available</div>
+                ) : (
+                  <div style={{position:'relative',height:400}}>
+                    <canvas ref={attendanceModalCanvasRef} />
+                  </div>
+                )}
+              </div>
             )}
             {modalKind === 'employees' && (
               <div style={{display:'grid',gridTemplateColumns:'1.25fr 1fr',gap:16,alignItems:'stretch'}}>

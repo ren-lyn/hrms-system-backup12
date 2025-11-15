@@ -257,6 +257,16 @@ Route::middleware('auth:sanctum')->group(function () {
             '/applications/{application}/profile-creation',
             [ProfileCreationController::class, 'store']
         );
+        // Get applicants ready for Profile Creation (source of truth from backend)
+        Route::get(
+            '/applications/profile-creation-queue',
+            [ApplicationController::class, 'getProfileCreationQueue']
+        );
+        // Update onboarding record with orientation details
+        Route::put(
+            '/applications/{application}/onboarding-record',
+            [ApplicationController::class, 'updateOnboardingRecord']
+        );
     });
 });
 

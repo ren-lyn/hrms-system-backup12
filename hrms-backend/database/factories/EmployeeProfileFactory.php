@@ -25,6 +25,10 @@ class EmployeeProfileFactory extends Factory
             'salary' => $this->faker->numberBetween(20000, 50000),
             'contact_number' => $this->faker->phoneNumber,
             'address' => $this->faker->address,
+            'sss' => $this->faker->numerify('##-#######-#'),
+            'philhealth' => 'PH-' . $this->faker->numerify('#########'),
+            'pagibig' => 'PG-' . $this->faker->numerify('#########'),
+            'tin_no' => $this->faker->numerify('###-###-###-###'),
         ];
     }
 }

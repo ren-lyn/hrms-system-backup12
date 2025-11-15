@@ -6,14 +6,10 @@ export const isTokenValid = () => {
   const token = localStorage.getItem('token');
   if (!token) return false;
   
-  try {
-    // Basic token validation - you can enhance this
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const currentTime = Date.now() / 1000;
-    return payload.exp > currentTime;
-  } catch (error) {
-    return false;
-  }
+  // Laravel Sanctum tokens are not JWT tokens, they're plain text tokens
+  // We can't validate expiration on the frontend, so we just check if token exists
+  // The backend will validate the token when making API calls
+  return token.length > 0;
 };
 
 export const getAuthToken = () => {
@@ -30,6 +26,7 @@ export const clearAuthData = () => {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
   localStorage.removeItem('role');
+  localStorage.removeItem('lastActivity');
   // Remove default axios authorization header
   delete axios.defaults.headers.common['Authorization'];
 };

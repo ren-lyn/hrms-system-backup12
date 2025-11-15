@@ -25,6 +25,7 @@ import {
   faUserTie,
   faTimesCircle,
   faInfoCircle,
+  faExclamationTriangle,
   faEye,
   faEdit,
   faEnvelope,
@@ -1539,10 +1540,15 @@ const closeDocumentModal = useCallback(() => {
     }
 
     try {
+      // If queue is empty, clear localStorage to ensure clean state
+      if (profileCreationQueue.length === 0) {
+        window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+      } else {
       window.localStorage.setItem(
         PROFILE_CREATION_QUEUE_STORAGE_KEY,
         JSON.stringify(profileCreationQueue)
       );
+      }
     } catch (error) {
       console.error("Failed to persist profile creation queue:", error);
     }
@@ -1570,6 +1576,18 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       };
     });
   }, [profileCreationForm.dateOfBirth]);
+
+  // Orientation scheduling state
+  const [showOrientationModal, setShowOrientationModal] = useState(false);
+  const [selectedApplicantForOrientation, setSelectedApplicantForOrientation] = useState(null);
+  const [orientationForm, setOrientationForm] = useState({
+    orientation_date: '',
+    orientation_time: '',
+    location: '',
+    orientation_type: 'In-person',
+    additional_notes: ''
+  });
+  const [orientationSaving, setOrientationSaving] = useState(false);
 
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
@@ -1806,6 +1824,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
   useEffect(() => {
     fetchApplicants();
+    fetchProfileCreationQueue(); // Fetch and sync profile creation queue
 
     // Add debug function to window for testing
 
@@ -4333,218 +4352,142 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     }
   };
 
-  const handleQueueForProfileCreation = () => {
+  // Fetch profile creation queue from API and sync with localStorage
+  const fetchProfileCreationQueue = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        "http://localhost:8000/api/applications/profile-creation-queue",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.data && response.data.success) {
+        const apiQueue = response.data.data || [];
+        
+        // If API returns empty, clear localStorage
+        if (apiQueue.length === 0) {
+          setProfileCreationQueue([]);
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+          }
+        } else {
+          // Sync with API data - use API as source of truth
+          setProfileCreationQueue(apiQueue);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching profile creation queue:", error);
+      // On error, clear localStorage to ensure clean state
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(PROFILE_CREATION_QUEUE_STORAGE_KEY);
+        setProfileCreationQueue([]);
+      }
+    }
+  };
+
+  const handleQueueForProfileCreation = async () => {
     if (!selectedApplicationForBenefits) {
-      alert("Select an applicant before marking benefits as complete.");
       return;
     }
 
     const applicantRecord = selectedApplicationForBenefits;
     const applicantId = applicantRecord.id;
 
-    if (profileCreationQueue.some((entry) => entry.id === applicantId)) {
-      alert("This applicant is already listed in the Profile Creation tab.");
-      handleCloseBenefitsModal();
-      setActiveTab("Onboarding");
-      setOnboardingSubtab("Profile Creation");
-      return;
-    }
+    try {
+      // First, update benefits enrollment status to "completed" in the backend
+      const token = localStorage.getItem("token");
+      
+      // Check if we have a file - if yes, use FormData, otherwise use plain object
+      const hasFile = benefitsForm.membershipProof instanceof File;
+      
+      let requestData;
+      let headers = {
+        Authorization: `Bearer ${token}`,
+      };
 
-    const applicantCore = applicantRecord.applicant || {};
-
-    const resolvedName =
-      benefitsApplicantInfo?.name ||
-      (applicantCore.first_name || applicantCore.last_name
-        ? `${applicantCore.first_name || ""} ${
-            applicantCore.last_name || ""
-          }`.trim()
-        : applicantRecord.employee_name || "N/A");
-
-    const resolvedEmail =
-      benefitsApplicantInfo?.email ||
-      applicantCore.email ||
-      applicantRecord.employee_email ||
-      "";
-
-    const resolvePhoneNumber = () => {
-      const candidates = [
-        benefitsApplicantInfo?.contact_number,
-        benefitsApplicantInfo?.phone_number,
-        applicantCore.contact_number,
-        applicantCore.phone_number,
-        applicantRecord.contact_number,
-        applicantRecord.phone_number,
-      ];
-
-      return candidates.find((value) =>
-        typeof value === "string" && value.trim().length > 0
-      )?.trim();
-    };
-
-    const resolvedDepartment =
-      benefitsApplicantInfo?.department ||
-      applicantRecord.jobPosting?.department ||
-      applicantRecord.job_posting?.department ||
-      "";
-
-    const resolvedPosition =
-      benefitsApplicantInfo?.position ||
-      applicantRecord.jobPosting?.position ||
-      applicantRecord.job_posting?.position ||
-      "";
-
-    const resolvedEmploymentStatus =
-      benefitsApplicantInfo?.employment_status ||
-      applicantRecord.employment_status ||
-      applicantCore.employment_status ||
-      "";
-
-    const resolvedDateStarted =
-      benefitsApplicantInfo?.date_started ||
-      applicantRecord.date_started ||
-      applicantCore.date_started ||
-      "";
-
-    const resolvedSalary =
-      benefitsApplicantInfo?.salary ||
-      applicantRecord.salary ||
-      (applicantRecord.jobPosting?.salary_min &&
-      applicantRecord.jobPosting?.salary_max
-        ? `${applicantRecord.jobPosting.salary_min} - ${applicantRecord.jobPosting.salary_max}`
-        : applicantRecord.job_posting?.salary_min &&
-          applicantRecord.job_posting?.salary_max
-        ? `${applicantRecord.job_posting.salary_min} - ${applicantRecord.job_posting.salary_max}`
-        : "");
-
-    const resolvedAddress = benefitsApplicantInfo?.address || {};
-
-    const calculateAge = (birthDateValue) => {
-      if (!birthDateValue) {
-        return "";
+      if (hasFile) {
+        // Use FormData if there's a file
+        const formData = new FormData();
+        formData.append("enrollment_status", "completed");
+        formData.append("sss_number", benefitsForm.sssNumber || "");
+        formData.append("philhealth_number", benefitsForm.philhealthNumber || "");
+        formData.append("pagibig_number", benefitsForm.pagibigNumber || "");
+        formData.append("membership_proof", benefitsForm.membershipProof);
+        requestData = formData;
+        // Let axios set Content-Type automatically for FormData
+      } else {
+        // Use plain object (JSON) if no file - works better with PUT
+        requestData = {
+          enrollment_status: "completed",
+          sss_number: benefitsForm.sssNumber || "",
+          philhealth_number: benefitsForm.philhealthNumber || "",
+          pagibig_number: benefitsForm.pagibigNumber || "",
+        };
+        headers["Content-Type"] = "application/json";
       }
 
-      const birthDate = new Date(birthDateValue);
-      if (Number.isNaN(birthDate.getTime())) {
-        return "";
-      }
+      // Update benefits enrollment status to completed using PUT method
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicantId}/benefits-enrollment`,
+        requestData,
+        { headers }
+      );
 
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const hasHadBirthdayThisYear =
-        today.getMonth() > birthDate.getMonth() ||
-        (today.getMonth() === birthDate.getMonth() &&
-          today.getDate() >= birthDate.getDate());
+      if (response.data?.success) {
+        // Update local state - preserve is_in_benefits_enrollment so applicant
+        // remains visible in Benefits Enrollment tab
+        setBenefitsEnrollmentStatus("completed");
+        setApplicants((prev) =>
+          prev.map((applicationRecord) =>
+            applicationRecord.id === applicantId
+              ? {
+                  ...applicationRecord,
+                  benefits_enrollment_status: "completed",
+                  is_in_benefits_enrollment: true, // Keep in Benefits Enrollment tab
+                }
+              : applicationRecord
+          )
+        );
 
-      if (!hasHadBirthdayThisYear) {
-        age -= 1;
-      }
+        setSelectedApplicationForBenefits((prev) =>
+          prev
+            ? {
+                ...prev,
+                benefits_enrollment_status: "completed",
+                is_in_benefits_enrollment: true, // Keep in Benefits Enrollment tab
+              }
+            : prev
+        );
 
-      return age >= 0 ? String(age) : "";
-    };
+        // Refresh applicants list to get latest data from backend
+        await fetchApplicants();
 
-    const resolvedDateOfBirth =
-      benefitsApplicantInfo?.date_of_birth ||
-      applicantCore.date_of_birth ||
-      "";
+        // Refresh Profile Creation queue from API - this will automatically include
+        // the applicant since they now have completed benefits enrollment
+        await fetchProfileCreationQueue();
 
-    const fallbackPhotoCandidates = [
-      benefitsApplicantInfo?.profile_photo_url,
-      benefitsApplicantInfo?.photo_url,
-      benefitsApplicantInfo?.profilePhotoUrl,
-      applicantCore.profile_photo_url,
-      applicantCore.photo_url,
-      applicantRecord.profile_photo_url,
-      applicantRecord.photo_url,
-    ];
-
-    const fallbackProfilePhotoUrl =
-      fallbackPhotoCandidates
-        .map((candidate) => normalizeAssetUrl(candidate))
-        .find((candidate) => candidate && candidate.length > 0) || "";
-
-    const resolvedProfilePhotoUrl =
-      extractProfilePhotoFromOverview(benefitsDocumentOverview) ||
-      fallbackProfilePhotoUrl;
-
-    const resolvedProfileData = {
-      fullName: resolvedName,
-      nickname: benefitsApplicantInfo?.nickname || applicantCore.nickname || "",
-      civilStatus:
-        benefitsApplicantInfo?.civil_status ||
-        applicantCore.civil_status ||
-        "",
-      gender: benefitsApplicantInfo?.gender || applicantCore.gender || "",
-      dateOfBirth: resolvedDateOfBirth,
-      age:
-        benefitsApplicantInfo?.age ||
-        applicantCore.age ||
-        calculateAge(resolvedDateOfBirth),
-      phoneNumber: resolvePhoneNumber() || "",
-      companyEmail: generateCompanyEmail(resolvedName),
-      emergencyContactName:
-        benefitsApplicantInfo?.emergency_contact_name ||
-        applicantCore.emergency_contact_name ||
-        "",
-      emergencyContactPhone:
-        benefitsApplicantInfo?.emergency_contact_phone ||
-        applicantCore.emergency_contact_phone ||
-        "",
-      province:
-        resolvedAddress.province ||
-        applicantCore.province ||
-        applicantRecord.province ||
-        "",
-      barangay:
-        resolvedAddress.barangay ||
-        applicantCore.barangay ||
-        applicantRecord.barangay ||
-        "",
-      city:
-        resolvedAddress.city ||
-        resolvedAddress.city_municipality ||
-        applicantCore.city ||
-        applicantRecord.city ||
-        "",
-      postalCode:
-        resolvedAddress.postal_code ||
-        applicantCore.postal_code ||
-        applicantRecord.postal_code ||
-        "",
-      presentAddress:
-        resolvedAddress.present_address ||
-        resolvedAddress.full ||
-        applicantCore.present_address ||
-        "",
-      position: resolvedPosition,
-      department: resolvedDepartment,
-      employmentStatus: resolvedEmploymentStatus,
-      dateStarted: resolvedDateStarted,
-      salary: resolvedSalary,
-      tenure: benefitsApplicantInfo?.tenure || "",
-      sss: benefitsForm.sssNumber || "",
-      philhealth: benefitsForm.philhealthNumber || "",
-      pagibig: benefitsForm.pagibigNumber || "",
-      tin: benefitsForm.tinNumber || "",
-      profilePhotoUrl: resolvedProfilePhotoUrl,
-    };
-
-    const queueEntry = {
-      id: applicantId,
-      name: resolvedName,
-      email: resolvedEmail,
-      department: resolvedDepartment,
-      position: resolvedPosition,
-      enrollmentStatus: benefitsEnrollmentStatus,
-      addedAt: new Date().toISOString(),
-      profileData: resolvedProfileData,
-      profileDataUpdatedAt: null,
-    };
-
-    setProfileCreationQueue((prev) => [...prev, queueEntry]);
-    alert("Applicant added to the Profile Creation tab.");
+        // Close modal silently - applicant will appear in Profile Creation tab
     handleCloseBenefitsModal();
-    setActiveTab("Onboarding");
-    setOnboardingSubtab("Profile Creation");
+      } else {
+        // Silently fail - log error for debugging
+        console.error("Benefits enrollment update failed:", response.data);
+      }
+    } catch (error) {
+      console.error("Error completing benefits enrollment:", error);
+      
+      // Log detailed error for debugging
+      if (error.response?.data) {
+        console.error("Error response:", error.response.data);
+        if (error.response.data.errors) {
+          console.error("Validation errors:", error.response.data.errors);
+        }
+      }
+      
+      // Silently fail - don't show alert as requested
+      // The user can try again if needed
+    }
   };
 
   const resetProfileCreationForm = useCallback(() => {
@@ -4561,12 +4504,14 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       const defaults = createEmptyProfileForm();
       const existing = entry.profileData || {};
       const resolvedFullName = resolveProfileFullName(entry, existing);
-      const generatedCompanyEmail = generateCompanyEmail(resolvedFullName);
-      const initialCompanyEmail =
-        existing.companyEmail ||
-        generatedCompanyEmail ||
-        existing.email ||
-        entry.email ||
+      
+      // Display original applicant email for information only - DO NOT change it
+      // This is just for HR to see what email the applicant registered with
+      const originalApplicantEmail = 
+        entry.applicant?.user?.email || // Original registration email
+        entry.applicant?.email || // Fallback to applicant email
+        entry.applicant_email || // Fallback
+        entry.email || // Fallback
         "";
       const initialProfilePhotoUrl =
         normalizeAssetUrl(
@@ -4579,7 +4524,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         ...defaults,
         ...existing,
         fullName: resolvedFullName,
-        companyEmail: initialCompanyEmail,
+        companyEmail: originalApplicantEmail, // Display original email only, not for changing
         profilePhotoUrl: initialProfilePhotoUrl,
         position: existing.position || entry.position || "",
         department: existing.department || entry.department || "",
@@ -4636,6 +4581,116 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     resetProfileCreationForm();
   }, [resetProfileCreationForm]);
 
+  // Orientation scheduling handlers
+  const handleOpenOrientationModal = (applicant) => {
+    setSelectedApplicantForOrientation(applicant);
+    setOrientationForm({
+      orientation_date: '',
+      orientation_time: '',
+      location: '',
+      orientation_type: 'In-person',
+      additional_notes: ''
+    });
+    setShowOrientationModal(true);
+  };
+
+  const handleCloseOrientationModal = () => {
+    setShowOrientationModal(false);
+    setSelectedApplicantForOrientation(null);
+    setOrientationForm({
+      orientation_date: '',
+      orientation_time: '',
+      location: '',
+      orientation_type: 'In-person',
+      additional_notes: ''
+    });
+  };
+
+  const handleScheduleOrientation = async () => {
+    if (!selectedApplicantForOrientation || orientationSaving) {
+      return;
+    }
+
+    // Validation
+    if (!orientationForm.orientation_date || !orientationForm.orientation_time || !orientationForm.location) {
+      alert("Please fill in all required fields (Date, Time, and Location).");
+      return;
+    }
+
+    try {
+      setOrientationSaving(true);
+      const token = localStorage.getItem("token");
+      const applicationId = selectedApplicantForOrientation.id;
+
+      if (!applicationId) {
+        alert("Error: Application ID not found. Please try again.");
+        return;
+      }
+
+      // Prepare request payload
+      const payload = {
+        orientation_date: orientationForm.orientation_date,
+        orientation_time: orientationForm.orientation_time,
+        location: orientationForm.location,
+        orientation_type: orientationForm.orientation_type || 'In-person',
+        additional_notes: orientationForm.additional_notes || null,
+        onboarding_status: 'orientation_scheduled'
+      };
+
+      console.log("📤 [HR Staff] Scheduling orientation:", {
+        applicationId,
+        payload
+      });
+
+      // Update onboarding record with orientation details
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicationId}/onboarding-record`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log("📥 [HR Staff] Orientation scheduling response:", response.data);
+
+      if (response.data?.success || response.status === 200) {
+        // Success - fetch updated data and close modal
+        await fetchApplicants();
+        handleCloseOrientationModal();
+        
+        // Show success message
+        alert("Successfully set orientation");
+      } else {
+        throw new Error(response.data?.message || 'Failed to schedule orientation');
+      }
+    } catch (error) {
+      console.error("❌ [HR Staff] Error scheduling orientation:", {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      
+      let errorMessage = "Failed to schedule orientation. Please try again.";
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.errors) {
+        const errors = Object.values(error.response.data.errors).flat();
+        errorMessage = errors.join(', ') || errorMessage;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setOrientationSaving(false);
+    }
+  };
+
   const handleProfileCreationInputChange = (field, value) => {
     setProfileCreationForm((prev) => {
       const next = {
@@ -4647,9 +4702,11 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         next.age = calculateAgeFromBirthdate(value);
       }
 
-      if (field === "fullName") {
-        next.companyEmail = generateCompanyEmail(value) || "";
-      }
+      // Do NOT regenerate email when fullName changes
+      // The email field is display-only and shows the original applicant email
+      // if (field === "fullName") {
+      //   next.companyEmail = generateCompanyEmail(value) || "";
+      // }
 
       return next;
     });
@@ -4753,7 +4810,8 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       gender: profileCreationForm.gender,
       birth_date: profileCreationForm.dateOfBirth,
       age: Number.isNaN(numericAge) ? 0 : numericAge,
-      company_email: profileCreationForm.companyEmail,
+      // Do NOT send company_email - it's display only
+      // company_email: profileCreationForm.companyEmail,
       contact_number: profileCreationForm.phoneNumber,
       emergency_contact_name: profileCreationForm.emergencyContactName,
       emergency_contact_phone: profileCreationForm.emergencyContactPhone,
@@ -4810,7 +4868,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         
         await fetchApplicants();
 
-        alert("Personal information saved and linked to employee records.");
+        alert("Personal information saved and linked to employee records. The applicant's status has been updated to 'Hired' and they now appear in the Orientation Schedule tab.");
         handleCloseProfileCreationModal();
       }
     } catch (error) {
@@ -4849,29 +4907,39 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         targetStatus ||
         (benefitsEnrollmentStatus === "completed" ? "completed" : "in_progress");
 
+      // Check if we have a file - if yes, use FormData, otherwise use plain object
+      const hasFile = benefitsForm.membershipProof instanceof File;
+      
+      let requestData;
+      let headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      if (hasFile) {
+        // Use FormData if there's a file
       const formData = new FormData();
       formData.append("enrollment_status", nextStatus);
       formData.append("sss_number", benefitsForm.sssNumber || "");
       formData.append("philhealth_number", benefitsForm.philhealthNumber || "");
       formData.append("pagibig_number", benefitsForm.pagibigNumber || "");
-      formData.append("tin_number", benefitsForm.tinNumber || "");
-      formData.append("enrollment_date", benefitsForm.enrollmentDate || "");
-
-      if (benefitsForm.membershipProof instanceof File) {
         formData.append("membership_proof", benefitsForm.membershipProof);
-      } else if (!benefitsForm.membershipProof) {
-        formData.append("membership_proof", "");
+        requestData = formData;
+        // Let axios set Content-Type automatically for FormData
+      } else {
+        // Use plain object (JSON) if no file - works better with PUT
+        requestData = {
+          enrollment_status: nextStatus,
+          sss_number: benefitsForm.sssNumber || "",
+          philhealth_number: benefitsForm.philhealthNumber || "",
+          pagibig_number: benefitsForm.pagibigNumber || "",
+        };
+        headers["Content-Type"] = "application/json";
       }
 
-      const response = await axios.post(
+      const response = await axios.put(
         `http://localhost:8000/api/applications/${selectedApplicationForBenefits.id}/benefits-enrollment`,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-        }
+        requestData,
+        { headers }
       );
 
       if (response.data?.success) {
@@ -4899,22 +4967,35 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
         await fetchApplicants();
 
-        alert("Benefit enrolled successfully.");
+        // If benefits enrollment was completed, refresh Profile Creation queue
+        // so the applicant appears in Profile Creation tab
+        if (nextStatus === "completed") {
+          await fetchProfileCreationQueue();
+        }
+
         setBenefitsValidationErrors([]);
       }
     } catch (error) {
       console.error("Error saving benefits enrollment:", error);
-      const message =
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        "Please complete required fields or correct errors.";
-      const errors =
-        error.response?.data?.errors && typeof error.response.data.errors === "object"
-          ? Object.values(error.response.data.errors)
-              .flat()
-              .map((err) => String(err))
-          : [message];
-      setBenefitsValidationErrors(errors);
+      
+      // Log detailed error for debugging
+      if (error.response?.data) {
+        console.error("Error response:", error.response.data);
+        if (error.response.data.errors) {
+          console.error("Validation errors:", error.response.data.errors);
+          // Set validation errors for display in form
+          const errors =
+            typeof error.response.data.errors === "object"
+              ? Object.values(error.response.data.errors)
+                  .flat()
+                  .map((err) => String(err))
+              : [error.response.data.message || "Validation failed"];
+          setBenefitsValidationErrors(errors);
+        }
+      } else {
+        // Silently fail - don't show alert
+        setBenefitsValidationErrors([]);
+      }
     } finally {
       setBenefitsSaving(false);
       setBenefitsSubmitMode("save");
@@ -5259,20 +5340,25 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                           applicant.is_in_benefits_enrollment
                       );
 
-                      const filtered = documentApplicants.filter((applicant) => {
-                        // Search filter
+                      const searchTerm = documentSearchTerm
+                        .trim()
+                        .toLowerCase();
 
-                        const name = applicant.applicant
-                          ? `${applicant.applicant.first_name || ""} ${
-                              applicant.applicant.last_name || ""
-                            }`
-                              .trim()
-                              .toLowerCase()
-                          : "";
+                      const filtered = documentApplicants.filter((applicant) => {
+                        const nameVariants = [
+                          `${applicant.applicant?.first_name || ""} ${
+                            applicant.applicant?.last_name || ""
+                          }`.trim(),
+                          applicant.employee_name || "",
+                        ]
+                          .filter(Boolean)
+                          .map((value) => value.toLowerCase());
 
                         const matchesSearch =
-                          !documentSearchTerm ||
-                          name.includes(documentSearchTerm.toLowerCase());
+                          !searchTerm ||
+                          nameVariants.some((value) =>
+                            value.includes(searchTerm)
+                          );
 
                         return matchesSearch;
                       });
@@ -5410,6 +5496,19 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                       applicant.job_posting?.position ||
                                       "";
 
+                                    const applicantName = applicant.applicant
+                                      ? `${
+                                          applicant.applicant.first_name || ""
+                                        } ${
+                                          applicant.applicant.last_name || ""
+                                        }`.trim()
+                                      : applicant.employee_name || "N/A";
+
+                                    const applicantEmail =
+                                      applicant.applicant?.email ||
+                                      applicant.employee_email ||
+                                      "N/A";
+
                                     return (
                                       <tr
                                         key={applicant.id}
@@ -5430,20 +5529,11 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                               marginBottom: "4px",
                                             }}
                                           >
-                                            {applicant.applicant
-                                              ? `${
-                                                  applicant.applicant
-                                                    .first_name || ""
-                                                } ${
-                                                  applicant.applicant
-                                                    .last_name || ""
-                                                }`.trim()
-                                              : "N/A"}
+                                            {applicantName || "N/A"}
                                           </div>
 
                                           <div className="small text-muted">
-                                            {applicant.applicant?.email ||
-                                              "N/A"}
+                                            {applicantEmail}
                                           </div>
                                         </td>
 
@@ -5505,14 +5595,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
                                             <div className="d-flex flex-wrap gap-2">
                                               <Button
-                                                variant="outline-primary"
+                                                variant="primary"
                                                 size="sm"
-                                                onClick={(event) => {
-                                                  event.stopPropagation();
+                                                onClick={() => {
                                                   setSelectedApplicationForDocs(
                                                     applicant
                                                   );
-                                                  setDocumentModalReadOnly(true);
+                                                  setDocumentModalReadOnly(false);
                                                   setShowDocumentModal(true);
                                                   setDocumentModalTab(
                                                     "Applicant Identification"
@@ -5971,7 +6060,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                 {/* Placeholder for upcoming onboarding subtabs */}
 
                 {onboardingSubtab === "Profile Creation" ? (
-                  (() => {
+                  ((() => {
                     // Get all hired applicants who are not in the queue
                     const hiredApplicants = applicants
                       .filter((app) => app.status === "Hired")
@@ -6221,14 +6310,188 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                         </div>
                       </div>
                     );
+                  })())
+                ) : onboardingSubtab === "Orientation Schedule" ? (
+                  (() => {
+                    // Get all hired applicants (status === "Hired")
+                    const hiredApplicants = applicants.filter(
+                      (app) => app.status === "Hired"
+                    );
+
+                    if (hiredApplicants.length === 0) {
+                      return (
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-body text-center py-5">
+                            <h5 className="text-muted mb-2">Orientation Schedule</h5>
+                            <p className="text-muted mb-0">
+                              No hired applicants available for orientation scheduling. Hire applicants by completing their Profile Creation.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="card border-0 shadow-sm">
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <Table hover className="mb-0">
+                              <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                <tr>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Employee
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Position & Department
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Status
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Actions
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hiredApplicants.map((applicant) => {
+                                  const applicantName = applicant.applicant
+                                    ? `${applicant.applicant.first_name || ""} ${applicant.applicant.last_name || ""}`.trim()
+                                    : applicant.employee_name || applicant.name || "N/A";
+                                  const applicantEmail = applicant.applicant?.email || applicant.employee_email || applicant.email || "N/A";
+                                  const department = applicant.jobPosting?.department || applicant.job_posting?.department || "N/A";
+                                  const position = applicant.jobPosting?.position || applicant.job_posting?.position || "N/A";
+                                  
+                                  // Check if orientation is already scheduled (from onboarding_record)
+                                  const hasOrientationScheduled = applicant.onboarding_record?.orientation_date || false;
+
+                                  return (
+                                    <tr key={applicant.id}>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div
+                                            style={{
+                                              width: "48px",
+                                              height: "48px",
+                                              borderRadius: "50%",
+                                              overflow: "hidden",
+                                              backgroundColor: "#f8f9fa",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center",
+                                            }}
+                                          >
+                                            <FontAwesomeIcon
+                                              icon={faUserTie}
+                                              style={{ fontSize: "24px", color: "#6c757d" }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="fw-semibold">
+                                              {applicantName}
+                                            </div>
+                                            <div className="small text-muted">
+                                              {applicantEmail}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div style={{ color: "#495057" }}>
+                                          {position}
+                                        </div>
+                                        <div className="small text-muted">
+                                          {department}
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        {hasOrientationScheduled ? (
+                                          <Badge
+                                            bg="success"
+                                            className="px-3 py-2"
+                                            style={{ borderRadius: "999px" }}
+                                          >
+                                            <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
+                                            Scheduled
+                                          </Badge>
+                                        ) : (
+                                          <Badge
+                                            bg="warning"
+                                            className="px-3 py-2"
+                                            style={{ borderRadius: "999px" }}
+                                          >
+                                            <FontAwesomeIcon icon={faExclamationTriangle} className="me-1" />
+                                            Needs Scheduling
+                                          </Badge>
+                                        )}
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <Button
+                                          variant={hasOrientationScheduled ? "outline-primary" : "primary"}
+                                          size="sm"
+                                          onClick={() => handleOpenOrientationModal(applicant)}
+                                        >
+                                          <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                                          {hasOrientationScheduled ? "Edit Schedule" : "Schedule Orientation"}
+                                        </Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    );
                   })()
-                ) : ["Orientation Schedule", "Start Date"].includes(
-                  onboardingSubtab
-                ) && (
+                ) : onboardingSubtab === "Start Date" && (
                   <div className="card border-0 shadow-sm">
                     <div className="card-body text-center py-5">
                       <h5 className="text-muted mb-2">{onboardingSubtab}</h5>
-
                       <p className="text-muted mb-0">
                         {onboardingTabDescriptions[onboardingSubtab] ||
                           "This section is coming soon."}
@@ -12039,7 +12302,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
               ) : null}
             </div>
 
-          <Form>
+            <Form>
               {renderProfileSection(
                 "Personal Information",
                 "Key personal details submitted by the applicant.",
@@ -12169,17 +12432,23 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                 <Col md={4}>
                   <Form.Group controlId="profileCompanyEmail">
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
-                      Company Email
+                      Applicant Email (Information Only)
                     </Form.Label>
                     <Form.Control
                       type="email"
-                      value={profileCreationForm.companyEmail}
+                      value={activeProfileCreationEntry?.applicant?.user?.email ||
+                        activeProfileCreationEntry?.applicant?.email ||
+                        activeProfileCreationEntry?.applicant_email ||
+                        activeProfileCreationEntry?.email ||
+                        profileCreationForm.companyEmail ||
+                        ""}
                       readOnly
-                      placeholder="Auto-generated company email"
+                      disabled
+                      placeholder="Applicant's original registration email"
                       style={PROFILE_READONLY_INPUT_STYLE}
                     />
                     <div className="text-muted small mt-1">
-                      Generated from the applicant&apos;s name.
+                      Display only - Original email the applicant used for registration. This email is used for JobPortal access only.
                     </div>
                   </Form.Group>
                 </Col>
@@ -12551,6 +12820,164 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
               </>
             ) : (
               "Save Personal Info"
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Orientation Scheduling Modal */}
+      <Modal
+        show={showOrientationModal}
+        onHide={handleCloseOrientationModal}
+        centered
+        size="lg"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" />
+            Schedule Orientation
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedApplicantForOrientation && (
+            <>
+              {/* Employee Info */}
+              <div className="mb-4 p-3 bg-light rounded">
+                <div className="d-flex align-items-center">
+                  <div
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      backgroundColor: "#f8f9fa",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: "15px",
+                    }}
+                  >
+                    <FontAwesomeIcon
+                      icon={faUserTie}
+                      style={{ fontSize: "30px", color: "#6c757d" }}
+                    />
+                  </div>
+                  <div>
+                    <h6 className="mb-1">
+                      {selectedApplicantForOrientation.applicant
+                        ? `${selectedApplicantForOrientation.applicant.first_name || ""} ${selectedApplicantForOrientation.applicant.last_name || ""}`.trim()
+                        : selectedApplicantForOrientation.employee_name || selectedApplicantForOrientation.name || "N/A"}
+                    </h6>
+                    <p className="mb-1 text-muted small">
+                      {selectedApplicantForOrientation.jobPosting?.position || selectedApplicantForOrientation.job_posting?.position || "N/A"}
+                    </p>
+                    <small className="text-muted">
+                      {selectedApplicantForOrientation.jobPosting?.department || selectedApplicantForOrientation.job_posting?.department || "N/A"}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scheduling Form */}
+              <Form>
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                        Date of Orientation *
+                      </Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={orientationForm.orientation_date}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_date: e.target.value})}
+                        min={new Date().toISOString().split('T')[0]}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faClock} className="me-1" />
+                        Time *
+                      </Form.Label>
+                      <Form.Control
+                        type="time"
+                        value={orientationForm.orientation_time}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_time: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Row>
+                  <Col md={8}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faMapMarkerAlt} className="me-1" />
+                        Location/Venue *
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="e.g., Main Conference Room, Building A"
+                        value={orientationForm.location}
+                        onChange={(e) => setOrientationForm({...orientationForm, location: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={4}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faUsers} className="me-1" />
+                        Orientation Type *
+                      </Form.Label>
+                      <Form.Select
+                        value={orientationForm.orientation_type}
+                        onChange={(e) => setOrientationForm({...orientationForm, orientation_type: e.target.value})}
+                      >
+                        <option value="In-person">In-person</option>
+                        <option value="Virtual/Online">Virtual/Online</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Additional Notes (Optional)</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    placeholder="e.g., Bring laptop, ID required, Dress code: Business casual"
+                    value={orientationForm.additional_notes}
+                    onChange={(e) => setOrientationForm({...orientationForm, additional_notes: e.target.value})}
+                  />
+                </Form.Group>
+              </Form>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseOrientationModal}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleScheduleOrientation}
+            disabled={orientationSaving}
+          >
+            {orientationSaving ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Scheduling...
+              </>
+            ) : (
+              <>
+                <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
+                Schedule Orientation
+              </>
             )}
           </Button>
         </Modal.Footer>

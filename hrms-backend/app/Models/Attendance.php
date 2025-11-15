@@ -113,8 +113,13 @@ class Attendance extends Model
         $standardOut = Carbon::parse($standardClockOut);
         $overtimeThreshold = Carbon::parse('18:00:00'); // 6 PM
 
-        // Check if clocked in late (after 8:00 AM)
-        $isLate = $clockInTime->gt($standardIn);
+        // Check if clocked in late (with 15-minute grace period)
+        // Employees are marked as late only if they clock in at 8:16 AM or later
+        // Grace period: 8:00 AM to 8:15 AM (15 minutes) = not late
+        // Late threshold: 8:16 AM and above
+        $gracePeriodMinutes = 15;
+        $lateThreshold = $standardIn->copy()->addMinutes($gracePeriodMinutes + 1); // 8:00 AM + 16 minutes = 8:16 AM
+        $isLate = $clockInTime->gte($lateThreshold); // >= 8:16:00
         
         // Check if clocked out early (before 5:00 PM)
         $isEarlyOut = $clockOutTime->lt($standardOut);

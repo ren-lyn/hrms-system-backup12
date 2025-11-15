@@ -79,6 +79,7 @@ import {
   faInfoCircle,
   faSearch,
   faRefresh,
+  faExternalLinkAlt,
 } from "@fortawesome/free-solid-svg-icons";
 
 const DOCUMENT_SECTIONS = [
@@ -368,6 +369,7 @@ const PersonalOnboarding = () => {
   const [loadingApplications, setLoadingApplications] = useState(false);
 
   const [orientationData, setOrientationData] = useState(null);
+  const [orientationLoading, setOrientationLoading] = useState(false);
 
   const [orientationChecklist, setOrientationChecklist] = useState([
     {
@@ -4296,68 +4298,127 @@ const formatStageLabel = (stage) => {
     }
   };
 
-  // Fetch orientation data for the logged-in user
+  // Helper function to convert 24-hour time to 12-hour format with AM/PM
+  const formatTime12Hour = (timeString) => {
+    if (!timeString) return null;
+    
+    // Handle time strings like "14:30:00" or "14:30"
+    const timeParts = timeString.split(':');
+    if (timeParts.length < 2) return timeString; // Return as-is if format is unexpected
+    
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = timeParts[1];
+    
+    if (isNaN(hours) || hours < 0 || hours > 23) return timeString; // Return as-is if invalid
+    
+    const period = hours >= 12 ? 'PM' : 'AM';
+    let displayHours = hours % 12;
+    if (displayHours === 0) displayHours = 12; // 0 should be 12
+    
+    return `${displayHours}:${minutes} ${period}`;
+  };
 
-  const fetchOrientationData = () => {
+  // Fetch orientation data for the logged-in user from API
+  const fetchOrientationData = async () => {
     try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      setOrientationLoading(true);
+      const token = localStorage.getItem("token");
+      
+      if (!token) {
+        setOrientationData(null);
+        setOrientationLoading(false);
+        return;
+      }
 
-      const userEmail = user.email || "";
-
-      // Get scheduled orientations from localStorage
-
-      const scheduledOrientations = JSON.parse(
-        localStorage.getItem("scheduledOrientations") || "[]"
+      // Fetch applications which include onboarding_record data
+      const response = await axios.get(
+        "http://localhost:8000/api/my-applications",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
 
-      // Find orientation for this user
-
-      const userOrientation = scheduledOrientations.find(
-        (orientation) => orientation.applicantEmail === userEmail
-      );
-
-      if (userOrientation) {
-        console.log(
-          "📅 [PersonalOnboarding] Found orientation data for user:",
-          userOrientation
-        );
-
-        // Check if orientation was updated (compare with previous data)
-
-        const previousOrientation = orientationData;
-
+      const applications = Array.isArray(response.data) ? response.data : [];
+      
+      // Optimized: Single pass through applications to find orientation data
+      const validStatuses = new Set(['Offer Accepted', 'Onboarding', 'Document Submission', 'Orientation Schedule', 'Profile Creation', 'Hired']);
+      
+      let applicationWithOrientation = null;
+      
+      // First pass: Try to find application with valid status and orientation date
+      for (const app of applications) {
+        const record = app.onboarding_record;
         if (
-          previousOrientation &&
-          JSON.stringify(previousOrientation) !==
-            JSON.stringify(userOrientation)
+          record &&
+          typeof record === 'object' &&
+          record.orientation_date &&
+          record.orientation_date !== null &&
+          record.orientation_date !== '' &&
+          app.status &&
+          validStatuses.has(app.status)
         ) {
-          // Orientation was updated by HR
+          applicationWithOrientation = app;
+          break;
+        }
+      }
+      
+      // Second pass: If not found, find any application with orientation date (fallback)
+      if (!applicationWithOrientation) {
+        for (const app of applications) {
+          const record = app.onboarding_record;
+          if (
+            record &&
+            typeof record === 'object' &&
+            record.orientation_date &&
+            record.orientation_date !== null &&
+            record.orientation_date !== ''
+          ) {
+            applicationWithOrientation = app;
+            break;
+          }
+        }
+      }
 
+      if (applicationWithOrientation?.onboarding_record) {
+        const orientationRecord = applicationWithOrientation.onboarding_record;
+        
+        // Transform the data to match expected format
+        const orientationInfo = {
+          orientationDate: orientationRecord.orientation_date || null,
+          orientationTime: orientationRecord.orientation_time || null,
+          location: orientationRecord.location || null,
+          orientationType: orientationRecord.orientation_type || null,
+          additionalNotes: orientationRecord.additional_notes || null,
+          onboardingStatus: orientationRecord.onboarding_status || null,
+          createdAt: applicationWithOrientation.updated_at || new Date().toISOString(),
+        };
+
+        // Optimized: Compare only essential fields instead of full JSON.stringify
+        const previousOrientation = orientationData;
+        const hasChanged = !previousOrientation || 
+          previousOrientation.orientationDate !== orientationInfo.orientationDate ||
+          previousOrientation.orientationTime !== orientationInfo.orientationTime ||
+          previousOrientation.location !== orientationInfo.location ||
+          previousOrientation.orientationType !== orientationInfo.orientationType;
+
+        if (hasChanged && previousOrientation) {
+          // Orientation was updated by HR
           showToast(
             "info",
             "Orientation Updated",
             "Your orientation schedule has been updated by HR. Please review the changes."
           );
-
-          console.log(
-            "🔔 [PersonalOnboarding] Orientation updated for user:",
-            userEmail
-          );
         }
 
-        setOrientationData(userOrientation);
+        setOrientationData(orientationInfo);
       } else {
-        console.log(
-          "📅 [PersonalOnboarding] No orientation scheduled for user:",
-          userEmail
-        );
-
         setOrientationData(null);
       }
     } catch (error) {
       console.error("Error fetching orientation data:", error);
-
       setOrientationData(null);
+    } finally {
+      setOrientationLoading(false);
     }
   };
 
@@ -4648,10 +4709,10 @@ const formatStageLabel = (stage) => {
     // fetchInterviewData(); // Removed auto loading - will only load when tab is clicked
 
     // Set up interval to check for orientation updates
-
+    // Reduced polling frequency to avoid unnecessary API calls
     const orientationInterval = setInterval(() => {
       fetchOrientationData();
-    }, 30000); // Increased from 5s to 30s
+    }, 120000); // Poll every 2 minutes (reduced from 30s to improve performance)
 
     // Set up interval to check for new notifications
 
@@ -4687,12 +4748,12 @@ const formatStageLabel = (stage) => {
     }
 
     return () => {
-      clearInterval(orientationInterval);
-
-      clearInterval(notificationInterval);
-
-      // clearInterval(interviewInterval); // Removed since interval is disabled
-
+      if (orientationInterval) {
+        clearInterval(orientationInterval);
+      }
+      if (notificationInterval) {
+        clearInterval(notificationInterval);
+      }
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showNotificationDropdown]);
@@ -6713,18 +6774,13 @@ const formatStageLabel = (stage) => {
 
                 <button
                   className={`subnav-item ${
-                    activeTab === "profile" ? "active" : ""
-                  }`}
-                  onClick={() => setActiveTab("profile")}
-                >
-                  Profile Creation
-                </button>
-
-                <button
-                  className={`subnav-item ${
                     activeTab === "overview" ? "active" : ""
                   }`}
-                  onClick={() => setActiveTab("overview")}
+                  onClick={() => {
+                    setActiveTab("overview");
+                    // Refresh orientation data when tab is clicked
+                    fetchOrientationData();
+                  }}
                 >
                   Orientation Schedule
                 </button>
@@ -6764,532 +6820,243 @@ const formatStageLabel = (stage) => {
                     )}
                   </div>
 
-                  {orientationData ? (
+                  {orientationLoading ? (
+                    <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: "12px" }}>
+                      <div className="card-body p-5 text-center">
+                        <div className="spinner-border text-primary mb-3" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-muted mb-0">Loading orientation details...</p>
+                      </div>
+                    </div>
+                  ) : orientationData && orientationData.orientationDate ? (
                     <>
-                      <div className="card border-0 shadow-sm">
+                      {/* Main Orientation Information Card */}
+                      <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: "12px", overflow: "hidden" }}>
+                        <div className="card-header bg-primary text-white py-3">
+                          <h5 className="mb-0 d-flex align-items-center">
+                            <FontAwesomeIcon icon={faCalendarCheck} className="me-2" />
+                            Your Orientation Details
+                          </h5>
+                        </div>
                         <div className="card-body p-4">
-                          <div className="row">
-                            {/* Left Column - Date & Time Info */}
-
-                            <div className="col-md-6">
-                              <div className="orientation-info-section mb-4">
-                                <h5 className="text-primary mb-3">
+                          <div className="row g-4">
+                            {/* Date of Orientation */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(13, 110, 253, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
                                   <FontAwesomeIcon
                                     icon={faCalendarAlt}
-                                    className="me-2"
-                                  />
-                                  Date & Time
-                                </h5>
-
-                                <div className="info-item d-flex align-items-start mb-3">
-                                  <div className="info-icon-wrapper me-3">
-                                    <FontAwesomeIcon
-                                      icon={faCalendarAlt}
-                                      className="text-info"
+                                    className="text-primary"
+                                    size="lg"
                                     />
                                   </div>
-
-                                  <div>
-                                    <label className="text-muted small mb-1">
-                                      Date
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Date of Orientation
                                     </label>
-
-                                    <p className="mb-0 fw-medium">
-                                      {new Date(
-                                        orientationData.orientationDate
-                                      ).toLocaleDateString("en-US", {
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                    {orientationData.orientationDate ? (
+                                      new Date(orientationData.orientationDate).toLocaleDateString("en-US", {
                                         weekday: "long",
-
                                         year: "numeric",
-
                                         month: "long",
-
                                         day: "numeric",
-                                      })}
+                                      })
+                                    ) : (
+                                      <span className="text-muted">Not specified</span>
+                                    )}
                                     </p>
+                                </div>
                                   </div>
                                 </div>
 
-                                <div className="info-item d-flex align-items-start mb-3">
-                                  <div className="info-icon-wrapper me-3">
+                            {/* Time */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(255, 193, 7, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
                                     <FontAwesomeIcon
                                       icon={faClock}
                                       className="text-warning"
+                                    size="lg"
                                     />
                                   </div>
-
-                                  <div>
-                                    <label className="text-muted small mb-1">
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                                       Time
                                     </label>
-
-                                    <p className="mb-0 fw-medium">
-                                      {orientationData.orientationTime}
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                    {orientationData.orientationTime ? (
+                                      formatTime12Hour(orientationData.orientationTime)
+                                    ) : (
+                                      <span className="text-muted">Not specified</span>
+                                    )}
                                     </p>
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="orientation-info-section mb-4">
-                                <h5 className="text-primary mb-3">
-                                  <FontAwesomeIcon
-                                    icon={faBuilding}
-                                    className="me-2"
-                                  />
-                                  Type & Location
-                                </h5>
-
-                                <div className="info-item d-flex align-items-start mb-3">
-                                  <div className="info-icon-wrapper me-3">
-                                    <FontAwesomeIcon
-                                      icon={faBuilding}
-                                      className="text-success"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="text-muted small mb-1">
-                                      Type
-                                    </label>
-
-                                    <p className="mb-0">
-                                      <span
-                                        className={`badge ${
-                                          orientationData.orientationType ===
-                                          "in-person"
-                                            ? "bg-primary"
-                                            : orientationData.orientationType ===
-                                              "online"
-                                            ? "bg-info"
-                                            : "bg-success"
-                                        }`}
-                                      >
-                                        {orientationData.orientationType ===
-                                        "in-person"
-                                          ? "In-Person"
-                                          : orientationData.orientationType ===
-                                            "online"
-                                          ? "Online"
-                                          : orientationData.orientationType}
-                                      </span>
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="info-item d-flex align-items-start">
-                                  <div className="info-icon-wrapper me-3">
+                            {/* Location/Venue */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(220, 53, 69, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
                                     <FontAwesomeIcon
                                       icon={faMapMarkerAlt}
                                       className="text-danger"
+                                    size="lg"
                                     />
                                   </div>
-
                                   <div className="flex-grow-1">
-                                    <label className="text-muted small mb-1">
-                                      {orientationData.orientationType ===
-                                      "online"
-                                        ? "Meeting Link"
-                                        : "Venue"}
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    {orientationData.orientationType === "Virtual/Online" ? "Meeting Link" : "Location/Venue"}
                                     </label>
-
-                                    {orientationData.orientationType ===
-                                    "online" ? (
+                                  {orientationData.location ? (
+                                    orientationData.orientationType === "Virtual/Online" && 
+                                    (orientationData.location.startsWith("http") || orientationData.location.startsWith("www")) ? (
                                       <a
                                         href={
-                                          orientationData.venue.startsWith(
-                                            "http"
-                                          )
-                                            ? orientationData.venue
-                                            : `https://${orientationData.venue}`
+                                          orientationData.location.startsWith("http")
+                                            ? orientationData.location
+                                            : `https://${orientationData.location}`
                                         }
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-primary fw-medium text-decoration-none d-inline-flex align-items-center"
+                                        className="text-primary fw-semibold text-decoration-none d-inline-flex align-items-center"
+                                        style={{ fontSize: "1.1rem" }}
                                       >
-                                        {orientationData.venue}
-
+                                        {orientationData.location}
                                         <FontAwesomeIcon
-                                          icon={faEye}
+                                          icon={faExternalLinkAlt}
                                           className="ms-2"
                                           size="sm"
                                         />
                                       </a>
                                     ) : (
-                                      <p className="mb-0 fw-medium">
-                                        {orientationData.venue}
+                                      <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                        {orientationData.location}
                                       </p>
+                                    )
+                                  ) : (
+                                    <p className="mb-0 text-muted">Not specified</p>
                                     )}
-                                  </div>
                                 </div>
                               </div>
                             </div>
 
-                            {/* Right Column - Facilitator & Instructions */}
-
-                            <div className="col-md-6">
-                              <div className="orientation-info-section mb-4">
-                                <h5 className="text-primary mb-3">
-                                  <FontAwesomeIcon
-                                    icon={faUserTie}
-                                    className="me-2"
-                                  />
-                                  Facilitator
-                                </h5>
-
-                                <div className="info-item d-flex align-items-start">
-                                  <div className="info-icon-wrapper me-3">
-                                    <FontAwesomeIcon
-                                      icon={faUserTie}
-                                      className="text-primary"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="text-muted small mb-1">
-                                      Facilitator Name
-                                    </label>
-
-                                    <p className="mb-0 fw-medium">
-                                      {orientationData.facilitator}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="orientation-info-section">
-                                <h5 className="text-primary mb-3">
-                                  <FontAwesomeIcon
-                                    icon={faInfoCircle}
-                                    className="me-2"
-                                  />
-                                  Notes & Instructions
-                                </h5>
-
-                                <div className="alert alert-info mb-0">
+                            {/* Orientation Type */}
+                            <div className="col-md-6 col-lg-4">
                                   <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(25, 135, 84, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
                                     <FontAwesomeIcon
-                                      icon={faLightbulb}
-                                      className="mt-1 me-2"
-                                    />
-
-                                    <div>
-                                      <p className="mb-0">
-                                        {orientationData.notes ||
-                                          "No additional notes provided."}
-                                      </p>
+                                    icon={faBuilding}
+                                    className="text-success"
+                                    size="lg"
+                                  />
                                     </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Status Badge */}
-
-                          <div className="mt-4 pt-4 border-top">
-                            <div className="d-flex justify-content-between align-items-center flex-wrap">
-                              <div>
-                                <label className="text-muted small mb-1">
-                                  Status
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Orientation Type
                                 </label>
-
-                                <div>
+                                  {orientationData.orientationType ? (
                                   <span
                                     className={`badge ${
-                                      orientationData.status === "scheduled"
+                                        orientationData.orientationType === "In-person" || orientationData.orientationType === "In-Person"
                                         ? "bg-primary"
-                                        : orientationData.status ===
-                                          "rescheduled"
-                                        ? "bg-warning"
-                                        : orientationData.status === "completed"
-                                        ? "bg-success"
-                                        : orientationData.status === "cancelled"
-                                        ? "bg-danger"
+                                          : orientationData.orientationType === "Virtual/Online" || orientationData.orientationType === "Online"
+                                          ? "bg-info"
                                         : "bg-secondary"
                                     } px-3 py-2`}
-                                  >
-                                    <FontAwesomeIcon
-                                      icon={faCheckCircle}
-                                      className="me-2"
-                                    />
-
-                                    {orientationData.status
-                                      ?.charAt(0)
-                                      .toUpperCase() +
-                                      orientationData.status?.slice(1)}
+                                      style={{ fontSize: "0.95rem" }}
+                                    >
+                                      {orientationData.orientationType}
                                   </span>
+                                  ) : (
+                                    <span className="text-muted">Not specified</span>
+                                  )}
                                 </div>
                               </div>
-
-                              {orientationData.attendees && (
-                                <div className="text-end">
-                                  <label className="text-muted small mb-1">
-                                    Other Attendees
-                                  </label>
-
-                                  <p className="mb-0 small">
-                                    {orientationData.attendees}
-                                  </p>
-                                </div>
-                              )}
                             </div>
                           </div>
 
-                          {/* Attendance Confirmation Section */}
-
+                          {/* Additional Notes Section */}
+                          {orientationData.additionalNotes && (
                           <div className="mt-4 pt-4 border-top">
-                            <label className="text-muted small mb-3 d-block fw-bold">
-                              <FontAwesomeIcon
-                                icon={faUserCheck}
-                                className="me-2"
-                              />
-                              ATTENDANCE CONFIRMATION
-                            </label>
-
-                            {attendanceStatus === null ? (
-                              <div className="d-flex flex-column gap-2">
-                                <div className="alert alert-warning mb-3">
-                                  <FontAwesomeIcon
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(13, 202, 240, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                  >
+                                    <FontAwesomeIcon
                                     icon={faInfoCircle}
-                                    className="me-2"
-                                  />
-                                  Please confirm your attendance for this
-                                  orientation session.
-                                </div>
-
-                                <div className="d-flex gap-2 flex-wrap">
-                                  <button
-                                    className="btn btn-success d-flex align-items-center"
-                                    onClick={handleConfirmAttendance}
-                                    style={{ flex: "1 1 auto" }}
-                                  >
-                                    <FontAwesomeIcon
-                                      icon={faCheckCircle}
-                                      className="me-2"
-                                    />
-                                    Confirm Attendance
-                                  </button>
-
-                                  <button
-                                    className="btn btn-outline-danger d-flex align-items-center"
-                                    onClick={handleDeclineAttendance}
-                                    style={{ flex: "1 1 auto" }}
-                                  >
-                                    <FontAwesomeIcon
-                                      icon={faTimesCircle}
-                                      className="me-2"
-                                    />
-                                    Cannot Attend
-                                  </button>
-                                </div>
-                              </div>
-                            ) : attendanceStatus === "confirmed" ? (
-                              <div className="alert alert-success mb-0">
-                                <div className="d-flex align-items-center justify-content-between flex-wrap">
-                                  <div className="d-flex align-items-center">
-                                    <FontAwesomeIcon
-                                      icon={faCheckCircle}
-                                      className="me-2"
+                                    className="text-info"
                                       size="lg"
                                     />
-
-                                    <div>
-                                      <strong>Attendance Confirmed</strong>
-
-                                      <p className="mb-0 small">
-                                        You have confirmed your attendance. We
-                                        look forward to seeing you!
-                                      </p>
                                     </div>
-                                  </div>
-
-                                  <button
-                                    className="btn btn-sm btn-outline-secondary mt-2 mt-md-0"
-                                    onClick={() => setAttendanceStatus(null)}
-                                  >
-                                    Change Response
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="alert alert-danger mb-0">
-                                <div className="d-flex align-items-center justify-content-between flex-wrap">
-                                  <div className="d-flex align-items-center">
-                                    <FontAwesomeIcon
-                                      icon={faTimesCircle}
-                                      className="me-2"
-                                      size="lg"
-                                    />
-
-                                    <div>
-                                      <strong>Attendance Declined</strong>
-
-                                      <p className="mb-0 small">
-                                        You have declined this orientation. HR
-                                        has been notified.
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <button
-                                    className="btn btn-sm btn-outline-secondary mt-2 mt-md-0"
-                                    onClick={() => setAttendanceStatus(null)}
-                                  >
-                                    Change Response
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Preparation Checklist */}
-
-                      <div className="card border-0 shadow-sm mt-4">
-                        <div className="card-body p-4">
-                          <div className="d-flex justify-content-between align-items-center mb-3">
-                            <h5 className="text-primary mb-0">
-                              <FontAwesomeIcon
-                                icon={faClipboardCheck}
-                                className="me-2"
-                              />
-                              Preparation Checklist
-                            </h5>
-
-                            <div className="d-flex align-items-center">
-                              <span className="badge bg-light text-dark me-2">
-                                {
-                                  orientationChecklist.filter(
-                                    (item) => item.completed
-                                  ).length
-                                }{" "}
-                                / {orientationChecklist.length} completed
-                              </span>
-
-                              <span
-                                className={`badge ${
-                                  getChecklistProgress() === 100
-                                    ? "bg-success"
-                                    : getChecklistProgress() >= 50
-                                    ? "bg-warning"
-                                    : "bg-secondary"
-                                }`}
-                              >
-                                {getChecklistProgress()}%
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Progress Bar */}
-
-                          <div
-                            className="progress mb-4"
-                            style={{ height: "8px" }}
-                          >
-                            <div
-                              className={`progress-bar ${
-                                getChecklistProgress() === 100
-                                  ? "bg-success"
-                                  : getChecklistProgress() >= 50
-                                  ? "bg-warning"
-                                  : "bg-primary"
-                              }`}
-                              role="progressbar"
-                              style={{ width: `${getChecklistProgress()}%` }}
-                              aria-valuenow={getChecklistProgress()}
-                              aria-valuemin="0"
-                              aria-valuemax="100"
-                            ></div>
-                          </div>
-
-                          {/* Checklist Items */}
-
-                          <div className="checklist-items">
-                            {orientationChecklist.map((item) => (
-                              <div
-                                key={item.id}
-                                className={`checklist-item d-flex align-items-center p-3 mb-2 rounded ${
-                                  item.completed
-                                    ? "checklist-item-completed"
-                                    : "checklist-item-pending"
-                                }`}
-                                onClick={() => handleChecklistToggle(item.id)}
-                                style={{
-                                  cursor: "pointer",
-                                  transition: "all 0.3s ease",
-                                }}
-                              >
-                                <div className="form-check">
-                                  <input
-                                    className="form-check-input"
-                                    type="checkbox"
-                                    checked={item.completed}
-                                    onChange={() =>
-                                      handleChecklistToggle(item.id)
-                                    }
-                                    style={{
-                                      cursor: "pointer",
-                                      width: "20px",
-                                      height: "20px",
-                                    }}
-                                  />
-                                </div>
-
-                                <div className="checklist-icon ms-3 me-3">
-                                  <FontAwesomeIcon
-                                    icon={item.icon}
-                                    className={
-                                      item.completed
-                                        ? "text-success"
-                                        : "text-muted"
-                                    }
-                                  />
-                                </div>
-
                                 <div className="flex-grow-1">
-                                  <p
-                                    className={`mb-0 ${
-                                      item.completed
-                                        ? "text-decoration-line-through text-muted"
-                                        : "fw-medium"
-                                    }`}
+                                  <label className="text-muted small mb-2 d-block fw-semibold" style={{ textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Additional Notes
+                                  </label>
+                                  <div 
+                                    className="alert alert-info mb-0"
+                                style={{
+                                      backgroundColor: "rgba(13, 202, 240, 0.1)",
+                                      border: "1px solid rgba(13, 202, 240, 0.2)",
+                                      borderRadius: "8px"
+                                    }}
                                   >
-                                    {item.task}
+                                    <div className="d-flex align-items-start">
+                                  <FontAwesomeIcon
+                                        icon={faLightbulb}
+                                        className="mt-1 me-2 text-info"
+                                      />
+                                      <p className="mb-0" style={{ lineHeight: "1.6" }}>
+                                        {orientationData.additionalNotes}
                                   </p>
                                 </div>
-
-                                {item.completed && (
-                                  <div className="checklist-badge">
-                                    <span className="badge bg-success">
-                                      <FontAwesomeIcon
-                                        icon={faCheckCircle}
-                                        className="me-1"
-                                      />
-                                      Done
-                                    </span>
                                   </div>
-                                )}
                               </div>
-                            ))}
-                          </div>
-
-                          {/* Completion Message */}
-
-                          {getChecklistProgress() === 100 && (
-                            <div className="alert alert-success mt-3 mb-0">
-                              <div className="d-flex align-items-center">
-                                <FontAwesomeIcon
-                                  icon={faTrophy}
-                                  className="me-2"
-                                  size="lg"
-                                />
-
-                                <div>
-                                  <strong>Great job!</strong> You've completed
-                                  all preparation tasks. You're ready for your
-                                  orientation!
-                                </div>
                               </div>
                             </div>
                           )}
@@ -7297,47 +7064,25 @@ const formatStageLabel = (stage) => {
                       </div>
                     </>
                   ) : (
-                    <div className="card border-0 shadow-sm">
+                    <div className="card border-0 shadow-sm" style={{ borderRadius: "12px" }}>
                       <div className="card-body p-5 text-center">
+                        <div className="mb-4">
                         <FontAwesomeIcon
                           icon={faCalendarAlt}
-                          className="text-muted mb-3"
-                          size="3x"
+                            className="text-muted"
+                            style={{ fontSize: "4rem", opacity: 0.5 }}
                         />
-
-                        <h5 className="text-muted mb-2">
+                        </div>
+                        <h5 className="text-muted mb-2 fw-semibold">
                           No Orientation Scheduled
                         </h5>
-
-                        <p className="text-muted mb-0">
-                          Your orientation has not been scheduled yet. You will
-                          be notified once HR schedules your orientation
-                          session.
+                        <p className="text-muted mb-0" style={{ maxWidth: "500px", margin: "0 auto" }}>
+                          Your orientation has not been scheduled yet. You will be notified once HR Staff or HR Assistant schedules your orientation session.
                         </p>
                       </div>
                     </div>
                   )}
                 </>
-              )}
-
-              {activeTab === "profile" && (
-                <div>
-                  <h4 className="mb-4">
-                    <FontAwesomeIcon
-                      icon={faUser}
-                      className="me-2 text-primary"
-                    />
-                    Profile Creation
-                  </h4>
-
-                  <div className="card">
-                    <div className="card-body">
-                      <p className="text-muted">
-                        Profile creation interface will be available here.
-                      </p>
-                    </div>
-                  </div>
-                </div>
               )}
 
               {activeTab === "documents" && (

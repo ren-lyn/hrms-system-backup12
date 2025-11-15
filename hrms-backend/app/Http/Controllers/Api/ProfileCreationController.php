@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ProfileCreationController extends Controller
 {
@@ -69,32 +70,47 @@ class ProfileCreationController extends Controller
                 $applicant?->last_name
             );
 
-            $companyEmail = $validated['company_email'] ??
-                $applicant?->email ??
-                ($user?->email ?? null);
+            // company_email is optional and only for display purposes
+            // Do NOT use it to change the user's email
+            // Ignore company_email from request - it's display-only (removed from processing)
 
+            // CRITICAL: Do NOT create new user or change existing user
+            // The applicant account must remain unchanged - they keep their original email and Applicant role
+            // Only create EmployeeProfile linked to existing applicant user account
             if (!$user) {
-                $user = $this->createUserFromApplicant(
-                    $firstName,
-                    $lastName,
-                    $companyEmail ?? ($applicant?->email ?? $this->generateFallbackEmail($validated['full_name'])),
-                    $applicant
-                );
+                // If no user exists, we still shouldn't create one - this shouldn't happen
+                // But if it does, link to applicant's existing user or create minimal user
+                if ($applicant && $applicant->user) {
+                    $user = $applicant->user;
+                } else {
+                    // Fallback: create user but keep original email and Applicant role
+                    $user = $this->createUserFromApplicant(
+                        $firstName,
+                        $lastName,
+                        $applicant?->email ?? $applicant?->user?->email ?? $this->generateFallbackEmail($validated['full_name']),
+                        $applicant
+                    );
+                }
             } else {
-                $this->updateUserRecord($user, $firstName, $lastName, $companyEmail);
+                // Do NOT update user email or role - keep applicant account unchanged
+                // Only update name if needed, but preserve email and role
+                $this->updateUserRecordWithoutEmailOrRole($user, $firstName, $lastName);
                 if ($applicant && !$applicant->user_id) {
                     $applicant->user_id = $user->id;
                     $applicant->save();
                 }
             }
 
-            $this->guardUniqueEmployeeEmail($companyEmail, $user->id);
+            // No need to guard email uniqueness since we're not changing emails
+            // $this->guardUniqueEmployeeEmail($companyEmail, $user->id);
 
+            // Use original user email for EmployeeProfile (for display/info purposes)
+            // Do NOT use company_email - it's just for display in frontend
             $profileData = [
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'nickname' => $validated['nickname'],
-                'email' => $companyEmail ?? $user->email,
+                'email' => $user->email, // Use original applicant email, not company email
                 'position' => $validated['position'],
                 'department' => $validated['department'],
                 'employment_status' => $validated['employment_status'],
@@ -129,10 +145,12 @@ class ProfileCreationController extends Controller
             );
 
             if ($applicant) {
+                // CRITICAL: Do NOT update applicant email - preserve original registration email
+                // Only update name if needed
                 $applicant->update([
                     'first_name' => $firstName,
                     'last_name' => $lastName,
-                    'email' => $companyEmail ?? $applicant->email,
+                    // DO NOT update email - keep original registration email
                 ]);
             }
 
@@ -182,14 +200,17 @@ class ProfileCreationController extends Controller
 
     protected function createUserFromApplicant(string $firstName, string $lastName, string $email, ?object $applicant): User
     {
-        $employeeRoleId = Role::where('name', 'Employee')->value('id');
+        // CRITICAL: Keep Applicant role, do NOT change to Employee role
+        // Applicant should remain as Applicant and only access JobPortal
+        $applicantRoleId = Role::where('name', 'Applicant')->value('id');
 
         $user = User::create([
             'first_name' => $firstName,
-            'last_name' => $lastName ?: 'Employee',
-            'email' => $email,
+            'last_name' => $lastName ?: 'Applicant',
+            'email' => $email, // Use original email
             'password' => Hash::make(Str::random(16)),
-            'role_id' => $employeeRoleId ?: $applicant?->user?->role_id ?? null,
+            // Keep Applicant role - do NOT change to Employee
+            'role_id' => $applicant?->user?->role_id ?? $applicantRoleId ?? null,
         ]);
 
         if ($applicant) {
@@ -200,32 +221,58 @@ class ProfileCreationController extends Controller
         return $user;
     }
 
-    protected function updateUserRecord(User $user, string $firstName, string $lastName, ?string $companyEmail): void
+    protected function updateUserRecordWithoutEmailOrRole(User $user, string $firstName, string $lastName): void
     {
-        $employeeRoleId = Role::where('name', 'Employee')->value('id');
-
+        // CRITICAL: Do NOT change user email or role
+        // Only update name if needed, but preserve original email and Applicant role
+        // The applicant must keep their original registration email for JobPortal access
+        
+        // Store original values for verification
+        $originalEmail = $user->email;
+        $originalRoleId = $user->role_id;
+        
         $user->first_name = $firstName;
         $user->last_name = $lastName ?: $user->last_name;
-
-        if ($companyEmail && $companyEmail !== $user->email) {
-            $emailInUse = User::where('email', $companyEmail)
-                ->where('id', '!=', $user->id)
-                ->exists();
-
-            if ($emailInUse) {
-                throw ValidationException::withMessages([
-                    'company_email' => 'The generated company email is already in use by another account.',
-                ]);
-            }
-
-            $user->email = $companyEmail;
+        // DO NOT change email
+        // DO NOT change role - keep Applicant role
+        
+        // Verify email and role are not changed before saving
+        if ($user->email !== $originalEmail) {
+            Log::error('CRITICAL: Email was changed in updateUserRecordWithoutEmailOrRole!', [
+                'user_id' => $user->id,
+                'original_email' => $originalEmail,
+                'new_email' => $user->email
+            ]);
+            // Restore original email
+            $user->email = $originalEmail;
         }
-
-        if ($employeeRoleId) {
-            $user->role_id = $employeeRoleId;
+        
+        if ($user->role_id !== $originalRoleId) {
+            Log::error('CRITICAL: Role was changed in updateUserRecordWithoutEmailOrRole!', [
+                'user_id' => $user->id,
+                'original_role_id' => $originalRoleId,
+                'new_role_id' => $user->role_id
+            ]);
+            // Restore original role
+            $user->role_id = $originalRoleId;
         }
-
+        
         $user->save();
+        
+        Log::info('User record updated (email and role preserved)', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role_id' => $user->role_id
+        ]);
+    }
+
+    // DEPRECATED: This method should not be used - it changes email and role
+    // Kept for backward compatibility but not called
+    protected function updateUserRecord(User $user, string $firstName, string $lastName, ?string $companyEmail): void
+    {
+        // This method is deprecated - use updateUserRecordWithoutEmailOrRole instead
+        // CRITICAL: Do NOT use this method - it changes email and role which we don't want
+        $this->updateUserRecordWithoutEmailOrRole($user, $firstName, $lastName);
     }
 
     protected function guardUniqueEmployeeEmail(?string $email, int $userId): void
@@ -275,7 +322,7 @@ class ProfileCreationController extends Controller
                 ['application_id' => $application->id],
                 [
                     'employee_name' => $validated['full_name'],
-                    'employee_email' => $validated['company_email'] ?? $employeeProfile->email,
+                    'employee_email' => $employeeProfile->email, // Use original applicant email
                     'position' => $validated['position'],
                     'department' => $validated['department'],
                     'onboarding_status' => 'profile_completed',

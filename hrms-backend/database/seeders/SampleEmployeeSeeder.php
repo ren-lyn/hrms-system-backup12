@@ -244,6 +244,12 @@ class SampleEmployeeSeeder extends Seeder
                 'role_id' => 2 // Assuming role_id 2 is for employees
             ]);
 
+            // Generate unique government ID numbers in proper Philippine formats
+            $sssNumber = sprintf('%02d-%07d-%d', rand(10, 99), rand(1000000, 9999999), rand(0, 9));
+            $philhealthNumber = 'PH-' . sprintf('%09d', rand(100000000, 999999999));
+            $pagibigNumber = 'PG-' . sprintf('%09d', rand(100000000, 999999999));
+            $tinNumber = sprintf('%03d-%03d-%03d-%03d', rand(100, 999), rand(100, 999), rand(100, 999), rand(100, 999));
+            
             // Create employee profile
             EmployeeProfile::create([
                 'user_id' => $user->id,
@@ -255,7 +261,11 @@ class SampleEmployeeSeeder extends Seeder
                 'date_hired' => $employeeData['date_hired'],
                 'salary' => $employeeData['salary'],
                 'contact_number' => $employeeData['contact_number'],
-                'address' => $employeeData['address']
+                'address' => $employeeData['address'],
+                'sss' => $sssNumber,
+                'philhealth' => $philhealthNumber,
+                'pagibig' => $pagibigNumber,
+                'tin_no' => $tinNumber,
             ]);
         }
 

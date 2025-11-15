@@ -79,6 +79,11 @@ class DefaultAccountsSeeder extends Seeder
             'salary' => 13520,
             'hire_date' => now()->subYears(1)->toDateString(),
             'status' => 'active', // Explicitly set status to active
+            'sss' => '12-3456789-1',
+            'philhealth' => 'PH-123456789',
+            'pagibig' => 'PG-234567890',
+            'tin_no' => '123-456-789-001',
+
         ]);
 
         // Manager - Migrate from old email if exists
@@ -140,6 +145,10 @@ class DefaultAccountsSeeder extends Seeder
             'salary' => 13520,
             'hire_date' => now()->subYears(2)->toDateString(),
             'status' => 'active', // Explicitly set status to active
+            'sss' => '12-3456789-2',
+            'philhealth' => 'PH-234567890',
+            'pagibig' => 'PG-345678901',
+            'tin_no' => '123-456-789-002',
         ]);
 
         // Employee - Migrate from old email if exists
@@ -201,6 +210,10 @@ class DefaultAccountsSeeder extends Seeder
             'salary' => 13520,
             'hire_date' => now()->subMonths(6)->toDateString(),
             'status' => 'active', // Explicitly set status to active
+             'sss' => '12-3456789-3',
+            'philhealth' => 'PH-345678901',
+            'pagibig' => 'PG-456789012',
+            'tin_no' => '123-456-789-003',
         ]);
 
         // Applicant
