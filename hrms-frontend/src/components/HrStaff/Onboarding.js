@@ -1589,6 +1589,20 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
   });
   const [orientationSaving, setOrientationSaving] = useState(false);
 
+  // Start Date modal state
+  const [showStartDateModal, setShowStartDateModal] = useState(false);
+  const [selectedApplicantForStartDate, setSelectedApplicantForStartDate] = useState(null);
+  const [startDateForm, setStartDateForm] = useState({
+    official_start_date: '',
+    department: '',
+    position: '',
+    reporting_manager: '',
+    work_schedule: '',
+    employment_type: 'Full-time',
+    additional_instructions: ''
+  });
+  const [startDateSaving, setStartDateSaving] = useState(false);
+
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
   // Document review state
@@ -4606,6 +4620,136 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     });
   };
 
+  // Handle Start Date button click (from Orientation Schedule tab)
+  const handleStartDateClick = async (applicant) => {
+    try {
+      const applicantName = applicant.applicant
+        ? `${applicant.applicant.first_name || ""} ${applicant.applicant.last_name || ""}`.trim()
+        : applicant.employee_name || applicant.name || "Applicant";
+
+      // Confirm action
+      if (!window.confirm(`Move ${applicantName} to Start Date tab?`)) {
+        return;
+      }
+
+      // Update status to "Starting Date"
+      await axios.put(
+        `http://localhost:8000/api/applications/${applicant.id}/status`,
+        { status: "Starting Date" },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
+
+      // Refresh applicants list
+      await fetchApplicants();
+
+      alert(`${applicantName} has been moved to Start Date tab.`);
+    } catch (error) {
+      console.error("Error updating status to Starting Date:", error);
+      alert("Failed to update status. Please try again.");
+    }
+  };
+
+  // Start Date modal handlers
+  const handleCloseStartDateModal = () => {
+    setShowStartDateModal(false);
+    setSelectedApplicantForStartDate(null);
+    setStartDateForm({
+      official_start_date: '',
+      department: '',
+      position: '',
+      reporting_manager: '',
+      work_schedule: '',
+      employment_type: 'Full-time',
+      additional_instructions: ''
+    });
+  };
+
+  const handleSaveStartDate = async () => {
+    if (!selectedApplicantForStartDate || startDateSaving) {
+      return;
+    }
+
+    // Validation
+    if (!startDateForm.official_start_date) {
+      alert("Please select an Official Start Date.");
+      return;
+    }
+
+    try {
+      setStartDateSaving(true);
+      const token = localStorage.getItem("token");
+      const applicationId = selectedApplicantForStartDate.id;
+
+      if (!applicationId) {
+        alert("Error: Application ID not found. Please try again.");
+        return;
+      }
+
+      // Prepare request payload
+      const payload = {
+        official_start_date: startDateForm.official_start_date,
+        department: startDateForm.department,
+        position: startDateForm.position,
+        reporting_manager: startDateForm.reporting_manager,
+        work_schedule: startDateForm.work_schedule,
+        employment_type: startDateForm.employment_type,
+        additional_instructions: startDateForm.additional_instructions || null,
+      };
+
+      console.log("📤 [HR Staff] Saving start date:", {
+        applicationId,
+        payload
+      });
+
+      // Save start date information to backend
+      const response = await axios.put(
+        `http://localhost:8000/api/applications/${applicationId}/onboarding-record`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log("📥 [HR Staff] Start date save response:", response.data);
+
+      if (response.data?.success === true) {
+        // Success - fetch updated data and close modal
+        await fetchApplicants();
+        handleCloseStartDateModal();
+        
+        // Show success message
+        const applicantName = selectedApplicantForStartDate.applicant
+          ? `${selectedApplicantForStartDate.applicant.first_name || ""} ${selectedApplicantForStartDate.applicant.last_name || ""}`.trim()
+          : selectedApplicantForStartDate.employee_name || selectedApplicantForStartDate.name || "Applicant";
+        
+        alert(`Successfully set start date for ${applicantName}.`);
+      } else {
+        const errorMsg = response.data?.message || "Failed to save start date information. Please try again.";
+        alert(errorMsg);
+        console.error("Start date save failed:", response.data);
+      }
+    } catch (error) {
+      console.error("Error saving start date:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Failed to save start date information. Please try again.";
+      alert(errorMessage);
+      
+      // Log full error for debugging
+      if (error.response?.data) {
+        console.error("Error response data:", error.response.data);
+      }
+    } finally {
+      setStartDateSaving(false);
+    }
+  };
+
   const handleScheduleOrientation = async () => {
     if (!selectedApplicantForOrientation || orientationSaving) {
       return;
@@ -6469,6 +6613,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                           verticalAlign: "middle",
                                         }}
                                       >
+                                        <div className="d-flex flex-column gap-2">
                                         <Button
                                           variant={hasOrientationScheduled ? "outline-primary" : "primary"}
                                           size="sm"
@@ -6476,6 +6621,192 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                                         >
                                           <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
                                           {hasOrientationScheduled ? "Edit Schedule" : "Schedule Orientation"}
+                                        </Button>
+                                          {hasOrientationScheduled && (
+                                            <Button
+                                              variant="outline-success"
+                                              size="sm"
+                                              onClick={() => handleStartDateClick(applicant)}
+                                            >
+                                              <FontAwesomeIcon icon={faClock} className="me-1" />
+                                              Start Date
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </Table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : onboardingSubtab === "Start Date" ? (
+                  (() => {
+                    // Get all applicants with status "Starting Date"
+                    const startDateApplicants = applicants.filter(
+                      (app) => app.status === "Starting Date"
+                    );
+
+                    if (startDateApplicants.length === 0) {
+                      return (
+                  <div className="card border-0 shadow-sm">
+                    <div className="card-body text-center py-5">
+                            <h5 className="text-muted mb-2">Start Date</h5>
+                      <p className="text-muted mb-0">
+                              No applicants available for start date coordination.
+                      </p>
+                    </div>
+                  </div>
+                      );
+                    }
+
+                    return (
+                      <div className="card border-0 shadow-sm">
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <Table hover className="mb-0">
+                              <thead style={{ backgroundColor: "#f8f9fa" }}>
+                                <tr>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Employee
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Position & Department
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Status
+                                  </th>
+                                  <th
+                                    style={{
+                                      padding: "16px",
+                                      fontWeight: 600,
+                                      color: "#495057",
+                                    }}
+                                  >
+                                    Actions
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {startDateApplicants.map((applicant) => {
+                                  const applicantName = applicant.applicant
+                                    ? `${applicant.applicant.first_name || ""} ${applicant.applicant.last_name || ""}`.trim()
+                                    : applicant.employee_name || applicant.name || "N/A";
+                                  const applicantEmail = applicant.applicant?.email || applicant.employee_email || applicant.email || "N/A";
+                                  const department = applicant.jobPosting?.department || applicant.job_posting?.department || "N/A";
+                                  const position = applicant.jobPosting?.position || applicant.job_posting?.position || "N/A";
+
+                                  return (
+                                    <tr key={applicant.id}>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div
+                                            style={{
+                                              width: "48px",
+                                              height: "48px",
+                                              borderRadius: "50%",
+                                              overflow: "hidden",
+                                              backgroundColor: "#f8f9fa",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center",
+                                            }}
+                                          >
+                                            <FontAwesomeIcon
+                                              icon={faUserTie}
+                                              style={{ fontSize: "24px", color: "#6c757d" }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="fw-semibold">
+                                              {applicantName}
+                                            </div>
+                                            <div className="small text-muted">
+                                              {applicantEmail}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <div style={{ color: "#495057" }}>
+                                          {position}
+                                        </div>
+                                        <div className="small text-muted">
+                                          {department}
+                                        </div>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <Badge
+                                          bg="info"
+                                          className="px-3 py-2"
+                                          style={{ borderRadius: "999px" }}
+                                        >
+                                          <FontAwesomeIcon icon={faClock} className="me-1" />
+                                          Start Date Pending
+                                        </Badge>
+                                      </td>
+                                      <td
+                                        style={{
+                                          padding: "16px",
+                                          verticalAlign: "middle",
+                                        }}
+                                      >
+                                        <Button
+                                          variant="primary"
+                                          size="sm"
+                                          onClick={() => {
+                                            setSelectedApplicantForStartDate(applicant);
+                                            setStartDateForm({
+                                              official_start_date: '',
+                                              department: applicant.jobPosting?.department || applicant.job_posting?.department || '',
+                                              position: applicant.jobPosting?.position || applicant.job_posting?.position || '',
+                                              reporting_manager: '',
+                                              work_schedule: '',
+                                              employment_type: 'Full-time',
+                                              additional_instructions: ''
+                                            });
+                                            setShowStartDateModal(true);
+                                          }}
+                                        >
+                                          <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                                          Set Start Date
                                         </Button>
                                       </td>
                                     </tr>
@@ -6488,17 +6819,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                       </div>
                     );
                   })()
-                ) : onboardingSubtab === "Start Date" && (
-                  <div className="card border-0 shadow-sm">
-                    <div className="card-body text-center py-5">
-                      <h5 className="text-muted mb-2">{onboardingSubtab}</h5>
-                      <p className="text-muted mb-0">
-                        {onboardingTabDescriptions[onboardingSubtab] ||
-                          "This section is coming soon."}
-                      </p>
-                    </div>
-                  </div>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -12977,6 +13298,187 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
               <>
                 <FontAwesomeIcon icon={faCalendarAlt} className="me-2" />
                 Schedule Orientation
+              </>
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Start Date Modal */}
+      <Modal
+        show={showStartDateModal}
+        onHide={handleCloseStartDateModal}
+        centered
+        size="lg"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faCalendarAlt} className="me-2 text-primary" />
+            Set Start Date
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedApplicantForStartDate && (
+            <>
+              {/* Employee Info */}
+              <div className="mb-4 p-3 bg-light rounded">
+                <div className="d-flex align-items-center">
+                  <div
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      backgroundColor: "#f8f9fa",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: "15px",
+                    }}
+                  >
+                    <FontAwesomeIcon
+                      icon={faUserTie}
+                      style={{ fontSize: "30px", color: "#6c757d" }}
+                    />
+                  </div>
+                  <div>
+                    <h6 className="mb-1">
+                      {selectedApplicantForStartDate.applicant
+                        ? `${selectedApplicantForStartDate.applicant.first_name || ""} ${selectedApplicantForStartDate.applicant.last_name || ""}`.trim()
+                        : selectedApplicantForStartDate.employee_name || selectedApplicantForStartDate.name || "N/A"}
+                    </h6>
+                    <p className="mb-1 text-muted small">
+                      {selectedApplicantForStartDate.jobPosting?.position || selectedApplicantForStartDate.job_posting?.position || "N/A"}
+                    </p>
+                    <small className="text-muted">
+                      {selectedApplicantForStartDate.jobPosting?.department || selectedApplicantForStartDate.job_posting?.department || "N/A"}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Start Date Form */}
+              <Form>
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
+                        Official Start Date *
+                      </Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={startDateForm.official_start_date}
+                        onChange={(e) => setStartDateForm({...startDateForm, official_start_date: e.target.value})}
+                        min={new Date().toISOString().split('T')[0]}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>
+                        <FontAwesomeIcon icon={faBuilding} className="me-1" />
+                        Employment Type *
+                      </Form.Label>
+                      <Form.Select
+                        value={startDateForm.employment_type}
+                        onChange={(e) => setStartDateForm({...startDateForm, employment_type: e.target.value})}
+                        required
+                      >
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contract">Contract</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Department *</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={startDateForm.department}
+                        onChange={(e) => setStartDateForm({...startDateForm, department: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Position *</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={startDateForm.position}
+                        onChange={(e) => setStartDateForm({...startDateForm, position: e.target.value})}
+                        required
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Reporting Manager</Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="Enter reporting manager name"
+                        value={startDateForm.reporting_manager}
+                        onChange={(e) => setStartDateForm({...startDateForm, reporting_manager: e.target.value})}
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Work Schedule</Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="e.g., Monday-Friday, 9:00 AM - 6:00 PM"
+                        value={startDateForm.work_schedule}
+                        onChange={(e) => setStartDateForm({...startDateForm, work_schedule: e.target.value})}
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Additional Instructions</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={4}
+                    placeholder="e.g., Report to Reception Desk at 8:30 AM, Bring ID and laptop, Dress code: Business casual"
+                    value={startDateForm.additional_instructions}
+                    onChange={(e) => setStartDateForm({...startDateForm, additional_instructions: e.target.value})}
+                  />
+                  <Form.Text className="text-muted">
+                    Include first-day details like where to report, what to bring, dress code, etc.
+                  </Form.Text>
+                </Form.Group>
+              </Form>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseStartDateModal}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveStartDate}
+            disabled={startDateSaving}
+          >
+            {startDateSaving ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Saving...
+              </>
+            ) : (
+              <>
+                <FontAwesomeIcon icon={faCheck} className="me-2" />
+                Save & Send to Applicant
               </>
             )}
           </Button>

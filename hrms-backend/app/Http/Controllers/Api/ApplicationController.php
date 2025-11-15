@@ -52,6 +52,11 @@ class ApplicationController extends Controller
                         'orientation_type' => $onboardingRecord->orientation_type ?? null,
                         'additional_notes' => $onboardingRecord->additional_notes ?? null,
                         'onboarding_status' => $onboardingRecord->onboarding_status ?? null,
+                        'official_start_date' => $onboardingRecord->official_start_date ?? null,
+                        'reporting_manager' => $onboardingRecord->reporting_manager ?? null,
+                        'work_schedule' => $onboardingRecord->work_schedule ?? null,
+                        'employment_type' => $onboardingRecord->employment_type ?? null,
+                        'additional_instructions' => $onboardingRecord->additional_instructions ?? null,
                     ];
                 }
                 return $application;
@@ -1148,6 +1153,11 @@ class ApplicationController extends Controller
                             'orientation_type' => $onboardingRecord->orientation_type ?? null,
                             'additional_notes' => $onboardingRecord->additional_notes ?? null,
                             'onboarding_status' => $onboardingRecord->onboarding_status ?? null,
+                            'official_start_date' => $onboardingRecord->official_start_date ?? null,
+                            'reporting_manager' => $onboardingRecord->reporting_manager ?? null,
+                            'work_schedule' => $onboardingRecord->work_schedule ?? null,
+                            'employment_type' => $onboardingRecord->employment_type ?? null,
+                            'additional_instructions' => $onboardingRecord->additional_instructions ?? null,
                         ];
                         
                         Log::info('Onboarding record attached to application', [
@@ -1404,14 +1414,39 @@ class ApplicationController extends Controller
                 ], 404);
             }
 
-            $validated = $request->validate([
-                'orientation_date' => ['required', 'date'],
-                'orientation_time' => ['required', 'string', 'max:255'],
-                'location' => ['required', 'string', 'max:255'],
-                'orientation_type' => ['required', 'string', 'in:In-person,Virtual/Online'],
-                'additional_notes' => ['nullable', 'string', 'max:1000'],
-                'onboarding_status' => ['nullable', 'string', 'max:255'],
+            // Check if this is a start date update or orientation update
+            $isStartDateUpdate = $request->has('official_start_date') && !$request->has('orientation_date');
+            
+            Log::info('Onboarding record update request', [
+                'application_id' => $application->id,
+                'has_official_start_date' => $request->has('official_start_date'),
+                'has_orientation_date' => $request->has('orientation_date'),
+                'is_start_date_update' => $isStartDateUpdate,
+                'request_keys' => array_keys($request->all())
             ]);
+            
+            if ($isStartDateUpdate) {
+                // Validate start date fields
+                $validated = $request->validate([
+                    'official_start_date' => ['required', 'date'],
+                    'department' => ['nullable', 'string', 'max:255'],
+                    'position' => ['nullable', 'string', 'max:255'],
+                    'reporting_manager' => ['nullable', 'string', 'max:255'],
+                    'work_schedule' => ['nullable', 'string', 'max:255'],
+                    'employment_type' => ['nullable', 'string', 'in:Full-time,Part-time,Contract'],
+                    'additional_instructions' => ['nullable', 'string', 'max:2000'],
+                ]);
+            } else {
+                // Validate orientation fields
+                $validated = $request->validate([
+                    'orientation_date' => ['required', 'date'],
+                    'orientation_time' => ['required', 'string', 'max:255'],
+                    'location' => ['required', 'string', 'max:255'],
+                    'orientation_type' => ['required', 'string', 'in:In-person,Virtual/Online'],
+                    'additional_notes' => ['nullable', 'string', 'max:1000'],
+                    'onboarding_status' => ['nullable', 'string', 'max:255'],
+                ]);
+            }
 
             if (!Schema::hasTable('onboarding_records')) {
                 Log::error('Onboarding records table does not exist');
@@ -1440,22 +1475,79 @@ class ApplicationController extends Controller
                 ->where('application_id', $application->id)
                 ->first();
 
+            // Check if start date columns exist (for migration compatibility)
+            $hasStartDateColumns = Schema::hasColumn('onboarding_records', 'official_start_date');
+            
             // Prepare data for update/insert
-            $updateData = [
-                'orientation_date' => $validated['orientation_date'],
-                'orientation_time' => $validated['orientation_time'],
-                'location' => $validated['location'],
-                'orientation_type' => $validated['orientation_type'],
-                'additional_notes' => $validated['additional_notes'] ?? null,
-                'onboarding_status' => $validated['onboarding_status'] ?? 'orientation_scheduled',
-                'updated_at' => Carbon::now(),
-            ];
+            if ($isStartDateUpdate) {
+                if (!$hasStartDateColumns) {
+                    Log::error('Start date columns do not exist in onboarding_records table');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Database migration required. Please run: php artisan migrate',
+                        'error' => 'Start date columns not found in onboarding_records table'
+                    ], 500);
+                }
+                
+                $updateData = [
+                    'official_start_date' => $validated['official_start_date'],
+                    'updated_at' => Carbon::now(),
+                ];
+                
+                // Only add columns that exist
+                if (Schema::hasColumn('onboarding_records', 'reporting_manager')) {
+                    $updateData['reporting_manager'] = $validated['reporting_manager'] ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'work_schedule')) {
+                    $updateData['work_schedule'] = $validated['work_schedule'] ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'employment_type')) {
+                    $updateData['employment_type'] = $validated['employment_type'] ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'additional_instructions')) {
+                    $updateData['additional_instructions'] = $validated['additional_instructions'] ?? null;
+                }
+                
+                // Update department and position if provided
+                if (isset($validated['department'])) {
+                    $updateData['department'] = $validated['department'];
+                }
+                if (isset($validated['position'])) {
+                    $updateData['position'] = $validated['position'];
+                }
+            } else {
+                $updateData = [
+                    'orientation_date' => $validated['orientation_date'],
+                    'orientation_time' => $validated['orientation_time'],
+                    'location' => $validated['location'],
+                    'orientation_type' => $validated['orientation_type'],
+                    'additional_notes' => $validated['additional_notes'] ?? null,
+                    'onboarding_status' => $validated['onboarding_status'] ?? 'orientation_scheduled',
+                    'updated_at' => Carbon::now(),
+                ];
+            }
 
             if ($existingRecord) {
                 // Update existing record
-                DB::table('onboarding_records')
-                    ->where('application_id', $application->id)
-                    ->update($updateData);
+                try {
+                    DB::table('onboarding_records')
+                        ->where('application_id', $application->id)
+                        ->update($updateData);
+                    
+                    Log::info('Onboarding record updated successfully', [
+                        'application_id' => $application->id,
+                        'is_start_date_update' => $isStartDateUpdate,
+                        'updated_fields' => array_keys($updateData)
+                    ]);
+                } catch (\Exception $updateError) {
+                    Log::error('Failed to update onboarding record', [
+                        'application_id' => $application->id,
+                        'error' => $updateError->getMessage(),
+                        'update_data' => $updateData,
+                        'is_start_date_update' => $isStartDateUpdate
+                    ]);
+                    throw $updateError;
+                }
             } else {
                 // Create new record with all required fields
                 $applicant = $application->applicant;
@@ -1465,14 +1557,48 @@ class ApplicationController extends Controller
                     'application_id' => $application->id,
                     'employee_name' => ($applicant ? ($applicant->first_name . ' ' . $applicant->last_name) : 'N/A'),
                     'employee_email' => ($applicant ? $applicant->email : 'N/A'),
-                    'position' => ($jobPosting ? $jobPosting->position : null),
-                    'department' => ($jobPosting ? $jobPosting->department : null),
                     'progress' => 0,
-                    'notes' => 'Created when orientation was scheduled',
+                    'notes' => $isStartDateUpdate ? 'Created when start date was set' : 'Created when orientation was scheduled',
                     'created_at' => Carbon::now(),
                 ]);
+                
+                // Add position and department (these columns always exist)
+                if ($jobPosting) {
+                    $insertData['position'] = $jobPosting->position;
+                    $insertData['department'] = $jobPosting->department;
+                } else {
+                    // Use values from validated data if job posting doesn't exist
+                    if (isset($validated['position'])) {
+                        $insertData['position'] = $validated['position'];
+                    }
+                    if (isset($validated['department'])) {
+                        $insertData['department'] = $validated['department'];
+                    }
+                }
+                
+                // Add onboarding_status only if column exists
+                if (Schema::hasColumn('onboarding_records', 'onboarding_status')) {
+                    $insertData['onboarding_status'] = $isStartDateUpdate ? 'start_date_set' : ($validated['onboarding_status'] ?? 'orientation_scheduled');
+                }
 
-                DB::table('onboarding_records')->insert($insertData);
+                try {
+                    DB::table('onboarding_records')->insert($insertData);
+                    
+                    Log::info('Onboarding record created successfully', [
+                        'application_id' => $application->id,
+                        'is_start_date_update' => $isStartDateUpdate,
+                        'inserted_fields' => array_keys($insertData)
+                    ]);
+                } catch (\Exception $insertError) {
+                    Log::error('Failed to insert onboarding record', [
+                        'application_id' => $application->id,
+                        'error' => $insertError->getMessage(),
+                        'insert_data' => $insertData,
+                        'is_start_date_update' => $isStartDateUpdate,
+                        'error_code' => $insertError->getCode()
+                    ]);
+                    throw $insertError;
+                }
             }
 
             // Fetch the updated onboarding record to return
@@ -1484,30 +1610,68 @@ class ApplicationController extends Controller
                 throw new \Exception('Failed to retrieve onboarding record after update');
             }
 
-            Log::info('Onboarding record updated with orientation details', [
-                'application_id' => $application->id,
-                'applicant_id' => $application->applicant_id,
-                'applicant_user_id' => $application->applicant->user_id ?? null,
-                'orientation_date' => $validated['orientation_date'],
-                'orientation_time' => $validated['orientation_time'],
-                'location' => $validated['location'],
-                'orientation_type' => $validated['orientation_type'],
-                'record_exists' => $existingRecord ? 'yes' : 'no (created)',
-                'onboarding_record_id' => $onboardingRecord->id ?? null,
-            ]);
+            if ($isStartDateUpdate) {
+                Log::info('Onboarding record updated with start date details', [
+                    'application_id' => $application->id,
+                    'applicant_id' => $application->applicant_id,
+                    'applicant_user_id' => $application->applicant->user_id ?? null,
+                    'official_start_date' => $validated['official_start_date'],
+                    'record_exists' => $existingRecord ? 'yes' : 'no (created)',
+                    'onboarding_record_id' => $onboardingRecord->id ?? null,
+                ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Orientation scheduled successfully.',
-                'data' => [
-                    'orientation_date' => $onboardingRecord->orientation_date,
-                    'orientation_time' => $onboardingRecord->orientation_time,
-                    'location' => $onboardingRecord->location,
-                    'orientation_type' => $onboardingRecord->orientation_type,
-                    'additional_notes' => $onboardingRecord->additional_notes,
-                    'onboarding_status' => $onboardingRecord->onboarding_status,
-                ]
-            ]);
+                // Build response data, checking if columns exist
+                $responseData = [
+                    'official_start_date' => $onboardingRecord->official_start_date ?? null,
+                    'department' => $onboardingRecord->department ?? null,
+                    'position' => $onboardingRecord->position ?? null,
+                ];
+                
+                // Only include these if columns exist
+                if (Schema::hasColumn('onboarding_records', 'reporting_manager')) {
+                    $responseData['reporting_manager'] = $onboardingRecord->reporting_manager ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'work_schedule')) {
+                    $responseData['work_schedule'] = $onboardingRecord->work_schedule ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'employment_type')) {
+                    $responseData['employment_type'] = $onboardingRecord->employment_type ?? null;
+                }
+                if (Schema::hasColumn('onboarding_records', 'additional_instructions')) {
+                    $responseData['additional_instructions'] = $onboardingRecord->additional_instructions ?? null;
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Start date information saved successfully.',
+                    'data' => $responseData
+                ]);
+            } else {
+                Log::info('Onboarding record updated with orientation details', [
+                    'application_id' => $application->id,
+                    'applicant_id' => $application->applicant_id,
+                    'applicant_user_id' => $application->applicant->user_id ?? null,
+                    'orientation_date' => $validated['orientation_date'],
+                    'orientation_time' => $validated['orientation_time'],
+                    'location' => $validated['location'],
+                    'orientation_type' => $validated['orientation_type'],
+                    'record_exists' => $existingRecord ? 'yes' : 'no (created)',
+                    'onboarding_record_id' => $onboardingRecord->id ?? null,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Orientation scheduled successfully.',
+                    'data' => [
+                        'orientation_date' => $onboardingRecord->orientation_date,
+                        'orientation_time' => $onboardingRecord->orientation_time,
+                        'location' => $onboardingRecord->location,
+                        'orientation_type' => $onboardingRecord->orientation_type,
+                        'additional_notes' => $onboardingRecord->additional_notes,
+                        'onboarding_status' => $onboardingRecord->onboarding_status,
+                    ]
+                ]);
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('Validation error updating onboarding record', [
                 'application_id' => $application->id,
@@ -1522,13 +1686,19 @@ class ApplicationController extends Controller
         } catch (\Exception $e) {
             Log::error('Error updating onboarding record', [
                 'application_id' => $application->id,
+                'is_start_date_update' => $request->has('official_start_date') && !$request->has('orientation_date'),
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
+            $isStartDateUpdate = $request->has('official_start_date') && !$request->has('orientation_date');
+            $errorMessage = $isStartDateUpdate 
+                ? 'An error occurred while saving start date information. Please try again.' 
+                : 'An error occurred while scheduling orientation. Please try again.';
+
             return response()->json([
                 'success' => false,
-                'message' => 'An error occurred while scheduling orientation. Please try again.',
+                'message' => $errorMessage,
                 'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }

@@ -371,6 +371,9 @@ const PersonalOnboarding = () => {
   const [orientationData, setOrientationData] = useState(null);
   const [orientationLoading, setOrientationLoading] = useState(false);
 
+  const [startDateData, setStartDateData] = useState(null);
+  const [startDateLoading, setStartDateLoading] = useState(false);
+
   const [orientationChecklist, setOrientationChecklist] = useState([
     {
       id: 1,
@@ -4422,6 +4425,151 @@ const formatStageLabel = (stage) => {
     }
   };
 
+  // Fetch start date data for the logged-in user from API
+  const fetchStartDateData = async () => {
+    try {
+      setStartDateLoading(true);
+      const token = localStorage.getItem("token");
+      
+      if (!token) {
+        setStartDateData(null);
+        setStartDateLoading(false);
+        return;
+      }
+
+      // Fetch applications which include onboarding_record data
+      const response = await axios.get(
+        "http://localhost:8000/api/my-applications",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const applications = Array.isArray(response.data) ? response.data : [];
+      
+      // Find application with start date information
+      const validStatuses = new Set(['Starting Date', 'Hired', 'Onboarding', 'Document Submission', 'Orientation Schedule', 'Profile Creation']);
+      
+      let applicationWithStartDate = null;
+      
+      // First pass: Try to find application with valid status and start date info
+      for (const app of applications) {
+        const record = app.onboarding_record;
+        if (
+          record &&
+          typeof record === 'object' &&
+          record.official_start_date &&
+          app.status &&
+          validStatuses.has(app.status)
+        ) {
+          applicationWithStartDate = app;
+          break;
+        }
+      }
+      
+      // Second pass: If not found, check notes field for backward compatibility
+      if (!applicationWithStartDate) {
+        for (const app of applications) {
+          const record = app.onboarding_record;
+          if (
+            record &&
+            typeof record === 'object' &&
+            record.notes &&
+            app.status &&
+            validStatuses.has(app.status)
+          ) {
+            try {
+              const notesData = JSON.parse(record.notes);
+              if (notesData && notesData.start_date_info) {
+                applicationWithStartDate = app;
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+      }
+      
+      // Third pass: If still not found, find any application with start date info (fallback)
+      if (!applicationWithStartDate) {
+        for (const app of applications) {
+          const record = app.onboarding_record;
+          if (record && typeof record === 'object') {
+            if (record.official_start_date) {
+              applicationWithStartDate = app;
+              break;
+            } else if (record.notes) {
+              try {
+                const notesData = JSON.parse(record.notes);
+                if (notesData && notesData.start_date_info) {
+                  applicationWithStartDate = app;
+                  break;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+      }
+
+      if (applicationWithStartDate?.onboarding_record) {
+        const onboardingRecord = applicationWithStartDate.onboarding_record;
+        
+        // Check if start date data exists directly in onboarding_record
+        if (onboardingRecord.official_start_date) {
+          // Transform the data to match expected format
+          const startDateInfoFormatted = {
+            officialStartDate: onboardingRecord.official_start_date || null,
+            department: applicationWithStartDate.jobPosting?.department || applicationWithStartDate.job_posting?.department || onboardingRecord.department || null,
+            position: applicationWithStartDate.jobPosting?.position || applicationWithStartDate.job_posting?.position || onboardingRecord.position || null,
+            reportingManager: onboardingRecord.reporting_manager || null,
+            workSchedule: onboardingRecord.work_schedule || null,
+            employmentType: onboardingRecord.employment_type || null,
+            additionalInstructions: onboardingRecord.additional_instructions || null,
+            savedAt: applicationWithStartDate.updated_at || new Date().toISOString(),
+          };
+
+          setStartDateData(startDateInfoFormatted);
+        } else {
+          // Fallback: Try to parse from notes field (for backward compatibility)
+          try {
+            const notesData = JSON.parse(onboardingRecord.notes || '{}');
+            const startDateInfo = notesData.start_date_info || {};
+            
+            if (startDateInfo.official_start_date) {
+              const startDateInfoFormatted = {
+                officialStartDate: startDateInfo.official_start_date || null,
+                department: startDateInfo.department || null,
+                position: startDateInfo.position || null,
+                reportingManager: startDateInfo.reporting_manager || null,
+                workSchedule: startDateInfo.work_schedule || null,
+                employmentType: startDateInfo.employment_type || null,
+                additionalInstructions: startDateInfo.additional_instructions || null,
+                savedAt: notesData.saved_at || applicationWithStartDate.updated_at || new Date().toISOString(),
+              };
+
+              setStartDateData(startDateInfoFormatted);
+            } else {
+              setStartDateData(null);
+            }
+          } catch (parseError) {
+            console.error("Error parsing start date data:", parseError);
+            setStartDateData(null);
+          }
+        }
+      } else {
+        setStartDateData(null);
+      }
+    } catch (error) {
+      console.error("Error fetching start date data:", error);
+      setStartDateData(null);
+    } finally {
+      setStartDateLoading(false);
+    }
+  };
+
   // Load checklist from localStorage
 
   const loadChecklist = () => {
@@ -4699,6 +4847,7 @@ const formatStageLabel = (stage) => {
     fetchUserApplications();
 
     fetchOrientationData();
+    fetchStartDateData();
 
     loadChecklist();
 
@@ -6789,7 +6938,10 @@ const formatStageLabel = (stage) => {
                   className={`subnav-item ${
                     activeTab === "starting-date" ? "active" : ""
                   }`}
-                  onClick={() => setActiveTab("starting-date")}
+                  onClick={() => {
+                    setActiveTab("starting-date");
+                    fetchStartDateData();
+                  }}
                 >
                   Start Date
                 </button>
@@ -8160,21 +8312,311 @@ const formatStageLabel = (stage) => {
 
               {activeTab === "starting-date" && (
                 <div>
-                  <h4 className="mb-4">
+                  <div className="d-flex justify-content-between align-items-center mb-4">
+                    <h4 className="mb-0">
                     <FontAwesomeIcon
                       icon={faCalendarAlt}
                       className="me-2 text-primary"
                     />
-                    Starting Date
+                      Start Date Information
                   </h4>
 
-                  <div className="card">
-                    <div className="card-body">
-                      <p className="text-muted">
-                        Starting date information will be available here.
+                    {startDateData && startDateData.savedAt && (
+                      <span className="badge bg-info">
+                        <FontAwesomeIcon icon={faClock} className="me-1" />
+                        Last Updated:{" "}
+                        {new Date(startDateData.savedAt).toLocaleDateString(
+                          "en-US",
+                          { month: "short", day: "numeric", year: "numeric" }
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {startDateLoading ? (
+                    <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: "12px" }}>
+                      <div className="card-body p-5 text-center">
+                        <div className="spinner-border text-primary mb-3" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="text-muted mb-0">Loading start date information...</p>
+                      </div>
+                    </div>
+                  ) : startDateData && startDateData.officialStartDate ? (
+                    <>
+                      {/* Main Start Date Information Card */}
+                      <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: "12px", overflow: "hidden" }}>
+                        <div className="card-header bg-success text-white py-3">
+                          <h5 className="mb-0 d-flex align-items-center">
+                            <FontAwesomeIcon icon={faRocket} className="me-2" />
+                            Your First Day Details
+                          </h5>
+                        </div>
+                        <div className="card-body p-4">
+                          <div className="row g-4">
+                            {/* Official Start Date */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(25, 135, 84, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <FontAwesomeIcon
+                                    icon={faCalendarAlt}
+                                    className="text-success"
+                                    size="lg"
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Official Start Date
+                                  </label>
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                    {startDateData.officialStartDate ? (
+                                      new Date(startDateData.officialStartDate).toLocaleDateString("en-US", {
+                                        weekday: "long",
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                      })
+                                    ) : (
+                                      <span className="text-muted">Not specified</span>
+                                    )}
                       </p>
                     </div>
                   </div>
+                </div>
+
+                            {/* Department */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(13, 110, 253, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <FontAwesomeIcon
+                                    icon={faBuilding}
+                                    className="text-primary"
+                                    size="lg"
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Department
+                                  </label>
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                    {startDateData.department || <span className="text-muted">Not specified</span>}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Position */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(255, 193, 7, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <FontAwesomeIcon
+                                    icon={faBriefcase}
+                                    className="text-warning"
+                                    size="lg"
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Position
+                                  </label>
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                    {startDateData.position || <span className="text-muted">Not specified</span>}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Employment Type */}
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(108, 117, 125, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <FontAwesomeIcon
+                                    icon={faUserTie}
+                                    className="text-secondary"
+                                    size="lg"
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Employment Type
+                                  </label>
+                                  {startDateData.employmentType ? (
+                                    <span
+                                      className={`badge ${
+                                        startDateData.employmentType === "Full-time"
+                                          ? "bg-success"
+                                          : startDateData.employmentType === "Part-time"
+                                          ? "bg-info"
+                                          : "bg-warning"
+                                      }`}
+                                      style={{ fontSize: "0.9rem", padding: "0.5rem 1rem" }}
+                                    >
+                                      {startDateData.employmentType}
+                                    </span>
+                                  ) : (
+                                    <p className="mb-0 text-muted">Not specified</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Reporting Manager */}
+                            {startDateData.reportingManager && (
+                              <div className="col-md-6 col-lg-4">
+                                <div className="d-flex align-items-start">
+                                  <div 
+                                    className="d-flex align-items-center justify-content-center me-3"
+                                    style={{
+                                      width: "48px",
+                                      height: "48px",
+                                      borderRadius: "12px",
+                                      backgroundColor: "rgba(220, 53, 69, 0.1)",
+                                      flexShrink: 0
+                                    }}
+                                  >
+                                    <FontAwesomeIcon
+                                      icon={faUser}
+                                      className="text-danger"
+                                      size="lg"
+                                    />
+                                  </div>
+                                  <div className="flex-grow-1">
+                                    <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                      Reporting Manager
+                                    </label>
+                                    <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                      {startDateData.reportingManager}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Work Schedule */}
+                            {startDateData.workSchedule && (
+                              <div className="col-md-6 col-lg-4">
+                                <div className="d-flex align-items-start">
+                                  <div 
+                                    className="d-flex align-items-center justify-content-center me-3"
+                                    style={{
+                                      width: "48px",
+                                      height: "48px",
+                                      borderRadius: "12px",
+                                      backgroundColor: "rgba(111, 66, 193, 0.1)",
+                                      flexShrink: 0
+                                    }}
+                                  >
+                                    <FontAwesomeIcon
+                                      icon={faClock}
+                                      className="text-primary"
+                                      size="lg"
+                                    />
+                                  </div>
+                                  <div className="flex-grow-1">
+                                    <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                      Work Schedule
+                                    </label>
+                                    <p className="mb-0 fw-semibold" style={{ fontSize: "1.1rem", color: "#212529" }}>
+                                      {startDateData.workSchedule}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Additional Instructions */}
+                          {startDateData.additionalInstructions && (
+                            <div className="mt-4 pt-4 border-top">
+                              <div className="d-flex align-items-start">
+                                <div 
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{
+                                    width: "48px",
+                                    height: "48px",
+                                    borderRadius: "12px",
+                                    backgroundColor: "rgba(255, 193, 7, 0.1)",
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <FontAwesomeIcon
+                                    icon={faInfoCircle}
+                                    className="text-warning"
+                                    size="lg"
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-2 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    First Day Instructions
+                                  </label>
+                                  <div 
+                                    className="bg-light p-3 rounded"
+                                    style={{ 
+                                      whiteSpace: "pre-wrap",
+                                      lineHeight: "1.6",
+                                      color: "#495057"
+                                    }}
+                                  >
+                                    {startDateData.additionalInstructions}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="card border-0 shadow-sm" style={{ borderRadius: "12px" }}>
+                      <div className="card-body p-5 text-center">
+                        <FontAwesomeIcon
+                          icon={faCalendarAlt}
+                          size="3x"
+                          className="text-muted mb-3"
+                        />
+                        <h5 className="text-muted mb-2">No Start Date Information Available</h5>
+                        <p className="text-muted mb-0">
+                          Your start date information will appear here once HR has set it. Please check back later.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
