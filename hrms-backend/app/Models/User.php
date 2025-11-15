@@ -16,6 +16,8 @@ class User extends Authenticatable
          'role_id', 'email', 'password', 'first_name', 'last_name', 'is_active'
     ];
 
+    protected $appends = ['name'];
+
     public function role()
     {
         return $this->belongsTo(Role::class);

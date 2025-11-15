@@ -6,6 +6,8 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import './responsive.css'; // Import responsive CSS
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import useSessionTimeout from './hooks/useSessionTimeout';
+import SessionWarningModal from './components/SessionWarningModal';
 // Lazy load components for better performance
 const Login = lazy(() => import('./pages/Login'));
 const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
@@ -47,6 +49,7 @@ const PerformanceMonitor = lazy(() => import('./components/PerformanceMonitor'))
 const ReportGeneration = lazy(() => import('./components/HrAssistant/ReportGeneration/ReportGeneration'));
 const PredictiveTurnoverAnalytics = lazy(() => import('./components/HrAssistant/PredictiveTurnoverAnalytics/PredictiveTurnoverAnalytics'));
 const OTManagement = lazy(() => import('./components/HrAssistant/OTManagement/OTManagement'));
+const BenefitsManagement = lazy(() => import('./components/HrAssistant/BenefitsManagement'));
 
 // Loading component
 const LoadingSpinner = () => (
@@ -58,12 +61,26 @@ const LoadingSpinner = () => (
 );
 
 function App() {
+  // Session timeout hook - 30 minutes inactivity timeout, 5 minutes warning
+  const { showWarning, timeRemaining, extendSession } = useSessionTimeout(30, 5);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
   }, []);
+
+  
+  const handleLogout = () => {
+    // Clear auth data and redirect
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
+    localStorage.removeItem('lastActivity');
+    delete axios.defaults.headers.common['Authorization'];
+    window.location.href = '/login';
+  };
 
   return (
     <Router>
@@ -80,6 +97,14 @@ function App() {
         pauseOnHover
         theme="colored"
         style={{ zIndex: 9999 }}
+      />
+
+      {/* Session Warning Modal */}
+      <SessionWarningModal
+        show={showWarning}
+        timeRemaining={timeRemaining}
+        onExtend={extendSession}
+        onLogout={handleLogout}
       />
       
       {/* Performance Monitor - disabled by default */}
@@ -125,6 +150,7 @@ function App() {
           <Route path="attendance" element={<AttendanceDashboard />} /> 
           <Route path="attendance-edit-requests" element={<AttendanceEditRequests />} />
           <Route path="payroll" element={<PayrollDashboard />} />
+          <Route path="benefits-management" element={<BenefitsManagement />} />
           <Route path="ot-management" element={<OTManagement />} />
           <Route path="report-generation" element={<ReportGeneration />} />
           <Route path="predictive-turnover-analytics" element={<PredictiveTurnoverAnalytics />} />

@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\DocumentFollowUpController;
 use App\Http\Controllers\Api\PredictiveAnalyticsController;
 use App\Http\Controllers\Api\BenefitsEnrollmentController;
+use App\Http\Controllers\Api\BenefitClaimController;
 use App\Http\Controllers\Api\ProfileCreationController;
 
 Route::middleware(['auth:sanctum', 'role:HR Assistant,HR Staff'])->group(function () {
@@ -297,6 +298,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/my-summary', [LeaveRequestController::class, 'getLeaveSummary']); // Employee leave summary with automatic payment status
     Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // Check if employee can submit new request
     Route::get('/leave-requests/{id}/download-pdf', [LeaveRequestController::class, 'downloadPdf']); // Download leave request as PDF
+
+    
+    // Benefit Claims - Employee routes
+    Route::get('/benefit-claims/my-claims', [BenefitClaimController::class, 'myClaims']); // Employee's own claims
+    Route::post('/benefit-claims', [BenefitClaimController::class, 'store']); // Employee file claim
 });
 
 //Cash Advances
@@ -308,6 +314,15 @@ Route::get('/cash-advances/{id}', [CashAdvanceController::class, 'show']); // vi
 Route::put('/cash-advances/{id}/approve', [CashAdvanceController::class, 'approve']); // approve
 Route::put('/cash-advances/{id}/reject', [CashAdvanceController::class, 'reject']); // reject
 Route::put('/cash-advances/{id}/money-received-status', [CashAdvanceController::class, 'updateMoneyReceivedStatus']); // update money received status
+
+//Benefit Claims (Public routes for testing - should be moved to authenticated routes in production)
+// NOTE: This route is commented out because it conflicts with the authenticated route above
+// Route::post('/benefit-claims', [BenefitClaimController::class, 'store']); // employee - file claim
+Route::get('/benefit-claims', [BenefitClaimController::class, 'index']); // hr assistant - get all claims
+Route::get('/benefit-claims/{id}', [BenefitClaimController::class, 'show']); // view specific claim
+Route::put('/benefit-claims/{id}/approve', [BenefitClaimController::class, 'approve']); // hr approve
+Route::put('/benefit-claims/{id}/reject', [BenefitClaimController::class, 'reject']); // hr reject
+Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // download supporting document
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
@@ -335,6 +350,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
     Route::get('/notifications/stream', [NotificationStreamController::class, 'stream']);
+
+        // Benefit Claims - HR routes
+    Route::middleware(['role:HR Assistant,HR Staff,HR Admin'])->group(function () {
+        Route::get('/benefit-claims', [BenefitClaimController::class, 'index']); // Get all claims
+        Route::get('/benefit-claims/{id}', [BenefitClaimController::class, 'show']); // View specific claim
+        Route::put('/benefit-claims/{id}/approve', [BenefitClaimController::class, 'approve']); // Approve claim
+        Route::put('/benefit-claims/{id}/reject', [BenefitClaimController::class, 'reject']); // Reject claim
+        Route::put('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']); // Update claim status
+        Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // Download document
+        Route::put('/employees/{employeeId}/benefits/terminate', [BenefitClaimController::class, 'terminateEnrollment']); // Terminate enrollment
+        Route::get('/benefit-contributions/report', [BenefitClaimController::class, 'generateContributionReport']); // Generate report
+    });
+
 
 
 });

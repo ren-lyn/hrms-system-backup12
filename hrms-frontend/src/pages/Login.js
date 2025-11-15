@@ -328,6 +328,10 @@ const Login = () => {
       localStorage.setItem('token', access_token);
       localStorage.setItem('user', JSON.stringify(normalizedUser));
       localStorage.setItem('role', roleName);
+      
+      // Initialize session activity timestamp
+      localStorage.setItem('lastActivity', Date.now().toString());
+
 
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
