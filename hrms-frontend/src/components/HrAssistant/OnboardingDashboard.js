@@ -598,6 +598,14 @@ const calculateAgeFromBirthdate = (birthDateValue) => {
 };
 
 const OnboardingDashboard = () => {
+  // Department-Position mapping from JobPostings.js
+  const departmentPositions = {
+    "HR Department": ["HR Staff", "HR Assistant"],
+    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker"],
+    "Logistics Department": ["Driver", "Helper", "Admin Staff", "Maintenance Foreman", "Maintenance Assistant"],
+    "Accounting Department": ["Accounting Staff", "Accounting Assistant"]
+  };
+
   const [activeTab, setActiveTab] = useState("Overview");
 
   const [applicants, setApplicants] = useState([]);
@@ -704,6 +712,31 @@ const OnboardingDashboard = () => {
 
   const [documentSearchTerm, setDocumentSearchTerm] = useState("");
 
+  // Search and filter state for all tabs
+  const [overviewSearchTerm, setOverviewSearchTerm] = useState("");
+  const [overviewDepartmentFilter, setOverviewDepartmentFilter] = useState("All");
+  const [overviewPositionFilter, setOverviewPositionFilter] = useState("All");
+
+  const [pendingSearchTerm, setPendingSearchTerm] = useState("");
+  const [pendingDepartmentFilter, setPendingDepartmentFilter] = useState("All");
+  const [pendingPositionFilter, setPendingPositionFilter] = useState("All");
+
+  const [shortlistedSearchTerm, setShortlistedSearchTerm] = useState("");
+  const [shortlistedDepartmentFilter, setShortlistedDepartmentFilter] = useState("All");
+  const [shortlistedPositionFilter, setShortlistedPositionFilter] = useState("All");
+
+  const [interviewSearchTerm, setInterviewSearchTerm] = useState("");
+  const [interviewDepartmentFilter, setInterviewDepartmentFilter] = useState("All");
+  const [interviewPositionFilter, setInterviewPositionFilter] = useState("All");
+
+  const [offeredSearchTerm, setOfferedSearchTerm] = useState("");
+  const [offeredDepartmentFilter, setOfferedDepartmentFilter] = useState("All");
+  const [offeredPositionFilter, setOfferedPositionFilter] = useState("All");
+
+  const [acceptedOfferSearchTerm, setAcceptedOfferSearchTerm] = useState("");
+  const [acceptedOfferDepartmentFilter, setAcceptedOfferDepartmentFilter] = useState("All");
+  const [acceptedOfferPositionFilter, setAcceptedOfferPositionFilter] = useState("All");
+
   const [benefitsSearchTerm, setBenefitsSearchTerm] = useState("");
   const [benefitsStatusFilter, setBenefitsStatusFilter] = useState("All");
   const [benefitsDepartmentFilter, setBenefitsDepartmentFilter] =
@@ -742,6 +775,36 @@ const OnboardingDashboard = () => {
       positions: ["All", ...Array.from(positionSet).sort()],
     };
   }, [applicants]);
+
+  // Filter options for all tabs - using predefined departments and positions from JobPostings
+  const getAllFilterOptions = useMemo(() => {
+    const departments = ["All", ...Object.keys(departmentPositions).sort()];
+    
+    // Get all unique positions from all departments
+    const allPositions = new Set();
+    Object.values(departmentPositions).forEach(positions => {
+      positions.forEach(pos => allPositions.add(pos));
+    });
+    const positions = ["All", ...Array.from(allPositions).sort()];
+
+    return {
+      departments,
+      positions,
+    };
+  }, []);
+
+  // Get positions for selected department
+  const getPositionsForDepartment = useCallback((department) => {
+    if (!department || department === "All") {
+      // Return all positions if no department selected
+      const allPositions = new Set();
+      Object.values(departmentPositions).forEach(positions => {
+        positions.forEach(pos => allPositions.add(pos));
+      });
+      return ["All", ...Array.from(allPositions).sort()];
+    }
+    return ["All", ...(departmentPositions[department] || []).sort()];
+  }, []);
   const [showBenefitsModal, setShowBenefitsModal] = useState(false);
   const [benefitsModalLoading, setBenefitsModalLoading] = useState(false);
   const [benefitsSaving, setBenefitsSaving] = useState(false);
@@ -1841,66 +1904,160 @@ const closeDocumentModal = useCallback(() => {
   // Filter applicants based on active tab
 
   const getFilteredApplicants = () => {
-    if (activeTab === "Overview") {
-      return applicants;
-    }
+    let filtered = applicants;
 
-    console.log(
-      "🔍 [OnboardingDashboard] Filtering applicants for tab:",
-      activeTab
-    );
-
-    console.log(
-      "🔍 [OnboardingDashboard] Total applicants before filtering:",
-      applicants.length
-    );
-
-    const filtered = applicants.filter((applicant) => {
-      const status = applicant.status;
-
+    // First filter by tab status
+    if (activeTab !== "Overview") {
       console.log(
-        "🔍 [OnboardingDashboard] Checking applicant status:",
-        status,
-        "for tab:",
+        "🔍 [OnboardingDashboard] Filtering applicants for tab:",
         activeTab
       );
 
-      switch (activeTab) {
-        case "Pending":
-          return status === "Pending";
+      console.log(
+        "🔍 [OnboardingDashboard] Total applicants before filtering:",
+        applicants.length
+      );
 
-        case "Shortlisted":
-          return status === "ShortListed" || status === "Shortlisted";
+      filtered = applicants.filter((applicant) => {
+        const status = applicant.status;
 
-        case "Interview":
-          return status === "On going Interview" || status === "Interview";
+        console.log(
+          "🔍 [OnboardingDashboard] Checking applicant status:",
+          status,
+          "for tab:",
+          activeTab
+        );
 
-        case "Offered":
-          return status === "Offered";
+        switch (activeTab) {
+          case "Pending":
+            return status === "Pending";
 
-        case "Accepted Offer":
-          return status === "Accepted" || status === "Offer Accepted";
+          case "Shortlisted":
+            return status === "ShortListed" || status === "Shortlisted";
 
-        case "Onboarding":
-          return (
-            status === "Onboarding" ||
-            status === "Document Submission" ||
-            status === "Orientation Schedule" ||
-            status === "Starting Date" ||
-            status === "Benefits Enroll" ||
-            status === "Profile Creation" ||
-            status === "Hired"
-          );
+          case "Interview":
+            return status === "On going Interview" || status === "Interview";
 
-        case "Hired":
-          return status === "Hired";
+          case "Offered":
+            return status === "Offered";
 
-        case "Rejected":
-          return status === "Rejected";
+          case "Accepted Offer":
+            return status === "Accepted" || status === "Offer Accepted";
 
-        default:
-          return true;
+          case "Onboarding":
+            return (
+              status === "Onboarding" ||
+              status === "Document Submission" ||
+              status === "Orientation Schedule" ||
+              status === "Starting Date" ||
+              status === "Benefits Enroll" ||
+              status === "Profile Creation" ||
+              status === "Hired"
+            );
+
+          case "Hired":
+            return status === "Hired";
+
+          case "Rejected":
+            return status === "Rejected";
+
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply search and filter based on active tab
+    let searchTerm = "";
+    let departmentFilter = "All";
+    let positionFilter = "All";
+
+    switch (activeTab) {
+      case "Overview":
+        searchTerm = overviewSearchTerm;
+        departmentFilter = overviewDepartmentFilter;
+        positionFilter = overviewPositionFilter;
+        break;
+      case "Pending":
+        searchTerm = pendingSearchTerm;
+        departmentFilter = pendingDepartmentFilter;
+        positionFilter = pendingPositionFilter;
+        break;
+      case "Shortlisted":
+        searchTerm = shortlistedSearchTerm;
+        departmentFilter = shortlistedDepartmentFilter;
+        positionFilter = shortlistedPositionFilter;
+        break;
+      case "Interview":
+        searchTerm = interviewSearchTerm;
+        departmentFilter = interviewDepartmentFilter;
+        positionFilter = interviewPositionFilter;
+        break;
+      case "Offered":
+        searchTerm = offeredSearchTerm;
+        departmentFilter = offeredDepartmentFilter;
+        positionFilter = offeredPositionFilter;
+        break;
+      case "Accepted Offer":
+        searchTerm = acceptedOfferSearchTerm;
+        departmentFilter = acceptedOfferDepartmentFilter;
+        positionFilter = acceptedOfferPositionFilter;
+        break;
+    }
+
+    // Apply search and filters
+    filtered = filtered.filter((applicant) => {
+      // Search filter
+      const searchLower = searchTerm.toLowerCase().trim();
+      if (searchLower) {
+        const name = `${applicant.applicant?.first_name || ""} ${
+          applicant.applicant?.last_name || ""
+        }`.trim().toLowerCase();
+        const email = (applicant.applicant?.email || "").toLowerCase();
+        const position = (
+          applicant.jobPosting?.position ||
+          applicant.job_posting?.position ||
+          ""
+        ).toLowerCase();
+        const department = (
+          applicant.jobPosting?.department ||
+          applicant.job_posting?.department ||
+          ""
+        ).toLowerCase();
+
+        if (
+          !name.includes(searchLower) &&
+          !email.includes(searchLower) &&
+          !position.includes(searchLower) &&
+          !department.includes(searchLower)
+        ) {
+          return false;
+        }
       }
+
+      // Department filter
+      if (departmentFilter !== "All") {
+        const applicantDepartment =
+          applicant.jobPosting?.department ||
+          applicant.job_posting?.department ||
+          "";
+        if (applicantDepartment !== departmentFilter) {
+          return false;
+        }
+      }
+
+      // Position filter
+      if (positionFilter !== "All") {
+        const applicantPosition =
+          applicant.jobPosting?.position ||
+          applicant.job_posting?.position ||
+          "";
+        if (applicantPosition !== positionFilter) {
+          return false;
+        }
+      }
+
+      return true;
     });
 
     console.log(
@@ -7203,28 +7360,193 @@ const closeDocumentModal = useCallback(() => {
               </div>
             )}
 
-            {activeTab !== "Onboarding" && filteredApplicants.length === 0 ? (
-              <div className="text-center py-5">
-                <FontAwesomeIcon
-                  icon={faUsers}
-                  size="3x"
-                  className="text-muted mb-3"
-                />
+            {activeTab !== "Onboarding" && (
+              <>
+                {/* Search and Filter Bar */}
+                <div className="card border-0 shadow-sm mb-3">
+                  <div className="card-body p-3">
+                    <div className="d-flex flex-wrap align-items-center gap-3">
+                      {/* Search Bar */}
+                      <div className="flex-grow-1" style={{ minWidth: "250px" }}>
+                        <div className="input-group">
+                          <span className="input-group-text bg-white">
+                            <FontAwesomeIcon
+                              icon={faSearch}
+                              className="text-muted"
+                            />
+                          </span>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="Search by name, email, position, or department..."
+                            value={
+                              activeTab === "Overview"
+                                ? overviewSearchTerm
+                                : activeTab === "Pending"
+                                ? pendingSearchTerm
+                                : activeTab === "Shortlisted"
+                                ? shortlistedSearchTerm
+                                : activeTab === "Interview"
+                                ? interviewSearchTerm
+                                : activeTab === "Offered"
+                                ? offeredSearchTerm
+                                : activeTab === "Accepted Offer"
+                                ? acceptedOfferSearchTerm
+                                : ""
+                            }
+                            onChange={(e) => {
+                              if (activeTab === "Overview") {
+                                setOverviewSearchTerm(e.target.value);
+                              } else if (activeTab === "Pending") {
+                                setPendingSearchTerm(e.target.value);
+                              } else if (activeTab === "Shortlisted") {
+                                setShortlistedSearchTerm(e.target.value);
+                              } else if (activeTab === "Interview") {
+                                setInterviewSearchTerm(e.target.value);
+                              } else if (activeTab === "Offered") {
+                                setOfferedSearchTerm(e.target.value);
+                              } else if (activeTab === "Accepted Offer") {
+                                setAcceptedOfferSearchTerm(e.target.value);
+                              }
+                            }}
+                            style={{ borderLeft: "none" }}
+                          />
+                        </div>
+                      </div>
 
-                <h5 className="text-muted mb-2">No Applications Found</h5>
+                      {/* Department Filter */}
+                      <div style={{ minWidth: "180px" }}>
+                        <select
+                          className="form-select"
+                          value={
+                            activeTab === "Overview"
+                              ? overviewDepartmentFilter
+                              : activeTab === "Pending"
+                              ? pendingDepartmentFilter
+                              : activeTab === "Shortlisted"
+                              ? shortlistedDepartmentFilter
+                              : activeTab === "Interview"
+                              ? interviewDepartmentFilter
+                              : activeTab === "Offered"
+                              ? offeredDepartmentFilter
+                              : activeTab === "Accepted Offer"
+                              ? acceptedOfferDepartmentFilter
+                              : "All"
+                          }
+                          onChange={(e) => {
+                            const newDept = e.target.value;
+                            if (activeTab === "Overview") {
+                              setOverviewDepartmentFilter(newDept);
+                              setOverviewPositionFilter("All"); // Reset position when department changes
+                            } else if (activeTab === "Pending") {
+                              setPendingDepartmentFilter(newDept);
+                              setPendingPositionFilter("All");
+                            } else if (activeTab === "Shortlisted") {
+                              setShortlistedDepartmentFilter(newDept);
+                              setShortlistedPositionFilter("All");
+                            } else if (activeTab === "Interview") {
+                              setInterviewDepartmentFilter(newDept);
+                              setInterviewPositionFilter("All");
+                            } else if (activeTab === "Offered") {
+                              setOfferedDepartmentFilter(newDept);
+                              setOfferedPositionFilter("All");
+                            } else if (activeTab === "Accepted Offer") {
+                              setAcceptedOfferDepartmentFilter(newDept);
+                              setAcceptedOfferPositionFilter("All");
+                            }
+                          }}
+                        >
+                          {getAllFilterOptions.departments.map((dept) => (
+                            <option key={dept} value={dept}>
+                              {dept}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                <p className="text-muted mb-3">
-                  {activeTab === "Overview"
-                    ? "No applications available at the moment."
-                    : `No ${activeTab.toLowerCase()} applications found.`}
-                </p>
-              </div>
-            ) : (
-              activeTab !== "Onboarding" && (
-                <div
-                  className="onboarding-list"
-                  style={{ background: "transparent" }}
-                >
+                      {/* Position Filter */}
+                      <div style={{ minWidth: "180px" }}>
+                        <select
+                          className="form-select"
+                          value={
+                            activeTab === "Overview"
+                              ? overviewPositionFilter
+                              : activeTab === "Pending"
+                              ? pendingPositionFilter
+                              : activeTab === "Shortlisted"
+                              ? shortlistedPositionFilter
+                              : activeTab === "Interview"
+                              ? interviewPositionFilter
+                              : activeTab === "Offered"
+                              ? offeredPositionFilter
+                              : activeTab === "Accepted Offer"
+                              ? acceptedOfferPositionFilter
+                              : "All"
+                          }
+                          onChange={(e) => {
+                            if (activeTab === "Overview") {
+                              setOverviewPositionFilter(e.target.value);
+                            } else if (activeTab === "Pending") {
+                              setPendingPositionFilter(e.target.value);
+                            } else if (activeTab === "Shortlisted") {
+                              setShortlistedPositionFilter(e.target.value);
+                            } else if (activeTab === "Interview") {
+                              setInterviewPositionFilter(e.target.value);
+                            } else if (activeTab === "Offered") {
+                              setOfferedPositionFilter(e.target.value);
+                            } else if (activeTab === "Accepted Offer") {
+                              setAcceptedOfferPositionFilter(e.target.value);
+                            }
+                          }}
+                        >
+                          {(() => {
+                            const selectedDept = 
+                              activeTab === "Overview"
+                                ? overviewDepartmentFilter
+                                : activeTab === "Pending"
+                                ? pendingDepartmentFilter
+                                : activeTab === "Shortlisted"
+                                ? shortlistedDepartmentFilter
+                                : activeTab === "Interview"
+                                ? interviewDepartmentFilter
+                                : activeTab === "Offered"
+                                ? offeredDepartmentFilter
+                                : activeTab === "Accepted Offer"
+                                ? acceptedOfferDepartmentFilter
+                                : "All";
+                            return getPositionsForDepartment(selectedDept).map((pos) => (
+                              <option key={pos} value={pos}>
+                                {pos}
+                              </option>
+                            ));
+                          })()}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredApplicants.length === 0 ? (
+                  <div className="text-center py-5">
+                    <FontAwesomeIcon
+                      icon={faUsers}
+                      size="3x"
+                      className="text-muted mb-3"
+                    />
+
+                    <h5 className="text-muted mb-2">No Applications Found</h5>
+
+                    <p className="text-muted mb-3">
+                      {activeTab === "Overview"
+                        ? "No applications available at the moment."
+                        : `No ${activeTab.toLowerCase()} applications found.`}
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    className="onboarding-list"
+                    style={{ background: "transparent" }}
+                  >
                   {activeTab === "Shortlisted" && (
                     <div
                       className="list-header d-flex align-items-center mb-2"
@@ -7827,7 +8149,8 @@ const closeDocumentModal = useCallback(() => {
                     </div>
                   ))}
                 </div>
-              )
+                )}
+              </>
             )}
           </div>
         </Col>
