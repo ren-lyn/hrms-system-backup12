@@ -455,6 +455,7 @@ class ReportController extends Controller
                     'period_start' => $payroll->period_start,
                     'period_end' => $payroll->period_end,
                     'basic_salary' => (float) $payroll->basic_salary,
+                    'overtime_pay' => (float) $payroll->overtime_pay,
                     'allowances' => (float) $payroll->allowances,
                     'total_deductions' => (float) $payroll->total_deductions,
                     'net_pay' => (float) $payroll->net_pay,

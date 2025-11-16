@@ -34,6 +34,12 @@ export default function ReportGeneration() {
   const [attendanceStatusTotals, setAttendanceStatusTotals] = useState({});
   const [attendanceInsights, setAttendanceInsights] = useState([]);
   const [attendanceAutoAdjusted, setAttendanceAutoAdjusted] = useState(false);
+  // Employee attendance detail modal state
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailEmployee, setDetailEmployee] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRecords, setDetailRecords] = useState([]);
+  const [detailAnalytics, setDetailAnalytics] = useState(null);
   const [employeeData, setEmployeeData] = useState([]);
   const [employeeAnalytics, setEmployeeAnalytics] = useState(null);
   const [leaveData, setLeaveData] = useState([]);
@@ -50,6 +56,92 @@ export default function ReportGeneration() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+  };
+
+  const buildEmployeeAttendanceAnalytics = (records = []) => {
+    const parseHours = (value) => {
+      if (value === null || value === undefined) return null;
+      const n = typeof value === 'number' ? value : parseFloat(value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const totals = {
+      count: 0,
+      present: 0,
+      late: 0,
+      absent: 0,
+      onLeave: 0,
+      overtime: 0,
+      undertime: 0,
+      totalHours: 0,
+      avgHours: 0,
+      firstDate: null,
+      lastDate: null,
+      punctualityRate: 0,
+    };
+    if (!Array.isArray(records) || records.length === 0) {
+      return totals;
+    }
+    records.forEach((r) => {
+      totals.count += 1;
+      const status = (r.status || '').toLowerCase();
+      if (status.includes('present')) totals.present += 1;
+      // Count any variant beginning with "late" (e.g., "Late", "Late (Overtime)", "Late (Undertime)")
+      if (status.startsWith('late')) totals.late += 1;
+      if (status === 'absent') totals.absent += 1;
+      if (status === 'on leave') totals.onLeave += 1;
+      if (status === 'overtime') totals.overtime += 1;
+      if (status === 'undertime') totals.undertime += 1;
+      const hours = parseHours(r.total_hours);
+      if (hours !== null) totals.totalHours += hours;
+      if (r.date) {
+        const d = new Date(r.date);
+        if (!totals.firstDate || d < totals.firstDate) totals.firstDate = d;
+        if (!totals.lastDate || d > totals.lastDate) totals.lastDate = d;
+      }
+    });
+    totals.avgHours = totals.count > 0 ? Number(totals.totalHours / totals.count) : 0;
+    const worked = totals.present + totals.late + totals.overtime + totals.undertime;
+    totals.punctualityRate = worked > 0 ? Number(((totals.present + totals.overtime) / worked) * 100) : 0;
+    return totals;
+  };
+
+  const openEmployeeAttendanceDetail = async (employee) => {
+    if (!employee?.id) return;
+    setDetailEmployee(employee);
+    setDetailModalOpen(true);
+    setDetailLoading(true);
+    setDetailRecords([]);
+    setDetailAnalytics(null);
+    try {
+      const params = {
+        employee_id: employee.id,
+        date_from: dateRange.startDate || undefined,
+        date_to: dateRange.endDate || undefined,
+        per_page: 1000,
+        sort_by: 'date',
+        sort_order: 'asc',
+      };
+      const response = await axios.get('http://localhost:8000/api/attendance', {
+        params,
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      const payload = response.data?.data;
+      let items = [];
+      if (Array.isArray(payload)) {
+        items = payload;
+      } else if (payload?.data && Array.isArray(payload.data)) {
+        items = payload.data;
+      } else if (Array.isArray(response.data)) {
+        items = response.data;
+      }
+      setDetailRecords(items);
+      setDetailAnalytics(buildEmployeeAttendanceAnalytics(items));
+    } catch (err) {
+      console.error('Failed to load employee attendance detail', err);
+      toast.error('Failed to load employee attendance');
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const formatDate = (value) => {
@@ -317,21 +409,21 @@ export default function ReportGeneration() {
     const totals = payrollData.reduce(
       (acc, payroll) => {
         const basic = Number(payroll.basic_salary ?? 0);
-        const allowances = Number(payroll.allowances ?? 0);
+        const overtime = Number(payroll.overtime_pay ?? 0);
         const deductions = Number(payroll.total_deductions ?? 0);
         const net = Number(payroll.net_pay ?? 0);
 
         acc.basic += basic;
-        acc.allowances += allowances;
+        acc.overtime += overtime;
         acc.deductions += deductions;
         acc.net += net;
 
         return acc;
       },
-      { basic: 0, allowances: 0, deductions: 0, net: 0 }
+      { basic: 0, overtime: 0, deductions: 0, net: 0 }
     );
 
-    const gross = totals.basic + totals.allowances;
+    const gross = totals.basic + totals.overtime;
     const netDistribution = [
       {
         label: 'Net Pay',
@@ -346,7 +438,7 @@ export default function ReportGeneration() {
     ];
 
     const deductionRate = gross > 0 ? (totals.deductions / gross) * 100 : 0;
-    const allowanceRate = gross > 0 ? (totals.allowances / gross) * 100 : 0;
+    const overtimeRate = gross > 0 ? (totals.overtime / gross) * 100 : 0;
 
     return {
       totals: {
@@ -355,7 +447,7 @@ export default function ReportGeneration() {
       },
       netDistribution,
       deductionRate,
-      allowanceRate,
+      overtimeRate,
     };
   }, [payrollData]);
 
@@ -397,7 +489,7 @@ export default function ReportGeneration() {
       return [];
     }
 
-    const { totals, deductionRate, allowanceRate } = payrollAggregates;
+    const { totals, deductionRate, overtimeRate } = payrollAggregates;
     const insights = [];
 
     if (deductionRate > 20) {
@@ -414,13 +506,13 @@ export default function ReportGeneration() {
       );
     }
 
-    if (allowanceRate > 25) {
+    if (overtimeRate > 25) {
       insights.push(
-        `Allowances represent ${allowanceRate.toFixed(1)}% of gross pay. Ensure allowance policies are aligned with budgeting goals.`
+        `Overtime represents ${overtimeRate.toFixed(1)}% of gross pay. Review staffing levels or workload distribution.`
       );
-    } else if (allowanceRate < 10) {
+    } else if (overtimeRate < 5) {
       insights.push(
-        `Allowances are modest at ${allowanceRate.toFixed(1)}% of gross pay. Consider whether additional incentives are needed for retention.`
+        `Overtime is modest at ${overtimeRate.toFixed(1)}% of gross pay.`
       );
     }
 
@@ -432,7 +524,7 @@ export default function ReportGeneration() {
     }
 
     if (insights.length === 0) {
-      insights.push('Payroll metrics are stable. Continue monitoring for variance in deductions or allowances.');
+      insights.push('Payroll metrics are stable. Continue monitoring overtime and deductions for anomalies.');
     }
 
     return insights;
@@ -2031,7 +2123,7 @@ export default function ReportGeneration() {
           className="text-end"
           style={{ padding: '1rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
         >
-          {formatCurrency(payroll.allowances)}
+          {formatCurrency(payroll.overtime_pay)}
         </td>
         <td
           className="text-end"
@@ -2079,7 +2171,12 @@ export default function ReportGeneration() {
           : '—';
 
       return (
-        <tr key={record.id || `${employee.employee_id}-${record.date}-${index}`}>
+        <tr
+          key={record.id || `${employee.employee_id}-${record.date}-${index}`}
+          style={{ cursor: 'pointer' }}
+          title="View detailed attendance for this employee"
+          onClick={() => openEmployeeAttendanceDetail(employee)}
+        >
           <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
           <td style={{ padding: '1rem' }}>
             <div className="fw-semibold text-dark">{employeeName}</div>
@@ -3765,6 +3862,124 @@ export default function ReportGeneration() {
         </Card>
       )}
 
+      {reportType === 'payroll' && payrollData && payrollData.length > 0 && payrollAggregates && (
+        <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
+          <Card.Header
+            className="text-white"
+            style={{
+              background: 'linear-gradient(135deg, #3c8dbc 0%, #0fb9b1 100%)',
+              borderRadius: '12px 12px 0 0',
+              border: 'none',
+              padding: '1.25rem',
+            }}
+          >
+            <h5 className="mb-0 d-flex align-items-center">
+              <FaBriefcase className="me-2" />
+              Payroll Overview
+            </h5>
+          </Card.Header>
+          <Card.Body>
+            <Row className="g-3 mb-4">
+              {payrollSummaryMetrics.map((metric) => (
+                <Col key={metric.label} xs={12} md={6} lg={3}>
+                  <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
+                    <Card.Body className="d-flex flex-column">
+                      <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
+                      <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
+                      <span className="small text-muted mt-auto">Updated from the latest payroll preview.</span>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+
+            <Row className="g-4">
+              <Col xs={12} lg={5}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Net vs Deductions</h6>
+                    <div className="d-flex flex-column align-items-stretch">
+                          <div className="d-flex justify-content-center">
+                            <div style={{ height: '200px', width: '200px' }}>
+                              <canvas ref={payrollDistributionChartRef}></canvas>
+                            </div>
+                          </div>
+                      <div className="mt-3">
+                        {payrollAggregates.netDistribution.map((item, idx) => (
+                          <div key={`payroll-dist-top-${idx}`} className="d-flex align-items-center mb-2">
+                            <span
+                              style={{
+                                width: '12px',
+                                height: '12px',
+                                borderRadius: '3px',
+                                backgroundColor: item.color,
+                                marginRight: '8px',
+                                display: 'inline-block',
+                              }}
+                            ></span>
+                            <span className="text-muted small flex-grow-1">{item.label}</span>
+                            <span className="fw-semibold small" style={{ color: '#1f2937' }}>
+                              {formatCurrency(item.value)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col xs={12} lg={7}>
+                <Card className="h-100 border-0 shadow-sm">
+                  <Card.Body>
+                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Payroll Snapshot</h6>
+                    <Row className="g-2">
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">Basic Salary Total</div>
+                          <div className="h5 mb-0 text-primary fw-bold">{formatCurrency(payrollAggregates.totals.basic)}</div>
+                        </div>
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">OT Total</div>
+                          <div className="h5 mb-0 text-info fw-bold">{formatCurrency(payrollAggregates.totals.overtime)}</div>
+                        </div>
+                      </Col>
+                    </Row>
+                    <Row className="g-2 mt-1">
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">Average Net per Employee</div>
+                          <div className="h5 mb-0 text-success fw-bold">{formatCurrency(payrollAggregates.totals.net / payrollData.length || 0)}</div>
+                        </div>
+                      </Col>
+                      <Col xs={12} md={6}>
+                        <div className="p-3 bg-light rounded-3 h-100">
+                          <div className="text-muted small fw-semibold mb-1">Deduction Rate</div>
+                          <div className="h5 mb-0 text-danger fw-bold">{payrollAggregates.deductionRate.toFixed(1)}%</div>
+                        </div>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              </Col>
+            </Row>
+
+            {payrollInsights.length > 0 && (
+              <div className="mt-4">
+                <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
+                <ul className="mb-0 ps-3">
+                  {payrollInsights.map((insight, idx) => (
+                    <li key={`payroll-insight-top-${idx}`} className="mb-2 text-muted">
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      )}
       <Card className="shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
         <Card.Header style={{
           background: '#f8f9fa',
@@ -3782,6 +3997,7 @@ export default function ReportGeneration() {
           </div>
         </Card.Header>
         <Card.Body style={{ padding: '1.5rem' }}>
+          
           <div className="table-responsive">
             <Table hover className="mb-0" style={{ 
               borderCollapse: 'separate',
@@ -3835,7 +4051,7 @@ export default function ReportGeneration() {
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>#</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Employee</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Basic Salary</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Allowances</th>
+                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>OT</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Deductions</th>
                     <th style={{ padding: '1rem', fontWeight: '600', border: 'none', textAlign: 'right' }}>Net Pay</th>
                   </tr>
@@ -3888,6 +4104,117 @@ export default function ReportGeneration() {
             </Table>
           </div>
           
+          {/* Employee Attendance Detail Modal */}
+          <Modal
+            size="xl"
+            show={detailModalOpen}
+            onHide={() => setDetailModalOpen(false)}
+            centered
+            scrollable
+          >
+            <Modal.Header closeButton>
+              <Modal.Title>
+                {detailEmployee
+                  ? `${detailEmployee.first_name || ''} ${detailEmployee.last_name || ''}`.trim()
+                  : 'Employee'}{' '}
+                – Attendance Details
+              </Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              {detailLoading ? (
+                <div className="d-flex justify-content-center align-items-center py-5">
+                  <Spinner animation="border" variant="primary" />
+                </div>
+              ) : (
+                <>
+                  <Row className="g-3 mb-3">
+                    <Col xs={12} md={6} lg={3}>
+                      <Card className="h-100 border-0 shadow-sm">
+                        <Card.Body>
+                          <div className="text-muted small text-uppercase fw-semibold">Days Worked</div>
+                          <div className="display-6 fw-bold text-primary mb-0">
+                            {(detailAnalytics?.present ?? 0) + (detailAnalytics?.late ?? 0) + (detailAnalytics?.overtime ?? 0) + (detailAnalytics?.undertime ?? 0)}
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col xs={12} md={6} lg={3}>
+                      <Card className="h-100 border-0 shadow-sm">
+                        <Card.Body>
+                          <div className="text-muted small text-uppercase fw-semibold">Avg Hours</div>
+                          <div className="display-6 fw-bold text-success mb-0">
+                            {Number(detailAnalytics?.avgHours ?? 0).toFixed(2)}
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col xs={12} md={6} lg={3}>
+                      <Card className="h-100 border-0 shadow-sm">
+                        <Card.Body>
+                          <div className="text-muted small text-uppercase fw-semibold">Tardies</div>
+                          <div className="display-6 fw-bold text-warning mb-0">
+                            {detailAnalytics?.late ?? 0}
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col xs={12} md={6} lg={3}>
+                      <Card className="h-100 border-0 shadow-sm">
+                        <Card.Body>
+                          <div className="text-muted small text-uppercase fw-semibold">Punctuality</div>
+                          <div className="display-6 fw-bold text-info mb-0">
+                            {Number(detailAnalytics?.punctualityRate ?? 0).toFixed(1)}%
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+
+                  <Table bordered hover responsive className="align-middle">
+                    <thead className="table-light text-muted text-uppercase small">
+                      <tr>
+                        <th style={{ width: '120px' }}>Date</th>
+                        <th>Status</th>
+                        <th className="text-center">In</th>
+                        <th className="text-center">Out</th>
+                        <th className="text-end">Total Hours</th>
+                        <th>Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="text-center text-muted py-4">
+                            No records found for the selected range.
+                          </td>
+                        </tr>
+                      ) : (
+                        detailRecords.map((r, idx) => (
+                          <tr key={r.id || idx}>
+                            <td>{formatDate(r.date)}</td>
+                            <td>
+                              <Badge bg={getAttendanceBadgeVariant(r.status)} className="text-uppercase">
+                                {r.status}
+                              </Badge>
+                            </td>
+                            <td className="text-center">{formatTime(r.clock_in)}</td>
+                            <td className="text-center">{formatTime(r.clock_out)}</td>
+                            <td className="text-end">
+                              {Number.isFinite(parseFloat(r.total_hours))
+                                ? parseFloat(r.total_hours).toFixed(2)
+                                : '—'}
+                            </td>
+                            <td>{r.remarks || '—'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </Table>
+                </>
+              )}
+            </Modal.Body>
+          </Modal>
+
           {reportType === 'performance' && aggregatedPerformance && aggregatedPerformance.length > 0 && (
             <div className="d-flex justify-content-between align-items-center mt-4" style={{
               padding: '1rem',
@@ -3903,124 +4230,7 @@ export default function ReportGeneration() {
             </div>
           )}
 
-          {reportType === 'payroll' && payrollData && payrollData.length > 0 && payrollAggregates && (
-            <Card className="mb-4 shadow-sm" style={{ border: 'none', borderRadius: '12px' }}>
-              <Card.Header
-                className="text-white"
-                style={{
-                  background: 'linear-gradient(135deg, #3c8dbc 0%, #0fb9b1 100%)',
-                  borderRadius: '12px 12px 0 0',
-                  border: 'none',
-                  padding: '1.25rem',
-                }}
-              >
-                <h5 className="mb-0 d-flex align-items-center">
-                  <FaBriefcase className="me-2" />
-                  Payroll Overview
-                </h5>
-              </Card.Header>
-              <Card.Body>
-                <Row className="g-3 mb-4">
-                  {payrollSummaryMetrics.map((metric) => (
-                    <Col key={metric.label} xs={12} md={6} lg={3}>
-                      <Card className={`h-100 border-0 shadow-sm bg-opacity-10 bg-${metric.variant}`} style={{ borderRadius: '14px' }}>
-                        <Card.Body className="d-flex flex-column">
-                          <span className="text-uppercase small fw-semibold text-muted mb-1">{metric.label}</span>
-                          <div className="display-6 fw-bold mb-2" style={{ color: '#1f2937' }}>{metric.value}</div>
-                          <span className="small text-muted mt-auto">Updated from the latest payroll preview.</span>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  ))}
-                </Row>
-
-                <Row className="g-4">
-                  <Col xs={12} lg={5}>
-                    <Card className="h-100 border-0 shadow-sm">
-                      <Card.Body>
-                        <h6 className="text-uppercase text-muted fw-semibold mb-3">Net vs Deductions</h6>
-                        <div className="d-flex flex-column align-items-stretch">
-                          <div className="d-flex justify-content-center">
-                            <div style={{ height: '200px', width: '200px' }}>
-                              <canvas ref={payrollDistributionChartRef}></canvas>
-                            </div>
-                          </div>
-                          <div className="mt-3">
-                            {payrollAggregates.netDistribution.map((item, idx) => (
-                              <div key={`payroll-dist-${idx}`} className="d-flex align-items-center mb-2">
-                                <span
-                                  style={{
-                                    width: '12px',
-                                    height: '12px',
-                                    borderRadius: '3px',
-                                    backgroundColor: item.color,
-                                    marginRight: '8px',
-                                    display: 'inline-block',
-                                  }}
-                                ></span>
-                                <span className="text-muted small flex-grow-1">{item.label}</span>
-                                <span className="fw-semibold small" style={{ color: '#1f2937' }}>
-                                  {formatCurrency(item.value)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                  <Col xs={12} lg={7}>
-                    <Card className="h-100 border-0 shadow-sm">
-                      <Card.Body>
-                        <h6 className="text-uppercase text-muted fw-semibold mb-3">Payroll Snapshot</h6>
-                        <Row className="g-2">
-                          <Col xs={12} md={6}>
-                            <div className="p-3 bg-light rounded-3 h-100">
-                              <div className="text-muted small fw-semibold mb-1">Basic Salary Total</div>
-                              <div className="h5 mb-0 text-primary fw-bold">{formatCurrency(payrollAggregates.totals.basic)}</div>
-                            </div>
-                          </Col>
-                          <Col xs={12} md={6}>
-                            <div className="p-3 bg-light rounded-3 h-100">
-                              <div className="text-muted small fw-semibold mb-1">Allowances Total</div>
-                              <div className="h5 mb-0 text-info fw-bold">{formatCurrency(payrollAggregates.totals.allowances)}</div>
-                            </div>
-                          </Col>
-                        </Row>
-                        <Row className="g-2 mt-1">
-                          <Col xs={12} md={6}>
-                            <div className="p-3 bg-light rounded-3 h-100">
-                              <div className="text-muted small fw-semibold mb-1">Average Net per Employee</div>
-                              <div className="h5 mb-0 text-success fw-bold">{formatCurrency(payrollAggregates.totals.net / payrollData.length || 0)}</div>
-                            </div>
-                          </Col>
-                          <Col xs={12} md={6}>
-                            <div className="p-3 bg-light rounded-3 h-100">
-                              <div className="text-muted small fw-semibold mb-1">Deduction Rate</div>
-                              <div className="h5 mb-0 text-danger fw-bold">{payrollAggregates.deductionRate.toFixed(1)}%</div>
-                            </div>
-                          </Col>
-                        </Row>
-                      </Card.Body>
-                    </Card>
-                  </Col>
-                </Row>
-
-                {payrollInsights.length > 0 && (
-                  <div className="mt-4">
-                    <h6 className="text-uppercase text-muted fw-semibold mb-3">Insights & Recommendations</h6>
-                    <ul className="mb-0 ps-3">
-                      {payrollInsights.map((insight, idx) => (
-                        <li key={`payroll-insight-${idx}`} className="mb-2 text-muted">
-                          {insight}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </Card.Body>
-            </Card>
-          )}
+          
         </Card.Body>
       </Card>
       </div>

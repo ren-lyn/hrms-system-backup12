@@ -1,7 +1,10 @@
 .disciplinary-management {
   padding: 20px 0;
-  height: calc(100vh - 180px); /* Optimized height to prevent cutoff */
-  overflow: hidden; /* Prevent page-level scrolling */
+  /* Allow content to grow and scroll vertically so tables aren't cut */
+  min-height: calc(100vh - 180px);
+  height: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -315,7 +318,8 @@
 
 .disciplinary-categories-tab .table-responsive {
   flex: 1;
-  max-height: calc(100vh - 400px); /* Dynamic height based on viewport */
+  /* Increase available space and let container scroll without clipping */
+  max-height: calc(100vh - 300px);
   min-height: 300px; /* Minimum height to ensure visibility */
   overflow-y: auto;
   overflow-x: auto;
@@ -428,11 +432,13 @@
 @media (max-width: 768px) {
   .disciplinary-management {
     padding: 10px 0;
-    height: calc(100vh - 120px); /* Adjusted for mobile */
+    min-height: calc(100vh - 120px); /* Adjusted for mobile */
+    height: auto;
+    overflow-y: auto;
   }
   
   .disciplinary-categories-tab .table-responsive {
-    max-height: calc(100vh - 350px); /* Adjusted for mobile */
+    max-height: calc(100vh - 260px); /* Adjusted for mobile */
     min-height: 200px;
   }
   

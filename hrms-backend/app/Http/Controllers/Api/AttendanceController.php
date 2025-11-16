@@ -167,8 +167,7 @@ class AttendanceController extends Controller
                 }
             }
 
-            // Attendance summary statistics - count only active employees (not terminated or resigned)
-            // Get all active employees (excluding applicants, terminated, and resigned)
+            // Attendance summary statistics and counts
             // Get Applicant role ID dynamically to avoid hardcoding
             $applicantRoleId = \App\Models\Role::where('name', 'Applicant')->value('id');
             
@@ -192,65 +191,55 @@ class AttendanceController extends Controller
             $undertimeCount = 0;
             $overtimeCount = 0;
 
-            // Get attendance records for all employees in the date range
+            // Get attendance records for all employees in the date range (for statistics and fallback list)
             $attendanceRecords = Attendance::whereBetween('date', [$dateFrom, $dateTo])
                 ->whereDate('date', '>=', '2000-01-01')
                 ->get();
 
-            // Group attendance by employee and date
-            $attendanceByEmployeeAndDate = [];
-            foreach ($attendanceRecords as $record) {
-                $attendanceByEmployeeAndDate[$record->employee_id][$record->date->format('Y-m-d')] = $record;
-            }
-
-            // Loop through each day in the date range
-            $currentDate = new DateTime($dateFrom);
-            $endDate = new DateTime($dateTo);
-            $dateRange = new DatePeriod($currentDate, new DateInterval('P1D'), $endDate->modify('+1 day'));
-
-            $dates = [];
-            foreach ($dateRange as $date) {
-                $dates[] = $date->format('Y-m-d');
-            }
-
-            // For recent attendance items, take the latest record for each employee
-            $recentAttendanceItems = [];
-            foreach ($activeEmployees as $employee) {
-                $latestRecord = null;
-                $employeeId = $employee->id;
-                
-                // Find the latest attendance record for this employee in the date range
-                if (isset($attendanceByEmployeeAndDate[$employeeId])) {
-                    $employeeRecords = $attendanceByEmployeeAndDate[$employeeId];
-                    krsort($employeeRecords); // Sort by date descending
-                    $latestRecord = reset($employeeRecords);
+            // Fallback: if recent attendance list is empty at this point, derive it from available records
+            if (empty($recentAttendanceItems)) {
+                // Build a map of active employee profiles for quick lookup
+                $employeeProfileById = [];
+                foreach ($activeEmployees as $user) {
+                    if ($user->employeeProfile) {
+                        $profile = $user->employeeProfile;
+                        $employeeProfileById[$profile->id] = [
+                            'id' => $profile->id,
+                            'employee_id' => $profile->employee_id,
+                            'first_name' => $profile->first_name,
+                            'last_name' => $profile->last_name,
+                            'position' => $profile->position,
+                            'department' => $profile->department,
+                        ];
+                    }
                 }
 
-                if ($latestRecord) {
+                // Determine latest record per employee within range
+                $latestByEmployeeFallback = [];
+                foreach ($attendanceRecords as $row) {
+                    $empId = $row->employee_id;
+                    if (!isset($latestByEmployeeFallback[$empId]) || strtotime($row->date) > strtotime($latestByEmployeeFallback[$empId]->date)) {
+                        $latestByEmployeeFallback[$empId] = $row;
+                    }
+                }
+
+                $recentAttendanceItems = [];
+                foreach ($latestByEmployeeFallback as $empId => $row) {
+                    if (!isset($employeeProfileById[$empId])) {
+                        continue;
+                    }
+                    $emp = $employeeProfileById[$empId];
                     $recentAttendanceItems[] = [
-                        'employee' => [
-                            'id' => $employeeId,
-                            'employee_id' => $employee->employee_id,
-                            'first_name' => $employee->first_name,
-                            'last_name' => $employee->last_name,
-                            'position' => $employee->position,
-                            'department' => $employee->department,
-                        ],
-                        'date' => $latestRecord->date?->toDateString(),
-                        'clock_in' => $latestRecord->clock_in?->format('H:i:s'),
-                        'clock_out' => $latestRecord->clock_out?->format('H:i:s'),
-                        'total_hours' => (float) ($latestRecord->total_hours ?? 0),
-                        'status' => $latestRecord->status,
-                        'remarks' => $latestRecord->remarks ?? null,
+                        'employee' => $emp,
+                        'date' => $row->date?->toDateString(),
+                        'clock_in' => $row->clock_in ? $row->clock_in->format('H:i:s') : null,
+                        'clock_out' => $row->clock_out ? $row->clock_out->format('H:i:s') : null,
+                        'total_hours' => (float) ($row->total_hours ?? 0),
+                        'status' => $row->status,
+                        'remarks' => $row->remarks ?? null,
                     ];
                 }
             }
-
-            // Sort recent attendance by date descending and take first 10
-            usort($recentAttendanceItems, function($a, $b) {
-                return strtotime($b['date']) - strtotime($a['date']);
-            });
-            $recentAttendanceItems = array_slice($recentAttendanceItems, 0, 10);
 
             // Count attendance statuses - only count actual records, don't assume absences
             foreach ($attendanceRecords as $record) {

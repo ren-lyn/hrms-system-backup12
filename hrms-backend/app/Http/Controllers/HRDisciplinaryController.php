@@ -285,8 +285,12 @@ class HRDisciplinaryController extends Controller
             });
         }
         
+        // Sorting (default: newest first so newly created categories appear on top)
+        $sortBy = $request->sort_by ?? 'created_at';
+        $sortOrder = $request->sort_order ?? 'desc';
+        
         $categories = $query->withCount('disciplinaryReports')
-                           ->orderBy('name')
+                           ->orderBy($sortBy, $sortOrder)
                            ->paginate($request->per_page ?? 100);
         
         \Log::info('HRDisciplinaryController::getCategories result', [
