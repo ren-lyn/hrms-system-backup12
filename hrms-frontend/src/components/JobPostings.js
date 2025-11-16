@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Card, Button, Form, Modal, Badge } from "react-bootstrap";
 import { motion, AnimatePresence } from "framer-motion";
-import { toast, ToastContainer } from 'react-toastify';
+import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAdvancedModalConfirmation } from '../hooks/useModalConfirmation';
 import '../styles/ModalConfirmation.css';
@@ -1017,7 +1017,7 @@ const JobPostings = () => {
         </Modal.Footer>
       </Modal>
 
-      <ToastContainer position="top-right" />
+      
     </div>
   );
 };

@@ -6,7 +6,7 @@ import { FaEye, FaUserSlash, FaUserTimes, FaCheckCircle, FaExclamationTriangle }
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import Papa from 'papaparse';
-import { toast, ToastContainer } from 'react-toastify';
+import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import ValidationModal from '../../components/common/ValidationModal';
 import useValidationModal from '../../hooks/useValidationModal';
@@ -2339,6 +2339,14 @@ const EmployeeRecords = () => {
                         <div className="view-value">{viewingEmployee.employee_profile?.age || 'N/A'}</div>
                       </div>
                     </div>
+                  <div className="col-md-6">
+                    <div className="view-field">
+                      <label className="fw-semibold text-muted">Place of Birth</label>
+                      <div className="view-value">
+                        {viewingEmployee.employee_profile?.place_of_birth || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -2491,6 +2499,28 @@ const EmployeeRecords = () => {
                         <div className="view-value">{viewingEmployee.employee_profile?.tenurity || 'N/A'}</div>
                       </div>
                     </div>
+                  <div className="col-md-6">
+                    <div className="view-field">
+                      <label className="fw-semibold text-muted">Manager</label>
+                      <div className="view-value">
+                        {
+                          viewingEmployee.employee_profile?.manager_name ||
+                          viewingEmployee.employee_profile?.manager ||
+                          // If backend returns metadata as an object/stringified JSON
+                          (() => {
+                            const meta = viewingEmployee.employee_profile?.metadata;
+                            if (!meta) return 'N/A';
+                            try {
+                              const obj = typeof meta === 'string' ? JSON.parse(meta) : meta;
+                              return obj?.manager_name || obj?.manager || 'N/A';
+                            } catch {
+                              return 'N/A';
+                            }
+                          })()
+                        }
+                      </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2544,18 +2574,7 @@ const EmployeeRecords = () => {
       </Modal>
 
             {/* Toast container */}
-      <ToastContainer 
-        position="top-center" 
-        autoClose={2000} 
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss={false}
-        draggable
-        pauseOnHover={false}
-        theme="colored"
-      />
+      
 
       </div>
     </div>

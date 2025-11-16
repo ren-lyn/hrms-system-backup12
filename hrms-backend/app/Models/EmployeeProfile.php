@@ -36,6 +36,8 @@ class EmployeeProfile extends Model
         'emergency_contact_phone',
         'hire_date',
         'employment_status',
+        'manager_name',
+        'manager_user_id',
         'job_title',
         'tenurity',
         'sss',

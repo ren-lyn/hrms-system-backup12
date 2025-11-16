@@ -13,7 +13,7 @@ import LeaveManagement from '../components/HrAssistant/LeaveManagement';
 import LeaveForm from '../components/Admin/LeaveForm';
 import LeaveTracker from '../components/HrAssistant/LeaveTracker';
 import LeaveHistory from '../components/HrAssistant/LeaveHistory';
-import { toast, ToastContainer } from 'react-toastify';
+import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import {
   faBriefcase,
@@ -1684,19 +1684,7 @@ const HrStaffDashboard = () => {
           </div>
         </div>
         
-        {/* Toast Container */}
-        <ToastContainer 
-          position="top-center" 
-          autoClose={3000} 
-          hideProgressBar={false}
-          newestOnTop={true}
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-          theme="colored"
-        />
+        
       </div>
     </>
   );

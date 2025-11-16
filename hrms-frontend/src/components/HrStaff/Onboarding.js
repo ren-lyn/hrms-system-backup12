@@ -75,6 +75,7 @@ const createEmptyProfileForm = () => ({
   gender: "",
   dateOfBirth: "",
   age: "",
+  placeOfBirth: "",
   phoneNumber: "",
   companyEmail: "",
   emergencyContactName: "",
@@ -89,6 +90,8 @@ const createEmptyProfileForm = () => ({
   employmentStatus: "",
   dateStarted: "",
   salary: "",
+  reportingManagerId: "",
+  reportingManagerName: "",
   tenure: "",
   sss: "",
   philhealth: "",
@@ -200,13 +203,126 @@ const calculateAgeFromBirthdate = (birthDateValue) => {
 };
 
 const Onboarding = () => {
-  // Department-Position mapping from JobPostings.js
+  // Department-Position mapping copied from JobPostings.js (excluding salary)
   const departmentPositions = {
-    "HR Department": ["HR Staff", "HR Assistant"],
-    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker"],
-    "Logistics Department": ["Driver", "Helper", "Admin Staff", "Maintenance Foreman", "Maintenance Assistant"],
-    "Accounting Department": ["Accounting Staff", "Accounting Assistant"]
+    "HR Department": ["HR Staff", "HR Assistant", "Hr Head"],
+    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker", "Production Manager"],
+    "Logistics Department": ["Driver", "Helper", "Maintenance Foreman", "Maintenance Assistant", "Logistics Manager"],
+    "Accounting Department": ["Accounting Staff", "Accounting Assistant", "Accountant Manager"],
+    "IT Department": ["System Administrator", "IT support"]
   };
+  // Position-Salary mapping copied from JobPostings.js (used to auto-fill salary)
+  const positionSalary = {
+    "HR Staff": 13520,
+    "HR Assistant": 15000,
+    "Hr Head": 25000,
+    "Foreman": 18000,
+    "Assistant Foreman": 15000,
+    "Production Worker": 13520,
+    "Production Manager": 28000,
+    "Driver": 13520,
+    "Helper": 13520,
+    "Maintenance Foreman": 18000,
+    "Maintenance Assistant": 16000,
+    "Logistics Manager": 30000,
+    "Accounting Staff": 15000,
+    "Accounting Assistant": 13520,
+    "Accountant Manager": 30000,
+    "System Administrator": 25000,
+    "IT support": 15000,
+  };
+  // Managers dropdown data
+  const [managers, setManagers] = useState([]);
+  const [managersLoading, setManagersLoading] = useState(false);
+  const [managersError, setManagersError] = useState("");
+
+  const fetchManagers = useCallback(async () => {
+    setManagersLoading(true);
+    setManagersError("");
+    const token = localStorage.getItem("token");
+    const headers = { Authorization: `Bearer ${token}` };
+    // Try multiple endpoints in order of likelihood
+    const endpoints = [
+      "http://localhost:8000/api/employee-profiles",
+      "http://localhost:8000/api/employee-records",
+      "http://localhost:8000/api/employees",
+    ];
+    const allEmployees = [];
+    for (const url of endpoints) {
+      try {
+        const res = await axios.get(url, { headers });
+        const payload = res.data;
+        const list =
+          Array.isArray(payload?.data) ? payload.data :
+          Array.isArray(payload?.employees) ? payload.employees :
+          Array.isArray(payload?.employee_profiles) ? payload.employee_profiles :
+          (Array.isArray(payload) ? payload : []);
+        if (Array.isArray(list) && list.length) {
+          allEmployees.push(...list);
+          // If one endpoint succeeds, we can stop early
+          break;
+        }
+      } catch (e) {
+        // Continue to next endpoint
+        continue;
+      }
+    }
+    try {
+      const isManagerLike = (val) => {
+        if (!val || typeof val !== "string") return false;
+        const s = val.toLowerCase();
+        return s.includes("manager");
+      };
+      const toName = (emp) => {
+        const join = (...names) =>
+          names.filter(Boolean).map((s) => String(s).trim()).filter(Boolean).join(" ").trim();
+        const candidates = [
+          emp.full_name,
+          emp.name,
+          join(emp.first_name, emp.middle_name, emp.last_name),
+          join(emp.firstName, emp.middleName, emp.lastName),
+          join(emp?.employeeProfile?.first_name, emp?.employeeProfile?.middle_name, emp?.employeeProfile?.last_name),
+          join(emp.given_name, emp.middle_name, emp.family_name),
+        ].filter((v) => typeof v === "string" && v.length > 0);
+        return candidates.length ? candidates[0] : "Unnamed";
+      };
+      const toPosition = (emp) => {
+        const nested = emp?.employeeProfile || emp?.employee_profile;
+        return (
+          emp.position ||
+          emp.position_name ||
+          nested?.position ||
+          emp.job_title ||
+          emp.designation ||
+          emp.role ||
+          emp.role_name ||
+          (emp.user && emp.user.role && emp.user.role.name) ||
+          (emp.role && emp.role.name) ||
+          ""
+        );
+      };
+      const normalizedManagers = allEmployees
+        .filter((emp) => isManagerLike(toPosition(emp)) || isManagerLike(emp?.department_role))
+        .map((emp) => ({
+          id: emp.id || emp.employee_id || emp.user_id || emp.profile_id || (emp.employeeProfile && emp.employeeProfile.id) || emp.uuid || emp.email || String(Math.random()),
+          name: toName(emp),
+          position: toPosition(emp),
+        }))
+        .filter((m) => m.name && isManagerLike(m.position))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setManagers(normalizedManagers);
+    } catch (err) {
+      console.error("Failed to normalize managers:", err);
+      setManagers([]);
+      setManagersError("Failed to load managers");
+    } finally {
+      setManagersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchManagers();
+  }, [fetchManagers]);
 
   const [activeTab, setActiveTab] = useState("Overview");
 
@@ -236,6 +352,30 @@ const Onboarding = () => {
 
   const [selectedApplicantForInterview, setSelectedApplicantForInterview] =
     useState(null);
+
+  // Resume preview state (for viewing applicant resume in-app)
+  const [showResumePreview, setShowResumePreview] = useState(false);
+  const [resumeViewerUrl, setResumeViewerUrl] = useState(null);
+  const [resumeViewerType, setResumeViewerType] = useState(null); // 'pdf' | 'image'
+
+  // Generic confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    show: false,
+    title: "Confirm Action",
+    message: "",
+    onConfirm: null,
+  });
+  const openConfirm = (message, onConfirm, title = "Confirm Action") => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      onConfirm: typeof onConfirm === "function" ? onConfirm : null,
+    });
+  };
+  const closeConfirm = () => {
+    setConfirmDialog((prev) => ({ ...prev, show: false, onConfirm: null }));
+  };
 
   const [showJobOfferModal, setShowJobOfferModal] = useState(false);
 
@@ -626,7 +766,6 @@ const resolveSubmissionFileUrl = (submission) => {
 
   return resolveValue(submission);
 };
-
 const extractProfilePhotoFromOverview = (overview) => {
   if (!overview) {
     return "";
@@ -1306,8 +1445,9 @@ const closeDocumentModal = useCallback(() => {
       const token = localStorage.getItem("token");
 
       if (!token) {
-        alert(
-          "Your session has expired. Please log in again to view the file."
+        toast.error(
+          "Your session has expired. Please log in again to view the file.",
+          { autoClose: 5000 }
         );
 
         return;
@@ -1352,7 +1492,7 @@ const closeDocumentModal = useCallback(() => {
       } catch (error) {
         console.error("Error opening submission file:", error);
 
-        alert("We could not open the submitted file. Please try again.");
+        toast.error("We could not open the submitted file. Please try again.", { autoClose: 5000 });
       }
     },
     [selectedApplicationForDocs]
@@ -2200,7 +2340,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       </Badge>
     );
   };
-
   // Handle dropdown toggle
 
   const toggleDropdown = (recordId) => {
@@ -2380,13 +2519,14 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
       // Show success message
 
-      alert(
-        `Onboarding started for ${applicantName}. They have been moved to the Document Submission stage.`
+      toast.success(
+        `Onboarding started for ${applicantName}. They have been moved to the Document Submission stage.`,
+        { autoClose: 5000 }
       );
     } catch (error) {
       console.error("Error starting onboarding:", error);
 
-      alert("Failed to start onboarding. Please try again.");
+      toast.error("Failed to start onboarding. Please try again.", { autoClose: 5000 });
     }
   };
 
@@ -2549,13 +2689,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
     const token = localStorage.getItem("token");
     if (!token) {
-      alert("Authentication is required to process follow-up requests.");
+      toast.error("Authentication is required to process follow-up requests.", { autoClose: 5000 });
       return;
     }
 
     const message = followUpActionForm.hrResponse.trim();
     if (!message) {
-      alert("Please provide a message for the applicant.");
+      toast.warn("Please provide a message for the applicant.", { autoClose: 4000 });
       return;
     }
 
@@ -2565,7 +2705,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     if (followUpActionType === "accept") {
       const days = parseInt(followUpActionForm.extensionDays, 10);
       if (!Number.isInteger(days) || days <= 0) {
-        alert("Please provide a valid number of days for the extension.");
+        toast.warn("Please provide a valid number of days for the extension.", { autoClose: 4000 });
         return;
       }
       payload.extension_days = days;
@@ -2591,13 +2731,14 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
       await fetchFollowUpRequests(selectedApplicationForDocs.id);
       await fetchDocumentRequirements(selectedApplicationForDocs.id);
-      alert("Follow-up request processed successfully.");
+      toast.success("Follow-up request processed successfully.", { autoClose: 4000 });
       handleCloseFollowUpModal();
     } catch (error) {
       console.error("Error processing follow-up request:", error);
-      alert(
+      toast.error(
         error.response?.data?.message ||
-          "Failed to process follow-up request. Please try again."
+          "Failed to process follow-up request. Please try again.",
+        { autoClose: 5000 }
       );
     } finally {
       setFollowUpActionLoading(false);
@@ -2615,13 +2756,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
   const handleOpenFollowUpAttachment = useCallback(async (request) => {
     if (!request?.attachmentUrl) {
-      alert("No attachment provided for this follow-up request.");
+      toast.info("No attachment provided for this follow-up request.", { autoClose: 4000 });
       return;
     }
 
     const token = localStorage.getItem("token");
     if (!token) {
-      alert("Please log in to download attachments.");
+      toast.error("Please log in to download attachments.", { autoClose: 5000 });
       return;
     }
 
@@ -2647,7 +2788,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       }, 30000);
     } catch (error) {
       console.error("Error downloading attachment:", error);
-      alert("Failed to download attachment. Please try again.");
+      toast.error("Failed to download attachment. Please try again.", { autoClose: 5000 });
     }
   }, []);
 
@@ -2843,16 +2984,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     } catch (error) {
       console.error("Error creating document requirement:", error);
 
-      alert("Failed to create document requirement");
+      toast.error("Failed to create document requirement", { autoClose: 5000 });
     }
   };
 
   // Delete document requirement
 
   const deleteDocumentRequirement = async (requirementId) => {
-    if (!window.confirm("Are you sure you want to delete this requirement?"))
-      return;
-
     try {
       const response = await axios.delete(
         `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/requirements/${requirementId}`,
@@ -2870,11 +3008,11 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         } else {
           await fetchDocumentRequirements(selectedApplicationForDocs.id);
         }
+        toast.success("Requirement deleted successfully", { autoClose: 4000 });
       }
     } catch (error) {
       console.error("Error deleting document requirement:", error);
-
-      alert("Failed to delete document requirement");
+      toast.error("Failed to delete document requirement", { autoClose: 5000 });
     }
   };
 
@@ -2979,18 +3117,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         ? `requirement_${submission.document_requirement_id}`
         : null);
 
-    const documentLabel =
-      doc?.title ||
-      submission.document_requirement?.document_name ||
-      "this document";
-
-    const confirmApproval = window.confirm(
-      `Are you sure you want to approve ${documentLabel}?`
-    );
-
-    if (!confirmApproval) {
-      return;
-    }
+    // Proceed directly; notify via toast after reviewDocumentSubmission
 
     await reviewDocumentSubmission(
       submission.id,
@@ -2999,7 +3126,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       derivedDocumentKey
     );
   };
-
   // Handle reject document - show rejection reason input
 
   const handleRejectDocument = (submission) => {
@@ -3024,23 +3150,17 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
   const confirmRejectDocument = async () => {
     if (!rejectionReason.trim()) {
-      alert("Please provide a rejection reason.");
+      toast.warn("Please provide a rejection reason.", { autoClose: 4000 });
 
       return;
     }
 
-    if (
-      window.confirm(
-        "Are you sure you want to reject this document? The employee will be notified to re-upload."
-      )
-    ) {
       await reviewDocumentSubmission(
         rejectingSubmissionId,
         "rejected",
         rejectionReason,
         rejectingDocumentKey
       );
-    }
   };
 
   const renderGovernmentIdCard = (config, display) => {
@@ -3372,15 +3492,16 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
   const markDocumentSubmissionAsDone = async () => {
     if (!allDocumentsApproved()) {
-      alert("Please approve all required documents before marking as done.");
+      toast.warn("Please approve all required documents before marking as done.", { autoClose: 5000 });
 
       return;
     }
 
     try {
       if (!selectedApplicationForDocs?.id) {
-        alert(
-          "Unable to determine the selected applicant. Please reopen the document viewer and try again."
+        toast.error(
+          "Please reopen the document viewer and try again.",
+          { autoClose: 5000 }
         );
         return;
       }
@@ -3418,9 +3539,10 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         });
       }
 
-      alert(
+      toast.success(
         response.data?.message ||
-          "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review."
+          "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review.",
+        { autoClose: 4500 }
       );
       setOnboardingSubtab("Benefits Enroll");
     } catch (error) {
@@ -3436,7 +3558,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         message.trim() !==
           "Unable to finalize the document submission. Please try again or contact support."
       ) {
-        alert(message);
+        toast.error(message, { autoClose: 5000 });
       }
     }
   };
@@ -3637,7 +3759,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
     setShowInterviewModal(true);
   };
-
   // Handle view interview details
 
   const handleViewInterviewDetails = async (applicant) => {
@@ -3851,8 +3972,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
               }))
             );
 
-            alert(
-              "No interview details found for this applicant. Please schedule an interview first."
+            toast.info(
+              "No interview details found for this applicant. Please schedule an interview first.",
+              { autoClose: 5000 }
             );
           }
         }
@@ -3860,7 +3982,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     } catch (error) {
       console.error("Error fetching interview details:", error);
 
-      alert("Failed to load interview details.");
+      toast.error("Failed to load interview details.", { autoClose: 5000 });
     }
   };
 
@@ -3913,47 +4035,34 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
   };
 
   // Handle reject applicant
-
   const handleRejectApplicant = async (applicant) => {
-    if (
-      window.confirm(
-        `Are you sure you want to reject ${
-          applicant.applicant?.first_name || "this applicant"
-        }?`
-      )
-    ) {
+    openConfirm(
+      `Are you sure you want to reject ${applicant.applicant?.first_name || "this applicant"}?`,
+      async () => {
       try {
         const token = localStorage.getItem("token");
-
         await axios.put(
           `http://localhost:8000/api/applications/${applicant.id}/status`,
-
           { status: "Rejected" },
-
           {
             headers: {
               Authorization: `Bearer ${token}`,
-
               "Content-Type": "application/json",
             },
           }
         );
-
-        alert("Applicant has been rejected.");
-
+        toast.success("Applicant has been rejected.", { autoClose: 4000 });
         setShowInterviewDetailsModal(false);
-
         setSelectedInterviewDetails(null);
-
         await fetchApplicants(); // Refresh the list
-
         setActiveTab("Rejected");
       } catch (error) {
         console.error("Error rejecting applicant:", error);
-
-        alert("Failed to reject applicant. Please try again.");
+        toast.error("Failed to reject applicant. Please try again.", { autoClose: 5000 });
       }
-    }
+      },
+      "Confirm Rejection"
+    );
   };
 
   // Handle job offer submission
@@ -3961,8 +4070,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
   const handleSubmitJobOffer = async () => {
     try {
       if (!jobOfferData.contact_person || !jobOfferData.contact_number) {
-        alert(
-          "Please fill in all required fields: Contact Person and Contact Number"
+        toast.warn(
+          "Please fill in all required fields: Contact Person and Contact Number",
+          { autoClose: 5000 }
         );
 
         return;
@@ -4004,7 +4114,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         }
       );
 
-      alert("Job offer sent successfully!");
+      toast.success("Job offer sent successfully!", { autoClose: 4000 });
 
       setShowJobOfferModal(false);
 
@@ -4042,13 +4152,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     } catch (error) {
       console.error("Error submitting job offer:", error);
 
-      alert("Failed to send job offer. Please try again.");
+      toast.error("Failed to send job offer. Please try again.", { autoClose: 5000 });
     }
   };
 
   // Handle send interview invite
 
-  const handleSendInterviewInvite = async ({ mode = "submit" } = {}) => {
+  const handleSendInterviewInvite = async ({ mode = "submit", bypassConfirm = false } = {}) => {
     try {
       // Validate required fields
 
@@ -4059,19 +4169,17 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         !interviewData.location ||
         !interviewData.interviewer
       ) {
-        alert(
-          "Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer"
-        );
+        toast.warn("Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer", { autoClose: 5000 });
 
         return;
       }
 
-      if (
-        mode === "reschedule" &&
-        !window.confirm(
-          "Are you sure you want to reschedule this interview for the applicant?"
-        )
-      ) {
+      if (mode === "reschedule" && !bypassConfirm) {
+        openConfirm(
+          "Are you sure you want to reschedule this interview for the applicant?",
+          () => handleSendInterviewInvite({ mode: "reschedule", bypassConfirm: true }),
+          "Confirm Reschedule"
+        );
         return;
       }
 
@@ -4113,8 +4221,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       const successMessage = wasUpdated
         ? "Interview invite updated successfully! The applicant will receive the revised schedule."
         : "Interview invitation sent successfully!";
-
-      alert(successMessage);
+      toast.success(successMessage, { autoClose: 4000 });
 
       // Save interview details to localStorage
 
@@ -4129,16 +4236,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       console.error("Error scheduling interview:", error);
 
       if (error?.response?.status === 403) {
-        alert(
-          error?.response?.data?.message ||
-            "You don't have permission to schedule interviews. Only HR Staff and HR Assistants can schedule interviews."
-        );
+        toast.error(error?.response?.data?.message || "You don't have permission to schedule interviews. Only HR Staff and HR Assistants can schedule interviews.", { autoClose: 5000 });
       } else if (error?.response?.status === 401) {
-        alert("Authentication required. Please log in again.");
+        toast.error("Authentication required. Please log in again.", { autoClose: 5000 });
       } else if (error?.response?.data?.message) {
-        alert(error.response.data.message);
+        toast.error(error.response.data.message, { autoClose: 5000 });
       } else {
-        alert("Failed to schedule interview. Please try again.");
+        toast.error("Failed to schedule interview. Please try again.", { autoClose: 5000 });
       }
     }
   };
@@ -4251,8 +4355,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
   const handleBatchInterviewModal = () => {
     if (selectedApplicants.length === 0) {
-      alert(
-        "Please select at least one applicant for batch interview scheduling."
+      toast.info(
+        "Please select at least one applicant for batch interview scheduling.",
+        { autoClose: 5000 }
       );
 
       return;
@@ -4281,8 +4386,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         !batchInterviewData.location ||
         !batchInterviewData.interviewer
       ) {
-        alert(
-          "Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer"
+        toast.warn(
+          "Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer",
+          { autoClose: 5000 }
         );
 
         return;
@@ -4351,7 +4457,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         });
       }
 
-      alert(message);
+      toast.success(message, { autoClose: 5000 });
 
       // Save interview details to localStorage for successful interviews
 
@@ -4372,55 +4478,59 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     } catch (error) {
       console.error("Error scheduling batch interviews:", error);
 
-      alert("Failed to schedule batch interviews. Please try again.");
+      toast.error("Failed to schedule batch interviews. Please try again.", { autoClose: 5000 });
     }
   };
 
   // Handle resume view
-
   const handleViewResume = (applicant) => {
-    // Check multiple possible resume locations
+    // Prefer secure API download (avoids cross-origin and auth issues)
+    const applicationId = applicant?.id;
+    if (!applicationId) {
+      console.error("❌ [View Resume] Missing application id");
+      toast.info("Resume not available for this applicant.", { autoClose: 5000 });
+      return;
+    }
+
+    const apiUrl = `http://localhost:8000/api/applications/${applicationId}/resume`;
+    axios
+      .get(apiUrl, { responseType: "blob" })
+      .then((response) => {
+        const contentType = response.headers["content-type"] || "application/pdf";
+        const isImage = contentType.includes("image/");
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: contentType }));
+        setResumeViewerUrl(url);
+        setResumeViewerType(isImage ? "image" : "pdf");
+        setShowResumePreview(true);
+      })
+      .catch((error) => {
+        // Fallback to legacy URL-based approach if API fails
+        console.warn("⚠️ [View Resume] API fetch failed, falling back to URL method", error);
 
     const resumeUrl =
       applicant.resume_path || applicant.applicant?.resume || applicant.resume;
 
     console.log("🔍 [View Resume] Checking resume URL:", resumeUrl);
-
     console.log("🔍 [View Resume] Full applicant data:", applicant);
 
     if (resumeUrl) {
-      // Construct full URL dynamically for online accessibility
-
       let fullUrl;
-
       if (resumeUrl.startsWith("http")) {
-        // Already a full URL, use as is
-
         fullUrl = resumeUrl;
       } else {
-        // Construct URL using current host for online accessibility
-
         const currentHost = window.location.hostname;
-
         const protocol = window.location.protocol;
-
-        // Use the same protocol and hostname as the current page
-
-        // Point to backend on port 8000 for storage
-
         fullUrl = `${protocol}//${currentHost}:8000/storage/${resumeUrl}`;
       }
 
       console.log("✅ [View Resume] Opening URL:", fullUrl);
-
       window.open(fullUrl, "_blank");
     } else {
       console.error("❌ [View Resume] No resume URL found");
-
-      alert("Resume not available for this applicant.");
+      toast.info("Resume not available for this applicant.", { autoClose: 5000 });
     }
+      });
   };
-
   const applyBenefitsPayload = (payload, options = {}) => {
     const metadata = payload?.metadata || {};
     const fields = metadata.fields || {};
@@ -4534,7 +4644,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       }
     } catch (error) {
       console.error("Error loading benefits enrollment:", error);
-      alert("Failed to load benefits enrollment details. Please try again.");
+      toast.error("Failed to load benefits enrollment details. Please try again.", { autoClose: 5000 });
       handleCloseBenefitsModal();
     } finally {
       setBenefitsModalLoading(false);
@@ -4717,6 +4827,26 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         profilePhotoUrl: initialProfilePhotoUrl,
         position: existing.position || entry.position || "",
         department: existing.department || entry.department || "",
+        salary: (() => {
+          // Prefer salary from the actual job posting on the application record
+          const min =
+            entry?.jobPosting?.salary_min ??
+            entry?.job_posting?.salary_min ??
+            null;
+          const max =
+            entry?.jobPosting?.salary_max ??
+            entry?.job_posting?.salary_max ??
+            null;
+          if (min && max) {
+            // If range exists, display min if both are equal, otherwise show range
+            return Number(min) === Number(max)
+              ? String(Number(min))
+              : `${Number(min)}`;
+          }
+          // Fallback to static mapping by position
+          const pos = (existing.position || entry.position || "").trim();
+          return pos && positionSalary[pos] ? String(positionSalary[pos]) : "";
+        })(),
         sss: existing.sss || "",
         philhealth: existing.philhealth || "",
         pagibig: existing.pagibig || "",
@@ -4803,10 +4933,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         : applicant.employee_name || applicant.name || "Applicant";
 
       // Confirm action
-      if (!window.confirm(`Move ${applicantName} to Start Date tab?`)) {
-        return;
-      }
-
+      openConfirm(
+        `Move ${applicantName} to Start Date tab?`,
+        async () => {
       // Update status to "Starting Date"
       await axios.put(
         `http://localhost:8000/api/applications/${applicant.id}/status`,
@@ -4818,14 +4947,17 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
           },
         }
       );
-
       // Refresh applicants list
       await fetchApplicants();
+          toast.success(`${applicantName} has been moved to Start Date tab.`, { autoClose: 4000 });
+        },
+        "Confirm Move"
+      );
+      return;
 
-      alert(`${applicantName} has been moved to Start Date tab.`);
     } catch (error) {
       console.error("Error updating status to Starting Date:", error);
-      alert("Failed to update status. Please try again.");
+      toast.error("Failed to update status. Please try again.", { autoClose: 5000 });
     }
   };
 
@@ -4851,7 +4983,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
     // Validation
     if (!startDateForm.official_start_date) {
-      alert("Please select an Official Start Date.");
+      toast.info("Please select an Official Start Date.", { autoClose: 4000 });
       return;
     }
 
@@ -4861,7 +4993,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       const applicationId = selectedApplicantForStartDate.id;
 
       if (!applicationId) {
-        alert("Error: Application ID not found. Please try again.");
+        toast.error("Application ID not found. Please try again.", { autoClose: 5000 });
         return;
       }
 
@@ -4905,16 +5037,16 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
           ? `${selectedApplicantForStartDate.applicant.first_name || ""} ${selectedApplicantForStartDate.applicant.last_name || ""}`.trim()
           : selectedApplicantForStartDate.employee_name || selectedApplicantForStartDate.name || "Applicant";
         
-        alert(`Successfully set start date for ${applicantName}.`);
+        toast.success(`Successfully set start date for ${applicantName}.`, { autoClose: 4000 });
       } else {
         const errorMsg = response.data?.message || "Failed to save start date information. Please try again.";
-        alert(errorMsg);
+        toast.error(errorMsg, { autoClose: 5000 });
         console.error("Start date save failed:", response.data);
       }
     } catch (error) {
       console.error("Error saving start date:", error);
       const errorMessage = error.response?.data?.message || error.message || "Failed to save start date information. Please try again.";
-      alert(errorMessage);
+      toast.error(errorMessage, { autoClose: 5000 });
       
       // Log full error for debugging
       if (error.response?.data) {
@@ -4932,7 +5064,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
     // Validation
     if (!orientationForm.orientation_date || !orientationForm.orientation_time || !orientationForm.location) {
-      alert("Please fill in all required fields (Date, Time, and Location).");
+      toast.info("Please fill in all required fields (Date, Time, and Location).", { autoClose: 4000 });
       return;
     }
 
@@ -4942,7 +5074,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       const applicationId = selectedApplicantForOrientation.id;
 
       if (!applicationId) {
-        alert("Error: Application ID not found. Please try again.");
+        toast.error("Application ID not found. Please try again.", { autoClose: 5000 });
         return;
       }
 
@@ -4981,7 +5113,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         handleCloseOrientationModal();
         
         // Show success message
-        alert("Successfully set orientation");
+        toast.success("Successfully set orientation.", { autoClose: 4000 });
       } else {
         throw new Error(response.data?.message || 'Failed to schedule orientation');
       }
@@ -5004,7 +5136,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         errorMessage = error.message;
       }
       
-      alert(errorMessage);
+      toast.error(errorMessage, { autoClose: 5000 });
     } finally {
       setOrientationSaving(false);
     }
@@ -5076,7 +5208,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     },
     []
   );
-
   const handleSaveProfileCreationForm = async () => {
     if (!activeProfileCreationEntry || profileCreationSaving) {
       return;
@@ -5104,6 +5235,15 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       "tenure",
     ];
 
+    // Enforce exactly 11 digits for phone numbers
+    if (
+      (profileCreationForm.phoneNumber || "").replace(/\D/g, "").length !== 11 ||
+      (profileCreationForm.emergencyContactPhone || "").replace(/\D/g, "").length !== 11
+    ) {
+      toast.warn("Phone numbers must contain exactly 11 digits.", { autoClose: 4000 });
+      return;
+    }
+
     const hasMissingRequiredFields = requiredFields.some((fieldKey) => {
       const value = profileCreationForm[fieldKey];
       if (value === null || value === undefined) {
@@ -5116,7 +5256,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     });
 
     if (hasMissingRequiredFields) {
-      alert("Please fill out all required fields before saving.");
+      toast.warn("Please fill out all required fields before saving.", { autoClose: 4000 });
       return;
     }
 
@@ -5129,6 +5269,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       gender: profileCreationForm.gender,
       birth_date: profileCreationForm.dateOfBirth,
       age: Number.isNaN(numericAge) ? 0 : numericAge,
+      place_of_birth: profileCreationForm.placeOfBirth || "",
       // Do NOT send company_email - it's display only
       // company_email: profileCreationForm.companyEmail,
       contact_number: profileCreationForm.phoneNumber,
@@ -5154,6 +5295,8 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       tin_no: profileCreationForm.tin || null,
       metadata: {
         profile_photo_url: profileCreationForm.profilePhotoUrl || null,
+        manager_id: profileCreationForm.reportingManagerId || null,
+        manager_name: profileCreationForm.reportingManagerName || null,
       },
     };
 
@@ -5187,7 +5330,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         
         await fetchApplicants();
 
-        alert("Personal information saved and linked to employee records. The applicant's status has been updated to 'Hired' and they now appear in the Orientation Schedule tab.");
+        toast.success("Personal information saved and linked to employee records. The applicant's status has been updated to 'Hired' and they now appear in the Orientation Schedule tab.", { autoClose: 5000 });
         handleCloseProfileCreationModal();
       }
     } catch (error) {
@@ -5197,7 +5340,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         error.response?.data?.errors?.company_email?.[0] ||
         error.response?.data?.errors?.full_name?.[0] ||
         "Failed to save personal information. Please try again.";
-      alert(errorMessage);
+      toast.error(errorMessage, { autoClose: 5000 });
     } finally {
       setProfileCreationSaving(false);
     }
@@ -5371,7 +5514,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
   console.log("- Filtered applicants:", filteredApplicants.length);
 
   console.log("- Loading:", loading);
-
   return (
     <Container fluid className="p-4">
       {/* Professional Navigation Bar */}
@@ -5956,7 +6098,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                 )}
 
                 {/* Benefits enrollment tab */}
-
                 {onboardingSubtab === "Benefits Enroll" && (
                   <>
                     <div className="card border-0 shadow-sm mb-3">
@@ -6997,7 +7138,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                 ) : null}
               </div>
             )}
-
             {activeTab !== "Onboarding" && (
               <>
                 {/* Search and Filter Bar */}
@@ -7757,7 +7897,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                             )}
                         </div>
                       </div>
-
                       {activeTab !== "Overview" &&
                         activeTab !== "Onboarding" &&
                         expandedRowId === applicant.id && (
@@ -8074,7 +8213,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       )}
 
       {/* Interview Schedule Modal */}
-
       {showInterviewModal && selectedApplicantForInterview && (
         <div
           className="modal show d-block"
@@ -8564,6 +8702,143 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         </div>
       )}
 
+      {/* Resume Preview Modal */}
+      {showResumePreview && resumeViewerUrl && (
+        <div
+          className="modal show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1200 }}
+        >
+          <div className="modal-dialog modal-xl modal-dialog-centered" style={{ maxWidth: "1200px" }}>
+            <div className="modal-content" style={{ borderRadius: "12px" }}>
+              <div
+                className="modal-header border-0 pb-2"
+                style={{
+                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  borderRadius: "12px 12px 0 0",
+                }}
+              >
+                <h5 className="modal-title fw-bold text-white">
+                  Resume Preview
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => {
+                    try {
+                      if (resumeViewerUrl && resumeViewerUrl.startsWith("blob:")) {
+                        window.URL.revokeObjectURL(resumeViewerUrl);
+                      }
+                    } catch (e) {
+                      console.error("Failed to revoke resume object URL", e);
+                    }
+                    setShowResumePreview(false);
+                    setResumeViewerUrl(null);
+                    setResumeViewerType(null);
+                  }}
+                ></button>
+              </div>
+
+              <div className="modal-body p-0">
+                <div style={{ padding: 0, maxHeight: "80vh", overflow: "auto" }}>
+                  {resumeViewerType === "pdf" && (
+                    <iframe
+                      src={`${resumeViewerUrl}#toolbar=1`}
+                      title="Resume Document"
+                      style={{ width: "100%", height: "80vh", border: "none", borderRadius: "0 0 0.375rem 0.375rem" }}
+                    />
+                  )}
+                  {resumeViewerType === "image" && (
+                    <div className="text-center p-3" style={{ backgroundColor: "#f8f9fa" }}>
+                      <img
+                        src={resumeViewerUrl}
+                        alt="Resume"
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: "75vh",
+                          borderRadius: "6px",
+                          boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="modal-footer border-0 pt-0">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    try {
+                      if (resumeViewerUrl && resumeViewerUrl.startsWith("blob:")) {
+                        window.URL.revokeObjectURL(resumeViewerUrl);
+                      }
+                    } catch (e) {
+                      console.error("Failed to revoke resume object URL", e);
+                    }
+                    setShowResumePreview(false);
+                    setResumeViewerUrl(null);
+                    setResumeViewerType(null);
+                  }}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    try {
+                      const a = document.createElement("a");
+                      a.href = resumeViewerUrl;
+                      a.target = "_blank";
+                      a.rel = "noopener noreferrer";
+                      a.click();
+                    } catch (e) {
+                      console.error("Failed to open resume in new tab", e);
+                    }
+                  }}
+                >
+                  Open in new tab
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog */}
+      {confirmDialog.show && (
+        <div className="modal show d-block" tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{confirmDialog.title || "Confirm Action"}</h5>
+                <button type="button" className="btn-close" onClick={closeConfirm}></button>
+              </div>
+              <div className="modal-body">
+                <p className="mb-0">{confirmDialog.message}</p>
+              </div>
+              <div className="modal-footer">
+                <Button variant="secondary" onClick={closeConfirm}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    const fn = confirmDialog.onConfirm;
+                    closeConfirm();
+                    if (typeof fn === "function") {
+                      fn();
+                    }
+                  }}
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status Change Modal */}
 
       {showStatusModal && (
@@ -8681,7 +8956,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
           </div>
         </div>
       )}
-
       <style jsx>{`
 
 
@@ -9475,13 +9749,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
 
         }
-
-
-
-
-
-
-
         /* Position and Department */
 
 
@@ -10271,13 +10538,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
 
         }
-
-
-
-
-
-
-
         /* View Details Button */
 
 
@@ -11071,9 +11331,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
 
 
         .overview-spacing thead th.text-start + th.text-start,
-
-
-
         .overview-spacing thead th.text-start + th.text-center,
 
 
@@ -11686,7 +11943,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       )}
 
       {/* Job Offer Modal */}
-
       {showJobOfferModal && selectedRecord && (
         <div
           className="modal show d-block"
@@ -12210,7 +12466,8 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                         </div>
                       )}
                     </>
-                  )) : documentModalTab === "Follow-Up Requests" ? (
+                    )
+                  ) : documentModalTab === "Follow-Up Requests" ? (
                     documentModalReadOnly ? null : (
                     <>
                       <div className="card border-0 shadow-sm mb-4">
@@ -13070,6 +13327,25 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                   </Form.Group>
                 </Col>
                 <Col md={4}>
+                  <Form.Group controlId="profilePlaceOfBirth">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Place of Birth
+                      </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.placeOfBirth}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "placeOfBirth",
+                          e.target.value
+                        )
+                      }
+                        style={PROFILE_INPUT_STYLE}
+                      placeholder="Enter place of birth"
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
                   <Form.Group controlId="profileAge">
                       <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                         Age
@@ -13109,9 +13385,6 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                       placeholder="Applicant's original registration email"
                       style={PROFILE_READONLY_INPUT_STYLE}
                     />
-                    <div className="text-muted small mt-1">
-                      Display only - Original email the applicant used for registration. This email is used for JobPortal access only.
-                    </div>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -13121,17 +13394,21 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                     </Form.Label>
                     <Form.Control
                       type="text"
+                      inputMode="numeric"
+                      pattern="\\d{11}"
+                      maxLength={11}
                       value={profileCreationForm.phoneNumber}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
                           "phoneNumber",
-                          e.target.value
+                          e.target.value.replace(/\\D/g, "").slice(0, 11)
                         )
                       }
                       placeholder="Enter phone number"
                       style={PROFILE_INPUT_STYLE}
                       required
                     />
+                    <div className="text-muted small mt-1">Enter exactly 11 digits.</div>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -13161,17 +13438,21 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                     </Form.Label>
                     <Form.Control
                       type="text"
+                      inputMode="numeric"
+                      pattern="\\d{11}"
+                      maxLength={11}
                       value={profileCreationForm.emergencyContactPhone}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
                           "emergencyContactPhone",
-                          e.target.value
+                          e.target.value.replace(/\\D/g, "").slice(0, 11)
                         )
                       }
                       placeholder="Enter emergency contact phone"
                       style={PROFILE_INPUT_STYLE}
                       required
                     />
+                    <div className="text-muted small mt-1">Enter exactly 11 digits.</div>
                   </Form.Group>
                 </Col>
               </Row>
@@ -13317,12 +13598,36 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                   </Form.Group>
                 </Col>
                 <Col md={4}>
+                  <Form.Group controlId="profileManager">
+                      <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                        Manager
+                      </Form.Label>
+                    <Form.Select
+                      value={profileCreationForm.reportingManagerId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const selected = managers.find((m) => String(m.id) === String(selectedId)) || null;
+                        handleProfileCreationInputChange("reportingManagerId", selectedId);
+                        handleProfileCreationInputChange("reportingManagerName", selected ? selected.name : "");
+                      }}
+                        style={PROFILE_INPUT_STYLE}
+                      disabled={managersLoading}
+                    >
+                      <option value="">Select Manager</option>
+                      {managers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.position ? ` • ${m.position}` : ""}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
                   <Form.Group controlId="profileEmploymentStatus">
                       <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                         Employment Status
                       </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.employmentStatus}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
@@ -13330,10 +13635,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                           e.target.value
                         )
                       }
-                      placeholder="Enter employment status"
                         style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select employment status</option>
+                      <option value="Part-Time">Part-Time</option>
+                      <option value="Full-Time">Full-Time</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -13363,11 +13671,9 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
                     <Form.Control
                       type="text"
                       value={profileCreationForm.salary}
-                      onChange={(e) =>
-                        handleProfileCreationInputChange("salary", e.target.value)
-                      }
-                      placeholder="Enter salary"
-                        style={PROFILE_INPUT_STYLE}
+                      readOnly
+                        style={PROFILE_READONLY_INPUT_STYLE}
+                      placeholder="Auto-filled from selected position"
                       required
                     />
                   </Form.Group>

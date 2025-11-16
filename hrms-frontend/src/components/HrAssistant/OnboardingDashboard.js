@@ -77,6 +77,7 @@ const createEmptyProfileForm = () => ({
   gender: "",
   dateOfBirth: "",
   age: "",
+  placeOfBirth: "",
   phoneNumber: "",
   companyEmail: "",
   emergencyContactName: "",
@@ -91,6 +92,8 @@ const createEmptyProfileForm = () => ({
   employmentStatus: "",
   dateStarted: "",
   salary: "",
+  reportingManagerId: "",
+  reportingManagerName: "",
   tenure: "",
   sss: "",
   philhealth: "",
@@ -599,13 +602,123 @@ const calculateAgeFromBirthdate = (birthDateValue) => {
 };
 
 const OnboardingDashboard = () => {
-  // Department-Position mapping from JobPostings.js
+  // Department-Position mapping copied from JobPostings.js (excluding salary)
   const departmentPositions = {
-    "HR Department": ["HR Staff", "HR Assistant"],
-    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker"],
-    "Logistics Department": ["Driver", "Helper", "Admin Staff", "Maintenance Foreman", "Maintenance Assistant"],
-    "Accounting Department": ["Accounting Staff", "Accounting Assistant"]
+    "HR Department": ["HR Staff", "HR Assistant", "Hr Head"],
+    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker", "Production Manager"],
+    "Logistics Department": ["Driver", "Helper", "Maintenance Foreman", "Maintenance Assistant", "Logistics Manager"],
+    "Accounting Department": ["Accounting Staff", "Accounting Assistant", "Accountant Manager"],
+    "IT Department": ["System Administrator", "IT support"]
   };
+  // Position-Salary mapping copied from JobPostings.js (used to auto-fill salary)
+  const positionSalary = {
+    "HR Staff": 13520,
+    "HR Assistant": 15000,
+    "Hr Head": 25000,
+    "Foreman": 18000,
+    "Assistant Foreman": 15000,
+    "Production Worker": 13520,
+    "Production Manager": 28000,
+    "Driver": 13520,
+    "Helper": 13520,
+    "Maintenance Foreman": 18000,
+    "Maintenance Assistant": 16000,
+    "Logistics Manager": 30000,
+    "Accounting Staff": 15000,
+    "Accounting Assistant": 13520,
+    "Accountant Manager": 30000,
+    "System Administrator": 25000,
+    "IT support": 15000,
+  };
+  // Managers dropdown data
+  const [managers, setManagers] = useState([]);
+  const [managersLoading, setManagersLoading] = useState(false);
+  const [managersError, setManagersError] = useState("");
+
+  const fetchManagers = useCallback(async () => {
+    setManagersLoading(true);
+    setManagersError("");
+    const token = localStorage.getItem("token");
+    const headers = { Authorization: `Bearer ${token}` };
+    const endpoints = [
+      "http://localhost:8000/api/employee-profiles",
+      "http://localhost:8000/api/employee-records",
+      "http://localhost:8000/api/employees",
+    ];
+    const allEmployees = [];
+    for (const url of endpoints) {
+      try {
+        const res = await axios.get(url, { headers });
+        const payload = res.data;
+        const list =
+          Array.isArray(payload?.data) ? payload.data :
+          Array.isArray(payload?.employees) ? payload.employees :
+          Array.isArray(payload?.employee_profiles) ? payload.employee_profiles :
+          (Array.isArray(payload) ? payload : []);
+        if (Array.isArray(list) && list.length) {
+          allEmployees.push(...list);
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    try {
+      const isManagerLike = (val) => {
+        if (!val || typeof val !== "string") return false;
+        const s = val.toLowerCase();
+        return s.includes("manager");
+      };
+      const toName = (emp) => {
+        const join = (...names) =>
+          names.filter(Boolean).map((s) => String(s).trim()).filter(Boolean).join(" ").trim();
+        const candidates = [
+          emp.full_name,
+          emp.name,
+          join(emp.first_name, emp.middle_name, emp.last_name),
+          join(emp.firstName, emp.middleName, emp.lastName),
+          join(emp?.employeeProfile?.first_name, emp?.employeeProfile?.middle_name, emp?.employeeProfile?.last_name),
+          join(emp.given_name, emp.middle_name, emp.family_name),
+        ].filter((v) => typeof v === "string" && v.length > 0);
+        return candidates.length ? candidates[0] : "Unnamed";
+      };
+      const toPosition = (emp) => {
+        const nested = emp?.employeeProfile || emp?.employee_profile;
+        return (
+          emp.position ||
+          emp.position_name ||
+          nested?.position ||
+          emp.job_title ||
+          emp.designation ||
+          emp.role ||
+          emp.role_name ||
+          (emp.user && emp.user.role && emp.user.role.name) ||
+          (emp.role && emp.role.name) ||
+          ""
+        );
+      };
+      const normalizedManagers = allEmployees
+        .filter((emp) => isManagerLike(toPosition(emp)) || isManagerLike(emp?.department_role))
+        .map((emp) => ({
+          id: emp.id || emp.employee_id || emp.user_id || emp.profile_id || (emp.employeeProfile && emp.employeeProfile.id) || emp.uuid || emp.email || String(Math.random()),
+          name: toName(emp),
+          position: toPosition(emp),
+        }))
+        .filter((m) => m.name && isManagerLike(m.position))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setManagers(normalizedManagers);
+    } catch (err) {
+      console.error("Failed to normalize managers:", err);
+      setManagers([]);
+      setManagersError("Failed to load managers");
+    } finally {
+      setManagersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchManagers();
+  }, [fetchManagers]);
 
   const [activeTab, setActiveTab] = useState("Overview");
 
@@ -701,6 +814,25 @@ const OnboardingDashboard = () => {
     useState([]);
 
   const [finalInterviewSelection, setFinalInterviewSelection] = useState([]);
+
+  // Generic confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    show: false,
+    title: "Confirm Action",
+    message: "",
+    onConfirm: null,
+  });
+  const openConfirm = (message, onConfirm, title = "Confirm Action") => {
+    setConfirmDialog({
+      show: true,
+      title,
+      message,
+      onConfirm: typeof onConfirm === "function" ? onConfirm : null,
+    });
+  };
+  const closeConfirm = () => {
+    setConfirmDialog((prev) => ({ ...prev, show: false, onConfirm: null }));
+  };
 
   const finalInterviewSelectAllRef = useRef(null);
 
@@ -2916,34 +3048,36 @@ const closeDocumentModal = useCallback(() => {
   };
 
   // Delete document requirement
-
   const deleteDocumentRequirement = async (requirementId) => {
-    if (!window.confirm("Are you sure you want to delete this requirement?"))
-      return;
-
-    try {
-      const response = await axios.delete(
-        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/requirements/${requirementId}`,
-
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
+    openConfirm(
+      "Are you sure you want to delete this requirement?",
+      async () => {
+        try {
+          const response = await axios.delete(
+            `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/requirements/${requirementId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+            }
+          );
+          if (response.data.success) {
+            if (response.data.overview) {
+              applyDocumentOverview(response.data.overview);
+            } else {
+              await fetchDocumentRequirements(selectedApplicationForDocs.id);
+            }
+            toast.success("Requirement deleted successfully", { autoClose: 4000 });
+          }
+        } catch (error) {
+          console.error("Error deleting document requirement:", error);
+          toast.error("Failed to delete document requirement", { autoClose: 5000 });
         }
-      );
+      },
+      "Confirm Delete"
+    );
+    return;
 
-      if (response.data.success) {
-        if (response.data.overview) {
-          applyDocumentOverview(response.data.overview);
-        } else {
-          await fetchDocumentRequirements(selectedApplicationForDocs.id);
-        }
-      }
-    } catch (error) {
-      console.error("Error deleting document requirement:", error);
-
-      alert("Failed to delete document requirement");
-    }
   };
 
   // Review document submission
@@ -3043,13 +3177,7 @@ const closeDocumentModal = useCallback(() => {
       submission.document_requirement?.document_name ||
       "this document";
 
-    const confirmApproval = window.confirm(
-      `Are you sure you want to approve ${documentLabel}?`
-    );
-
-    if (!confirmApproval) {
-      return;
-    }
+    // Proceed directly; notify via toast after reviewDocumentSubmission
 
     await reviewDocumentSubmission(
       submission.id,
@@ -3083,23 +3211,15 @@ const closeDocumentModal = useCallback(() => {
 
   const confirmRejectDocument = async () => {
     if (!rejectionReason.trim()) {
-      alert("Please provide a rejection reason.");
-
+      toast.warn("Please provide a rejection reason.", { autoClose: 4000 });
       return;
     }
-
-    if (
-      window.confirm(
-        "Are you sure you want to reject this document? The employee will be notified to re-upload."
-      )
-    ) {
-      await reviewDocumentSubmission(
-        rejectingSubmissionId,
-        "rejected",
-        rejectionReason,
-        rejectingDocumentKey
-      );
-    }
+    await reviewDocumentSubmission(
+      rejectingSubmissionId,
+      "rejected",
+      rejectionReason,
+      rejectingDocumentKey
+    );
   };
 
   // Get valid submitted documents (exclude resubmission_required)
@@ -3141,22 +3261,16 @@ const closeDocumentModal = useCallback(() => {
     const validDocs = validSubmittedDocuments;
     
     if (validDocs.length === 0) {
-      alert("No valid submitted documents to approve.");
+      toast.info("No valid submitted documents to approve.", { autoClose: 4000 });
       return;
     }
 
     if (!selectedApplicationForDocs) {
-      alert("No application selected. Please select an application first.");
+      toast.warn("No application selected. Please select an application first.", { autoClose: 4000 });
       return;
     }
 
-    const confirmApproval = window.confirm(
-      `Are you sure you want to approve all ${validDocs.length} valid submitted document(s)?`
-    );
-
-    if (!confirmApproval) {
-      return;
-    }
+    // Proceed directly; notify via toast after batch review
 
     setApprovingAllDocuments(true);
 
@@ -3166,7 +3280,7 @@ const closeDocumentModal = useCallback(() => {
         .map(doc => doc.submission.id);
 
       if (submissionIds.length === 0) {
-        alert("No valid submission IDs found.");
+        toast.info("No valid submission IDs found.", { autoClose: 4000 });
         setApprovingAllDocuments(false);
         return;
       }
@@ -3225,14 +3339,12 @@ const closeDocumentModal = useCallback(() => {
         const failedCount = response.data.failed_count || 0;
 
         if (failedCount === 0) {
-          alert(`Successfully approved all ${reviewedCount} document(s)!`);
+          toast.success(`Successfully approved all ${reviewedCount} document(s)!`, { autoClose: 4000 });
         } else {
-          alert(
-            `Approved ${reviewedCount} document(s). Failed to approve ${failedCount} document(s).`
-          );
+          toast.warn(`Approved ${reviewedCount} document(s). Failed to approve ${failedCount} document(s).`, { autoClose: 5000 });
         }
       } else {
-        alert(response.data.message || "Failed to approve documents. Please try again.");
+        toast.error(response.data.message || "Failed to approve documents. Please try again.", { autoClose: 5000 });
       }
     } catch (error) {
       console.error("Error approving all documents:", error);
@@ -3572,24 +3684,13 @@ const closeDocumentModal = useCallback(() => {
 
   const markDocumentSubmissionAsDone = async () => {
     if (!allDocumentsApproved()) {
-      alert("Please approve all required documents before marking as done.");
-
-      return;
-    }
-
-    if (
-      !window.confirm(
-        "Are you sure you want to mark document submission as complete?"
-      )
-    ) {
+      toast.warn("Please approve all required documents before marking as done.", { autoClose: 5000 });
       return;
     }
 
     try {
       if (!selectedApplicationForDocs?.id) {
-        alert(
-          "Unable to determine the selected applicant. Please reopen the document viewer and try again."
-        );
+        toast.error("Unable to determine the selected applicant. Please reopen the document viewer and try again.", { autoClose: 5000 });
         return;
       }
 
@@ -3626,9 +3727,7 @@ const closeDocumentModal = useCallback(() => {
         });
       }
 
-      alert(
-        "Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review."
-      );
+      toast.success("Document submission marked as completed! The applicant has been moved to Benefits Enroll, and their document records remain available for review.", { autoClose: 4500 });
       setOnboardingSubtab("Benefits Enroll");
     } catch (error) {
       console.error("Error updating status:", error);
@@ -3874,7 +3973,7 @@ const closeDocumentModal = useCallback(() => {
       });
 
     if (finalInterviewApplicants.length === 0) {
-      alert("No applicants are ready for orientation scheduling.");
+      toast.info("No applicants are ready for orientation scheduling.", { autoClose: 4000 });
       return;
     }
 
@@ -3921,7 +4020,7 @@ const closeDocumentModal = useCallback(() => {
 
   const handleConfirmFinalInterviewSelection = () => {
     if (finalInterviewSelection.length === 0) {
-      alert("Please select at least one applicant to schedule.");
+      toast.info("Please select at least one applicant to schedule.", { autoClose: 4000 });
       return;
     }
 
@@ -4210,47 +4309,34 @@ const closeDocumentModal = useCallback(() => {
   };
 
   // Handle reject applicant
-
   const handleRejectApplicant = async (applicant) => {
-    if (
-      window.confirm(
-        `Are you sure you want to reject ${
-          applicant.applicant?.first_name || "this applicant"
-        }?`
-      )
-    ) {
-      try {
-        const token = localStorage.getItem("token");
-
-        await axios.put(
-          `http://localhost:8000/api/applications/${applicant.id}/status`,
-
-          { status: "Rejected" },
-
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        alert("Applicant has been rejected.");
-
-        setShowInterviewDetailsModal(false);
-
-        setSelectedInterviewDetails(null);
-
-        await fetchApplicants(); // Refresh the list
-
-        setActiveTab("Rejected");
-      } catch (error) {
-        console.error("Error rejecting applicant:", error);
-
-        alert("Failed to reject applicant. Please try again.");
-      }
-    }
+    openConfirm(
+      `Are you sure you want to reject ${applicant.applicant?.first_name || "this applicant"}?`,
+      async () => {
+        try {
+          const token = localStorage.getItem("token");
+          await axios.put(
+            `http://localhost:8000/api/applications/${applicant.id}/status`,
+            { status: "Rejected" },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+          toast.success("Applicant has been rejected.", { autoClose: 4000 });
+          setShowInterviewDetailsModal(false);
+          setSelectedInterviewDetails(null);
+          await fetchApplicants(); // Refresh the list
+          setActiveTab("Rejected");
+        } catch (error) {
+          console.error("Error rejecting applicant:", error);
+          toast.error("Failed to reject applicant. Please try again.", { autoClose: 5000 });
+        }
+      },
+      "Confirm Rejection"
+    );
   };
 
   // Handle job offer submission
@@ -4258,9 +4344,7 @@ const closeDocumentModal = useCallback(() => {
   const handleSubmitJobOffer = async () => {
     try {
       if (!jobOfferData.contact_person || !jobOfferData.contact_number) {
-        alert(
-          "Please fill in all required fields: Contact Person and Contact Number"
-        );
+        toast.warn("Please fill in all required fields: Contact Person and Contact Number", { autoClose: 4000 });
 
         return;
       }
@@ -4301,7 +4385,7 @@ const closeDocumentModal = useCallback(() => {
         }
       );
 
-      alert("Job offer sent successfully!");
+      toast.success("Job offer sent successfully!", { autoClose: 4000 });
 
       setShowJobOfferModal(false);
 
@@ -4339,13 +4423,13 @@ const closeDocumentModal = useCallback(() => {
     } catch (error) {
       console.error("Error submitting job offer:", error);
 
-      alert("Failed to send job offer. Please try again.");
+      toast.error("Failed to send job offer. Please try again.", { autoClose: 5000 });
     }
   };
 
   // Handle send interview invite
 
-  const handleSendInterviewInvite = async ({ mode = "submit" } = {}) => {
+  const handleSendInterviewInvite = async ({ mode = "submit", bypassConfirm = false } = {}) => {
     try {
       // Validate required fields
 
@@ -4356,19 +4440,17 @@ const closeDocumentModal = useCallback(() => {
         !interviewData.location ||
         !interviewData.interviewer
       ) {
-        alert(
-          "Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer"
-        );
+        toast.warn("Please fill in all required fields: Date, Start Time, End Time, Location, and Interviewer", { autoClose: 5000 });
 
         return;
       }
 
-      if (
-        mode === "reschedule" &&
-        !window.confirm(
-          "Are you sure you want to reschedule this interview for the applicant?"
-        )
-      ) {
+      if (mode === "reschedule" && !bypassConfirm) {
+        openConfirm(
+          "Are you sure you want to reschedule this interview for the applicant?",
+          () => handleSendInterviewInvite({ mode: "reschedule", bypassConfirm: true }),
+          "Confirm Reschedule"
+        );
         return;
       }
 
@@ -4410,8 +4492,7 @@ const closeDocumentModal = useCallback(() => {
       const successMessage = wasUpdated
         ? "Interview invite updated successfully! The applicant will receive the revised schedule."
         : "Interview invitation sent successfully!";
-
-      alert(successMessage);
+      toast.success(successMessage, { autoClose: 4000 });
 
       // Save interview details to localStorage
 
@@ -4426,16 +4507,13 @@ const closeDocumentModal = useCallback(() => {
       console.error("Error scheduling interview:", error);
 
       if (error?.response?.status === 403) {
-        alert(
-          error?.response?.data?.message ||
-            "You don't have permission to schedule interviews. Only HR Staff and HR Assistants can schedule interviews."
-        );
+        toast.error(error?.response?.data?.message || "You don't have permission to schedule interviews. Only HR Staff and HR Assistants can schedule interviews.", { autoClose: 5000 });
       } else if (error?.response?.status === 401) {
-        alert("Authentication required. Please log in again.");
+        toast.error("Authentication required. Please log in again.", { autoClose: 5000 });
       } else if (error?.response?.data?.message) {
-        alert(error.response.data.message);
+        toast.error(error.response.data.message, { autoClose: 5000 });
       } else {
-        alert("Failed to schedule interview. Please try again.");
+        toast.error("Failed to schedule interview. Please try again.", { autoClose: 5000 });
       }
     }
   };
@@ -4971,6 +5049,25 @@ const closeDocumentModal = useCallback(() => {
         profilePhotoUrl: initialProfilePhotoUrl,
         position: existing.position || entry.position || "",
         department: existing.department || entry.department || "",
+        salary: (() => {
+          // Prefer salary from the actual job posting on the application record
+          const min =
+            entry?.jobPosting?.salary_min ??
+            entry?.job_posting?.salary_min ??
+            null;
+          const max =
+            entry?.jobPosting?.salary_max ??
+            entry?.job_posting?.salary_max ??
+            null;
+          if (min && max) {
+            return Number(min) === Number(max)
+              ? String(Number(min))
+              : `${Number(min)}`;
+          }
+          // Fallback to static mapping by position
+          const pos = (existing.position || entry.position || "").trim();
+          return pos && positionSalary[pos] ? String(positionSalary[pos]) : "";
+        })(),
         sss: existing.sss || "",
         philhealth: existing.philhealth || "",
         pagibig: existing.pagibig || "",
@@ -5065,29 +5162,31 @@ const closeDocumentModal = useCallback(() => {
         : applicant.employee_name || applicant.name || "Applicant";
 
       // Confirm action
-      if (!window.confirm(`Move ${applicantName} to Start Date tab?`)) {
-        return;
-      }
-
-      // Update status to "Starting Date"
-      await axios.put(
-        `http://localhost:8000/api/applications/${applicant.id}/status`,
-        { status: "Starting Date" },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
+      openConfirm(
+        `Move ${applicantName} to Start Date tab?`,
+        async () => {
+          // Update status to "Starting Date"
+          await axios.put(
+            `http://localhost:8000/api/applications/${applicant.id}/status`,
+            { status: "Starting Date" },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+            }
+          );
+          // Refresh applicants list
+          await fetchApplicants();
+          toast.success(`${applicantName} has been moved to Start Date tab.`, { autoClose: 4000 });
+        },
+        "Confirm Move"
       );
+      return;
 
-      // Refresh applicants list
-      await fetchApplicants();
-
-      alert(`${applicantName} has been moved to Start Date tab.`);
     } catch (error) {
       console.error("Error updating status to Starting Date:", error);
-      alert("Failed to update status. Please try again.");
+      toast.error("Failed to update status. Please try again.", { autoClose: 5000 });
     }
   };
 
@@ -5366,6 +5465,15 @@ const closeDocumentModal = useCallback(() => {
       "tenure",
     ];
 
+    // Enforce exactly 11 digits for phone numbers
+    if (
+      (profileCreationForm.phoneNumber || "").replace(/\D/g, "").length !== 11 ||
+      (profileCreationForm.emergencyContactPhone || "").replace(/\D/g, "").length !== 11
+    ) {
+      alert("Phone numbers must contain exactly 11 digits.");
+      return;
+    }
+
     const hasMissingRequiredFields = requiredFields.some((fieldKey) => {
       const value = profileCreationForm[fieldKey];
       if (value === null || value === undefined) {
@@ -5391,6 +5499,7 @@ const closeDocumentModal = useCallback(() => {
       gender: profileCreationForm.gender,
       birth_date: profileCreationForm.dateOfBirth,
       age: Number.isNaN(numericAge) ? 0 : numericAge,
+      place_of_birth: profileCreationForm.placeOfBirth || "",
       // Do NOT send company_email - it's display only
       // company_email: profileCreationForm.companyEmail,
       contact_number: profileCreationForm.phoneNumber,
@@ -5416,6 +5525,8 @@ const closeDocumentModal = useCallback(() => {
       tin_no: profileCreationForm.tin || null,
       metadata: {
         profile_photo_url: profileCreationForm.profilePhotoUrl || null,
+        manager_id: profileCreationForm.reportingManagerId || null,
+        manager_name: profileCreationForm.reportingManagerName || null,
       },
     };
 
@@ -8474,6 +8585,40 @@ const closeDocumentModal = useCallback(() => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog */}
+      {confirmDialog.show && (
+        <div className="modal show d-block" tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{confirmDialog.title || "Confirm Action"}</h5>
+                <button type="button" className="btn-close" onClick={closeConfirm}></button>
+              </div>
+              <div className="modal-body">
+                <p className="mb-0">{confirmDialog.message}</p>
+              </div>
+              <div className="modal-footer">
+                <Button variant="secondary" onClick={closeConfirm}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    const fn = confirmDialog.onConfirm;
+                    closeConfirm();
+                    if (typeof fn === "function") {
+                      fn();
+                    }
+                  }}
+                >
+                  Confirm
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -13792,6 +13937,25 @@ const closeDocumentModal = useCallback(() => {
                   </Form.Group>
                 </Col>
                 <Col md={4}>
+                  <Form.Group controlId="assistantProfilePlaceOfBirth">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Place of Birth
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={profileCreationForm.placeOfBirth}
+                      onChange={(e) =>
+                        handleProfileCreationInputChange(
+                          "placeOfBirth",
+                          e.target.value
+                        )
+                      }
+                      style={PROFILE_INPUT_STYLE}
+                      placeholder="Enter place of birth"
+                    />
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
                   <Form.Group controlId="assistantProfileAge">
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                       Age
@@ -13831,9 +13995,6 @@ const closeDocumentModal = useCallback(() => {
                       placeholder="Applicant's original registration email"
                       style={PROFILE_READONLY_INPUT_STYLE}
                     />
-                    <div className="text-muted small mt-1">
-                      Display only - Original email the applicant used for registration. This email is used for JobPortal access only.
-                    </div>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -13843,17 +14004,21 @@ const closeDocumentModal = useCallback(() => {
                     </Form.Label>
                     <Form.Control
                       type="text"
+                      inputMode="numeric"
+                      pattern="\\d{11}"
+                      maxLength={11}
                       value={profileCreationForm.phoneNumber}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
                           "phoneNumber",
-                          e.target.value
+                          e.target.value.replace(/\\D/g, "").slice(0, 11)
                         )
                       }
                       placeholder="Enter phone number"
                       style={PROFILE_INPUT_STYLE}
                       required
                     />
+                    <div className="text-muted small mt-1">Enter exactly 11 digits.</div>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -13883,17 +14048,21 @@ const closeDocumentModal = useCallback(() => {
                     </Form.Label>
                     <Form.Control
                       type="text"
+                      inputMode="numeric"
+                      pattern="\\d{11}"
+                      maxLength={11}
                       value={profileCreationForm.emergencyContactPhone}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
                           "emergencyContactPhone",
-                          e.target.value
+                          e.target.value.replace(/\\D/g, "").slice(0, 11)
                         )
                       }
                       placeholder="Enter emergency contact phone"
                       style={PROFILE_INPUT_STYLE}
                       required
                     />
+                    <div className="text-muted small mt-1">Enter exactly 11 digits.</div>
                   </Form.Group>
                 </Col>
               </Row>
@@ -14033,12 +14202,36 @@ const closeDocumentModal = useCallback(() => {
                   </Form.Group>
                 </Col>
                 <Col md={4}>
+                  <Form.Group controlId="assistantProfileManager">
+                    <Form.Label className={PROFILE_LABEL_CLASSNAME}>
+                      Manager
+                    </Form.Label>
+                    <Form.Select
+                      value={profileCreationForm.reportingManagerId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const selected = managers.find((m) => String(m.id) === String(selectedId)) || null;
+                        handleProfileCreationInputChange("reportingManagerId", selectedId);
+                        handleProfileCreationInputChange("reportingManagerName", selected ? selected.name : "");
+                      }}
+                      style={PROFILE_INPUT_STYLE}
+                      disabled={managersLoading}
+                    >
+                      <option value="">Select Manager</option>
+                      {managers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.position ? ` • ${m.position}` : ""}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={4}>
                   <Form.Group controlId="assistantProfileEmploymentStatus">
                     <Form.Label className={PROFILE_LABEL_CLASSNAME}>
                       Employment Status
                     </Form.Label>
-                    <Form.Control
-                      type="text"
+                    <Form.Select
                       value={profileCreationForm.employmentStatus}
                       onChange={(e) =>
                         handleProfileCreationInputChange(
@@ -14046,10 +14239,13 @@ const closeDocumentModal = useCallback(() => {
                           e.target.value
                         )
                       }
-                      placeholder="Enter employment status"
                       style={PROFILE_INPUT_STYLE}
                       required
-                    />
+                    >
+                      <option value="">Select employment status</option>
+                      <option value="Part-Time">Part-Time</option>
+                      <option value="Full-Time">Full-Time</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -14076,11 +14272,9 @@ const closeDocumentModal = useCallback(() => {
                     <Form.Control
                       type="text"
                       value={profileCreationForm.salary}
-                      onChange={(e) =>
-                        handleProfileCreationInputChange("salary", e.target.value)
-                      }
-                      placeholder="Enter salary"
-                      style={PROFILE_INPUT_STYLE}
+                      readOnly
+                      style={PROFILE_READONLY_INPUT_STYLE}
+                      placeholder="Auto-filled from selected position"
                       required
                     />
                   </Form.Group>

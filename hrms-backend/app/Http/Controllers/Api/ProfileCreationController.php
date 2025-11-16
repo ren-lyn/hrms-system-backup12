@@ -38,6 +38,7 @@ class ProfileCreationController extends Controller
             'gender' => ['required', 'string', 'max:255'],
             'birth_date' => ['required', 'date'],
             'age' => ['required', 'integer', 'min:0'],
+            'place_of_birth' => ['nullable', 'string', 'max:255'],
             'company_email' => ['nullable', 'email', 'max:255'],
             'contact_number' => ['required', 'string', 'max:255'],
             'emergency_contact_name' => ['required', 'string', 'max:255'],
@@ -57,7 +58,10 @@ class ProfileCreationController extends Controller
             'philhealth' => ['nullable', 'string', 'max:100'],
             'pagibig' => ['nullable', 'string', 'max:100'],
             'tin_no' => ['nullable', 'string', 'max:100'],
+            // Optional metadata
             'metadata.profile_photo_url' => ['nullable', 'string', 'max:2048'],
+            'metadata.manager_id' => ['nullable'],
+            'metadata.manager_name' => ['nullable', 'string', 'max:255'],
         ]);
 
         $profile = DB::transaction(function () use ($validated, $application) {
@@ -118,6 +122,7 @@ class ProfileCreationController extends Controller
                 'salary' => $validated['salary'],
                 'contact_number' => $validated['contact_number'],
                 'phone' => $validated['contact_number'],
+                'place_of_birth' => $validated['place_of_birth'] ?? null,
                 'province' => $validated['province'],
                 'barangay' => $validated['barangay'],
                 'city' => $validated['city'],
@@ -138,6 +143,17 @@ class ProfileCreationController extends Controller
                 'tin_no' => $validated['tin_no'] ?? null,
                 'status' => 'Active',
             ];
+
+            // Optional manager link if provided by frontend
+            $managerId = data_get($validated, 'metadata.manager_id');
+            $managerName = data_get($validated, 'metadata.manager_name');
+            if (!empty($managerName)) {
+                $profileData['manager_name'] = $managerName;
+            }
+            if (!empty($managerId)) {
+                // Store as manager_user_id if numeric or as string fallback
+                $profileData['manager_user_id'] = is_numeric($managerId) ? (int) $managerId : null;
+            }
 
             $employeeProfile = EmployeeProfile::updateOrCreate(
                 ['user_id' => $user->id],
