@@ -8,6 +8,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import useSessionTimeout from './hooks/useSessionTimeout';
 import SessionWarningModal from './components/SessionWarningModal';
+import ProtectedRoute from './components/ProtectedRoute';
 // Lazy load components for better performance
 const Login = lazy(() => import('./pages/Login'));
 const RegisterApplicant = lazy(() => import('./pages/RegisterApplicant'));
@@ -18,7 +19,6 @@ const ManagerDashboard = lazy(() => import('./pages/ManagerDashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const ApplicantDashboard = lazy(() => import('./pages/ApplicantDashboard'));
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'));
-const ProtectedRoute = lazy(() => import('./components/ProtectedRoute'));
 const HrAssistantLayout = lazy(() => import('./pages/HrAssistant/HrAssistantLayout'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const EmployeeRecords = lazy(() => import('./pages/HrAssistant/EmployeeRecords'));
