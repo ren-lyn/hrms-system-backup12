@@ -32,53 +32,6 @@ const useScrollLock = () => {
   return { lockScroll, unlockScroll };
 };
 
-// Uncontrolled input component using refs to prevent re-render issues
-const UncontrolledInput = ({ type, defaultValue, onBlur, required, placeholder, fieldName, ...props }) => {
-  const inputRef = useRef(null);
-  
-  const handleBlur = () => {
-    if (onBlur && inputRef.current) {
-      onBlur(fieldName, inputRef.current.value);
-    }
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type={type}
-      name={fieldName}
-      defaultValue={defaultValue}
-      onBlur={handleBlur}
-      required={required}
-      placeholder={placeholder}
-      {...props}
-    />
-  );
-};
-
-// Uncontrolled textarea component using refs to prevent re-render issues
-const UncontrolledTextarea = ({ defaultValue, onBlur, required, placeholder, fieldName, rows, ...props }) => {
-  const textareaRef = useRef(null);
-  
-  const handleBlur = () => {
-    if (onBlur && textareaRef.current) {
-      onBlur(fieldName, textareaRef.current.value);
-    }
-  };
-
-  return (
-    <textarea
-      ref={textareaRef}
-      name={fieldName}
-      defaultValue={defaultValue}
-      onBlur={handleBlur}
-      required={required}
-      placeholder={placeholder}
-      rows={rows}
-      {...props}
-    />
-  );
-};
 
 const DepartmentPositionManagement = () => {
   const [departments, setDepartments] = useState([]);
@@ -193,36 +146,15 @@ const DepartmentPositionManagement = () => {
     setShowDeletePosModal(true);
   };
 
-  const handleDeptInputBlur = (field, value) => {
-    setDeptFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handlePosInputBlur = (field, value) => {
-    setPosFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
   const handleDepartmentSubmit = async (e) => {
     e.preventDefault();
     try {
       setSaving(true);
       
-      // Read current form values directly from the form to ensure we get the latest values
-      const formData = new FormData(e.target);
-      const currentFormData = {
-        name: formData.get('name') || deptFormData.name || '',
-        description: formData.get('description') || deptFormData.description || ''
-      };
-      
       if (showAddDeptModal) {
-        await axios.post('http://localhost:8000/api/departments', currentFormData);
+        await axios.post('http://localhost:8000/api/departments', deptFormData);
       } else if (showEditDeptModal) {
-        await axios.put(`http://localhost:8000/api/departments/${selectedItem.id}`, currentFormData);
+        await axios.put(`http://localhost:8000/api/departments/${selectedItem.id}`, deptFormData);
       }
       
       await fetchDepartments();
@@ -301,7 +233,7 @@ const DepartmentPositionManagement = () => {
     }
   };
 
-  const Modal = ({ isOpen, onClose, title, children }) => {
+  const Modal = ({ isOpen, onClose, title, children, contentClassName }) => {
     const { lockScroll, unlockScroll } = useScrollLock();
 
     useEffect(() => {
@@ -319,7 +251,7 @@ const DepartmentPositionManagement = () => {
 
     return (
       <div className="modal-overlay" onClick={onClose}>
-        <div className="modal-content" onClick={e => e.stopPropagation()}>
+        <div className={`modal-content ${contentClassName || ''}`} onClick={e => e.stopPropagation()}>
           <div className="modal-header">
             <h3>{title}</h3>
             <button type="button" className="modal-close" onClick={onClose}>
@@ -500,26 +432,38 @@ const DepartmentPositionManagement = () => {
           setShowEditDeptModal(false);
         }}
         title={showAddDeptModal ? 'Add Department' : 'Edit Department'}
+        contentClassName="no-scroll"
       >
         <form onSubmit={handleDepartmentSubmit} className="dept-form">
           <div className="form-group">
             <label>Department Name</label>
-            <UncontrolledInput
+            <input
               type="text"
-              defaultValue={deptFormData.name}
-              onBlur={handleDeptInputBlur}
-              fieldName="name"
+              value={deptFormData.name}
+              onChange={(e) => setDeptFormData(prev => ({ ...prev, name: e.target.value }))}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               required
               placeholder="Enter department name"
+              autoFocus
             />
           </div>
           
           <div className="form-group">
             <label>Description</label>
-            <UncontrolledTextarea
-              defaultValue={deptFormData.description}
-              onBlur={handleDeptInputBlur}
-              fieldName="description"
+            <textarea
+              value={deptFormData.description}
+              onChange={(e) => setDeptFormData(prev => ({ ...prev, description: e.target.value }))}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               placeholder="Enter department description"
               rows="3"
             />
@@ -552,17 +496,24 @@ const DepartmentPositionManagement = () => {
           setShowEditPosModal(false);
         }}
         title={showAddPosModal ? 'Add Position' : 'Edit Position'}
+        contentClassName="no-scroll"
       >
         <form onSubmit={handlePositionSubmit} className="pos-form">
           <div className="form-group">
             <label>Position Name</label>
-            <UncontrolledInput
+            <input
               type="text"
-              defaultValue={posFormData.name}
-              onBlur={handlePosInputBlur}
-              fieldName="name"
+              value={posFormData.name}
+              onChange={(e) => setPosFormData(prev => ({ ...prev, name: e.target.value }))}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               required
               placeholder="Enter position name"
+              autoFocus
             />
           </div>
           
@@ -570,7 +521,13 @@ const DepartmentPositionManagement = () => {
             <label>Description</label>
             <textarea
               value={posFormData.description}
-              onChange={(e) => setPosFormData({ ...posFormData, description: e.target.value })}
+              onChange={(e) => setPosFormData(prev => ({ ...prev, description: e.target.value }))}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               placeholder="Enter position description"
               rows="3"
             />
@@ -580,7 +537,7 @@ const DepartmentPositionManagement = () => {
             <label>Department</label>
             <select
               value={posFormData.department_id}
-              onChange={(e) => setPosFormData({ ...posFormData, department_id: e.target.value })}
+              onChange={(e) => setPosFormData(prev => ({ ...prev, department_id: e.target.value }))}
               required
             >
               <option value="">Select Department</option>

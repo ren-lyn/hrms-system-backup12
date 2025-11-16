@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSearch, faPlus, faEdit, faTrash, faKey, faToggleOn, faToggleOff,
@@ -78,6 +78,12 @@ const UserAccountManagement = () => {
   const [saving, setSaving] = useState(false);
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
   const [showResetSuccess, setShowResetSuccess] = useState(false);
+  const [showSetPasswordModal, setShowSetPasswordModal] = useState(false);
+  const [showSetPassword, setShowSetPassword] = useState(false);
+  const [setPasswordData, setSetPasswordData] = useState({
+    password: '',
+    password_confirmation: ''
+  });
 
   // Form states
   const [formData, setFormData] = useState({
@@ -90,15 +96,6 @@ const UserAccountManagement = () => {
   });
 
   const [roles, setRoles] = useState([]);
-
-  useEffect(() => {
-    fetchUsers();
-    fetchRoles();
-  }, []);
-
-  useEffect(() => {
-    filterUsers();
-  }, [users, searchTerm, roleFilter, statusFilter]);
 
   const fetchUsers = async () => {
     try {
@@ -121,31 +118,54 @@ const UserAccountManagement = () => {
     }
   };
 
-  const filterUsers = () => {
-    let filtered = users;
+  const filterUsers = useCallback(() => {
+    // Start with all users
+    let filtered = [...users];
 
-    if (searchTerm) {
+    // Apply search filter
+    if (searchTerm && searchTerm.trim() !== '') {
       filtered = filtered.filter(user => {
-        const firstName = user.first_name || '';
-        const lastName = user.last_name || '';
-        const email = user.email || '';
+        const firstName = (user.first_name || '').trim();
+        const lastName = (user.last_name || '').trim();
+        const email = (user.email || '').trim();
+        const searchLower = searchTerm.toLowerCase().trim();
         
-        return `${firstName} ${lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-               email.toLowerCase().includes(searchTerm.toLowerCase());
+        return `${firstName} ${lastName}`.toLowerCase().includes(searchLower) ||
+               email.toLowerCase().includes(searchLower);
       });
     }
 
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(user => user.role?.name === roleFilter);
+    // Apply role filter
+    if (roleFilter && roleFilter !== 'all') {
+      filtered = filtered.filter(user => {
+        const userRoleName = user.role?.name || '';
+        return userRoleName === roleFilter;
+      });
     }
 
-    if (statusFilter !== 'all') {
+    // Apply status filter
+    if (statusFilter && statusFilter !== 'all') {
       const isActive = statusFilter === 'active';
-      filtered = filtered.filter(user => user.is_active === isActive);
+      filtered = filtered.filter(user => {
+        // Handle both boolean and string representations
+        const userActive = typeof user.is_active === 'boolean' 
+          ? user.is_active 
+          : user.is_active === 1 || user.is_active === '1' || user.is_active === true;
+        return userActive === isActive;
+      });
     }
 
     setFilteredUsers(filtered);
-  };
+  }, [users, searchTerm, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    fetchUsers();
+    fetchRoles();
+  }, []);
+
+  useEffect(() => {
+    filterUsers();
+  }, [filterUsers]);
 
   const handleAddUser = () => {
     setFormData({
@@ -187,6 +207,50 @@ const UserAccountManagement = () => {
     setShowResetSuccess(false);
     setShowResetPassword(false);
     setShowPasswordModal(true);
+  };
+
+  const handleSetPassword = (user) => {
+    setSelectedUser(user);
+    setSetPasswordData({
+      password: '',
+      password_confirmation: ''
+    });
+    setShowSetPasswordModal(true);
+  };
+
+  const handleSetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (setPasswordData.password !== setPasswordData.password_confirmation) {
+      alert('Passwords do not match');
+      return;
+    }
+
+    if (setPasswordData.password.length < 8) {
+      alert('Password must be at least 8 characters long');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await axios.put(`http://localhost:8000/api/users/${selectedUser.id}/reset-password`, {
+        password: setPasswordData.password,
+        password_confirmation: setPasswordData.password_confirmation
+      });
+      await fetchUsers();
+      setShowSetPasswordModal(false);
+      setSetPasswordData({
+        password: '',
+        password_confirmation: ''
+      });
+      alert('Password has been successfully set.');
+    } catch (error) {
+      console.error('Error setting password:', error);
+      const errorMessage = error.response?.data?.message || error.response?.data?.errors?.password?.[0] || 'Unable to set password. Please try again.';
+      alert(errorMessage);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleInputBlur = (field, value) => {
@@ -291,13 +355,21 @@ const UserAccountManagement = () => {
       <div className="form-group">
         <label>New Password</label>
         <div className="password-input-container">
-          <UncontrolledInput
+          <input
             type={showResetPassword ? 'text' : 'password'}
-            defaultValue={formData.password}
-            onBlur={handleInputBlur}
-            fieldName="password"
+            value={formData.password || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.target.focus();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.target.focus();
+            }}
             required
             placeholder="Enter new password"
+            autoFocus
           />
           <button
             type="button"
@@ -313,11 +385,18 @@ const UserAccountManagement = () => {
       <div className="form-group">
         <label>Confirm Password</label>
         <div className="password-input-container">
-          <UncontrolledInput
+          <input
             type={showResetPassword ? 'text' : 'password'}
-            defaultValue={formData.confirmPassword}
-            onBlur={handleInputBlur}
-            fieldName="confirmPassword"
+            value={formData.confirmPassword || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.target.focus();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.target.focus();
+            }}
             required
             placeholder="Re-enter new password"
           />
@@ -484,6 +563,14 @@ const UserAccountManagement = () => {
                     </button>
                     <button
                       type="button"
+                      className="action-btn password-btn"
+                      onClick={() => handleSetPassword(user)}
+                      title="Set Password"
+                    >
+                      <FontAwesomeIcon icon={faKey} />
+                    </button>
+                    <button
+                      type="button"
                       className="action-btn delete-btn"
                       onClick={() => handleDeleteUser(user)}
                       title="Delete User"
@@ -511,21 +598,36 @@ const UserAccountManagement = () => {
           <div className="form-row">
             <div className="form-group">
               <label>First Name</label>
-              <UncontrolledInput
+              <input
                 type="text"
-                defaultValue={formData.first_name}
-                onBlur={handleInputBlur}
-                fieldName="first_name"
+                value={formData.first_name || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
                 required
+                autoFocus
               />
             </div>
             <div className="form-group">
               <label>Last Name</label>
-              <UncontrolledInput
+              <input
                 type="text"
-                defaultValue={formData.last_name}
-                onBlur={handleInputBlur}
-                fieldName="last_name"
+                value={formData.last_name || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
                 required
               />
             </div>
@@ -533,11 +635,18 @@ const UserAccountManagement = () => {
 
           <div className="form-group">
             <label>Email</label>
-            <UncontrolledInput
+            <input
               type="email"
-              defaultValue={formData.email}
-              onBlur={handleInputBlur}
-              fieldName="email"
+              value={formData.email || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.target.focus();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.target.focus();
+              }}
               required
             />
           </div>
@@ -545,8 +654,8 @@ const UserAccountManagement = () => {
           <div className="form-group">
             <label>Role</label>
             <select
-              value={formData.role_id}
-              onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}
+              value={formData.role_id || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, role_id: e.target.value }))}
               required
             >
               <option value="">Select Role</option>
@@ -559,11 +668,18 @@ const UserAccountManagement = () => {
           <div className="form-group">
             <label>Password {showEditModal && '(leave blank to keep current)'}</label>
             <div className="password-input-container">
-              <UncontrolledInput
+              <input
                 type={showPassword ? 'text' : 'password'}
-                defaultValue={formData.password}
-                onBlur={handleInputBlur}
-                fieldName="password"
+                value={formData.password || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
                 required={showAddModal}
               />
               <button
@@ -709,6 +825,93 @@ const UserAccountManagement = () => {
             Okay
           </button>
         </div>
+      </Modal>
+
+      {/* Set Password Modal */}
+      <Modal
+        isOpen={showSetPasswordModal}
+        onClose={() => {
+          setShowSetPasswordModal(false);
+          setSetPasswordData({
+            password: '',
+            password_confirmation: ''
+          });
+        }}
+        title="Set New Password"
+        contentClassName="no-scroll"
+      >
+        <form onSubmit={handleSetPasswordSubmit} className="user-form">
+          <div className="form-group">
+            <label>New Password</label>
+            <div className="password-input-container">
+              <input
+                type={showSetPassword ? 'text' : 'password'}
+                value={setPasswordData.password}
+                onChange={(e) => setSetPasswordData(prev => ({ ...prev, password: e.target.value }))}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                required
+                placeholder="Enter new password (min. 8 characters)"
+                autoFocus
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowSetPassword(!showSetPassword)}
+                aria-label={showSetPassword ? 'Hide password' : 'Show password'}
+              >
+                <FontAwesomeIcon icon={showSetPassword ? faEyeSlash : faEye} />
+              </button>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Confirm Password</label>
+            <div className="password-input-container">
+              <input
+                type={showSetPassword ? 'text' : 'password'}
+                value={setPasswordData.password_confirmation}
+                onChange={(e) => setSetPasswordData(prev => ({ ...prev, password_confirmation: e.target.value }))}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.target.focus();
+                }}
+                required
+                placeholder="Re-enter new password"
+              />
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => {
+                setShowSetPasswordModal(false);
+                setSetPasswordData({
+                  password: '',
+                  password_confirmation: ''
+                });
+              }}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="save-btn" disabled={saving}>
+              {saving ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faKey} />}
+              {saving ? 'Setting...' : 'Set Password'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

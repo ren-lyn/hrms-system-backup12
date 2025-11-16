@@ -407,6 +407,12 @@
   animation: modalSlideIn 0.3s ease;
 }
 
+/* Variant: no scrollbar for compact dialogs */
+.modal-content.no-scroll {
+  overflow-y: hidden;
+  scrollbar-gutter: auto;
+}
+
 @keyframes modalSlideIn {
   from {
     opacity: 0;

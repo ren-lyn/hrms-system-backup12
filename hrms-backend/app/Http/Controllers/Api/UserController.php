@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\EmployeeProfile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
 
 class UserController extends Controller
 {
@@ -64,7 +66,7 @@ class UserController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        $user = User::with('employeeProfile')->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
             'first_name' => 'sometimes|string|max:255',
@@ -86,6 +88,30 @@ class UserController extends Controller
         }
 
         $user->update($updateData);
+
+        // Sync changes to EmployeeProfile if user has one
+        if ($user->employeeProfile) {
+            $profileUpdateData = [];
+            
+            // Sync name and email to EmployeeProfile
+            if (isset($updateData['first_name'])) {
+                $profileUpdateData['first_name'] = $updateData['first_name'];
+            }
+            if (isset($updateData['last_name'])) {
+                $profileUpdateData['last_name'] = $updateData['last_name'];
+            }
+            if (isset($updateData['email'])) {
+                $profileUpdateData['email'] = $updateData['email'];
+            }
+            
+            // Update EmployeeProfile if there are changes
+            if (!empty($profileUpdateData)) {
+                $user->employeeProfile->update($profileUpdateData);
+                
+                // Clear employees cache when profile is updated
+                Cache::forget('employees_list');
+            }
+        }
 
         // Refresh the user from database to ensure we get the latest role relationship
         $user = $user->fresh(['role']);

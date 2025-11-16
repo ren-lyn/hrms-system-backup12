@@ -18,6 +18,8 @@ const RegisterApplicant = () => {
   const [success, setSuccess] = useState('');
   const [showPasswords, setShowPasswords] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [passwordValidation, setPasswordValidation] = useState({
     length: false,
     uppercase: false,
@@ -911,7 +913,7 @@ const RegisterApplicant = () => {
                   onChange={(e) => setTermsAccepted(e.target.checked)}
                 />
                 <label htmlFor="terms" className="terms-label">
-                  I agree to the <a href="#" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="#" target="_blank" rel="noopener noreferrer">Privacy Policy</a>. 
+                  I agree to the <a href="#" onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}>Terms of Service</a> and <a href="#" onClick={(e) => { e.preventDefault(); setShowPrivacyModal(true); }}>Privacy Policy</a>. 
                   I understand that my information will be used solely for recruitment and application purposes.
                 </label>
               </motion.div>
@@ -951,6 +953,137 @@ const RegisterApplicant = () => {
           </motion.div>
         </motion.div>
       </div>
+
+      {/* Terms of Service Modal */}
+      <AnimatePresence>
+        {showTermsModal && (
+          <motion.div
+            key="terms-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000
+            }}
+            onClick={() => setShowTermsModal(false)}
+          >
+            <motion.div
+              initial={{ y: 30, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 30, opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 'min(900px, 92vw)',
+                maxHeight: '80vh',
+                background: '#ffffff',
+                borderRadius: '16px',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>Terms of Service</h3>
+                <button
+                  onClick={() => setShowTermsModal(false)}
+                  style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#6b7280' }}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ padding: '16px 22px', overflowY: 'auto' }}>
+                <p style={{ color: '#374151' }}>
+                  These Terms of Service govern your use of this recruitment and application portal. By creating an account, you agree to:
+                </p>
+                <ul style={{ color: '#374151', paddingLeft: '18px' }}>
+                  <li>Provide accurate and truthful information in your application.</li>
+                  <li>Use your account responsibly and keep your credentials secure.</li>
+                  <li>Allow us to process your submitted information solely for recruitment and application purposes.</li>
+                  <li>Comply with applicable laws and refrain from misuse of the system.</li>
+                </ul>
+                <p style={{ color: '#374151' }}>
+                  Company may update these Terms from time to time. Continued use of the portal indicates your acceptance of the revised Terms.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Privacy Policy Modal */}
+      <AnimatePresence>
+        {showPrivacyModal && (
+          <motion.div
+            key="privacy-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.45)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000
+            }}
+            onClick={() => setShowPrivacyModal(false)}
+          >
+            <motion.div
+              initial={{ y: 30, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 30, opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 'min(900px, 92vw)',
+                maxHeight: '80vh',
+                background: '#ffffff',
+                borderRadius: '16px',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#111827' }}>Privacy Policy</h3>
+                <button
+                  onClick={() => setShowPrivacyModal(false)}
+                  style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#6b7280' }}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ padding: '16px 22px', overflowY: 'auto' }}>
+                <p style={{ color: '#374151' }}>
+                  We collect and process your personal information to evaluate your application and manage recruitment activities.
+                  Your data will be used solely for recruitment and application purposes and will be retained only as long as necessary.
+                </p>
+                <ul style={{ color: '#374151', paddingLeft: '18px' }}>
+                  <li>Information collected may include contact details, resume/CV, and application responses.</li>
+                  <li>We implement reasonable safeguards to protect your data against unauthorized access.</li>
+                  <li>You may request access, correction, or deletion of your data as permitted by law.</li>
+                  <li>We do not sell your personal data.</li>
+                </ul>
+                <p style={{ color: '#374151' }}>
+                  For any privacy inquiries, please contact our HR or Data Protection Officer.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

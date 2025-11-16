@@ -26,6 +26,10 @@ const AdminDashboard = () => {
   const [showUsers, setShowUsers] = useState(false);
   const [showRoles, setShowRoles] = useState(false);
   const [activeRole, setActiveRole] = useState(null);
+  const [passwordRequestCounts, setPasswordRequestCounts] = useState({ total: 0, pending: 0 });
+  const [passwordRequests, setPasswordRequests] = useState([]);
+  const [showNewEmployees, setShowNewEmployees] = useState(false);
+  const [showPasswordRequests, setShowPasswordRequests] = useState(false);
 
   // Responsive sidebar management
   useEffect(() => {
@@ -117,6 +121,32 @@ const AdminDashboard = () => {
   // (Security alerts removed)
   // Fetch password change requests (preferred) or fallback security alerts
   // Security Alerts feature removed
+  useEffect(() => {
+    let isMounted = true;
+    const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+    const fetchPasswordRequests = async () => {
+      try {
+        const res = await axios.get('http://localhost:8000/api/password-change-requests', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!isMounted) return;
+        const items = Array.isArray(res.data) ? res.data : [];
+        const pending = items.filter(it => (it.status || '').toLowerCase() === 'pending').length;
+        setPasswordRequests(items);
+        setPasswordRequestCounts({ total: items.length, pending });
+      } catch (_e) {
+        if (!isMounted) return;
+        setPasswordRequestCounts({ total: 0, pending: 0 });
+        setPasswordRequests([]);
+      }
+    };
+    fetchPasswordRequests();
+    const interval = setInterval(fetchPasswordRequests, 60000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const totalUsers = useMemo(() => employees.length, [employees]);
   const totalRoles = useMemo(() => {
@@ -153,6 +183,30 @@ const AdminDashboard = () => {
       });
     });
     return unique.size;
+  }, [employees]);
+
+  const recentNewEmployeesCount = useMemo(() => {
+    if (!employees || employees.length === 0) return 0;
+    const now = new Date();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const isRecent = (dateVal) => {
+      if (!dateVal) return false;
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return false;
+      return now.getTime() - d.getTime() <= sevenDaysMs;
+    };
+    const getCreatedDate = (e) => {
+      return (
+        e?.created_at ||
+        e?.createdAt ||
+        e?.date_hired ||
+        e?.hire_date ||
+        e?.joined_at ||
+        e?.date_created ||
+        null
+      );
+    };
+    return employees.filter((e) => isRecent(getCreatedDate(e))).length;
   }, [employees]);
 
   // Helpers for displaying names/departments and deriving roles
@@ -322,6 +376,32 @@ const AdminDashboard = () => {
                   <p className="stat-number">{totalRoles}</p>
                 </div>
               </button>
+              <button
+                className="stat-card stat-card-button"
+                onClick={() => setShowNewEmployees(true)}
+                title="View recently added employees"
+              >
+                <div className="stat-icon">
+                  <FontAwesomeIcon icon={faUserPlus} />
+                </div>
+                <div className="stat-content">
+                  <h3>New Employees</h3>
+                  <p className="stat-number">{recentNewEmployeesCount}</p>
+                </div>
+              </button>
+              <button
+                className="stat-card stat-card-button"
+                onClick={() => setShowPasswordRequests(true)}
+                title="View pending password change requests"
+              >
+                <div className="stat-icon">
+                  <FontAwesomeIcon icon={faKey} />
+                </div>
+                <div className="stat-content">
+                  <h3>New Password Resets</h3>
+                  <p className="stat-number">{passwordRequestCounts.pending}</p>
+                </div>
+              </button>
               {/* Security Alerts feature removed */}
             </div>
 
@@ -375,6 +455,60 @@ const AdminDashboard = () => {
               </div>
             )}
 
+            {showNewEmployees && (
+              <div className="alerts-modal-overlay" onClick={() => setShowNewEmployees(false)}>
+                <div className="alerts-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="alerts-modal-header">
+                    <h3><FontAwesomeIcon icon={faUserPlus} /> New Employees</h3>
+                    <button className="alerts-close" onClick={() => setShowNewEmployees(false)}>
+                      <FontAwesomeIcon icon={faTimes} />
+                    </button>
+                  </div>
+                  <div className="alerts-modal-body">
+                    <ul className="entity-list">
+                      {employees
+                        .filter((e) => {
+                          const created =
+                            e?.created_at ||
+                            e?.createdAt ||
+                            e?.date_hired ||
+                            e?.hire_date ||
+                            e?.joined_at ||
+                            e?.date_created ||
+                            null;
+                          if (!created) return false;
+                          const d = new Date(created);
+                          if (isNaN(d.getTime())) return false;
+                          const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+                          return Date.now() - d.getTime() <= sevenDaysMs;
+                        })
+                        .map((e, i) => {
+                          const { fullName, department } = getEmployeeDisplay(e);
+                          return (
+                            <li key={i} className="entity-item">
+                              <span className="entity-name">{fullName}</span>
+                              <span className="entity-meta">{department}</span>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        className="admin-logout-btn"
+                        onClick={() => {
+                          setShowNewEmployees(false);
+                          setActiveView('user-management');
+                        }}
+                        style={{ width: 'auto', padding: '8px 14px', background: '#4F46E5' }}
+                      >
+                        View in User Management
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {showRoles && (
               <div className="alerts-modal-overlay" onClick={() => setShowRoles(false)}>
                 <div className="alerts-modal" onClick={(e) => e.stopPropagation()}>
@@ -415,6 +549,47 @@ const AdminDashboard = () => {
                           })}
                         </ul>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showPasswordRequests && (
+              <div className="alerts-modal-overlay" onClick={() => setShowPasswordRequests(false)}>
+                <div className="alerts-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="alerts-modal-header">
+                    <h3><FontAwesomeIcon icon={faKey} /> Password Reset Requests</h3>
+                    <button className="alerts-close" onClick={() => setShowPasswordRequests(false)}>
+                      <FontAwesomeIcon icon={faTimes} />
+                    </button>
+                  </div>
+                  <div className="alerts-modal-body">
+                    <ul className="entity-list">
+                      {passwordRequests
+                        .filter((r) => (r.status || '').toLowerCase() === 'pending')
+                        .map((r, i) => {
+                          const name = r.full_name || r.name || r.email || `Request #${r.id}`;
+                          const meta = r.department || r.email || '';
+                          return (
+                            <li key={i} className="entity-item">
+                              <span className="entity-name">{name}</span>
+                              <span className="entity-meta">{meta}</span>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        className="admin-logout-btn"
+                        onClick={() => {
+                          setShowPasswordRequests(false);
+                          setActiveView('password-reset-requests');
+                        }}
+                        style={{ width: 'auto', padding: '8px 14px', background: '#FB923C' }}
+                      >
+                        View in Password Requests
+                      </button>
                     </div>
                   </div>
                 </div>

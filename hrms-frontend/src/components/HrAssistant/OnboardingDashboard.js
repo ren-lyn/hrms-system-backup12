@@ -641,6 +641,11 @@ const OnboardingDashboard = () => {
     "Document Submission"
   );
 
+  // Resume preview state (for viewing applicant resume in-app)
+  const [showResumePreview, setShowResumePreview] = useState(false);
+  const [resumeViewerUrl, setResumeViewerUrl] = useState(null);
+  const [resumeViewerType, setResumeViewerType] = useState(null); // 'pdf' | 'image'
+
   // Onboarding management tabs
 
   const onboardingTabs = [
@@ -4675,46 +4680,32 @@ const closeDocumentModal = useCallback(() => {
   // Handle resume view
 
   const handleViewResume = (applicant) => {
-    // Check multiple possible resume locations
+    // Prefer secure API download (avoids cross-origin and auth issues)
+    const applicationId = applicant?.id;
 
-    const resumeUrl =
-      applicant.resume_path || applicant.applicant?.resume || applicant.resume;
-
-    console.log("🔍 [View Resume] Checking resume URL:", resumeUrl);
-
-    console.log("🔍 [View Resume] Full applicant data:", applicant);
-
-    if (resumeUrl) {
-      // Construct full URL dynamically for online accessibility
-
-      let fullUrl;
-
-      if (resumeUrl.startsWith("http")) {
-        // Already a full URL, use as is
-
-        fullUrl = resumeUrl;
-      } else {
-        // Construct URL using current host for online accessibility
-
-        const currentHost = window.location.hostname;
-
-        const protocol = window.location.protocol;
-
-        // Use the same protocol and hostname as the current page
-
-        // Point to backend on port 8000 for storage
-
-        fullUrl = `${protocol}//${currentHost}:8000/storage/${resumeUrl}`;
-      }
-
-      console.log("✅ [View Resume] Opening URL:", fullUrl);
-
-      window.open(fullUrl, "_blank");
-    } else {
-      console.error("❌ [View Resume] No resume URL found");
-
+    if (!applicationId) {
+      console.error("❌ [View Resume] Missing application id");
       alert("Resume not available for this applicant.");
+      return;
     }
+
+    const apiUrl = `http://localhost:8000/api/applications/${applicationId}/resume`;
+
+    axios
+      .get(apiUrl, { responseType: "blob" })
+      .then((response) => {
+        const contentType = response.headers["content-type"] || "application/pdf";
+        const isImage = contentType.includes("image/");
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: contentType }));
+
+        setResumeViewerUrl(url);
+        setResumeViewerType(isImage ? "image" : "pdf");
+        setShowResumePreview(true);
+      })
+      .catch((error) => {
+        console.error("❌ [View Resume] Failed to fetch resume via API", error);
+        alert("Failed to load resume. Please try again.");
+      });
   };
 
   const applyBenefitsPayload = (payload, options = {}) => {
@@ -8482,6 +8473,110 @@ const closeDocumentModal = useCallback(() => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resume Preview Modal */}
+
+      {showResumePreview && resumeViewerUrl && (
+        <div
+          className="modal show d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1200 }}
+        >
+          <div className="modal-dialog modal-xl modal-dialog-centered" style={{ maxWidth: "1200px" }}>
+            <div className="modal-content" style={{ borderRadius: "12px" }}>
+              <div
+                className="modal-header border-0 pb-2"
+                style={{
+                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  borderRadius: "12px 12px 0 0",
+                }}
+              >
+                <h5 className="modal-title fw-bold text-white">
+                  Resume Preview
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => {
+                    try {
+                      if (resumeViewerUrl && resumeViewerUrl.startsWith("blob:")) {
+                        window.URL.revokeObjectURL(resumeViewerUrl);
+                      }
+                    } catch (e) {
+                      console.error("Failed to revoke resume object URL", e);
+                    }
+                    setShowResumePreview(false);
+                    setResumeViewerUrl(null);
+                    setResumeViewerType(null);
+                  }}
+                ></button>
+              </div>
+
+              <div className="modal-body p-0">
+                <div style={{ padding: 0, maxHeight: "80vh", overflow: "auto" }}>
+                  {resumeViewerType === "pdf" && (
+                    <iframe
+                      src={`${resumeViewerUrl}#toolbar=1`}
+                      title="Resume Document"
+                      style={{ width: "100%", height: "80vh", border: "none", borderRadius: "0 0 0.375rem 0.375rem" }}
+                    />
+                  )}
+                  {resumeViewerType === "image" && (
+                    <div className="text-center p-3" style={{ backgroundColor: "#f8f9fa" }}>
+                      <img
+                        src={resumeViewerUrl}
+                        alt="Resume"
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: "75vh",
+                          borderRadius: "6px",
+                          boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="modal-footer border-0 pt-0">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    try {
+                      if (resumeViewerUrl && resumeViewerUrl.startsWith("blob:")) {
+                        window.URL.revokeObjectURL(resumeViewerUrl);
+                      }
+                    } catch (e) {
+                      console.error("Failed to revoke resume object URL", e);
+                    }
+                    setShowResumePreview(false);
+                    setResumeViewerUrl(null);
+                    setResumeViewerType(null);
+                  }}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    try {
+                      const a = document.createElement("a");
+                      a.href = resumeViewerUrl;
+                      a.target = "_blank";
+                      a.rel = "noopener noreferrer";
+                      a.click();
+                    } catch (e) {
+                      console.error("Failed to open resume in new tab", e);
+                    }
+                  }}
+                >
+                  Open in new tab
+                </Button>
+              </div>
             </div>
           </div>
         </div>
