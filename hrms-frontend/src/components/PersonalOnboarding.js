@@ -334,6 +334,7 @@ const PersonalOnboarding = () => {
   const [onboardingData, setOnboardingData] = useState(null);
 
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState(null);
+  const [submittingAllDocuments, setSubmittingAllDocuments] = useState(false);
 
   const [jobOfferData, setJobOfferData] = useState(null);
 
@@ -2572,6 +2573,187 @@ const PersonalOnboarding = () => {
     }
 
     return success;
+  };
+
+  // Handle submitting all uploaded documents
+  const handleSubmitAllDocuments = async () => {
+    const uploadedDocumentKeys = Object.keys(documentUploads);
+    
+    if (uploadedDocumentKeys.length === 0) {
+      showToast(
+        "warning",
+        "No Documents to Submit",
+        "Please upload at least one document before submitting."
+      );
+      return;
+    }
+
+    if (!activeApplicationId) {
+      showToast(
+        "error",
+        "No Application Found",
+        "We could not determine your application. Please refresh and try again."
+      );
+      return;
+    }
+
+    setSubmittingAllDocuments(true);
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      showToast(
+        "error",
+        "Authentication Required",
+        "Please log in again to continue."
+      );
+      setSubmittingAllDocuments(false);
+      return;
+    }
+
+    try {
+      // Prepare all documents for batch upload
+      const uploadPromises = [];
+      const documentData = [];
+
+      for (const documentKey of uploadedDocumentKeys) {
+        const selectedFile = documentUploads[documentKey];
+        if (!selectedFile) continue;
+
+        let requirementId = requirementIdsByDocumentKey[documentKey];
+        if (!requirementId) {
+          const resolvedRequirement = await resolveRequirementViaApi(documentKey);
+          if (resolvedRequirement?.id) {
+            requirementId = resolvedRequirement.id;
+          } else {
+            continue;
+          }
+        }
+
+        const identifierConfig = GOVERNMENT_ID_FIELD_MAP[documentKey] || null;
+        let identifierValue = null;
+
+        if (identifierConfig) {
+          const currentValue = governmentIdNumbers[documentKey] || "";
+          const trimmedValue = currentValue.trim();
+
+          if (!trimmedValue) {
+            showToast(
+              "error",
+              "Missing Information",
+              `Please enter your ${identifierConfig.label} before submitting.`
+            );
+            setSubmittingAllDocuments(false);
+            return;
+          }
+
+          identifierValue = trimmedValue;
+        }
+
+        // Create FormData for this document
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        if (identifierConfig && identifierValue !== null) {
+          formData.append(identifierConfig.field, identifierValue);
+        }
+
+        const uploadUrl = `http://localhost:8000/api/applications/${activeApplicationId}/documents/requirements/${requirementId}/upload`;
+        
+        uploadPromises.push(
+          axios.post(uploadUrl, formData, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }).then((response) => ({
+            success: true,
+            documentKey,
+            response,
+          })).catch((error) => ({
+            success: false,
+            documentKey,
+            error,
+          }))
+        );
+
+        documentData.push({ documentKey, requirementId, identifierValue });
+      }
+
+      // Upload all documents in parallel
+      const results = await Promise.all(uploadPromises);
+
+      // Process results
+      let successCount = 0;
+      let failCount = 0;
+      const failedDocuments = [];
+
+      for (const result of results) {
+        if (result.success) {
+          successCount++;
+          
+          // Clean up local state for successful uploads
+          setDocumentUploads((prev) => {
+            const next = { ...prev };
+            delete next[result.documentKey];
+            return next;
+          });
+
+          setDocumentPreviews((prev) => {
+            const next = { ...prev };
+            if (next[result.documentKey]) {
+              URL.revokeObjectURL(next[result.documentKey]);
+              delete next[result.documentKey];
+            }
+            return next;
+          });
+
+          delete documentPreviewsRef.current[result.documentKey];
+
+          setUploadErrors((prev) => {
+            const next = { ...prev };
+            delete next[result.documentKey];
+            return next;
+          });
+        } else {
+          failCount++;
+          failedDocuments.push(getDocumentLabel(result.documentKey));
+          console.error(`Error uploading ${result.documentKey}:`, result.error);
+        }
+      }
+
+      // Show summary toast
+      if (successCount > 0 && failCount === 0) {
+        showToast(
+          "success",
+          "All Documents Submitted",
+          `Successfully submitted ${successCount} document${successCount > 1 ? 's' : ''} to HR.`
+        );
+      } else if (successCount > 0 && failCount > 0) {
+        showToast(
+          "warning",
+          "Partial Submission",
+          `Submitted ${successCount} document${successCount > 1 ? 's' : ''} successfully. ${failCount} document${failCount > 1 ? 's' : ''} failed: ${failedDocuments.join(', ')}`
+        );
+      } else {
+        showToast(
+          "error",
+          "Submission Failed",
+          `Failed to submit all documents. Please try submitting them individually.`
+        );
+      }
+
+      // Refresh document overview after submission
+      await fetchDocumentOverview();
+    } catch (error) {
+      console.error("Error submitting all documents:", error);
+      showToast(
+        "error",
+        "Submission Error",
+        "An error occurred while submitting documents. Please try again."
+      );
+    } finally {
+      setSubmittingAllDocuments(false);
+    }
   };
 
   useEffect(() => {
@@ -8306,6 +8488,51 @@ const formatStageLabel = (stage) => {
                         </Card.Body>
                       </Card>
                     ))}
+                  
+                  {/* Submit All Documents Button */}
+                  {Object.keys(documentUploads).length > 0 && (
+                    <div className="mt-4 pt-4 border-top">
+                      <div className="d-flex justify-content-center">
+                        <Button
+                          variant="success"
+                          size="lg"
+                          onClick={handleSubmitAllDocuments}
+                          disabled={submittingAllDocuments || isSubmissionLocked}
+                          className="px-5"
+                        >
+                          {submittingAllDocuments ? (
+                            <>
+                              <span
+                                className="spinner-border spinner-border-sm me-2"
+                                role="status"
+                                aria-hidden="true"
+                              ></span>
+                              Submitting All Documents...
+                            </>
+                          ) : (
+                            <>
+                              <FontAwesomeIcon icon={faUpload} className="me-2" />
+                              Submit All Documents ({Object.keys(documentUploads).length})
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      {isSubmissionLocked && (
+                        <div className="text-center mt-2">
+                          <small className="text-muted">
+                            {submissionLockMessage}
+                          </small>
+                        </div>
+                      )}
+                      {!isSubmissionLocked && Object.keys(documentUploads).length > 0 && (
+                        <div className="text-center mt-2">
+                          <small className="text-muted">
+                            This will submit all {Object.keys(documentUploads).length} uploaded document{Object.keys(documentUploads).length > 1 ? 's' : ''} to HR for review.
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   </Form>
                 </div>
               )}

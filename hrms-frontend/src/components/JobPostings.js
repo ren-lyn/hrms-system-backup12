@@ -22,6 +22,8 @@ const JobPostings = () => {
     department: "",
     position: "",
     status: "Open",
+    salary_min: "",
+    salary_max: "",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -31,10 +33,32 @@ const JobPostings = () => {
 
   // Department-Position mapping as specified by user
   const departmentPositions = {
-    "HR Department": ["HR Staff", "HR Assistant"],
-    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker"],
-    "Logistics Department": ["Driver", "Helper", "Admin Staff", "Maintenance Foreman", "Maintenance Assistant"],
-    "Accounting Department": ["Accounting Staff", "Accounting Assistant"]
+    "HR Department": ["HR Staff", "HR Assistant", "Hr Head"],
+    "Production Department": ["Foreman", "Assistant Foreman", "Production Worker", "Production Manager"],
+    "Logistics Department": ["Driver", "Helper", "Maintenance Foreman", "Maintenance Assistant", "Logistics Manager"],
+    "Accounting Department": ["Accounting Staff", "Accounting Assistant", "Accountant Manager"],
+    "IT Department": ["System Administrator", "IT support"]
+  };
+
+  // Position-Salary mapping (monthly salary in PHP)
+  const positionSalary = {
+    "HR Staff": 13520,
+    "HR Assistant": 15000,
+    "Hr Head": 25000,
+    "Foreman": 18000,
+    "Assistant Foreman": 15000,
+    "Production Worker": 13520,
+    "Production Manager": 28000,
+    "Driver": 13520,
+    "Helper": 13520,
+    "Maintenance Foreman": 18000,
+    "Maintenance Assistant": 16000,
+    "Logistics Manager": 30000,
+    "Accounting Staff": 15000,
+    "Accounting Assistant": 13520,
+    "Accountant Manager": 30000,
+    "System Administrator": 25000,
+    "IT support": 15000
   };
 
   // New loading states to prevent multiple toasts
@@ -59,6 +83,8 @@ const JobPostings = () => {
         department: "",
         position: "",
         status: "Open",
+        salary_min: "",
+        salary_max: "",
       });
       setIsEditing(false);
     },
@@ -194,8 +220,16 @@ const JobPostings = () => {
     const { name, value } = e.target;
     
     if (name === 'department') {
-      // Reset position when department changes
-      setCurrentJob({ ...currentJob, department: value, position: "" });
+      // Reset position and salary when department changes
+      setCurrentJob({ ...currentJob, department: value, position: "", salary_min: "", salary_max: "" });
+    } else if (name === 'position') {
+      // Auto-populate salary when position is selected
+      const salary = positionSalary[value] || null;
+      if (salary) {
+        setCurrentJob({ ...currentJob, position: value, salary_min: salary, salary_max: salary });
+      } else {
+        setCurrentJob({ ...currentJob, position: value });
+      }
     } else {
       setCurrentJob({ ...currentJob, [name]: value });
       
@@ -218,6 +252,8 @@ const JobPostings = () => {
       department: "",
       position: "",
       status: "Open",
+      salary_min: "",
+      salary_max: "",
     });
     setIsEditing(false);
     setDescriptionCharCount(0);
@@ -325,6 +361,9 @@ const JobPostings = () => {
     
     const jobData = {
       ...currentJob,
+      // Ensure salary values are sent as numbers
+      salary_min: currentJob.salary_min ? Number(currentJob.salary_min) : null,
+      salary_max: currentJob.salary_max ? Number(currentJob.salary_max) : null,
       created_at: now.toISOString(), // Current time in UTC
       ph_timezone: 'Asia/Manila',
       ph_created_at: philippinesTime,
@@ -343,12 +382,15 @@ const JobPostings = () => {
     
     try {
       if (isEditing) {
-        await axios.put(`http://localhost:8000/api/job-postings/${currentJob.id}`, currentJob, { headers });
-        setJobPosts(
-          jobPosts.map((job) =>
-            job.id === currentJob.id ? currentJob : job
-          )
-        );
+        // Ensure salary values are sent as numbers for edit
+        const updateData = {
+          ...currentJob,
+          salary_min: currentJob.salary_min ? Number(currentJob.salary_min) : null,
+          salary_max: currentJob.salary_max ? Number(currentJob.salary_max) : null,
+        };
+        const response = await axios.put(`http://localhost:8000/api/job-postings/${currentJob.id}`, updateData, { headers });
+        // Refresh the job list to get the updated data from the backend
+        fetchJobs();
         toast.dismiss(loadingToast);
         showSuccess(`Job posting "${currentJob.title}" updated successfully!`);
       } else {
@@ -366,6 +408,8 @@ const JobPostings = () => {
         department: "",
         position: "",
         status: "Open",
+        salary_min: "",
+        salary_max: "",
       });
       setIsEditing(false);
     } catch (error) {
@@ -388,6 +432,8 @@ const JobPostings = () => {
       department: "",
       position: "",
       status: "Open",
+      salary_min: "",
+      salary_max: "",
     });
   };
 
@@ -407,6 +453,8 @@ const JobPostings = () => {
   const handleUpdateExisting = () => {
     setShowDuplicateModal(false);
     const existingJob = duplicateJobInfo.existing_job;
+    // Auto-set salary if position has a defined salary
+    const positionSal = existingJob.position && positionSalary[existingJob.position] ? positionSalary[existingJob.position] : (existingJob.salary_min || "");
     setCurrentJob({
       id: existingJob.id,
       title: existingJob.title,
@@ -415,6 +463,8 @@ const JobPostings = () => {
       department: existingJob.department,
       position: existingJob.position,
       status: "Open",
+      salary_min: positionSal,
+      salary_max: positionSal,
     });
     setIsEditing(true);
     setDuplicateJobInfo(null);
@@ -663,6 +713,7 @@ const JobPostings = () => {
                 <option value="Production Department">Production Department</option>
                 <option value="Logistics Department">Logistics Department</option>
                 <option value="Accounting Department">Accounting Department</option>
+                <option value="IT Department">IT Department</option>
               </Form.Select>
             </Form.Group>
             <Form.Group>
@@ -685,6 +736,12 @@ const JobPostings = () => {
               {!currentJob.department && (
                 <Form.Text className="text-muted">
                   Please select a department first to view available positions.
+                </Form.Text>
+              )}
+              {currentJob.position && positionSalary[currentJob.position] && (
+                <Form.Text className="text-success mt-2">
+                  <i className="bi bi-info-circle me-1"></i>
+                  Salary automatically set: ₱{Number(positionSalary[currentJob.position]).toLocaleString()} per month
                 </Form.Text>
               )}
             </Form.Group>

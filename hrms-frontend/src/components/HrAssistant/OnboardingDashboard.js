@@ -929,6 +929,8 @@ const documentModalTabs = useMemo(
 
     "Additional Document",
 
+    "Overview Submitted Documents",
+
     "Follow-Up Requests",
   ],
   []
@@ -1634,6 +1636,7 @@ const closeDocumentModal = useCallback(() => {
   const [rejectionReason, setRejectionReason] = useState("");
 
   const [reviewingDocument, setReviewingDocument] = useState(false);
+  const [approvingAllDocuments, setApprovingAllDocuments] = useState(false);
 
   const [rejectingDocumentKey, setRejectingDocumentKey] = useState(null);
 
@@ -3090,6 +3093,150 @@ const closeDocumentModal = useCallback(() => {
         rejectionReason,
         rejectingDocumentKey
       );
+    }
+  };
+
+  // Get valid submitted documents (exclude resubmission_required)
+  const validSubmittedDocuments = useMemo(() => {
+    const allDocs = [
+      ...applicantIdentificationDocs,
+      ...governmentTaxDocs,
+      ...medicalDocs,
+      ...additionalRequirementDocs,
+    ];
+
+    return allDocs
+      .map((doc) => {
+        const { requirement, submission, statusVariant, submissionStatus } =
+          computeApplicantDocStatus(doc);
+        
+        // Only include documents that have been submitted and are not resubmission_required
+        if (
+          submission &&
+          submissionStatus !== "resubmission_required" &&
+          submissionStatus !== "rejected" &&
+          statusVariant !== "resubmit"
+        ) {
+          return { ...doc, requirement, submission, statusVariant, submissionStatus };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [
+    applicantIdentificationDocs,
+    governmentTaxDocs,
+    medicalDocs,
+    additionalRequirementDocs,
+    computeApplicantDocStatus,
+  ]);
+
+  // Handle approve all documents in overview
+  const handleApproveAllDocuments = async () => {
+    const validDocs = validSubmittedDocuments;
+    
+    if (validDocs.length === 0) {
+      alert("No valid submitted documents to approve.");
+      return;
+    }
+
+    if (!selectedApplicationForDocs) {
+      alert("No application selected. Please select an application first.");
+      return;
+    }
+
+    const confirmApproval = window.confirm(
+      `Are you sure you want to approve all ${validDocs.length} valid submitted document(s)?`
+    );
+
+    if (!confirmApproval) {
+      return;
+    }
+
+    setApprovingAllDocuments(true);
+
+    try {
+      const submissionIds = validDocs
+        .filter(doc => doc.submission && doc.submission.id)
+        .map(doc => doc.submission.id);
+
+      if (submissionIds.length === 0) {
+        alert("No valid submission IDs found.");
+        setApprovingAllDocuments(false);
+        return;
+      }
+
+      const token = localStorage.getItem("token");
+      const response = await axios.post(
+        `http://localhost:8000/api/applications/${selectedApplicationForDocs.id}/documents/submissions/batch-review`,
+        {
+          submission_ids: submissionIds,
+          status: "received",
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        if (response.data.overview) {
+          applyDocumentOverview(response.data.overview);
+        } else {
+          await fetchDocumentSubmissions(selectedApplicationForDocs.id);
+          await fetchDocumentRequirements(selectedApplicationForDocs.id);
+        }
+
+        // Refresh applicants list to get updated status
+        await fetchApplicants();
+
+        if (selectedApplicationForDocs) {
+          setSelectedApplicationForDocs({
+            ...selectedApplicationForDocs,
+            status:
+              response.data.application_status ||
+              selectedApplicationForDocs.status,
+            documents_stage_status:
+              response.data.documents_stage_status ||
+              selectedApplicationForDocs.documents_stage_status,
+            documents_completed_at:
+              response.data.documents_completed_at ||
+              selectedApplicationForDocs.documents_completed_at,
+            is_in_benefits_enrollment:
+              response.data.is_in_benefits_enrollment ??
+              selectedApplicationForDocs.is_in_benefits_enrollment,
+            benefits_enrollment_status:
+              response.data.benefits_enrollment_status ??
+              selectedApplicationForDocs.benefits_enrollment_status,
+            documents_status_label:
+              response.data.documents_status_label ??
+              selectedApplicationForDocs.documents_status_label,
+          });
+        }
+
+        const reviewedCount = response.data.reviewed_count || submissionIds.length;
+        const failedCount = response.data.failed_count || 0;
+
+        if (failedCount === 0) {
+          alert(`Successfully approved all ${reviewedCount} document(s)!`);
+        } else {
+          alert(
+            `Approved ${reviewedCount} document(s). Failed to approve ${failedCount} document(s).`
+          );
+        }
+      } else {
+        alert(response.data.message || "Failed to approve documents. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error approving all documents:", error);
+      const errorMessage = error.response?.data?.message || 
+        error.response?.data?.errors ? 
+        Object.values(error.response.data.errors).flat().join(", ") :
+        "An error occurred while approving documents. Please try again.";
+      alert(errorMessage);
+    } finally {
+      setApprovingAllDocuments(false);
     }
   };
 
@@ -12455,6 +12602,73 @@ const closeDocumentModal = useCallback(() => {
                         )}
                       </>
                     )
+                  ) : documentModalTab === "Overview Submitted Documents" ? (
+                    !documentModalReadOnly ? (
+                      <>
+                        <div className="card border-0 shadow-sm mb-4">
+                          <div className="card-body">
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                              <div>
+                                <h6 className="fw-bold mb-1">
+                                  <FontAwesomeIcon
+                                    icon={faFileAlt}
+                                    className="text-primary me-2"
+                                  />
+                                  Valid Submitted Documents
+                                </h6>
+                                <p className="text-muted small mb-0">
+                                  Documents that have been submitted and are valid (not requested for resubmission).
+                                </p>
+                              </div>
+                              {validSubmittedDocuments.length > 0 && (
+                                <Button
+                                  variant="success"
+                                  size="sm"
+                                  onClick={handleApproveAllDocuments}
+                                  disabled={approvingAllDocuments || reviewingDocument}
+                                >
+                                  {approvingAllDocuments ? (
+                                    <>
+                                      <span
+                                        className="spinner-border spinner-border-sm me-2"
+                                        role="status"
+                                        aria-hidden="true"
+                                      ></span>
+                                      Approving...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                                      Approve All ({validSubmittedDocuments.length})
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {validSubmittedDocuments.length > 0 ? (
+                          renderDocumentCards(validSubmittedDocuments)
+                        ) : (
+                          <div className="card border-0 shadow-sm">
+                            <div className="card-body text-center py-5">
+                              <FontAwesomeIcon
+                                icon={faFileAlt}
+                                size="3x"
+                                className="text-muted mb-3"
+                              />
+                              <h5 className="fw-semibold text-muted mb-2">
+                                No Valid Submitted Documents
+                              </h5>
+                              <p className="text-muted mb-0 small">
+                                Valid submitted documents will appear here. Documents that have been requested for resubmission will not be shown in this overview.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : null
                   ) : documentModalTab === "Follow-Up Requests" ? (
                     documentModalReadOnly ? null : (
                       <>

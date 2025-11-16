@@ -241,6 +241,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Review submissions (HR only)
         Route::middleware(['role:HR Assistant,HR Staff'])->group(function () {
+            Route::post('/submissions/batch-review', [DocumentController::class, 'batchReviewSubmissions']);
             Route::put('/submissions/{submissionId}/review', [DocumentController::class, 'reviewSubmission']);
             Route::post('/complete', [DocumentController::class, 'completeDocuments']);
         });

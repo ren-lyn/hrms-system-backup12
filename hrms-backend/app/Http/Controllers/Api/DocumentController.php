@@ -1498,6 +1498,128 @@ class DocumentController extends Controller
         }
     }
 
+    // Batch review document submissions (HR only)
+    public function batchReviewSubmissions(Request $request, $applicationId)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'submission_ids' => 'required|array|min:1',
+                'submission_ids.*' => 'required|integer|exists:document_submissions,id',
+                'status' => 'required|in:approved,received,rejected',
+                'rejection_reason' => 'required_if:status,rejected|nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $submissionIds = $request->submission_ids;
+            $status = $request->status === 'approved' ? 'received' : $request->status;
+            $rejectionReason = $request->rejection_reason;
+
+            // Get all submissions for this application
+            $submissions = DocumentSubmission::where('application_id', $applicationId)
+                ->whereIn('id', $submissionIds)
+                ->get();
+
+            if ($submissions->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No submissions found'
+                ], 404);
+            }
+
+            $application = $submissions->first()->application;
+            $reviewedCount = 0;
+            $failedCount = 0;
+
+            foreach ($submissions as $submission) {
+                try {
+                    $submission->update([
+                        'status' => $status,
+                        'rejection_reason' => $rejectionReason,
+                        'reviewed_at' => now(),
+                        'reviewed_by' => Auth::id()
+                    ]);
+
+                    // Send notification to applicant
+                    try {
+                        if ($application && $application->applicant && $application->applicant->user) {
+                            $application->applicant->user->notify(new DocumentStatusChanged($submission));
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('Error sending document status notification: ' . $e->getMessage());
+                    }
+
+                    $reviewedCount++;
+                } catch (\Exception $e) {
+                    Log::error('Error reviewing submission ' . $submission->id . ': ' . $e->getMessage());
+                    $failedCount++;
+                }
+            }
+
+            // Check if all required documents are approved
+            $allApproved = false;
+            try {
+                $requiredDocs = DocumentRequirement::where('application_id', $applicationId)
+                    ->where('is_required', true)
+                    ->pluck('id');
+
+                $this->normalizeReviewedSubmissionStatuses($applicationId);
+
+                $approvedCount = $this->applyReviewedStatusFilter(
+                    DocumentSubmission::where('application_id', $applicationId)
+                        ->whereIn('document_requirement_id', $requiredDocs)
+                )->count();
+
+                if ($requiredDocs->count() > 0 && $approvedCount === $requiredDocs->count()) {
+                    $allApproved = true;
+
+                    $applicationUpdates = [
+                        'reviewed_at' => Carbon::now(),
+                    ];
+
+                    if (!$application->documents_approved_at) {
+                        $applicationUpdates['documents_approved_at'] = Carbon::now();
+                    }
+
+                    $application->update($applicationUpdates);
+                }
+            } catch (\Exception $e) {
+                Log::error('Error checking document approval status: ' . $e->getMessage());
+            }
+
+            $application->refresh()->load('benefitsEnrollment');
+            $overview = $this->buildDocumentOverview($application->fresh());
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully reviewed {$reviewedCount} document(s)",
+                'reviewed_count' => $reviewedCount,
+                'failed_count' => $failedCount,
+                'all_documents_approved' => $allApproved,
+                'application_status' => $application->status,
+                'documents_stage_status' => $application->documents_stage_status,
+                'documents_status_label' => $application->documents_stage_status === 'completed'
+                    ? 'Completed'
+                    : ($allApproved ? 'Approved Documents' : 'In Progress'),
+                'documents_completed_at' => optional($application->documents_completed_at)->toISOString(),
+                'is_in_benefits_enrollment' => $application->benefitsEnrollment !== null,
+                'benefits_enrollment_status' => optional($application->benefitsEnrollment)->enrollment_status,
+                'overview' => $overview,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error batch reviewing documents: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to review documents'
+            ], 500);
+        }
+    }
+
     // Review document submission (HR only)
     public function reviewSubmission(Request $request, $applicationId, $submissionId)
     {

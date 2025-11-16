@@ -1179,7 +1179,11 @@ export default function JobPortal() {
                     {job.salary_min && job.salary_max && (
                       <div className="mb-2">
                         <span className="badge bg-success-subtle text-success px-2 py-1" style={{ fontSize: '0.8rem' }}>
-                          ₱{Number(job.salary_min).toLocaleString()} - ₱{Number(job.salary_max).toLocaleString()}
+                          {Number(job.salary_min) === Number(job.salary_max) ? (
+                            <>₱{Number(job.salary_min).toLocaleString()}/month</>
+                          ) : (
+                            <>₱{Number(job.salary_min).toLocaleString()} - ₱{Number(job.salary_max).toLocaleString()}</>
+                          )}
                         </span>
                         {job.salary_notes && (
                           <div className="text-muted mt-1" style={{ fontSize: '0.75rem', fontStyle: 'italic' }}>
@@ -1485,10 +1489,14 @@ export default function JobPortal() {
                           <div className="fw-semibold">{selectedJobForDetails.position || 'N/A'}</div>
                         </div>
                         <div className="col-md-3 mb-3 mb-md-0">
-                          <div className="text-muted small mb-1">Salary Range</div>
+                          <div className="text-muted small mb-1">Salary</div>
                           <div className="fw-semibold text-success">
                             {selectedJobForDetails.salary_min && selectedJobForDetails.salary_max ? (
-                              `₱${Number(selectedJobForDetails.salary_min).toLocaleString()} - ₱${Number(selectedJobForDetails.salary_max).toLocaleString()}`
+                              Number(selectedJobForDetails.salary_min) === Number(selectedJobForDetails.salary_max) ? (
+                                `₱${Number(selectedJobForDetails.salary_min).toLocaleString()}/month`
+                              ) : (
+                                `₱${Number(selectedJobForDetails.salary_min).toLocaleString()} - ₱${Number(selectedJobForDetails.salary_max).toLocaleString()}`
+                              )
                             ) : (
                               'To be discussed'
                             )}

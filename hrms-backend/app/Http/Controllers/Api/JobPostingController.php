@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\JobPosting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class JobPostingController extends Controller
 {
@@ -56,8 +57,16 @@ class JobPostingController extends Controller
             ], 409);
         }
 
-        // Get salary range for the position
-        $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
+        // Use salary values from request if provided, otherwise get from position mapping
+        $salaryMin = $request->has('salary_min') ? (float)$request->salary_min : null;
+        $salaryMax = $request->has('salary_max') ? (float)$request->salary_max : null;
+        
+        // If salary not provided in request, try to get from position mapping
+        if ($salaryMin === null || $salaryMax === null) {
+            $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
+            $salaryMin = $salaryMin !== null ? $salaryMin : ($salaryRange['min'] ?? null);
+            $salaryMax = $salaryMax !== null ? $salaryMax : ($salaryRange['max'] ?? null);
+        }
         
         $jobPosting = JobPosting::create([
             'hr_staff_id' => Auth::check() ? Auth::id() : null,
@@ -66,9 +75,9 @@ class JobPostingController extends Controller
             'requirements' => $request->requirements,
             'department' => $request->department,
             'position' => $request->position,
-            'salary_min' => $salaryRange['min'] ?? null,
-            'salary_max' => $salaryRange['max'] ?? null,
-            'salary_notes' => $salaryRange['notes'] ?? null,
+            'salary_min' => $salaryMin,
+            'salary_max' => $salaryMax,
+            'salary_notes' => $request->salary_notes ?? null,
             'status' => $request->status ?? 'Open',  // Default to 'Open' if not provided
         ]);
 
@@ -82,14 +91,14 @@ class JobPostingController extends Controller
                 $hr->notify(new \App\Notifications\JobPostingCreated($jobPosting));
             }
 
-            \Log::info('Job posting creation notifications sent', [
+            Log::info('Job posting creation notifications sent', [
                 'job_posting_id' => $jobPosting->id,
                 'title' => $jobPosting->title,
                 'department' => $jobPosting->department,
                 'hr_staff_notified' => $hrStaff->count()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to send job posting creation notifications', [
+            Log::error('Failed to send job posting creation notifications', [
                 'job_posting_id' => $jobPosting->id,
                 'error' => $e->getMessage()
             ]);
@@ -115,9 +124,6 @@ class JobPostingController extends Controller
             'status' => 'required|in:Open,Closed',
         ]);
 
-        // Get salary range for the position
-        $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
-        
         $updateData = $request->only([
             'title',
             'description',
@@ -127,10 +133,21 @@ class JobPostingController extends Controller
             'status'
         ]);
         
-        // Add salary information
-        $updateData['salary_min'] = $salaryRange['min'] ?? null;
-        $updateData['salary_max'] = $salaryRange['max'] ?? null;
-        $updateData['salary_notes'] = $salaryRange['notes'] ?? null;
+        // Use salary values from request if provided, otherwise get from position mapping
+        if ($request->has('salary_min') || $request->has('salary_max')) {
+            $updateData['salary_min'] = $request->has('salary_min') ? (float)$request->salary_min : null;
+            $updateData['salary_max'] = $request->has('salary_max') ? (float)$request->salary_max : null;
+        } else {
+            // If salary not in request, get from position mapping
+            $salaryRange = JobPosting::getSalaryRangeForPosition($request->position);
+            $updateData['salary_min'] = $salaryRange['min'] ?? null;
+            $updateData['salary_max'] = $salaryRange['max'] ?? null;
+        }
+        
+        // Add salary notes if provided
+        if ($request->has('salary_notes')) {
+            $updateData['salary_notes'] = $request->salary_notes;
+        }
         
         $job->update($updateData);
 
