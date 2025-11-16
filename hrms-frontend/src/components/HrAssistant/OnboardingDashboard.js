@@ -53,6 +53,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
+import { toast } from "react-toastify";
 
 const PROFILE_CREATION_QUEUE_STORAGE_KEY =
   "hrAssistantProfileCreationQueue";
@@ -2269,7 +2270,7 @@ const closeDocumentModal = useCallback(() => {
       record.status !== "On going Interview" &&
       record.status !== "Interview"
     ) {
-      alert("Status can only be changed from Pending or Interview status");
+    toast.info("Status can only be changed from Pending or Interview status");
 
       setActiveDropdown(null);
 
@@ -2291,7 +2292,7 @@ const closeDocumentModal = useCallback(() => {
         selectedRecord || selectedRecordForStatus || selectedApplicationForDocs;
 
       if (!applicantToUpdate) {
-        alert("No applicant selected. Please select an applicant first.");
+        toast.info("No applicant selected. Please select an applicant first.");
         return;
       }
 
@@ -2313,7 +2314,7 @@ const closeDocumentModal = useCallback(() => {
         ? `${applicantToUpdate.applicant.first_name} ${applicantToUpdate.applicant.last_name}`
         : "Applicant";
 
-      alert(`Status updated to ${targetStatus} for ${applicantName}`);
+      toast.success(`Status updated to ${targetStatus} for ${applicantName}`);
 
       await fetchApplicants();
 
@@ -2327,7 +2328,7 @@ const closeDocumentModal = useCallback(() => {
     } catch (error) {
       console.error("Error updating status:", error);
 
-      alert("Failed to update status. Please try again.");
+      toast.error("Failed to update status. Please try again.");
     }
   };
 
@@ -2379,15 +2380,15 @@ const closeDocumentModal = useCallback(() => {
 
       setSelectedRecordForStatus(null);
 
-      // Show success message
+    // Show success message
 
-      alert(
-        `Onboarding started for ${applicantName}. They have been moved to the Document Submission stage.`
-      );
+    toast.success(
+      `Onboarding started for ${applicantName}. They have been moved to the Document Submission stage.`
+    );
     } catch (error) {
       console.error("Error starting onboarding:", error);
 
-      alert("Failed to start onboarding. Please try again.");
+    toast.error("Failed to start onboarding. Please try again.");
     }
   };
 
@@ -2432,7 +2433,7 @@ const closeDocumentModal = useCallback(() => {
     } else {
       console.error("❌ [Download Resume] No resume URL found");
 
-      alert("Resume not available for this applicant.");
+      toast.info("Resume not available for this applicant.");
     }
   };
 

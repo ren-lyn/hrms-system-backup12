@@ -52,6 +52,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
+import { toast } from "react-toastify";
 
 const PROFILE_CREATION_QUEUE_STORAGE_KEY = "hrStaffProfileCreationQueue";
 
@@ -2267,7 +2268,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
       record.status !== "On going Interview" &&
       record.status !== "Interview"
     ) {
-      alert("Status can only be changed from Pending or Interview status");
+    toast.info("Status can only be changed from Pending or Interview status");
 
       setActiveDropdown(null);
 
@@ -2289,7 +2290,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         selectedRecord || selectedRecordForStatus || selectedApplicationForDocs;
 
       if (!applicantToUpdate) {
-        alert("No applicant selected. Please select an applicant first.");
+        toast.info("No applicant selected. Please select an applicant first.");
         return;
       }
 
@@ -2311,7 +2312,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
         ? `${applicantToUpdate.applicant.first_name} ${applicantToUpdate.applicant.last_name}`
         : "Applicant";
 
-      alert(`Status updated to ${targetStatus} for ${applicantName}`);
+      toast.success(`Status updated to ${targetStatus} for ${applicantName}`);
 
       await fetchApplicants();
 
@@ -2325,7 +2326,7 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     } catch (error) {
       console.error("Error updating status:", error);
 
-      alert("Failed to update status. Please try again.");
+      toast.error("Failed to update status. Please try again.");
     }
   };
 
