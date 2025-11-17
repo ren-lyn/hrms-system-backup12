@@ -50,6 +50,7 @@ class MultipleAccountsSeeder extends Seeder
             ['first_name' => 'Arthur', 'last_name' => 'Regondola', 'email' => 'arthur.regondola@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Hans Axle', 'last_name' => 'Consuelo', 'email' => 'hans.consuelo@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Mark Vincent', 'last_name' => 'Aguado', 'email' => 'mark.aguado@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Francisco', 'last_name' => 'Carbonell', 'email' => 'kiko.carbonell@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
 
             // Admins
             ['first_name' => 'Admin', 'last_name' => 'One', 'email' => 'admin.one@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department', 'salary' => 13520],
