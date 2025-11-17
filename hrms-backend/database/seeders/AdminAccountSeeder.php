@@ -27,17 +27,28 @@ class AdminAccountSeeder extends Seeder
             ]
         );
 
-        // Create employee profile for admin
-        $admin->employeeProfile()->updateOrCreate([], [
-            'employee_id' => 'EM1001',
-            'first_name' => 'System',
-            'last_name' => 'Administrator',
-            'email' => 'admin@company.com',
-            'position' => 'System Administrator',
-            'department' => 'IT Department',
-            'employment_status' => 'Full Time',
-            'salary' => 100000,
-            'hire_date' => now()->subYears(3)->toDateString(),
+        // Create or update employee profile for admin
+        // Edit the government ID numbers below as needed
+        $profile = $admin->employeeProfile()->firstOrCreate(
+            ['user_id' => $admin->id],
+            [
+                'employee_id' => 'EM1001',
+                'first_name' => 'System',
+                'last_name' => 'Administrator',
+                'email' => 'admin@company.com',
+                'position' => 'System Administrator',
+                'department' => 'IT Department',
+                'employment_status' => 'Full Time',
+                'salary' => 25000,
+                'hire_date' => now()->subYears(3)->toDateString(),
+            ]
+        );
+        
+        // Always update these fields to ensure they're set
+        $profile->update([
+            'sss' => '12-3456789-0', // Edit this with the actual SSS number
+            'philhealth' => '12-345678901-2', // Edit this with the actual PhilHealth number
+            'pagibig' => '1234-5678-9012', // Edit this with the actual Pag-IBIG number
         ]);
 
         $this->command?->info('Admin account created: admin@company.com (password: password123)');

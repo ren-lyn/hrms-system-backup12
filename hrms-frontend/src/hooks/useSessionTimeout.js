@@ -62,13 +62,15 @@ const useSessionTimeout = (timeoutMinutes = 30, warningMinutes = 5) => {
       return;
     }
 
-    // Set warning timer
-    warningTimeoutRef.current = setTimeout(() => {
-      if (isAuthenticated()) {
-        setShowWarning(true);
-        startWarningCountdown();
-      }
-    }, warningMs);
+    // Set warning timer only if warningMinutes > 0
+    if (warningMinutes > 0) {
+      warningTimeoutRef.current = setTimeout(() => {
+        if (isAuthenticated()) {
+          setShowWarning(true);
+          startWarningCountdown();
+        }
+      }, warningMs);
+    }
 
     // Set logout timer
     timeoutRef.current = setTimeout(() => {
@@ -155,8 +157,8 @@ const useSessionTimeout = (timeoutMinutes = 30, warningMinutes = 5) => {
         return;
       }
       
-      // If past warning time, show warning immediately
-      if (elapsed >= warningMs) {
+      // If past warning time, show warning immediately (only if warning is enabled)
+      if (warningMinutes > 0 && elapsed >= warningMs) {
         setShowWarning(true);
         lastActivityRef.current = savedTime;
         startWarningCountdown();

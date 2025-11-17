@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import './PasswordResetRequests.css';
@@ -29,6 +29,10 @@ const PasswordResetRequests = () => {
     message: '',
   });
 
+  // Track first fetch to avoid duplicate calls in React.StrictMode (dev) and permission state
+  const hasFetchedRef = useRef(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+
   const token = useMemo(() => localStorage.getItem('token') || localStorage.getItem('auth_token'), []);
   const fetchRequests = async (showSpinner = true) => {
     try {
@@ -44,11 +48,18 @@ const PasswordResetRequests = () => {
             }
           : {},
       });
+      setPermissionDenied(false);
       setRequests(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
-      toast.error(
-        error.response?.data?.message || 'Failed to load password reset requests. Please try again.'
-      );
+      // Suppress noisy toasts for permission errors and show a quiet empty state instead
+      if (error?.response?.status === 403) {
+        setPermissionDenied(true);
+        setRequests([]);
+      } else {
+        toast.error(
+          error?.response?.data?.message || 'Failed to load password reset requests. Please try again.'
+        );
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -56,6 +67,9 @@ const PasswordResetRequests = () => {
   };
 
   useEffect(() => {
+    // Guard to prevent duplicate invocation in development with React.StrictMode
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
     fetchRequests();
     const interval = setInterval(() => fetchRequests(false), 60000);
     return () => clearInterval(interval);
@@ -232,7 +246,13 @@ const PasswordResetRequests = () => {
       ) : filteredRequests.length === 0 ? (
         <div className="prr-empty">
           <h4>No requests found</h4>
-          <p>{filter === 'all' ? 'There are no password reset requests yet.' : 'No requests match the selected status.'}</p>
+          <p>
+            {permissionDenied
+              ? 'You do not have permission to view password reset requests.'
+              : (filter === 'all'
+                ? 'There are no password reset requests yet.'
+                : 'No requests match the selected status.')}
+          </p>
         </div>
       ) : (
         <div className="prr-table-wrapper">

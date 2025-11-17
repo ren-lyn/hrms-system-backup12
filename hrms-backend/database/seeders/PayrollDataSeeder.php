@@ -66,14 +66,15 @@ class PayrollDataSeeder extends Seeder
         $deductionTitlesToDelete = ['SSS', 'PhilHealth', 'Pag-IBIG'];
         DeductionTitle::whereIn('name', $deductionTitlesToDelete)->delete();
 
+        // Remove Absence Deduction, Loan Deduction, and Uniform Deduction
+        $removedDeductionTitles = ['Absence Deduction', 'Loan Deduction', 'Uniform Deduction'];
+        DeductionTitle::whereIn('name', $removedDeductionTitles)->delete();
+
         // Create Deduction Titles
         $deductionTitles = [
             ['name' => 'Late Penalty', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated penalty for late arrival (15-minute grace period, then 8.67 per minute after 8:15 AM)', 'is_active' => true],
             ['name' => 'Undertime Penalty', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated penalty for clocking out before 5:00 PM (8.67 per minute early)', 'is_active' => true],
             ['name' => 'Cash Advance', 'amount' => 0.00, 'type' => 'fixed', 'description' => 'Auto-calculated cash advance deduction (500 for amounts ≤10k, 1000 for amounts >10k per payroll period until paid)', 'is_active' => true],
-            ['name' => 'Absence Deduction', 'amount' => 500.00, 'type' => 'fixed', 'description' => 'Deduction for unexcused absence', 'is_active' => true],
-            ['name' => 'Loan Deduction', 'amount' => 1000.00, 'type' => 'fixed', 'description' => 'Salary loan deduction', 'is_active' => true],
-            ['name' => 'Uniform Deduction', 'amount' => 200.00, 'type' => 'fixed', 'description' => 'Uniform cost deduction', 'is_active' => true],
         ];
 
         foreach ($deductionTitles as $deduction) {

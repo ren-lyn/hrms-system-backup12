@@ -50,6 +50,7 @@ const CashAdvanceHistory = React.lazy(() => import('../components/Employee/CashA
 const RequestEditAttendance = React.lazy(() => import('../components/Employee/RequestEditAttendance'));
 const ViewAttendanceRecords = React.lazy(() => import('../components/Employee/ViewAttendanceRecords'));
 const FileBenefitClaim = React.lazy(() => import('../components/Employee/FileBenefitClaim'));
+const ViewPayslip = React.lazy(() => import('../components/Employee/ViewPayslip'));
 
 
 const EmployeeDashboard = () => {
@@ -252,6 +253,7 @@ const EmployeeDashboard = () => {
       case 'request-edit-attendance': return 'Request Edit Attendance';
       case 'overtime-request': return 'Overtime Request';
       case 'file-benefit-claim': return 'File Benefit Claim Request';
+      case 'view-payslip': return 'View Payslip';
       default: return 'Dashboard';
     }
   };
@@ -671,6 +673,12 @@ const EmployeeDashboard = () => {
             <FileBenefitClaim />
           </Suspense>
         );
+      case 'view-payslip':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading payslip..." />}>
+            <ViewPayslip />
+          </Suspense>
+        );
       default:
         return (
           <div className="card p-4">
@@ -728,6 +736,13 @@ const EmployeeDashboard = () => {
             >
               <FontAwesomeIcon icon={faFileAlt} />
               <span>File Benefit Claim Request</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'view-payslip' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('view-payslip')}
+            >
+              <FontAwesomeIcon icon={faMoneyBillWave} />
+              <span>View Payslip</span>
             </button>
             
             {/* Cash Advance with Dropdown */}

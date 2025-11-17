@@ -16,6 +16,8 @@ use App\Models\OvertimeRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 
 class PayrollController extends Controller
@@ -268,12 +270,17 @@ class PayrollController extends Controller
         // Calculate leave without pay (deduction)
         // Note: Using $dailyRate calculated above
         // Note: Leave with pay is already included in basic salary calculation above
+        // Note: Leave without pay days are already excluded from basic salary, so this is just for tracking
         $leaveWithoutPayDeduction = $this->calculateLeaveWithoutPay($leaveRequests, $periodStart, $periodEnd, $dailyRate);
 
         // Gross pay
         // Basic salary already includes days worked + approved leave with pay days
         // Holiday pay is additional (typically double pay for working on holidays)
-        $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0) - $leaveWithoutPayDeduction;
+        // Leave without pay is NOT subtracted from gross pay since those days are already excluded from basic salary
+        $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0);
+        
+        // Ensure gross pay never goes negative
+        $grossPay = max(0, $grossPay);
 
         // Calculate tax deductions from assigned taxes
         $taxDeductions = $this->calculateAssignedTaxes($employee, $periodStart, $periodEnd);
@@ -992,12 +999,206 @@ class PayrollController extends Controller
                 continue;
             }
 
-            // For other deductions (Absence Deduction, Loan Deduction, Uniform Deduction, etc.)
+            // For other deductions (custom deductions created by HR)
             // Add the fixed amount
             $totalDeduction += $effectiveAmount;
         }
 
         return $totalDeduction;
+    }
+
+    /**
+     * Get employee's own payrolls
+     */
+    public function myPayrolls(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+
+            if (!$employeeProfile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            $query = Payroll::with(['employee', 'payrollPeriod'])
+                ->where('employee_id', $employeeProfile->id);
+
+            // Filter by period if provided
+            if ($request->has('period_start') && $request->has('period_end')) {
+                $query->whereBetween('period_start', [$request->period_start, $request->period_end]);
+            }
+
+            // Sort by most recent first
+            $query->orderBy('period_start', 'desc');
+
+            $payrolls = $query->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $payrolls
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch payrolls: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Download payslip as PDF
+     */
+    public function downloadPayslip($id)
+    {
+        try {
+            $user = Auth::user();
+            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+
+            if (!$employeeProfile) {
+                return response()->json(['error' => 'Employee profile not found'], 404);
+            }
+
+            // Load payroll with relationships
+            $payroll = Payroll::with(['employee', 'payrollPeriod'])
+                ->where('id', $id)
+                ->where('employee_id', $employeeProfile->id)
+                ->firstOrFail();
+
+            // Generate PDF
+            $pdf = Pdf::loadView('pdf.payslip', compact('payroll', 'employeeProfile'));
+            $pdf->setPaper('a4', 'portrait');
+
+            $employeeName = $employeeProfile->first_name . '_' . $employeeProfile->last_name;
+            $period = $payroll->period_start . '_to_' . $payroll->period_end;
+            $filename = 'payslip_' . $employeeName . '_' . $period . '.pdf';
+
+            return $pdf->download($filename);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payslip not found or you do not have permission to access it'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to download payslip: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update payroll status
+     */
+    public function updateStatus(Request $request, $id): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'status' => 'required|string|in:draft,processed,paid'
+            ]);
+
+            $payroll = Payroll::findOrFail($id);
+            
+            // Only allow editing status if current status is draft
+            if ($payroll->status !== 'draft') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only draft payrolls can have their status updated.'
+                ], 400);
+            }
+
+            $payroll->status = $validated['status'];
+            
+            // Set processed_at or paid_at timestamps
+            if ($validated['status'] === 'processed') {
+                $payroll->processed_at = now();
+            } elseif ($validated['status'] === 'paid') {
+                $payroll->paid_at = now();
+                $payroll->processed_at = $payroll->processed_at ?? now();
+            }
+            
+            $payroll->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payroll status updated successfully',
+                'data' => $payroll->fresh(['employee', 'payrollPeriod'])
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payroll not found'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update payroll status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk update payroll statuses
+     */
+    public function bulkUpdateStatus(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'status' => 'required|string|in:draft,processed,paid',
+                'period_start' => 'nullable|date',
+                'period_end' => 'nullable|date',
+                'payroll_period_id' => 'nullable|exists:payroll_periods,id'
+            ]);
+
+            $query = Payroll::where('status', 'draft'); // Only update draft payrolls
+
+            // Filter by period if provided
+            if (isset($validated['period_start']) && isset($validated['period_end'])) {
+                $query->whereBetween('period_start', [$validated['period_start'], $validated['period_end']]);
+            }
+
+            // Filter by payroll period if provided
+            if (isset($validated['payroll_period_id'])) {
+                $query->where('payroll_period_id', $validated['payroll_period_id']);
+            }
+
+            $payrolls = $query->get();
+
+            if ($payrolls->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No draft payrolls found to update'
+                ], 404);
+            }
+
+            $updateData = ['status' => $validated['status']];
+            
+            // Set processed_at or paid_at timestamps
+            if ($validated['status'] === 'processed') {
+                $updateData['processed_at'] = now();
+            } elseif ($validated['status'] === 'paid') {
+                $updateData['paid_at'] = now();
+                $updateData['processed_at'] = now();
+            }
+
+            $updatedCount = $query->update($updateData);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully updated {$updatedCount} payroll status(es) to {$validated['status']}",
+                'data' => [
+                    'updated_count' => $updatedCount,
+                    'new_status' => $validated['status']
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to bulk update payroll statuses: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
 

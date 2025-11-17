@@ -25,12 +25,14 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => $this->faker->name,
+            'first_name' => $this->faker->firstName,
+            'last_name' => $this->faker->lastName,
             'email' => $this->faker->unique()->safeEmail,
             'email_verified_at' => now(),
             'password' => bcrypt('password'), // default password
             'remember_token' => \Str::random(10),
             'role_id' => Role::inRandomOrder()->first()?->id ?? Role::factory(), // fallback
+            'is_active' => 1,
         ];
     }
 

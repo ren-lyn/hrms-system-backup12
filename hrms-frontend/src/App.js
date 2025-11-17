@@ -7,7 +7,6 @@ import './responsive.css'; // Import responsive CSS
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import useSessionTimeout from './hooks/useSessionTimeout';
-import SessionWarningModal from './components/SessionWarningModal';
 import ProtectedRoute from './components/ProtectedRoute';
 // Lazy load components for better performance
 const Login = lazy(() => import('./pages/Login'));
@@ -61,8 +60,8 @@ const LoadingSpinner = () => (
 );
 
 function App() {
-  // Session timeout hook - 30 minutes inactivity timeout, 5 minutes warning
-  const { showWarning, timeRemaining, extendSession } = useSessionTimeout(30, 5);
+  // Session timeout hook - 30 minutes inactivity timeout, no warning
+  const { showWarning, timeRemaining, extendSession } = useSessionTimeout(30, 0);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -99,13 +98,6 @@ function App() {
         style={{ zIndex: 9999 }}
       />
 
-      {/* Session Warning Modal */}
-      <SessionWarningModal
-        show={showWarning}
-        timeRemaining={timeRemaining}
-        onExtend={extendSession}
-        onLogout={handleLogout}
-      />
       
       {/* Performance Monitor - disabled by default */}
       {false && process.env.NODE_ENV === 'development' && <PerformanceMonitor />}

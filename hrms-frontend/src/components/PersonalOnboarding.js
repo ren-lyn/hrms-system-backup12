@@ -80,6 +80,7 @@ import {
   faSearch,
   faRefresh,
   faExternalLinkAlt,
+  faKey,
 } from "@fortawesome/free-solid-svg-icons";
 
 const DOCUMENT_SECTIONS = [
@@ -430,6 +431,10 @@ const PersonalOnboarding = () => {
   const [loadingInterview, setLoadingInterview] = useState(false);
 
   const [acceptingOffer, setAcceptingOffer] = useState(false);
+  
+  // Role verification state
+  const [roleVerificationPending, setRoleVerificationPending] = useState(false);
+  const [verifyingRole, setVerifyingRole] = useState(false);
 
   // New state for multi-page system
 
@@ -1479,6 +1484,12 @@ const PersonalOnboarding = () => {
       }));
 
       setNotifications(transformedNotifications);
+      
+      // Check for role change verification notifications
+      const hasRoleVerification = transformedNotifications.some(
+        (n) => n.type === "role_change_verification" && !n.read
+      );
+      setRoleVerificationPending(hasRoleVerification);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
@@ -1507,6 +1518,42 @@ const PersonalOnboarding = () => {
       return `${Math.floor(diffInSeconds / 86400)} days ago`;
 
     return `${Math.floor(diffInSeconds / 604800)} weeks ago`;
+  };
+  
+  // Verify role change
+  const handleVerifyRoleChange = async () => {
+    try {
+      setVerifyingRole(true);
+      const token = localStorage.getItem("token");
+      
+      const response = await axios.post(
+        "http://localhost:8000/api/notifications/verify-role-change",
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      
+      if (response.data.success) {
+        showToast(
+          "success",
+          "Success",
+          response.data.message || "Role change verified successfully. Please log out and log back in to see your new role."
+        );
+        setRoleVerificationPending(false);
+        // Refresh notifications
+        await fetchNotifications();
+      }
+    } catch (error) {
+      console.error("Error verifying role change:", error);
+      showToast(
+        "error",
+        "Error",
+        error.response?.data?.message || "Failed to verify role change. Please try again."
+      );
+    } finally {
+      setVerifyingRole(false);
+    }
   };
 
   const getDocumentLabel = (documentKey) => {
@@ -7127,6 +7174,15 @@ const formatStageLabel = (stage) => {
                 >
                   Start Date
                 </button>
+
+                <button
+                  className={`subnav-item ${activeTab === "my-account" ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("my-account");
+                  }}
+                >
+                  My Account
+                </button>
               </div>
 
               {/* Content based on activeTab */}
@@ -7416,6 +7472,131 @@ const formatStageLabel = (stage) => {
                       </div>
                     </div>
                   )}
+                </>
+              )}
+
+              {activeTab === "my-account" && (
+                <>
+                  <div className="d-flex justify-content-between align-items-center mb-4">
+                    <h4 className="mb-0">
+                      <FontAwesomeIcon
+                        icon={faUser}
+                        className="me-2 text-primary"
+                      />
+                      My Account
+                    </h4>
+                  </div>
+
+                  <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: "12px", overflow: "hidden" }}>
+                    <div className="card-header bg-primary text-white py-3">
+                      <h5 className="mb-0 d-flex align-items-center">
+                        <FontAwesomeIcon icon={faUser} className="me-2" />
+                        Account Details
+                      </h5>
+                    </div>
+                    <div className="card-body p-4">
+                      {(() => {
+                        let userRaw = null;
+                        try {
+                          userRaw = JSON.parse(localStorage.getItem("user") || "{}");
+                        } catch {}
+                        const displayName =
+                          (userRaw && (userRaw.name || `${userRaw.first_name || ""} ${userRaw.last_name || ""}`.trim())) ||
+                          (applicantName || "Applicant");
+                        const displayEmail =
+                          (userRaw && (userRaw.email || (userRaw.user && userRaw.user.email))) || "";
+                        return (
+                          <div className="row g-4">
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{ width: "48px", height: "48px", borderRadius: "12px", backgroundColor: "rgba(79,70,229,0.1)", flexShrink: 0 }}
+                                >
+                                  <FontAwesomeIcon icon={faUser} className="text-primary" size="lg" />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Full Name
+                                  </label>
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.05rem" }}>{displayName || "N/A"}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{ width: "48px", height: "48px", borderRadius: "12px", backgroundColor: "rgba(16,185,129,0.1)", flexShrink: 0 }}
+                                >
+                                  <FontAwesomeIcon icon={faEnvelope} className="text-success" size="lg" />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Email
+                                  </label>
+                                  <p className="mb-0 fw-semibold" style={{ fontSize: "1.05rem" }}>{displayEmail || "N/A"}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="col-md-6 col-lg-4">
+                              <div className="d-flex align-items-start">
+                                <div
+                                  className="d-flex align-items-center justify-content-center me-3"
+                                  style={{ width: "48px", height: "48px", borderRadius: "12px", backgroundColor: roleVerificationPending ? "rgba(16,185,129,0.1)" : "rgba(234,179,8,0.1)", flexShrink: 0 }}
+                                >
+                                  <FontAwesomeIcon 
+                                    icon={roleVerificationPending ? faCheckCircle : faUserCheck} 
+                                    className={roleVerificationPending ? "text-success" : "text-warning"} 
+                                    size="lg" 
+                                  />
+                                </div>
+                                <div className="flex-grow-1">
+                                  <label className="text-muted small mb-1 d-block" style={{ fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                    Account Verification
+                                  </label>
+                                  {roleVerificationPending ? (
+                                    <>
+                                      <p className="mb-2 text-muted">
+                                        Your role has been changed to Employee. Verify your account so that on your next login, you will be recognized as an Employee.
+                                      </p>
+                                      <button 
+                                        className="btn btn-sm btn-success"
+                                        onClick={handleVerifyRoleChange}
+                                        disabled={verifyingRole}
+                                      >
+                                        {verifyingRole ? (
+                                          <>
+                                            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                            Verifying...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <FontAwesomeIcon icon={faCheckCircle} className="me-2" />
+                                            Verify Account
+                                          </>
+                                        )}
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className="mb-2 text-muted">Your account is verified and ready.</p>
+                                      <span className="badge bg-success">
+                                        <FontAwesomeIcon icon={faCheckCircle} className="me-1" />
+                                        Verified
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
                 </>
               )}
 

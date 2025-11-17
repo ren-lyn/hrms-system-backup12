@@ -12,6 +12,6 @@ class EmployeeProfileSeeder extends Seeder
      */
     public function run(): void
     {
-        \App\Models\EmployeeProfile::factory(10)->create();
+        \App\Models\EmployeeProfile::factory(100)->create();
     }
 }

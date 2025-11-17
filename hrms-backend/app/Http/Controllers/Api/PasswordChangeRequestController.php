@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use App\Notifications\PasswordChangeRequestSubmitted;
 
 class PasswordChangeRequestController extends Controller
 {
@@ -113,6 +114,25 @@ class PasswordChangeRequestController extends Controller
 
         try {
             $requestModel = PasswordChangeRequest::create($data);
+            // Notify admins immediately
+            try {
+                $admins = User::whereHas('role', function ($q) {
+                    $q->whereIn('name', ['Admin', 'System Administrator', 'System Admin']);
+                })->get();
+                foreach ($admins as $admin) {
+                    $admin->notify(new PasswordChangeRequestSubmitted($requestModel));
+                }
+                Log::info('Password change request notification sent to admins', [
+                    'admins_notified' => $admins->count(),
+                    'request_id' => $requestModel->id,
+                    'email' => $requestModel->email,
+                ]);
+            } catch (\Throwable $notifyErr) {
+                Log::error('Failed to send admin notification for password change request', [
+                    'error' => $notifyErr->getMessage(),
+                    'request_id' => $requestModel->id,
+                ]);
+            }
             return response()->json(['message' => 'Password change request submitted', 'id' => $requestModel->id, 'saved' => true], 201);
         } catch (\Throwable $e) {
             // Log the error for debugging

@@ -50,6 +50,7 @@ import {
   faBuilding,
   faLightbulb,
   faExclamationTriangle,
+  faUserCog,
 } from "@fortawesome/free-solid-svg-icons";
 
 import axios from "axios";
@@ -1043,6 +1044,13 @@ const [profileCreationSaving, setProfileCreationSaving] = useState(false);
     additional_instructions: ''
   });
   const [startDateSaving, setStartDateSaving] = useState(false);
+
+  // Role change modal state
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [selectedApplicantForRole, setSelectedApplicantForRole] = useState(null);
+  const [availableRoles, setAvailableRoles] = useState([]);
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [roleSaving, setRoleSaving] = useState(false);
 
   const [applicantsDocumentStatus, setApplicantsDocumentStatus] = useState({});
 
@@ -3737,7 +3745,7 @@ const closeDocumentModal = useCallback(() => {
         error.response?.data?.error ||
         "Failed to update status. Please try again.";
 
-      alert(message);
+      toast.error(message, { autoClose: 5000 });
     }
   };
 
@@ -5283,6 +5291,79 @@ const closeDocumentModal = useCallback(() => {
       }
     } finally {
       setStartDateSaving(false);
+    }
+  };
+
+  // Role change handlers
+  const openRoleModal = async (applicant) => {
+    setSelectedApplicantForRole(applicant);
+    setSelectedRoleId("");
+    setShowRoleModal(true);
+    // Roles list is not needed for this flow; no network call required
+  };
+
+  const handleCloseRoleModal = () => {
+    setShowRoleModal(false);
+    setSelectedApplicantForRole(null);
+    setSelectedRoleId("");
+  };
+
+  const handleSaveRoleChange = async () => {
+    if (!selectedApplicantForRole || roleSaving) {
+      if (!roleSaving) {
+        try { toast.info("No applicant selected."); } catch {}
+      }
+      return;
+    }
+    try {
+      setRoleSaving(true);
+      const token = localStorage.getItem("token");
+
+      const applicantName =
+        (selectedApplicantForRole.applicant
+          ? `${selectedApplicantForRole.applicant.first_name || ""} ${selectedApplicantForRole.applicant.last_name || ""}`.trim()
+          : selectedApplicantForRole.employee_name || selectedApplicantForRole.name || "") || undefined;
+      const applicantEmail =
+        selectedApplicantForRole.applicant?.email ||
+        selectedApplicantForRole.employee_email ||
+        selectedApplicantForRole.email ||
+        undefined;
+
+      await axios.post(
+        "http://localhost:8000/api/notifications/role-change-request",
+        {
+          applicant_name: applicantName,
+          applicant_email: applicantEmail,
+          application_id: selectedApplicantForRole.id,
+          redirect_url: "/dashboard/admin/users" // optional hint for admins
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      toast.success("Sent to Admin. They can now set a role for this applicant.");
+      // Hint other tabs/windows to refresh notifications immediately with lightweight payload
+      try {
+        const ping = {
+          type: 'role_change_requested',
+          applicant_name: applicantName || null,
+          applicant_email: applicantEmail || null,
+          at: Date.now()
+        };
+        localStorage.setItem('role_change_request_ping', JSON.stringify(ping));
+      } catch {}
+      handleCloseRoleModal();
+    } catch (error) {
+      console.error("Failed to send signal", error);
+      const message =
+        error.response?.data?.message || "Failed to send signal.";
+      toast.error(message);
+    } finally {
+      setRoleSaving(false);
     }
   };
 
@@ -7594,6 +7675,15 @@ const closeDocumentModal = useCallback(() => {
                                         >
                                           <FontAwesomeIcon icon={faCalendarAlt} className="me-1" />
                                           Set Start Date
+                                        </Button>
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          className="ms-2"
+                                          onClick={() => openRoleModal(applicant)}
+                                        >
+                                          <FontAwesomeIcon icon={faUserCog} className="me-1" />
+                                          Change Role
                                         </Button>
                                       </td>
                                     </tr>
@@ -14728,6 +14818,57 @@ const closeDocumentModal = useCallback(() => {
                 <FontAwesomeIcon icon={faCheck} className="me-2" />
                 Save & Send to Applicant
               </>
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Change Role Modal */}
+      <Modal show={showRoleModal} onHide={handleCloseRoleModal} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <FontAwesomeIcon icon={faUserCog} className="me-2 text-primary" />
+            Change User Role
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedApplicantForRole && (
+            <>
+              <div className="mb-3">
+                <div className="fw-semibold">
+                  {(selectedApplicantForRole.applicant
+                    ? `${selectedApplicantForRole.applicant.first_name || ""} ${selectedApplicantForRole.applicant.last_name || ""}`.trim()
+                    : selectedApplicantForRole.employee_name || selectedApplicantForRole.name || "Applicant")}
+                </div>
+                <div className="small text-muted">
+                  {selectedApplicantForRole.applicant?.email ||
+                    selectedApplicantForRole.employee_email ||
+                    selectedApplicantForRole.email ||
+                    "N/A"}
+                </div>
+              </div>
+              <div className="text-muted">
+                Notify to set a new role for this applicant.
+              </div>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseRoleModal}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveRoleChange}
+            disabled={roleSaving}
+          >
+            {roleSaving ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Sending...
+              </>
+            ) : (
+              "Send to Admin"
             )}
           </Button>
         </Modal.Footer>

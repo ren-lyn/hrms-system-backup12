@@ -10,6 +10,8 @@ use App\Models\EmployeeProfile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
+use App\Notifications\RoleChangeVerification;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -83,11 +85,45 @@ class UserController extends Controller
 
         $updateData = $request->only(['first_name', 'last_name', 'email', 'role_id', 'is_active']);
         
+        // Track role change for notification
+        $oldRoleId = $user->role_id;
+        $oldRoleName = $user->role->name ?? null;
+        $roleChanged = false;
+        $newRoleName = null;
+        
         if ($request->has('password')) {
             $updateData['password'] = Hash::make($request->password);
         }
 
+        // Check if role is being changed
+        if (isset($updateData['role_id']) && $updateData['role_id'] != $oldRoleId) {
+            $newRole = Role::find($updateData['role_id']);
+            $newRoleName = $newRole->name ?? null;
+            $roleChanged = true;
+        }
+
         $user->update($updateData);
+
+        // If role changed from Applicant to Employee, notify the user
+        if ($roleChanged && $oldRoleName === 'Applicant' && $newRoleName === 'Employee') {
+            try {
+                $user->notify(new RoleChangeVerification([
+                    'user_id' => $user->id,
+                    'old_role_name' => $oldRoleName,
+                    'new_role_name' => $newRoleName,
+                ]));
+                Log::info('Role change verification notification sent to user', [
+                    'user_id' => $user->id,
+                    'old_role' => $oldRoleName,
+                    'new_role' => $newRoleName,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to send role change verification notification', [
+                    'error' => $e->getMessage(),
+                    'user_id' => $user->id,
+                ]);
+            }
+        }
 
         // Sync changes to EmployeeProfile if user has one
         if ($user->employeeProfile) {

@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use App\Notifications\RoleChangeRequested;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Notifications\DatabaseNotification;
 
 class NotificationController extends Controller
 {
@@ -14,12 +18,20 @@ class NotificationController extends Controller
         if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
 
         return response()->json([
-            'data' => $user->notifications()->latest()->take(20)->get()->map(function($n) {
+            'data' => DatabaseNotification::where('notifiable_id', $user->id)
+                ->where('notifiable_type', User::class)
+                ->latest()
+                ->take(20)
+                ->get()
+                ->map(function($n) {
                 $data = [
                     'id' => $n->id,
                     'type' => $n->data['type'] ?? null,
                     'title' => $this->generateNotificationTitle($n),
                     'message' => $this->generateNotificationMessage($n),
+                    'applicant_name' => $n->data['applicant_name'] ?? null,
+                    'applicant_email' => $n->data['applicant_email'] ?? null,
+                    'hr_message' => $n->data['hr_message'] ?? null,
                     'leave_id' => $n->data['leave_id'] ?? null,
                     'action_id' => $n->data['action_id'] ?? null,
                     'disciplinary_action_id' => $n->data['action_id'] ?? null,
@@ -62,12 +74,58 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function roleChangeRequest(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
+
+        $validated = $request->validate([
+            'applicant_name' => 'nullable|string|max:255',
+            'applicant_email' => 'nullable|email|max:255',
+            'application_id' => 'nullable|integer',
+            'redirect_url' => 'nullable|string|max:1024',
+            'hr_message' => 'nullable|string|max:2000',
+        ]);
+
+        $payload = array_merge($validated, [
+            'requested_by_user_id' => $user->id,
+            'requested_by_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: $user->email,
+        ]);
+
+        try {
+            $admins = User::whereHas('role', function ($q) {
+                $q->whereIn('name', ['Admin', 'System Administrator', 'System Admin']);
+            })->get();
+
+            foreach ($admins as $admin) {
+                $admin->notify(new RoleChangeRequested($payload));
+            }
+
+            Log::info('Role change request notification sent to admins', [
+                'admins_notified' => $admins->count(),
+                'requested_by' => $user->id,
+                'applicant_email' => $validated['applicant_email'] ?? null,
+                'application_id' => $validated['application_id'] ?? null,
+            ]);
+
+            return response()->json(['success' => true]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send role change request notification', [
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['success' => false, 'message' => 'Failed to send notification'], 500);
+        }
+    }
+
     public function markAsRead($id)
     {
         $user = Auth::user();
         if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
 
-        $notification = $user->notifications()->where('id', $id)->firstOrFail();
+        $notification = DatabaseNotification::where('id', $id)
+            ->where('notifiable_id', $user->id)
+            ->where('notifiable_type', User::class)
+            ->firstOrFail();
         $notification->markAsRead();
 
         return response()->json(['success' => true]);
@@ -78,7 +136,10 @@ class NotificationController extends Controller
         $user = Auth::user();
         if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
 
-        $notification = $user->notifications()->where('id', $id)->firstOrFail();
+        $notification = DatabaseNotification::where('id', $id)
+            ->where('notifiable_id', $user->id)
+            ->where('notifiable_type', User::class)
+            ->firstOrFail();
         $notification->delete();
 
         return response()->json(['success' => true, 'message' => 'Notification deleted successfully']);
@@ -90,6 +151,8 @@ class NotificationController extends Controller
         $data = $notification->data;
         
         switch ($type) {
+            case 'role_change_requested':
+                return 'Role Change Request';
             case 'disciplinary_action_issued':
                 return 'Disciplinary Action Issued';
             case 'disciplinary_verdict_issued':
@@ -146,6 +209,8 @@ class NotificationController extends Controller
             case 'benefit_claim_status_changed':
                 $status = ucfirst($data['status'] ?? 'updated');
                 return "Benefit Claim {$status}";
+            case 'role_change_verification':
+                return 'Role Change Verification Required';
             default:
                 return $data['title'] ?? 'Notification';
         }
@@ -157,6 +222,9 @@ class NotificationController extends Controller
         $data = $notification->data;
         
         switch ($type) {
+            case 'role_change_requested':
+                $name = $data['applicant_name'] ?? ($data['applicant_email'] ?? 'the applicant');
+                return "Please set a role for {$name}.";
             case 'disciplinary_action_issued':
                 $actionType = ucfirst(str_replace('_', ' ', $data['action_type'] ?? 'action'));
                 return "A {$actionType} has been issued against you. Please submit your explanation by " . 
@@ -242,8 +310,41 @@ class NotificationController extends Controller
                 // Use the message from the notification data (already formatted in BenefitClaimStatusChanged)
                 return $data['message'] ?? 'Your benefit claim status has been updated.';
             
+            case 'role_change_verification':
+                return $data['message'] ?? 'Your role has been changed. Please verify your account to activate this role.';
+            
             default:
                 return $data['message'] ?? 'You have a new notification.';
+        }
+    }
+    
+    public function verifyRoleChange()
+    {
+        $user = Auth::user();
+        if (!$user) return response()->json(['error' => 'Unauthorized'], 401);
+        
+        // The role is already updated by admin, we just need to confirm verification
+        // This endpoint can be used to mark the verification notification as read
+        // and potentially trigger any post-verification actions
+        
+        try {
+            // Mark all role_change_verification notifications as read
+            DatabaseNotification::where('notifiable_id', $user->id)
+                ->where('notifiable_type', User::class)
+                ->where('type', 'App\\Notifications\\RoleChangeVerification')
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Role change verified successfully. Please log out and log back in to see your new role.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to verify role change', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+            ]);
+            return response()->json(['success' => false, 'message' => 'Failed to verify role change'], 500);
         }
     }
 }

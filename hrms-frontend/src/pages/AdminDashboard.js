@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTachometerAlt, faUsers, faUserCog, faBuilding, faShieldAlt,
   faCalendar, faSignOutAlt, faBars, faTimes, faUser, faCog, faChartBar,
-  faUserPlus, faEdit, faTrash, faEye, faKey, faToggleOn, faToggleOff
+  faUserPlus, faEdit, faTrash, faEye, faKey, faToggleOn, faToggleOff, faBell
 } from '@fortawesome/free-solid-svg-icons';
 import useUserProfile from '../hooks/useUserProfile';
 import axios from 'axios';
@@ -15,6 +15,7 @@ import DepartmentPositionManagement from '../components/Admin/DepartmentPosition
 import DataPrivacySecurity from '../components/Admin/DataPrivacySecurity';
 import PasswordResetRequests from '../components/Admin/PasswordResetRequests';
 import './AdminDashboard.css';
+import { fetchNotifications } from '../api/notifications';
 
 const AdminDashboard = () => {
   const [activeView, setActiveView] = useState('dashboard');
@@ -30,6 +31,11 @@ const AdminDashboard = () => {
   const [passwordRequests, setPasswordRequests] = useState([]);
   const [showNewEmployees, setShowNewEmployees] = useState(false);
   const [showPasswordRequests, setShowPasswordRequests] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [roleChangeRequests, setRoleChangeRequests] = useState([]);
+  const [passwordResetNotifs, setPasswordResetNotifs] = useState([]);
+  const [showHeaderNotifications, setShowHeaderNotifications] = useState(false);
+  const bellAnchorRef = React.useRef(null);
 
   // Responsive sidebar management
   useEffect(() => {
@@ -109,13 +115,125 @@ const AdminDashboard = () => {
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
-        const response = await axios.get('http://localhost:8000/api/employee-profiles');
+        const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await axios.get('http://localhost:8000/api/employee-profiles', { headers });
         setEmployees(Array.isArray(response.data) ? response.data : []);
       } catch (e) {
         setEmployees([]);
       }
     };
     fetchEmployees();
+  }, []);
+
+  // Fetch notifications (used to surface role change requests in New Employees section)
+  useEffect(() => {
+    let eventSource;
+    let pollTimer;
+
+    const loadNotifications = async () => {
+      try {
+        const res = await fetchNotifications();
+        const list = res.data?.data || [];
+        setNotifications(list);
+        setRoleChangeRequests(list.filter(n => n.type === 'role_change_requested'));
+        setPasswordResetNotifs(list.filter(n => n.type === 'password_change_request_submitted'));
+      } catch (_e) {
+        // keep previous state
+      }
+    };
+
+    // Initial load
+    loadNotifications();
+    // Seed from last HR ping (in case it happened before this tab mounted)
+    try {
+      const seedRaw = localStorage.getItem('role_change_request_ping');
+      if (seedRaw) {
+        const seed = JSON.parse(seedRaw);
+        if (seed && seed.type === 'role_change_requested') {
+          setRoleChangeRequests((prev) => [
+            {
+              id: `local-${seed.at}`,
+              type: 'role_change_requested',
+              applicant_name: seed.applicant_name || 'Applicant',
+              applicant_email: seed.applicant_email || '',
+              created_at: new Date(seed.at || Date.now()).toISOString(),
+            },
+            ...prev,
+          ]);
+        }
+      }
+    } catch (_e) {}
+
+    // SSE stream for near-real-time updates if available
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+      if (token && typeof EventSource !== 'undefined') {
+        const url = `http://localhost:8000/api/notifications/stream?token=${encodeURIComponent(token)}`;
+        eventSource = new EventSource(url);
+        eventSource.onmessage = () => {
+          loadNotifications();
+        };
+        eventSource.onerror = () => {
+          // Fallback to polling if SSE fails
+          if (!pollTimer) {
+            pollTimer = setInterval(loadNotifications, 15000);
+          }
+        };
+      } else {
+        pollTimer = setInterval(loadNotifications, 15000);
+      }
+    } catch (_e) {
+      pollTimer = setInterval(loadNotifications, 15000);
+    }
+
+    // Also refresh when tab becomes visible
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadNotifications();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Refresh when HR pings via localStorage
+    const onStorage = (e) => {
+      if (e.key === 'role_change_request_ping') {
+        try {
+          const payload = JSON.parse(e.newValue || '{}');
+          if (payload && payload.type === 'role_change_requested') {
+            // Optimistically show in UI
+            setRoleChangeRequests((prev) => {
+              const exists = prev.some(
+                (n) =>
+                  (n.applicant_email && n.applicant_email === payload.applicant_email) &&
+                  Math.abs(new Date(n.created_at || 0).getTime() - (payload.at || 0)) < 60000
+              );
+              if (exists) return prev;
+              return [
+                {
+                  id: `local-${payload.at}`,
+                  type: 'role_change_requested',
+                  applicant_name: payload.applicant_name || 'Applicant',
+                  applicant_email: payload.applicant_email || '',
+                  created_at: new Date(payload.at || Date.now()).toISOString(),
+                },
+                ...prev,
+              ];
+            });
+          }
+        } catch (_e) {
+          // ignore parse errors
+        }
+        // Also refresh from backend
+        loadNotifications();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('storage', onStorage);
+      if (eventSource) eventSource.close();
+      if (pollTimer) clearInterval(pollTimer);
+    };
   }, []);
 
   // (Security alerts removed)
@@ -206,8 +324,30 @@ const AdminDashboard = () => {
         null
       );
     };
-    return employees.filter((e) => isRecent(getCreatedDate(e))).length;
-  }, [employees]);
+    const employeeCount = employees.filter((e) => isRecent(getCreatedDate(e))).length;
+    // Include role change requests as actionable items for onboarding
+    const requestsCount = roleChangeRequests.length;
+    return employeeCount + requestsCount;
+  }, [employees, roleChangeRequests]);
+
+  // Notification count for header bell (currently role change requests)
+  const headerNotificationCount = useMemo(() => {
+    const a = (roleChangeRequests || []).length;
+    const b = (passwordResetNotifs || []).length;
+    return a + b;
+  }, [roleChangeRequests, passwordResetNotifs]);
+
+  // Close header notifications on outside click
+  useEffect(() => {
+    if (!showHeaderNotifications) return;
+    const onDocClick = (e) => {
+      if (!bellAnchorRef.current) return;
+      if (bellAnchorRef.current.contains(e.target)) return;
+      setShowHeaderNotifications(false);
+    };
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [showHeaderNotifications]);
 
   // Helpers for displaying names/departments and deriving roles
   const getEmployeeDisplay = (e) => {
@@ -357,6 +497,50 @@ const AdminDashboard = () => {
       default:
         return (
           <div className="admin-dashboard-content">
+            {/* Header with notification bell */}
+            <div className="admin-header">
+              <div className="admin-header-title">Dashboard</div>
+              <div className="admin-header-actions" ref={bellAnchorRef}>
+                <button
+                  className="admin-header-bell"
+                  title="Notifications"
+                  onClick={() => setShowHeaderNotifications((v) => !v)}
+                >
+                  <FontAwesomeIcon icon={faBell} />
+                  {headerNotificationCount > 0 && (
+                    <span className="admin-bell-badge">{headerNotificationCount}</span>
+                  )}
+                </button>
+                {showHeaderNotifications && (
+                  <div className="admin-notif-dropdown">
+                    <div className="admin-notif-header">Notifications</div>
+                    <div className="admin-notif-body">
+                      {((roleChangeRequests && roleChangeRequests.length > 0) || (passwordResetNotifs && passwordResetNotifs.length > 0)) ? (
+                        <ul className="admin-notif-list">
+                          {[...roleChangeRequests, ...passwordResetNotifs].map((n, i) => {
+                            const name = n.applicant_name || n.applicant_email || 'Applicant';
+                            const isPwd = n.type === 'password_change_request_submitted';
+                            const displayName = isPwd ? (n.full_name || n.email || 'User') : name;
+                            const meta = isPwd ? (n.email || '') : (n.applicant_email || '');
+                            const body = isPwd ? (n.message || 'Password reset requested') : (n.hr_message || 'Role needs to be updated');
+                            return (
+                              <li key={`hdr-${i}`} className="admin-notif-item">
+                                <div className="admin-notif-item-title">{displayName}</div>
+                                <div className="admin-notif-item-meta">{body}</div>
+                                {meta ? <div className="admin-notif-item-meta">{meta}</div> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <div className="admin-notif-empty">No notifications</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="admin-stats">
               <button className="stat-card stat-card-button" onClick={() => setShowUsers(true)}>
                 <div className="stat-icon">
@@ -491,6 +675,16 @@ const AdminDashboard = () => {
                             </li>
                           );
                         })}
+                      {roleChangeRequests.map((n, i) => {
+                        const name = n.applicant_name || n.applicant_email || 'Applicant';
+                        const meta = n.applicant_email || '';
+                        return (
+                          <li key={`req-${i}`} className="entity-item">
+                            <span className="entity-name">{name}</span>
+                            <span className="entity-meta">Role change requested {meta ? `• ${meta}` : ''}</span>
+                          </li>
+                        );
+                      })}
                     </ul>
                     <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                       <button

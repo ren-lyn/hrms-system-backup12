@@ -347,10 +347,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     
     // Notifications
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
-    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
-    Route::get('/notifications/stream', [NotificationStreamController::class, 'stream']);
+Route::get('/notifications', [NotificationController::class, 'index']);
+Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
+Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
+Route::get('/notifications/stream', [NotificationStreamController::class, 'stream']);
+// Notify Admin: role change request for applicant (auth required)
+Route::middleware('auth:sanctum')->post('/notifications/role-change-request', [NotificationController::class, 'roleChangeRequest']);
+// Verify role change (auth required)
+Route::middleware('auth:sanctum')->post('/notifications/verify-role-change', [NotificationController::class, 'verifyRoleChange']);
 
         // Benefit Claims - HR routes
     Route::middleware(['role:HR Assistant,HR Staff,HR Admin'])->group(function () {
@@ -414,6 +418,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/my-evaluations', [ManagerEvaluationController::class, 'getMyEvaluationResults']); // Get employee's own evaluations
         Route::get('/{evaluationId}', [ManagerEvaluationController::class, 'getEvaluationResultForEmployee']); // View specific evaluation result
         Route::get('/{evaluationId}/pdf', [ManagerEvaluationController::class, 'downloadPdfForEmployee']); // Download evaluation PDF
+    });
+
+    // Employee Payroll Routes
+    Route::prefix('payrolls')->group(function () {
+        Route::get('/my-payrolls', [PayrollController::class, 'myPayrolls']); // Get employee's own payrolls
+        Route::get('/{id}/download', [PayrollController::class, 'downloadPayslip']); // Download payslip as PDF
     });
 
     // Cash Advance Management
@@ -497,6 +507,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['role:HR Assistant,HR Staff'])->prefix('payroll')->group(function () {
         Route::get('/', [PayrollController::class, 'index']);
         Route::post('/generate', [PayrollController::class, 'generate']);
+        Route::put('/{id}/status', [PayrollController::class, 'updateStatus']); // Update payroll status
+        Route::put('/bulk-update-status', [PayrollController::class, 'bulkUpdateStatus']); // Bulk update payroll statuses
     });
 
     // Deduction Title Management Routes

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Table, Form, Modal, Badge, InputGroup, Tabs, Tab } from 'react-bootstrap';
-import { FaMoneyCheckAlt, FaCalculator, FaCalendarAlt, FaEye, FaPrint, FaPlus, FaTrash, FaEdit, FaChevronDown, FaChevronRight, FaUserCheck, FaMinusCircle, FaReceipt } from 'react-icons/fa';
+import { FaMoneyCheckAlt, FaCalculator, FaCalendarAlt, FaEye, FaPrint, FaPlus, FaTrash, FaEdit, FaChevronDown, FaChevronRight, FaUserCheck, FaMinusCircle, FaReceipt, FaSync, FaCheckDouble } from 'react-icons/fa';
 import axios from '../../axios';
 import { toast } from 'react-toastify';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -21,6 +21,13 @@ const PayrollDashboard = () => {
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPayroll, setSelectedPayroll] = useState(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedPayrollForStatus, setSelectedPayrollForStatus] = useState(null);
+  const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
+  const [bulkNewStatus, setBulkNewStatus] = useState('');
+  const [bulkUpdateScope, setBulkUpdateScope] = useState('period'); // 'period' or 'all'
+  const [selectedPeriodForBulk, setSelectedPeriodForBulk] = useState(null);
+  const [newStatus, setNewStatus] = useState('');
   const [newPeriod, setNewPeriod] = useState({ name: '', start_date: '', end_date: '', description: '' });
   const [generating, setGenerating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -161,7 +168,7 @@ const PayrollDashboard = () => {
     }).format(amount || 0);
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status, payroll = null) => {
     const variants = {
       processed: 'success',
       paid: 'primary',
@@ -171,6 +178,124 @@ const PayrollDashboard = () => {
       closed: 'secondary'
     };
     return <Badge bg={variants[status] || 'secondary'}>{status?.toUpperCase()}</Badge>;
+  };
+
+  const handleEditStatus = (payroll) => {
+    if (payroll.status !== 'draft') {
+      toast.info('Only draft payrolls can have their status updated.');
+      return;
+    }
+    setSelectedPayrollForStatus(payroll);
+    setNewStatus(payroll.status);
+    setShowStatusModal(true);
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!selectedPayrollForStatus || !newStatus) {
+      toast.error('Please select a status');
+      return;
+    }
+
+    if (selectedPayrollForStatus.status === newStatus) {
+      toast.info('Status is already set to ' + newStatus);
+      setShowStatusModal(false);
+      return;
+    }
+
+    try {
+      const response = await axios.put(`/payroll/${selectedPayrollForStatus.id}/status`, {
+        status: newStatus
+      });
+
+      if (response.data.success) {
+        toast.success('Payroll status updated successfully');
+        // Update the payroll in the state
+        setPayrolls(prevPayrolls => 
+          prevPayrolls.map(p => 
+            p.id === selectedPayrollForStatus.id 
+              ? { ...p, status: newStatus }
+              : p
+          )
+        );
+        // Also update payrolls in periods if they exist
+        setPayrollPeriods(prevPeriods =>
+          prevPeriods.map(period => ({
+            ...period,
+            payrolls: period.payrolls?.map(p =>
+              p.id === selectedPayrollForStatus.id
+                ? { ...p, status: newStatus }
+                : p
+            ) || []
+          }))
+        );
+        setShowStatusModal(false);
+        setSelectedPayrollForStatus(null);
+        setNewStatus('');
+      }
+    } catch (error) {
+      console.error('Error updating payroll status:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to update payroll status';
+      toast.error(errorMessage);
+    }
+  };
+
+  const handleBulkUpdateStatus = async () => {
+    if (!bulkNewStatus) {
+      toast.error('Please select a status');
+      return;
+    }
+
+    try {
+      const payload = { status: bulkNewStatus };
+      
+      // Add period filter if scope is 'period' and a period is selected
+      if (bulkUpdateScope === 'period') {
+        if (selectedPeriodForBulk) {
+          payload.payroll_period_id = selectedPeriodForBulk.id;
+        } else if (selectedPeriod.start && selectedPeriod.end) {
+          payload.period_start = selectedPeriod.start;
+          payload.period_end = selectedPeriod.end;
+        }
+      } else if (bulkUpdateScope === 'current') {
+        // Update all draft payrolls in current view
+        if (selectedPeriod.start && selectedPeriod.end) {
+          payload.period_start = selectedPeriod.start;
+          payload.period_end = selectedPeriod.end;
+        }
+      }
+
+      const response = await axios.put('/payroll/bulk-update-status', payload);
+
+      if (response.data.success) {
+        const updatedCount = response.data.data.updated_count;
+        toast.success(`Successfully updated ${updatedCount} payroll status(es) to ${bulkNewStatus}`);
+        
+        // Refresh payrolls data
+        await fetchPayrolls();
+        await fetchPayrollPeriods();
+        
+        setShowBulkStatusModal(false);
+        setBulkNewStatus('');
+        setSelectedPeriodForBulk(null);
+        setBulkUpdateScope('period');
+      }
+    } catch (error) {
+      console.error('Error bulk updating payroll statuses:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to bulk update payroll statuses';
+      toast.error(errorMessage);
+    }
+  };
+
+  const handleOpenBulkStatusModal = (period = null) => {
+    if (period) {
+      setBulkUpdateScope('period');
+      setSelectedPeriodForBulk(period);
+    } else {
+      setBulkUpdateScope('current');
+      setSelectedPeriodForBulk(null);
+    }
+    setBulkNewStatus('');
+    setShowBulkStatusModal(true);
   };
 
   const filteredPayrolls = payrolls.filter(payroll => {
@@ -684,7 +809,51 @@ const PayrollDashboard = () => {
                         {expandedPeriod === period.id && period.payrolls && period.payrolls.length > 0 && (
                           <tr>
                             <td colSpan={6} style={{ backgroundColor: '#f8f9fa', padding: '20px' }}>
-                              <h6 className="mb-3">Payroll Records ({period.payrolls.length})</h6>
+                              <div className="d-flex justify-content-between align-items-center mb-3">
+                                <h6 className="mb-0">Payroll Records ({period.payrolls.length})</h6>
+                                {(() => {
+                                  const draftCount = period.payrolls.filter(p => p.status === 'draft').length;
+                                  return draftCount > 0 && (
+                                    <div className="d-flex align-items-center gap-2">
+                                      <Button
+                                        variant="warning"
+                                        size="sm"
+                                        onClick={() => handleOpenBulkStatusModal(period)}
+                                        className="d-flex align-items-center"
+                                        style={{
+                                          fontWeight: '600',
+                                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.transform = 'translateY(-1px)';
+                                          e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.15)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.transform = 'translateY(0)';
+                                          e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                                        }}
+                                      >
+                                        <FaSync className="me-2" style={{ fontSize: '0.9rem' }} />
+                                        Change All Status
+                                      </Button>
+                                      <Badge 
+                                        bg="dark" 
+                                        text="light"
+                                        style={{ 
+                                          fontSize: '0.75rem',
+                                          padding: '5px 12px',
+                                          fontWeight: '500',
+                                          color: '#fff',
+                                          backgroundColor: '#212529'
+                                        }}
+                                      >
+                                        {draftCount} {draftCount === 1 ? 'draft' : 'drafts'}
+                                      </Badge>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                               <Table size="sm" hover>
                                 <thead>
                                   <tr>
@@ -715,7 +884,21 @@ const PayrollDashboard = () => {
                                         <td>{formatCurrency(payroll.gross_pay)}</td>
                                         <td>{formatCurrency(payroll.total_deductions)}</td>
                                         <td><strong>{formatCurrency(payroll.net_pay)}</strong></td>
-                                        <td>{getStatusBadge(payroll.status)}</td>
+                                        <td>
+                                          <div className="d-flex align-items-center gap-2">
+                                            {getStatusBadge(payroll.status, payroll)}
+                                            {payroll.status === 'draft' && (
+                                              <Button
+                                                variant="outline-warning"
+                                                size="sm"
+                                                onClick={() => handleEditStatus(payroll)}
+                                                title="Edit Status"
+                                              >
+                                                <FaEdit />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        </td>
                                         <td>
                                           <Button
                                             variant="outline-primary"
@@ -1125,6 +1308,49 @@ const PayrollDashboard = () => {
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="mb-0">Payroll Records</h5>
+                {(() => {
+                  const draftCount = filteredPayrolls.filter(p => p.status === 'draft').length;
+                  return draftCount > 0 && (
+                    <div className="d-flex align-items-center position-relative">
+                      <Button
+                        variant="warning"
+                        size="sm"
+                        onClick={() => handleOpenBulkStatusModal(null)}
+                        className="d-flex align-items-center"
+                        style={{
+                          fontWeight: '600',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        <FaSync className="me-2" style={{ fontSize: '0.9rem' }} />
+                        <span>Change All Status</span>
+                      </Button>
+                      <Badge 
+                        bg="dark" 
+                        text="light"
+                        className="ms-2" 
+                        style={{ 
+                          fontSize: '0.75rem',
+                          padding: '5px 12px',
+                          fontWeight: '500',
+                          color: '#fff',
+                          backgroundColor: '#212529'
+                        }}
+                      >
+                        {draftCount} {draftCount === 1 ? 'draft' : 'drafts'}
+                      </Badge>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Date Range Selector */}
@@ -1201,7 +1427,21 @@ const PayrollDashboard = () => {
                             <td>{formatCurrency(payroll.gross_pay)}</td>
                             <td>{formatCurrency(payroll.total_deductions)}</td>
                             <td><strong>{formatCurrency(payroll.net_pay)}</strong></td>
-                            <td>{getStatusBadge(payroll.status)}</td>
+                            <td>
+                              <div className="d-flex align-items-center gap-2">
+                                {getStatusBadge(payroll.status, payroll)}
+                                {payroll.status === 'draft' && (
+                                  <Button
+                                    variant="outline-warning"
+                                    size="sm"
+                                    onClick={() => handleEditStatus(payroll)}
+                                    title="Edit Status"
+                                  >
+                                    <FaEdit />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
                             <td>
                               <Button
                                 variant="outline-primary"
@@ -1884,6 +2124,159 @@ const PayrollDashboard = () => {
           <Button variant="primary" onClick={() => window.print()}>
             <FaPrint className="me-2" />
             Print
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Update Status Modal */}
+      <Modal show={showStatusModal} onHide={() => {
+        setShowStatusModal(false);
+        setSelectedPayrollForStatus(null);
+        setNewStatus('');
+      }}>
+        <Modal.Header closeButton>
+          <Modal.Title>Update Payroll Status</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedPayrollForStatus && (
+            <div>
+              <p><strong>Employee:</strong> {
+                employees.find(emp => emp.employee_profile?.id === selectedPayrollForStatus.employee_id)?.employee_profile
+                  ? `${employees.find(emp => emp.employee_profile?.id === selectedPayrollForStatus.employee_id).employee_profile.first_name} ${employees.find(emp => emp.employee_profile?.id === selectedPayrollForStatus.employee_id).employee_profile.last_name}`
+                  : selectedPayrollForStatus.employee?.first_name && selectedPayrollForStatus.employee?.last_name
+                    ? `${selectedPayrollForStatus.employee.first_name} ${selectedPayrollForStatus.employee.last_name}`
+                    : 'Unknown Employee'
+              }</p>
+              <p><strong>Current Status:</strong> {getStatusBadge(selectedPayrollForStatus.status)}</p>
+              <p><strong>Period:</strong> {format(new Date(selectedPayrollForStatus.period_start), 'MMM dd, yyyy')} - {format(new Date(selectedPayrollForStatus.period_end), 'MMM dd, yyyy')}</p>
+              <hr />
+              <Form.Group className="mb-3">
+                <Form.Label>New Status</Form.Label>
+                <Form.Select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                >
+                  <option value="">Select Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="processed">Processed</option>
+                  <option value="paid">Paid</option>
+                </Form.Select>
+              </Form.Group>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => {
+            setShowStatusModal(false);
+            setSelectedPayrollForStatus(null);
+            setNewStatus('');
+          }}>
+            Cancel
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleUpdateStatus}
+            disabled={!newStatus || newStatus === selectedPayrollForStatus?.status}
+          >
+            Update Status
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Bulk Update Status Modal */}
+      <Modal show={showBulkStatusModal} onHide={() => {
+        setShowBulkStatusModal(false);
+        setBulkNewStatus('');
+        setSelectedPeriodForBulk(null);
+        setBulkUpdateScope('period');
+      }} size="lg">
+        <Modal.Header closeButton style={{ borderBottom: '2px solid #f0f0f0' }}>
+          <Modal.Title className="d-flex align-items-center">
+            <FaSync className="me-2 text-warning" />
+            Bulk Update Payroll Status
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div>
+            {bulkUpdateScope === 'period' && selectedPeriodForBulk && (() => {
+              const draftCount = selectedPeriodForBulk.payrolls?.filter(p => p.status === 'draft').length || 0;
+              return (
+                <div className="mb-4 p-3" style={{ backgroundColor: '#f8f9fa', borderRadius: '8px', borderLeft: '4px solid #ffc107' }}>
+                  <div className="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                      <p className="mb-1"><strong>Period:</strong> {selectedPeriodForBulk.name}</p>
+                      <p className="mb-0"><strong>Date Range:</strong> {format(new Date(selectedPeriodForBulk.start_date), 'MMM dd, yyyy')} - {format(new Date(selectedPeriodForBulk.end_date), 'MMM dd, yyyy')}</p>
+                    </div>
+                    <Badge bg="warning" text="dark" style={{ fontSize: '0.9rem', padding: '6px 12px' }}>
+                      {draftCount} {draftCount === 1 ? 'Draft Payroll' : 'Draft Payrolls'}
+                    </Badge>
+                  </div>
+                  <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
+                    <FaCheckDouble className="me-1" />
+                    This will update all draft payrolls in this period to the selected status.
+                  </p>
+                </div>
+              );
+            })()}
+            {bulkUpdateScope === 'current' && (() => {
+              const draftCount = filteredPayrolls.filter(p => p.status === 'draft').length;
+              return (
+                <div className="mb-4 p-3" style={{ backgroundColor: '#f8f9fa', borderRadius: '8px', borderLeft: '4px solid #ffc107' }}>
+                  <div className="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                      <p className="mb-0"><strong>Date Range:</strong> {format(new Date(selectedPeriod.start), 'MMM dd, yyyy')} - {format(new Date(selectedPeriod.end), 'MMM dd, yyyy')}</p>
+                    </div>
+                    <Badge bg="warning" text="dark" style={{ fontSize: '0.9rem', padding: '6px 12px' }}>
+                      {draftCount} {draftCount === 1 ? 'Draft Payroll' : 'Draft Payrolls'}
+                    </Badge>
+                  </div>
+                  <p className="text-muted mb-0" style={{ fontSize: '0.9rem' }}>
+                    <FaCheckDouble className="me-1" />
+                    This will update all draft payrolls in the current date range to the selected status.
+                  </p>
+                </div>
+              );
+            })()}
+            <Form.Group className="mb-3">
+              <Form.Label className="fw-bold">New Status</Form.Label>
+              <Form.Select
+                value={bulkNewStatus}
+                onChange={(e) => setBulkNewStatus(e.target.value)}
+                size="lg"
+                style={{ border: '2px solid #dee2e6' }}
+              >
+                <option value="">Select Status</option>
+                <option value="processed">Processed</option>
+                <option value="paid">Paid</option>
+              </Form.Select>
+              <Form.Text className="text-muted d-block mt-2">
+                <FaCheckDouble className="me-1" />
+                Note: Only draft payrolls will be updated. Processed and paid payrolls will remain unchanged.
+              </Form.Text>
+            </Form.Group>
+          </div>
+        </Modal.Body>
+        <Modal.Footer style={{ borderTop: '2px solid #f0f0f0' }}>
+          <Button 
+            variant="secondary" 
+            onClick={() => {
+              setShowBulkStatusModal(false);
+              setBulkNewStatus('');
+              setSelectedPeriodForBulk(null);
+              setBulkUpdateScope('period');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="warning" 
+            onClick={handleBulkUpdateStatus}
+            disabled={!bulkNewStatus}
+            className="d-flex align-items-center"
+            style={{ fontWeight: '600' }}
+          >
+            <FaSync className="me-2" />
+            Update All Statuses
           </Button>
         </Modal.Footer>
       </Modal>
