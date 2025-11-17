@@ -121,6 +121,7 @@ class PayrollController extends Controller
                         'overtime_pay' => 0,
                         'allowances' => 0,
                         'holiday_pay' => 0,
+                        'thirteenth_month_pay' => 0,
                         'gross_pay' => 0,
                         'sss_deduction' => 0,
                         'philhealth_deduction' => 0,
@@ -261,6 +262,10 @@ class PayrollController extends Controller
         // Holiday pay is typically double the daily rate
         $holidayPay = $this->calculateHolidayPay($employee, $attendances, $dailyRate);
 
+        // Calculate 13th month pay (visible for all payroll periods, but not included in gross pay)
+        // Formula: (Basic Salary per Month × Months Worked during the Year) / 12
+        $thirteenthMonthPay = $this->calculateThirteenthMonthPay($employee, $periodStart, $periodEnd);
+
         // Calculate late deduction with 15-minute grace period (only if employee is assigned to Late Penalty)
         $lateDeduction = $this->calculateLateDeduction($employee, $attendances);
 
@@ -276,6 +281,7 @@ class PayrollController extends Controller
         // Gross pay
         // Basic salary already includes days worked + approved leave with pay days
         // Holiday pay is additional (typically double pay for working on holidays)
+        // Note: 13th month pay is NOT included in gross pay (it's shown separately and not in payslip)
         // Leave without pay is NOT subtracted from gross pay since those days are already excluded from basic salary
         $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0);
         
@@ -327,6 +333,7 @@ class PayrollController extends Controller
             'gross_pay' => round($grossPay, 2),
             'overtime_pay' => round($overtimePay, 2),
             'holiday_pay' => round($holidayPay, 2),
+            'thirteenth_month_pay' => round($thirteenthMonthPay, 2),
             'sss_deduction' => $sssDed,
             'philhealth_deduction' => $philhealthDed,
             'pagibig_deduction' => $pagibigDed,
@@ -853,6 +860,82 @@ class PayrollController extends Controller
         }
 
         return round($totalHolidayPay, 2);
+    }
+
+    /**
+     * Calculate 13th month pay
+     * Formula: (Basic Salary per Month × Months Worked during the Year) / 12
+     * 
+     * @param EmployeeProfile $employee
+     * @param string $periodStart
+     * @param string $periodEnd
+     * @return float
+     */
+    private function calculateThirteenthMonthPay(EmployeeProfile $employee, $periodStart, $periodEnd): float
+    {
+        // Get employee's monthly basic salary
+        $monthlyBasicSalary = $employee->salary ?? 0;
+        
+        if ($monthlyBasicSalary <= 0) {
+            return 0;
+        }
+
+        // Get the year from the payroll period end date
+        $periodEndCarbon = Carbon::parse($periodEnd);
+        $year = $periodEndCarbon->year;
+        
+        // Get employee's hire date
+        $hireDate = null;
+        if ($employee->hire_date) {
+            $hireDate = Carbon::parse($employee->hire_date);
+        } else {
+            // If no hire date, use employee creation date as fallback
+            $hireDate = Carbon::parse($employee->created_at);
+        }
+        
+        // Determine the start of the calculation period (start of the year)
+        $yearStart = Carbon::create($year, 1, 1)->startOfDay();
+        
+        // Use the later of: hire date or start of the year
+        $calculationStart = $hireDate->gt($yearStart) ? $hireDate : $yearStart;
+        
+        // Determine the end of the calculation period (end of the year or period end, whichever is earlier)
+        $yearEnd = Carbon::create($year, 12, 31)->endOfDay();
+        $calculationEnd = $periodEndCarbon->lt($yearEnd) ? $periodEndCarbon : $yearEnd;
+        
+        // Ensure calculation start is before calculation end
+        if ($calculationStart->gt($calculationEnd)) {
+            return 0;
+        }
+        
+        // Count months worked during the year
+        // We count the number of calendar months the employee worked
+        // Start from the first day of the start month to the last day of the end month
+        $startMonth = $calculationStart->month;
+        $endMonth = $calculationEnd->month;
+        $startYear = $calculationStart->year;
+        $endYear = $calculationEnd->year;
+        
+        // Calculate months worked
+        if ($startYear == $endYear) {
+            // Same year: count months from start month to end month (inclusive)
+            $monthsWorked = ($endMonth - $startMonth) + 1;
+        } else {
+            // Different years (shouldn't happen for same year calculation, but handle it)
+            $monthsWorked = (12 - $startMonth + 1) + ($endMonth - 1);
+        }
+        
+        // Ensure months worked doesn't exceed 12 and is at least 1
+        $monthsWorked = max(1, min($monthsWorked, 12));
+        
+        // Calculate total salary earned during the year
+        // Total salary = monthly basic salary × months worked
+        $totalSalaryEarned = $monthlyBasicSalary * $monthsWorked;
+        
+        // Calculate 13th month pay: total salary earned / 12
+        $thirteenthMonthPay = $totalSalaryEarned / 12;
+        
+        return round($thirteenthMonthPay, 2);
     }
 
     /**

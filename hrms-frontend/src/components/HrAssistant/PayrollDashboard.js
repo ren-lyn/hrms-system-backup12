@@ -860,6 +860,7 @@ const PayrollDashboard = () => {
                                     <th>Employee</th>
                                     <th>Basic Salary</th>
                                     <th>OT Pay</th>
+                                    <th>13th Month Pay</th>
                                     <th>Gross Pay</th>
                                     <th>Deductions</th>
                                     <th>Net Pay</th>
@@ -881,6 +882,7 @@ const PayrollDashboard = () => {
                                         <td>{fullName}</td>
                                         <td>{formatCurrency(payroll.basic_salary)}</td>
                                         <td>{formatCurrency(payroll.overtime_pay)}</td>
+                                        <td>{formatCurrency(payroll.thirteenth_month_pay || 0)}</td>
                                         <td>{formatCurrency(payroll.gross_pay)}</td>
                                         <td>{formatCurrency(payroll.total_deductions)}</td>
                                         <td><strong>{formatCurrency(payroll.net_pay)}</strong></td>
@@ -1398,6 +1400,7 @@ const PayrollDashboard = () => {
                       <th>Employee</th>
                       <th>Basic Salary</th>
                       <th>OT Pay</th>
+                      <th>13th Month Pay</th>
                       <th>Gross Pay</th>
                       <th>Deductions</th>
                       <th>Net Pay</th>
@@ -1408,7 +1411,7 @@ const PayrollDashboard = () => {
                   <tbody>
                     {filteredPayrolls.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-4">
+                        <td colSpan={9} className="text-center py-4">
                           No payroll records found for this period
                         </td>
                       </tr>
@@ -1424,6 +1427,7 @@ const PayrollDashboard = () => {
                             <td>{fullName}</td>
                             <td>{formatCurrency(payroll.basic_salary)}</td>
                             <td>{formatCurrency(payroll.overtime_pay)}</td>
+                            <td>{formatCurrency(payroll.thirteenth_month_pay || 0)}</td>
                             <td>{formatCurrency(payroll.gross_pay)}</td>
                             <td>{formatCurrency(payroll.total_deductions)}</td>
                             <td><strong>{formatCurrency(payroll.net_pay)}</strong></td>
@@ -2081,6 +2085,9 @@ const PayrollDashboard = () => {
               <Row className="mb-3">
                 <Col md={6}>
                   <strong>Holiday Pay:</strong> {formatCurrency(selectedPayroll.holiday_pay || 0)}
+                </Col>
+                <Col md={6}>
+                  <strong>13th Month Pay:</strong> {formatCurrency(selectedPayroll.thirteenth_month_pay || 0)}
                 </Col>
               </Row>
               <Row className="mb-3">
