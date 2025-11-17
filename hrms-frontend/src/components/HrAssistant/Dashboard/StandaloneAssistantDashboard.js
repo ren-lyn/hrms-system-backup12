@@ -179,16 +179,43 @@ export default function StandaloneAssistantDashboard() {
         const token = localStorage.getItem('token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         
-        // Get last 7 days of attendance data (or latest available period)
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 6); // Last 7 days including today
+        // First, get the latest attendance record date from the system
+        let latestDate = new Date();
+        let endDateStr = latestDate.toISOString().split('T')[0];
+        
+        try {
+          // Fetch a small set of attendance records ordered by date descending to find the latest date
+          const latestResponse = await axios.get('http://localhost:8000/api/attendance', {
+            headers,
+            params: {
+              per_page: 1,
+              sort_by: 'date',
+              sort_order: 'desc'
+            }
+          });
+          
+          if (latestResponse.data.success && latestResponse.data.data.data && latestResponse.data.data.data.length > 0) {
+            const latestRecord = latestResponse.data.data.data[0];
+            if (latestRecord.date) {
+              latestDate = new Date(latestRecord.date);
+              endDateStr = latestDate.toISOString().split('T')[0];
+              console.log('Latest attendance record date found:', endDateStr);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch latest attendance date, using today:', error);
+          // If we can't get the latest date, use today as fallback
+        }
+        
+        // Calculate 7 days back from the latest date (including the latest date itself)
+        // This ensures we show the latest 7 days of recorded attendance records
+        const startDate = new Date(latestDate);
+        startDate.setDate(startDate.getDate() - 6); // Last 7 days including latest date
         
         // Format dates properly for API (YYYY-MM-DD)
         const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
         
-        console.log('Fetching attendance data from', startDateStr, 'to', endDateStr);
+        console.log('Fetching attendance data from', startDateStr, 'to', endDateStr, '(latest 7 days with records)');
         
         const response = await axios.get('http://localhost:8000/api/attendance/dashboard', {
           headers,
