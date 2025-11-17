@@ -4,6 +4,11 @@ import { Card, Button, Row, Col, Form, Table, Dropdown, Badge, Alert, Modal, Spi
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import Chart from 'chart.js/auto';
+// Import jspdf-autotable FIRST - must be imported as side-effect to extend jsPDF prototype
+// This import statement extends the jsPDF class with the autoTable method
+import 'jspdf-autotable';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 
 export default function ReportGeneration() {
   const [reportType, setReportType] = useState('attendance');
@@ -1856,20 +1861,175 @@ export default function ReportGeneration() {
     }
   };
 
-  const handleDownloadPDF = async () => {
+  // Helper function to download file
+  const downloadFile = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Export Attendance Reports
+  const exportAttendancePDF = async () => {
+    if (!attendanceData || attendanceData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape');
+      doc.setFontSize(16);
+      doc.text('Attendance Report', 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      
+      const tableData = attendanceData.map(item => {
+        const emp = item.employee || {};
+        return [
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.date || 'N/A',
+          item.clock_in || 'N/A',
+          item.clock_out || 'N/A',
+          (item.total_hours || 0).toFixed(2),
+          item.status || 'N/A'
+        ];
+      });
+
+      // Use autoTable if available, otherwise use manual table
+      if (doc.autoTable && typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          head: [['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Hours', 'Status']],
+          body: tableData,
+          startY: 30,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [66, 139, 202] }
+        });
+      } else {
+        // Fallback: create table manually using jsPDF text methods
+        let yPos = 30;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Hours', 'Status'];
+        const colWidths = [25, 40, 30, 30, 25, 20, 20, 15, 20];
+        let xPos = 14;
+        
+        headers.forEach((header, i) => {
+          doc.text(header.substring(0, 15), xPos, yPos);
+          xPos += colWidths[i];
+        });
+        
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        tableData.forEach(row => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          xPos = 14;
+          row.forEach((cell, i) => {
+            const cellText = String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5));
+            doc.text(cellText, xPos, yPos);
+            xPos += colWidths[i];
+          });
+          yPos += 7;
+        });
+      }
+
+      const filename = `Attendance_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
+      doc.save(filename);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+    }
+  };
+
+  const exportAttendanceExcel = () => {
+    if (!attendanceData || attendanceData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const worksheetData = [
+        ['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Total Hours', 'Status', 'Remarks']
+      ];
+
+      attendanceData.forEach(item => {
+        const emp = item.employee || {};
+        worksheetData.push([
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.date || 'N/A',
+          item.clock_in || 'N/A',
+          item.clock_out || 'N/A',
+          (item.total_hours || 0).toFixed(2),
+          item.status || 'N/A',
+          item.remarks || ''
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Attendance Report');
+      
+      const filename = `Attendance_Report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast.error('Failed to generate Excel file');
+    }
+  };
+
+  const exportAttendanceCSV = async () => {
     if (!dateRange.startDate || !dateRange.endDate) {
       toast.error('Please select a date range');
       return;
     }
 
-    if (reportType === 'performance') {
-      await downloadPerformancePDF();
-    } else {
-      toast.info('Other report types coming soon');
+    try {
+      const params = {
+        date_from: dateRange.startDate,
+        date_to: dateRange.endDate,
+      };
+
+      if (filters.status && filters.status !== 'all' && filters.status !== '') {
+        params.status = filters.status;
+      }
+
+      const response = await axios.get('http://localhost:8000/api/attendance/export', {
+        params,
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        responseType: 'blob'
+      });
+
+      const filename = `Attendance_Report_${dateRange.startDate}_to_${dateRange.endDate}.csv`;
+      downloadFile(response.data, filename);
+      toast.success('CSV downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading CSV:', error);
+      toast.error('Failed to download CSV');
     }
   };
 
-  const downloadPerformancePDF = async () => {
+  // Export Performance Reports
+  const exportPerformancePDF = async () => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      toast.error('Please select a date range');
+      return;
+    }
+
     try {
       const params = {
         start_date: dateRange.startDate,
@@ -1885,16 +2045,8 @@ export default function ReportGeneration() {
         responseType: 'blob'
       });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
       const filename = `Performance_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      
+      downloadFile(response.data, filename);
       toast.success('PDF downloaded successfully');
     } catch (error) {
       console.error('Error downloading PDF:', error);
@@ -1902,21 +2054,539 @@ export default function ReportGeneration() {
     }
   };
 
-  const downloadPayrollPDF = async () => {
-    toast.info('Payroll PDF export coming soon');
+  const exportPerformanceExcel = () => {
+    if (!performanceData || performanceData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const worksheetData = [
+        ['Employee ID', 'Name', 'Department', 'Position', 'Evaluation Period', 'Score', 'Status', 'Passed']
+      ];
+
+      performanceData.forEach(item => {
+        const emp = item.employee?.employee_profile || item.employee || {};
+        worksheetData.push([
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.evaluation_period_start ? `${item.evaluation_period_start} to ${item.evaluation_period_end || ''}` : 'N/A',
+          (item.percentage_score || 0).toFixed(2) + '%',
+          item.status || 'N/A',
+          item.is_passed ? 'Yes' : 'No'
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Performance Report');
+      
+      const filename = `Performance_Report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast.error('Failed to generate Excel file');
+    }
   };
 
-  const handleGenerateReport = (format) => {
-    if (format === 'pdf') {
-      if (reportType === 'performance') {
-        handleDownloadPDF();
-      } else if (reportType === 'payroll') {
-        downloadPayrollPDF();
+  const exportPerformanceCSV = () => {
+    if (!performanceData || performanceData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      let csv = 'Employee ID,Name,Department,Position,Evaluation Period,Score,Status,Passed\n';
+      
+      performanceData.forEach(item => {
+        const emp = item.employee?.employee_profile || item.employee || {};
+        const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A';
+        const period = item.evaluation_period_start ? `${item.evaluation_period_start} to ${item.evaluation_period_end || ''}` : 'N/A';
+        csv += `"${emp.employee_id || emp.id || 'N/A'}","${name}","${emp.department || 'N/A'}","${emp.position || 'N/A'}","${period}","${(item.percentage_score || 0).toFixed(2)}%","${item.status || 'N/A'}","${item.is_passed ? 'Yes' : 'No'}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const filename = `Performance_Report_${dateRange.startDate}_to_${dateRange.endDate}.csv`;
+      downloadFile(blob, filename);
+      toast.success('CSV downloaded successfully');
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      toast.error('Failed to generate CSV');
+    }
+  };
+
+  // Export Payroll Reports
+  const exportPayrollPDF = async () => {
+    if (!payrollData || payrollData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape');
+      doc.setFontSize(16);
+      doc.text('Payroll Report', 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      
+      const tableData = payrollData.map(item => {
+        const emp = item.employee || {};
+        return [
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          `PHP ${(item.basic_salary || 0).toFixed(2)}`,
+          `PHP ${(item.overtime_pay || 0).toFixed(2)}`,
+          `PHP ${(item.gross_pay || 0).toFixed(2)}`,
+          `PHP ${(item.total_deductions || 0).toFixed(2)}`,
+          `PHP ${(item.net_pay || 0).toFixed(2)}`,
+          item.status || 'N/A'
+        ];
+      });
+
+      if (doc.autoTable && typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          head: [['Employee ID', 'Name', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status']],
+          body: tableData,
+          startY: 30,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [66, 139, 202] }
+        });
       } else {
-        toast.info('PDF export coming soon for this report type');
+        // Fallback manual table
+        let yPos = 30;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        const headers = ['Employee ID', 'Name', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status'];
+        const colWidths = [25, 40, 25, 20, 25, 25, 25, 20];
+        let xPos = 14;
+        headers.forEach((header, i) => {
+          doc.text(header.substring(0, 12), xPos, yPos);
+          xPos += colWidths[i];
+        });
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        tableData.forEach(row => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          xPos = 14;
+          row.forEach((cell, i) => {
+            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
+            xPos += colWidths[i];
+          });
+          yPos += 7;
+        });
       }
-    } else {
-      toast.info(`${format.toUpperCase()} export coming soon`);
+
+      const filename = `Payroll_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
+      doc.save(filename);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+    }
+  };
+
+  const exportPayrollExcel = () => {
+    if (!payrollData || payrollData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const worksheetData = [
+        ['Employee ID', 'Name', 'Department', 'Position', 'Period Start', 'Period End', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status']
+      ];
+
+      payrollData.forEach(item => {
+        const emp = item.employee || {};
+        worksheetData.push([
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.period_start || 'N/A',
+          item.period_end || 'N/A',
+          item.basic_salary || 0,
+          item.overtime_pay || 0,
+          item.gross_pay || 0,
+          item.total_deductions || 0,
+          item.net_pay || 0,
+          item.status || 'N/A'
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Payroll Report');
+      
+      const filename = `Payroll_Report_${dateRange.startDate}_to_${dateRange.endDate}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast.error('Failed to generate Excel file');
+    }
+  };
+
+  const exportPayrollCSV = () => {
+    if (!payrollData || payrollData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      let csv = 'Employee ID,Name,Department,Position,Period Start,Period End,Basic Salary,OT Pay,Gross Pay,Deductions,Net Pay,Status\n';
+      
+      payrollData.forEach(item => {
+        const emp = item.employee || {};
+        const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A';
+        csv += `"${emp.employee_id || emp.id || 'N/A'}","${name}","${emp.department || 'N/A'}","${emp.position || 'N/A'}","${item.period_start || 'N/A'}","${item.period_end || 'N/A'}","${item.basic_salary || 0}","${item.overtime_pay || 0}","${item.gross_pay || 0}","${item.total_deductions || 0}","${item.net_pay || 0}","${item.status || 'N/A'}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const filename = `Payroll_Report_${dateRange.startDate}_to_${dateRange.endDate}.csv`;
+      downloadFile(blob, filename);
+      toast.success('CSV downloaded successfully');
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      toast.error('Failed to generate CSV');
+    }
+  };
+
+  // Export Employee Reports
+  const exportEmployeePDF = async () => {
+    if (!employeeData || employeeData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape');
+      doc.setFontSize(16);
+      doc.text('Employee Report', 14, 15);
+      doc.setFontSize(10);
+      if (dateRange.startDate && dateRange.endDate) {
+        doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      }
+      
+      const tableData = employeeData.map(item => {
+        const profile = item.employee_profile || item;
+        return [
+          profile.employee_id || profile.id || 'N/A',
+          `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'N/A',
+          profile.department || 'N/A',
+          profile.position || 'N/A',
+          profile.email || 'N/A',
+          profile.employment_status || 'N/A',
+          profile.status || 'Active',
+          profile.hire_date || 'N/A',
+          `PHP ${(profile.salary || 0).toFixed(2)}`
+        ];
+      });
+
+      if (doc.autoTable && typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          head: [['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary']],
+          body: tableData,
+          startY: dateRange.startDate && dateRange.endDate ? 30 : 22,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [66, 139, 202] }
+        });
+      } else {
+        // Fallback manual table
+        let yPos = dateRange.startDate && dateRange.endDate ? 30 : 22;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary'];
+        const colWidths = [25, 35, 30, 30, 40, 25, 20, 25, 25];
+        let xPos = 14;
+        headers.forEach((header, i) => {
+          doc.text(header.substring(0, 12), xPos, yPos);
+          xPos += colWidths[i];
+        });
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        tableData.forEach(row => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          xPos = 14;
+          row.forEach((cell, i) => {
+            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
+            xPos += colWidths[i];
+          });
+          yPos += 7;
+        });
+      }
+
+      const filename = `Employee_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.pdf`;
+      doc.save(filename);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+    }
+  };
+
+  const exportEmployeeExcel = () => {
+    if (!employeeData || employeeData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const worksheetData = [
+        ['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary', 'Contact Number']
+      ];
+
+      employeeData.forEach(item => {
+        const profile = item.employee_profile || item;
+        worksheetData.push([
+          profile.employee_id || profile.id || 'N/A',
+          `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'N/A',
+          profile.department || 'N/A',
+          profile.position || 'N/A',
+          profile.email || 'N/A',
+          profile.employment_status || 'N/A',
+          profile.status || 'Active',
+          profile.hire_date || 'N/A',
+          profile.salary || 0,
+          profile.contact_number || 'N/A'
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Employee Report');
+      
+      const filename = `Employee_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast.error('Failed to generate Excel file');
+    }
+  };
+
+  const exportEmployeeCSV = () => {
+    if (!employeeData || employeeData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      let csv = 'Employee ID,Name,Department,Position,Email,Employment Status,Status,Hire Date,Salary,Contact Number\n';
+      
+      employeeData.forEach(item => {
+        const profile = item.employee_profile || item;
+        const name = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'N/A';
+        csv += `"${profile.employee_id || profile.id || 'N/A'}","${name}","${profile.department || 'N/A'}","${profile.position || 'N/A'}","${profile.email || 'N/A'}","${profile.employment_status || 'N/A'}","${profile.status || 'Active'}","${profile.hire_date || 'N/A'}","${profile.salary || 0}","${profile.contact_number || 'N/A'}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const filename = `Employee_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.csv`;
+      downloadFile(blob, filename);
+      toast.success('CSV downloaded successfully');
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      toast.error('Failed to generate CSV');
+    }
+  };
+
+  // Export Leave Reports
+  const exportLeavePDF = async () => {
+    if (!leaveData || leaveData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF('landscape');
+      doc.setFontSize(16);
+      doc.text('Leave Request Report', 14, 15);
+      doc.setFontSize(10);
+      if (dateRange.startDate && dateRange.endDate) {
+        doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      }
+      
+      const tableData = leaveData.map(item => {
+        const emp = item.employee?.employee_profile || item.employee || {};
+        return [
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.leave_type || 'N/A',
+          item.from || 'N/A',
+          item.to || 'N/A',
+          item.total_days || 0,
+          item.status || 'N/A',
+          item.reason || 'N/A'
+        ];
+      });
+
+      if (doc.autoTable && typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          head: [['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Reason']],
+          body: tableData,
+          startY: dateRange.startDate && dateRange.endDate ? 30 : 22,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [66, 139, 202] }
+        });
+      } else {
+        // Fallback manual table
+        let yPos = dateRange.startDate && dateRange.endDate ? 30 : 22;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Reason'];
+        const colWidths = [25, 35, 30, 30, 25, 25, 25, 15, 20, 30];
+        let xPos = 14;
+        headers.forEach((header, i) => {
+          doc.text(header.substring(0, 12), xPos, yPos);
+          xPos += colWidths[i];
+        });
+        yPos += 7;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(8);
+        tableData.forEach(row => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          xPos = 14;
+          row.forEach((cell, i) => {
+            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
+            xPos += colWidths[i];
+          });
+          yPos += 7;
+        });
+      }
+
+      const filename = `Leave_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.pdf`;
+      doc.save(filename);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+    }
+  };
+
+  const exportLeaveExcel = () => {
+    if (!leaveData || leaveData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      const worksheetData = [
+        ['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Total Days', 'Status', 'Reason', 'Terms']
+      ];
+
+      leaveData.forEach(item => {
+        const emp = item.employee?.employee_profile || item.employee || {};
+        worksheetData.push([
+          emp.employee_id || emp.id || 'N/A',
+          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          emp.department || 'N/A',
+          emp.position || 'N/A',
+          item.leave_type || 'N/A',
+          item.from || 'N/A',
+          item.to || 'N/A',
+          item.total_days || 0,
+          item.status || 'N/A',
+          item.reason || 'N/A',
+          item.terms || 'N/A'
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Leave Report');
+      
+      const filename = `Leave_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      toast.error('Failed to generate Excel file');
+    }
+  };
+
+  const exportLeaveCSV = () => {
+    if (!leaveData || leaveData.length === 0) {
+      toast.error('Please generate the report first');
+      return;
+    }
+
+    try {
+      let csv = 'Employee ID,Name,Department,Position,Leave Type,From,To,Total Days,Status,Reason,Terms\n';
+      
+      leaveData.forEach(item => {
+        const emp = item.employee?.employee_profile || item.employee || {};
+        const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A';
+        csv += `"${emp.employee_id || emp.id || 'N/A'}","${name}","${emp.department || 'N/A'}","${emp.position || 'N/A'}","${item.leave_type || 'N/A'}","${item.from || 'N/A'}","${item.to || 'N/A'}","${item.total_days || 0}","${item.status || 'N/A'}","${(item.reason || 'N/A').replace(/"/g, '""')}","${item.terms || 'N/A'}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const filename = `Leave_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.csv`;
+      downloadFile(blob, filename);
+      toast.success('CSV downloaded successfully');
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      toast.error('Failed to generate CSV');
+    }
+  };
+
+  // Main export handler
+  const handleGenerateReport = (format) => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      if (reportType !== 'employee' && reportType !== 'leave') {
+        toast.error('Please select a date range');
+        return;
+      }
+    }
+
+    switch (reportType) {
+      case 'attendance':
+        if (format === 'pdf') exportAttendancePDF();
+        else if (format === 'excel') exportAttendanceExcel();
+        else if (format === 'csv') exportAttendanceCSV();
+        break;
+      
+      case 'performance':
+        if (format === 'pdf') exportPerformancePDF();
+        else if (format === 'excel') exportPerformanceExcel();
+        else if (format === 'csv') exportPerformanceCSV();
+        break;
+      
+      case 'payroll':
+        if (format === 'pdf') exportPayrollPDF();
+        else if (format === 'excel') exportPayrollExcel();
+        else if (format === 'csv') exportPayrollCSV();
+        break;
+      
+      case 'employee':
+        if (format === 'pdf') exportEmployeePDF();
+        else if (format === 'excel') exportEmployeeExcel();
+        else if (format === 'csv') exportEmployeeCSV();
+        break;
+      
+      case 'leave':
+        if (format === 'pdf') exportLeavePDF();
+        else if (format === 'excel') exportLeaveExcel();
+        else if (format === 'csv') exportLeaveCSV();
+        break;
+      
+      default:
+        toast.info('Export not available for this report type');
     }
   };
 
