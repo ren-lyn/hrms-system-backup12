@@ -1881,66 +1881,322 @@ export default function ReportGeneration() {
     }
 
     try {
-      const doc = new jsPDF('landscape');
-      doc.setFontSize(16);
-      doc.text('Attendance Report', 14, 15);
-      doc.setFontSize(10);
-      doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const leftMargin = margin;
+      const rightMargin = pageWidth - margin;
+      let currentY = margin;
       
-      const tableData = attendanceData.map(item => {
+      // Helper function to add new page if needed
+      const checkPageBreak = (requiredHeight) => {
+        if (currentY + requiredHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+          return true;
+        }
+        return false;
+      };
+
+      // Enhanced Header Section with Background
+      // Company Name Header - Professional Format (Centered with background)
+      doc.setFillColor(44, 62, 80); // Dark blue-gray background
+      doc.rect(0, 0, pageWidth, 25, 'F'); // Header background
+      
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(255, 255, 255); // White text
+      const companyName = 'CABUYAO CONCRETE DEVELOPMENT CORPORATION';
+      const companyNameWidth = doc.getTextWidth(companyName);
+      doc.text(companyName, (pageWidth - companyNameWidth) / 2, 12);
+      
+      currentY = 30;
+      
+      // Report Title Section with accent
+      doc.setFillColor(240, 248, 255); // Light blue background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 18, 'F');
+      
+      // Report Title (Left side)
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 102, 204); // Blue color
+      const reportTitle = 'ATTENDANCE REPORT';
+      doc.text(reportTitle, leftMargin + 3, currentY + 6);
+      doc.setTextColor(0, 0, 0); // Reset to black
+      
+      // Period Information (Right side of title box)
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      const periodText = `Period: ${dateRange.startDate} to ${dateRange.endDate}`;
+      const periodWidth = doc.getTextWidth(periodText);
+      doc.text(periodText, rightMargin - periodWidth - 3, currentY + 6);
+      
+      // Generate Date (Right side of title box)
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const generatedText = `Generated: ${generatedDate}`;
+      const generatedWidth = doc.getTextWidth(generatedText);
+      doc.text(generatedText, rightMargin - generatedWidth - 3, currentY + 12);
+      
+      currentY += 22;
+
+      // Prepare table data with proper formatting
+      const tableData = attendanceData.map((item, index) => {
         const emp = item.employee || {};
-        return [
-          emp.employee_id || emp.id || 'N/A',
-          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
-          emp.department || 'N/A',
-          emp.position || 'N/A',
-          item.date || 'N/A',
-          item.clock_in || 'N/A',
-          item.clock_out || 'N/A',
-          (item.total_hours || 0).toFixed(2),
-          item.status || 'N/A'
-        ];
+        const dateStr = item.date ? formatDate(item.date) : 'N/A';
+        const clockIn = item.clock_in ? formatTime(item.clock_in) : 'N/A';
+        const clockOut = item.clock_out ? formatTime(item.clock_out) : 'N/A';
+        const totalHours = item.total_hours !== undefined && item.total_hours !== null 
+          ? `${Number(item.total_hours).toFixed(2)} hrs` 
+          : 'N/A';
+        
+        return {
+          index: index + 1,
+          employeeId: emp.employee_id || emp.id || 'N/A',
+          name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
+          department: emp.department || 'N/A',
+          position: emp.position || 'N/A',
+          date: dateStr,
+          clockIn: clockIn,
+          clockOut: clockOut,
+          totalHours: totalHours,
+          status: item.status || 'N/A',
+          remarks: item.remarks || ''
+        };
       });
 
-      // Use autoTable if available, otherwise use manual table
-      if (doc.autoTable && typeof doc.autoTable === 'function') {
-        doc.autoTable({
-          head: [['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Hours', 'Status']],
-          body: tableData,
-          startY: 30,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [66, 139, 202] }
+      // Summary Statistics Box (after tableData is created)
+      const presentCount = tableData.filter(e => e.status.toLowerCase().includes('present')).length;
+      const absentCount = tableData.filter(e => e.status.toLowerCase().includes('absent')).length;
+      const lateCount = tableData.filter(e => e.status.toLowerCase().includes('late')).length;
+      const onLeaveCount = tableData.filter(e => e.status.toLowerCase().includes('leave')).length;
+      const totalRecords = tableData.length;
+      const uniqueEmployees = new Set(tableData.map(e => e.employeeId)).size;
+      
+      doc.setFillColor(245, 247, 250); // Light gray background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 12, 'F');
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('SUMMARY:', leftMargin + 3, currentY + 5);
+      
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      const summaryText = `Total Records: ${totalRecords} | Employees: ${uniqueEmployees} | Present: ${presentCount} | Absent: ${absentCount} | Late: ${lateCount} | On Leave: ${onLeaveCount}`;
+      doc.text(summaryText, leftMargin + 35, currentY + 5);
+      
+      currentY += 16;
+
+      // Draw header line
+      doc.setDrawColor(44, 62, 80);
+      doc.setLineWidth(0.8);
+      doc.line(leftMargin, currentY, rightMargin, currentY);
+      currentY += 6;
+
+      // Table column definitions for landscape mode (total width: ~267mm to fit A4 landscape)
+      // A4 landscape: 297mm wide, with 15mm margins = 267mm available
+      const columns = [
+        { header: '#', width: 10, align: 'center' },
+        { header: 'Employee ID', width: 28, align: 'left' },
+        { header: 'Employee Name', width: 45, align: 'left' },
+        { header: 'Department', width: 32, align: 'left' },
+        { header: 'Position', width: 32, align: 'left' },
+        { header: 'Date', width: 25, align: 'left' },
+        { header: 'Time In', width: 22, align: 'center' },
+        { header: 'Time Out', width: 22, align: 'center' },
+        { header: 'Total Hours', width: 20, align: 'center' },
+        { header: 'Status', width: 35, align: 'center' }
+      ];
+
+      // Calculate column positions
+      let colX = leftMargin;
+      const colPositions = columns.map(col => {
+        const pos = colX;
+        colX += col.width;
+        return pos;
+      });
+      
+      // Ensure table fits within page width
+      const totalTableWidth = colX - leftMargin;
+      if (totalTableWidth > (rightMargin - leftMargin)) {
+        // Adjust if needed - scale down proportionally
+        const scaleFactor = (rightMargin - leftMargin) / totalTableWidth;
+        columns.forEach(col => col.width *= scaleFactor);
+        // Recalculate positions
+        colX = leftMargin;
+        columns.forEach((col, i) => {
+          colPositions[i] = colX;
+          colX += col.width;
         });
-      } else {
-        // Fallback: create table manually using jsPDF text methods
-        let yPos = 30;
-        doc.setFontSize(10);
+      }
+
+      // Draw table header with solid black line
+      const headerY = currentY;
+      const headerTop = headerY - 6;
+      const headerHeight = 10;
+      const headerBottom = headerTop + headerHeight;
+      const tableWidth = colPositions[colPositions.length - 1] + columns[columns.length - 1].width - leftMargin;
+      
+      doc.setFillColor(44, 62, 80); // Dark gray background
+      doc.rect(leftMargin, headerTop, tableWidth, headerHeight, 'F');
+      
+      doc.setFontSize(9);
         doc.setFont(undefined, 'bold');
-        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Hours', 'Status'];
-        const colWidths = [25, 40, 30, 30, 25, 20, 20, 15, 20];
-        let xPos = 14;
-        
-        headers.forEach((header, i) => {
-          doc.text(header.substring(0, 15), xPos, yPos);
-          xPos += colWidths[i];
-        });
-        
-        yPos += 7;
-        doc.setFont(undefined, 'normal');
+      doc.setTextColor(255, 255, 255);
+      
+      // Draw header text
+      columns.forEach((col, i) => {
+        const cellX = colPositions[i];
+        const textX = col.align === 'center' 
+          ? cellX + (col.width / 2)
+          : cellX + 3;
+        const textY = headerY + 2;
+        doc.text(col.header, textX, textY, { align: col.align === 'center' ? 'center' : 'left' });
+      });
+      
+      // Draw vertical borders for header (will extend through rows later)
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, headerBottom);
+        }
+      });
+      
+      currentY = headerBottom;
+      
+      // Draw light gray line under header
+      doc.setDrawColor(224, 224, 224);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, currentY, leftMargin + tableWidth, currentY);
+      currentY += 4;
+
+      // Draw table rows with light gray dividers
         doc.setFontSize(8);
-        tableData.forEach(row => {
-          if (yPos > 280) {
-            doc.addPage();
-            yPos = 20;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
+      
+      const rowHeight = 9;
+      const cellPadding = 3;
+      
+      tableData.forEach((row, rowIndex) => {
+        checkPageBreak(rowHeight + 2);
+        
+        const rowStartY = currentY;
+        const rowEndY = currentY + rowHeight;
+        
+        // Alternate row background
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(leftMargin, rowStartY, tableWidth, rowHeight, 'F');
+        }
+        
+        // Draw row data
+        columns.forEach((col, colIndex) => {
+          let cellValue = '';
+          switch(col.header) {
+            case '#':
+              cellValue = String(row.index);
+              break;
+            case 'Employee ID':
+              cellValue = String(row.employeeId);
+              break;
+            case 'Employee Name':
+              cellValue = row.name;
+              break;
+            case 'Department':
+              cellValue = row.department;
+              break;
+            case 'Position':
+              cellValue = row.position;
+              break;
+            case 'Date':
+              cellValue = row.date;
+              break;
+            case 'Time In':
+              cellValue = row.clockIn;
+              break;
+            case 'Time Out':
+              cellValue = row.clockOut;
+              break;
+            case 'Total Hours':
+              cellValue = row.totalHours;
+              break;
+            case 'Status':
+              cellValue = row.status;
+              break;
           }
-          xPos = 14;
-          row.forEach((cell, i) => {
-            const cellText = String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5));
-            doc.text(cellText, xPos, yPos);
-            xPos += colWidths[i];
+          
+          // Truncate if too long (with more padding consideration)
+          const maxWidth = col.width - (cellPadding * 2);
+          const textWidth = doc.getTextWidth(cellValue);
+          if (textWidth > maxWidth) {
+            let truncated = cellValue;
+            while (doc.getTextWidth(truncated + '...') > maxWidth && truncated.length > 0) {
+              truncated = truncated.slice(0, -1);
+            }
+            cellValue = truncated + '...';
+          }
+          
+          const cellX = colPositions[colIndex];
+          const textX = col.align === 'center' 
+            ? cellX + (col.width / 2)
+            : cellX + cellPadding;
+          const textY = currentY + 2;
+          
+          doc.text(cellValue, textX, textY, { 
+            align: col.align === 'center' ? 'center' : 'left',
+            maxWidth: col.width - (cellPadding * 2)
           });
-          yPos += 7;
         });
+        
+        // Draw vertical borders for this row (aligned with header borders)
+        columns.forEach((col, colIndex) => {
+          if (colIndex < columns.length - 1) {
+            const borderX = colPositions[colIndex] + col.width;
+            doc.setDrawColor(224, 224, 224);
+            doc.setLineWidth(0.15);
+            doc.line(borderX, rowStartY, borderX, rowEndY);
+          }
+        });
+        
+        // Draw horizontal divider line at bottom of row
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, rowEndY, leftMargin + tableWidth, rowEndY);
+        
+        currentY = rowEndY;
+      });
+      
+      const tableBottom = currentY;
+      
+      // Ensure vertical borders extend fully from header to table bottom
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(224, 224, 224);
+          doc.setLineWidth(0.15);
+          // Redraw vertical border from header top to table bottom
+          doc.line(borderX, headerTop, borderX, tableBottom);
+        }
+      });
+
+      // Footer with page numbers
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(128, 128, 128);
+        const footerText = `Page ${i} of ${totalPages}`;
+        const footerWidth = doc.getTextWidth(footerText);
+        doc.text(footerText, (pageWidth - footerWidth) / 2, pageHeight - 10);
       }
 
       const filename = `Attendance_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
@@ -1959,27 +2215,131 @@ export default function ReportGeneration() {
     }
 
     try {
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      // Build professional Excel template structure
       const worksheetData = [
-        ['Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Total Hours', 'Status', 'Remarks']
+        // Header Section
+        ['CABUYAO CONCRETE DEVELOPMENT CORPORATION'],
+        [],
+        ['ATTENDANCE REPORT'],
+        [],
+        ['Period:', `${dateRange.startDate} to ${dateRange.endDate}`],
+        ['Generated on:', generatedDate],
+        [],
+        // Table Header
+        ['#', 'Employee ID', 'Name', 'Department', 'Position', 'Date', 'Clock In', 'Clock Out', 'Total Hours', 'Status', 'Remarks']
       ];
 
-      attendanceData.forEach(item => {
+      // Add data rows
+      attendanceData.forEach((item, index) => {
         const emp = item.employee || {};
+        const dateStr = item.date ? formatDate(item.date) : 'N/A';
+        const clockIn = item.clock_in ? formatTime(item.clock_in) : 'N/A';
+        const clockOut = item.clock_out ? formatTime(item.clock_out) : 'N/A';
+        const totalHours = item.total_hours !== undefined && item.total_hours !== null 
+          ? `${Number(item.total_hours).toFixed(2)} hrs` 
+          : 'N/A';
+        
         worksheetData.push([
+          index + 1,
           emp.employee_id || emp.id || 'N/A',
           `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
           emp.department || 'N/A',
           emp.position || 'N/A',
-          item.date || 'N/A',
-          item.clock_in || 'N/A',
-          item.clock_out || 'N/A',
-          (item.total_hours || 0).toFixed(2),
+          dateStr,
+          clockIn,
+          clockOut,
+          totalHours,
           item.status || 'N/A',
           item.remarks || ''
         ]);
       });
 
+      // Create worksheet
       const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability - increased widths for all columns
+      const colWidths = [
+        { wch: 6 },   // #
+        { wch: 18 },  // Employee ID (increased for visibility)
+        { wch: 32 },  // Name (increased significantly for longer names)
+        { wch: 22 },  // Department (increased for full visibility)
+        { wch: 22 },  // Position (increased for full visibility)
+        { wch: 14 },  // Date (increased for date format)
+        { wch: 16 },  // Clock In (increased for time format)
+        { wch: 16 },  // Clock Out (increased for time format)
+        { wch: 14 },  // Total Hours (increased for "X.XX hrs" format)
+        { wch: 18 },  // Status (increased for longer status text)
+        { wch: 35 }   // Remarks (increased significantly for longer remarks)
+      ];
+      ws['!cols'] = colWidths;
+
+      // Merge cells for header (company name and title)
+      if (!ws['!merges']) ws['!merges'] = [];
+      ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }); // Company name across all columns
+      ws['!merges'].push({ s: { r: 2, c: 0 }, e: { r: 2, c: 10 } }); // Report title across all columns
+
+      // Apply cell styles using XLSX's style support
+      // Company name cell (A1) - larger font, pastel blue background
+      const companyCellRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
+      if (!ws[companyCellRef]) ws[companyCellRef] = { t: 's', v: worksheetData[0][0] };
+      ws[companyCellRef].s = {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: '000000' } },
+        fill: { fgColor: { rgb: 'B3D9FF' } }, // Soft pastel blue
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+      };
+
+      // Report title cell (A3) - bold, slightly larger
+      const titleCellRef = XLSX.utils.encode_cell({ r: 2, c: 0 });
+      if (!ws[titleCellRef]) ws[titleCellRef] = { t: 's', v: worksheetData[2][0] };
+      ws[titleCellRef].s = {
+        font: { name: 'Arial', sz: 14, bold: true, color: { rgb: '0066CC' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+
+      // Table header row (row 7, index 7)
+      const headerRowIndex = 7;
+      const headerColumns = [
+        { idx: 0, name: '#', bg: 'E8F4F8' },           // Light blue
+        { idx: 1, name: 'Employee ID', bg: 'E8F4F8' }, // Light blue
+        { idx: 2, name: 'Name', bg: 'E8F4F8' },        // Light blue
+        { idx: 3, name: 'Department', bg: 'F0E8F8' },  // Light pastel purple
+        { idx: 4, name: 'Position', bg: 'F0E8F8' },   // Light pastel purple
+        { idx: 5, name: 'Date', bg: 'FFF8E8' },       // Light pastel yellow
+        { idx: 6, name: 'Clock In', bg: 'FFF8E8' },    // Light pastel yellow
+        { idx: 7, name: 'Clock Out', bg: 'FFF8E8' },   // Light pastel yellow
+        { idx: 8, name: 'Total Hours', bg: 'E8F8E8' }, // Light pastel green
+        { idx: 9, name: 'Status', bg: 'FFF8E8' },     // Light pastel yellow
+        { idx: 10, name: 'Remarks', bg: 'FFE8E8' }    // Light pastel red
+      ];
+
+      headerColumns.forEach(col => {
+        const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: col.idx });
+        const cell = ws[cellRef];
+        if (cell) {
+          cell.s = {
+            font: { name: 'Arial', sz: 11, bold: true, color: { rgb: '000000' } },
+            fill: { fgColor: { rgb: col.bg } },
+            alignment: { 
+              horizontal: col.idx === 0 || col.idx === 8 ? 'center' : 'left', 
+              vertical: 'center' 
+            },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+      });
+
+      // Create workbook
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Attendance Report');
       
@@ -2126,61 +2486,399 @@ export default function ReportGeneration() {
     }
 
     try {
-      const doc = new jsPDF('landscape');
-      doc.setFontSize(16);
-      doc.text('Payroll Report', 14, 15);
-      doc.setFontSize(10);
-      doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const leftMargin = margin;
+      const rightMargin = pageWidth - margin;
+      let currentY = margin;
       
-      const tableData = payrollData.map(item => {
-        const emp = item.employee || {};
-        return [
-          emp.employee_id || emp.id || 'N/A',
-          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
-          `PHP ${(item.basic_salary || 0).toFixed(2)}`,
-          `PHP ${(item.overtime_pay || 0).toFixed(2)}`,
-          `PHP ${(item.gross_pay || 0).toFixed(2)}`,
-          `PHP ${(item.total_deductions || 0).toFixed(2)}`,
-          `PHP ${(item.net_pay || 0).toFixed(2)}`,
-          item.status || 'N/A'
-        ];
+      // Helper function to add new page if needed
+      const checkPageBreak = (requiredHeight) => {
+        if (currentY + requiredHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+          return true;
+        }
+        return false;
+      };
+
+      // Enhanced Header Section with Background
+      // Company Name Header - Professional Format (Centered with background)
+      doc.setFillColor(44, 62, 80); // Dark blue-gray background
+      doc.rect(0, 0, pageWidth, 25, 'F'); // Header background
+      
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(255, 255, 255); // White text
+      const companyName = 'CABUYAO CONCRETE DEVELOPMENT CORPORATION';
+      const companyNameWidth = doc.getTextWidth(companyName);
+      doc.text(companyName, (pageWidth - companyNameWidth) / 2, 12);
+      
+      currentY = 30;
+      
+      // Report Title Section with accent
+      doc.setFillColor(240, 248, 255); // Light blue background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 18, 'F');
+      
+      // Report Title (Left side)
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 102, 204); // Blue color
+      const reportTitle = 'PAYROLL REPORT';
+      doc.text(reportTitle, leftMargin + 3, currentY + 6);
+      doc.setTextColor(0, 0, 0); // Reset to black
+      
+      // Period Information (Right side of title box)
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      const periodText = `Period: ${dateRange.startDate} to ${dateRange.endDate}`;
+      const periodWidth = doc.getTextWidth(periodText);
+      doc.text(periodText, rightMargin - periodWidth - 3, currentY + 6);
+      
+      // Generate Date (Right side of title box)
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const generatedText = `Generated: ${generatedDate}`;
+      const generatedWidth = doc.getTextWidth(generatedText);
+      doc.text(generatedText, rightMargin - generatedWidth - 3, currentY + 12);
+      
+      currentY += 22;
+
+      // Prepare table data with proper formatting
+      const tableData = payrollData.map((item, index) => {
+        try {
+          const employeeId = item.employee_id_number || item.employee_id || item.id || 'N/A';
+          const employeeName = item.employee_name || 
+            (item.employee ? `${item.employee.first_name || ''} ${item.employee.last_name || ''}`.trim() : '') ||
+            'N/A';
+          
+          // Format status
+          let statusText = item.status || 'Draft';
+          if (statusText && typeof statusText === 'string') {
+            statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+            const statusMap = {
+              'draft': 'Draft',
+              'pending': 'Pending',
+              'processed': 'Processed',
+              'paid': 'Paid'
+            };
+            statusText = statusMap[statusText.toLowerCase()] || statusText;
+          }
+          
+          return {
+            index: index + 1,
+            employeeId: employeeId,
+            name: employeeName,
+            basicSalary: `PHP ${Number(item.basic_salary || 0).toFixed(2)}`,
+            overtimePay: `PHP ${Number(item.overtime_pay || 0).toFixed(2)}`,
+            grossPay: `PHP ${Number(item.gross_pay || 0).toFixed(2)}`,
+            deductions: `PHP ${Number(item.total_deductions || 0).toFixed(2)}`,
+            netPay: `PHP ${Number(item.net_pay || 0).toFixed(2)}`,
+            status: statusText || 'Draft'
+          };
+        } catch (err) {
+          console.error(`Error processing row ${index}:`, err, item);
+          return {
+            index: index + 1,
+            employeeId: 'Error',
+            name: 'Error',
+            basicSalary: 'Error',
+            overtimePay: 'Error',
+            grossPay: 'Error',
+            deductions: 'Error',
+            netPay: 'Error',
+            status: 'Error'
+          };
+        }
       });
 
-      if (doc.autoTable && typeof doc.autoTable === 'function') {
-        doc.autoTable({
-          head: [['Employee ID', 'Name', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status']],
-          body: tableData,
-          startY: 30,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [66, 139, 202] }
+      // Summary Statistics Box (after tableData is created)
+      const paidCount = tableData.filter(e => e.status.toLowerCase().includes('paid')).length;
+      const processedCount = tableData.filter(e => e.status.toLowerCase().includes('processed')).length;
+      const pendingCount = tableData.filter(e => e.status.toLowerCase().includes('pending')).length;
+      const draftCount = tableData.filter(e => e.status.toLowerCase().includes('draft')).length;
+      const totalEmployees = tableData.length;
+      
+      // Calculate totals
+      const totalBasicSalary = tableData.reduce((sum, e) => {
+        const val = parseFloat(String(e.basicSalary).replace('PHP ', '').replace(/,/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      const totalOvertimePay = tableData.reduce((sum, e) => {
+        const val = parseFloat(String(e.overtimePay).replace('PHP ', '').replace(/,/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      const totalGrossPay = tableData.reduce((sum, e) => {
+        const val = parseFloat(String(e.grossPay).replace('PHP ', '').replace(/,/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      const totalDeductions = tableData.reduce((sum, e) => {
+        const val = parseFloat(String(e.deductions).replace('PHP ', '').replace(/,/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      const totalNetPay = tableData.reduce((sum, e) => {
+        const val = parseFloat(String(e.netPay).replace('PHP ', '').replace(/,/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      
+      // Summary box with better formatting
+      const summaryBoxHeight = 24; // Increased height for better spacing
+      doc.setFillColor(245, 247, 250); // Light gray background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), summaryBoxHeight, 'F');
+      
+      // Summary title
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('SUMMARY', leftMargin + 3, currentY + 6);
+      
+      // Employee status summary (first line)
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      const statusSummary = `Total Employees: ${totalEmployees}  |  Paid: ${paidCount}  |  Processed: ${processedCount}  |  Pending: ${pendingCount}  |  Draft: ${draftCount}`;
+      doc.text(statusSummary, leftMargin + 3, currentY + 12);
+      
+      // Financial summary (second line)
+      const formatCurrency = (amount) => {
+        return `PHP ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      };
+      
+      const financialLine1 = `Gross Pay: ${formatCurrency(totalGrossPay)}  |  Net Pay: ${formatCurrency(totalNetPay)}`;
+      doc.text(financialLine1, leftMargin + 3, currentY + 17);
+      
+      // Additional financial details (third line)
+      const financialLine2 = `Basic Salary: ${formatCurrency(totalBasicSalary)}  |  OT Pay: ${formatCurrency(totalOvertimePay)}  |  Deductions: ${formatCurrency(totalDeductions)}`;
+      doc.text(financialLine2, leftMargin + 3, currentY + 22);
+      
+      currentY += summaryBoxHeight + 4;
+
+      // Draw header line
+      doc.setDrawColor(44, 62, 80);
+      doc.setLineWidth(0.8);
+      doc.line(leftMargin, currentY, rightMargin, currentY);
+      currentY += 6;
+
+      // Table column definitions for landscape mode
+      const columns = [
+        { header: '#', width: 10, align: 'center' },
+        { header: 'Employee ID', width: 28, align: 'left' },
+        { header: 'Employee Name', width: 45, align: 'left' },
+        { header: 'Basic Salary', width: 30, align: 'right' },
+        { header: 'OT Pay', width: 28, align: 'right' },
+        { header: 'Gross Pay', width: 30, align: 'right' },
+        { header: 'Deductions', width: 30, align: 'right' },
+        { header: 'Net Pay', width: 30, align: 'right' },
+        { header: 'Status', width: 40, align: 'center' }
+      ];
+
+      // Calculate column positions
+      let colX = leftMargin;
+      const colPositions = columns.map(col => {
+        const pos = colX;
+        colX += col.width;
+        return pos;
+      });
+      
+      // Ensure table fits within page width
+      const totalTableWidth = colX - leftMargin;
+      if (totalTableWidth > (rightMargin - leftMargin)) {
+        const scaleFactor = (rightMargin - leftMargin) / totalTableWidth;
+        columns.forEach(col => col.width *= scaleFactor);
+        colX = leftMargin;
+        columns.forEach((col, i) => {
+          colPositions[i] = colX;
+          colX += col.width;
         });
-      } else {
-        // Fallback manual table
-        let yPos = 30;
-        doc.setFontSize(10);
+      }
+
+      // Draw table header with solid dark gray background
+      const headerY = currentY;
+      const headerTop = headerY - 6;
+      const headerHeight = 10;
+      const headerBottom = headerTop + headerHeight;
+      const tableWidth = colPositions[colPositions.length - 1] + columns[columns.length - 1].width - leftMargin;
+      
+      doc.setFillColor(44, 62, 80); // Dark gray background
+      doc.rect(leftMargin, headerTop, tableWidth, headerHeight, 'F');
+      
+      doc.setFontSize(9);
         doc.setFont(undefined, 'bold');
-        const headers = ['Employee ID', 'Name', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status'];
-        const colWidths = [25, 40, 25, 20, 25, 25, 25, 20];
-        let xPos = 14;
-        headers.forEach((header, i) => {
-          doc.text(header.substring(0, 12), xPos, yPos);
-          xPos += colWidths[i];
-        });
-        yPos += 7;
-        doc.setFont(undefined, 'normal');
+      doc.setTextColor(255, 255, 255);
+      
+      // Draw header text
+      columns.forEach((col, i) => {
+        const cellX = colPositions[i];
+        const textX = col.align === 'center' 
+          ? cellX + (col.width / 2)
+          : col.align === 'right'
+          ? cellX + col.width - 3
+          : cellX + 3;
+        const textY = headerY + 2;
+        doc.text(col.header, textX, textY, { align: col.align });
+      });
+      
+      // Draw vertical borders for header
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, headerBottom);
+        }
+      });
+      
+      currentY = headerBottom;
+      
+      // Draw light gray line under header
+      doc.setDrawColor(224, 224, 224);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, currentY, leftMargin + tableWidth, currentY);
+      currentY += 4;
+
+      // Draw table rows with light gray dividers
         doc.setFontSize(8);
-        tableData.forEach(row => {
-          if (yPos > 280) {
-            doc.addPage();
-            yPos = 20;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
+      
+      const rowHeight = 9;
+      const cellPadding = 3;
+      
+      tableData.forEach((row, rowIndex) => {
+        checkPageBreak(rowHeight + 2);
+        
+        const rowStartY = currentY;
+        const rowEndY = currentY + rowHeight;
+        
+        // Alternate row background
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(leftMargin, rowStartY, tableWidth, rowHeight, 'F');
+        }
+        
+        // Draw row data
+        columns.forEach((col, colIndex) => {
+          let cellValue = '';
+          switch(col.header) {
+            case '#':
+              cellValue = String(row.index);
+              break;
+            case 'Employee ID':
+              cellValue = String(row.employeeId);
+              break;
+            case 'Employee Name':
+              cellValue = row.name;
+              break;
+            case 'Basic Salary':
+              cellValue = row.basicSalary;
+              break;
+            case 'OT Pay':
+              cellValue = row.overtimePay;
+              break;
+            case 'Gross Pay':
+              cellValue = row.grossPay;
+              break;
+            case 'Deductions':
+              cellValue = row.deductions;
+              break;
+            case 'Net Pay':
+              cellValue = row.netPay;
+              break;
+            case 'Status':
+              cellValue = row.status;
+              break;
           }
-          xPos = 14;
-          row.forEach((cell, i) => {
-            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
-            xPos += colWidths[i];
+          
+          // Truncate if too long
+          const maxWidth = col.width - (cellPadding * 2);
+          const textWidth = doc.getTextWidth(cellValue);
+          if (textWidth > maxWidth) {
+            let truncated = cellValue;
+            while (doc.getTextWidth(truncated + '...') > maxWidth && truncated.length > 0) {
+              truncated = truncated.slice(0, -1);
+            }
+            cellValue = truncated + '...';
+          }
+          
+          const cellX = colPositions[colIndex];
+          const textX = col.align === 'center' 
+            ? cellX + (col.width / 2)
+            : col.align === 'right'
+            ? cellX + col.width - cellPadding
+            : cellX + cellPadding;
+          const textY = currentY + 2;
+          
+          // Apply status color
+          if (col.header === 'Status') {
+            const statusLower = cellValue.toLowerCase();
+            if (statusLower === 'paid') {
+              doc.setTextColor(0, 128, 0); // Green
+              doc.setFont(undefined, 'bold');
+            } else if (statusLower === 'processed') {
+              doc.setTextColor(0, 102, 204); // Blue
+              doc.setFont(undefined, 'bold');
+            } else if (statusLower === 'pending') {
+              doc.setTextColor(255, 165, 0); // Orange
+            } else if (statusLower === 'draft') {
+              doc.setTextColor(128, 128, 128); // Gray
+            }
+          }
+          
+          doc.text(cellValue, textX, textY, { 
+            align: col.align,
+            maxWidth: col.width - (cellPadding * 2)
           });
-          yPos += 7;
+          
+          // Reset text color and font
+          doc.setTextColor(0, 0, 0);
+          doc.setFont(undefined, 'normal');
         });
+        
+        // Draw vertical borders for this row
+        columns.forEach((col, colIndex) => {
+          if (colIndex < columns.length - 1) {
+            const borderX = colPositions[colIndex] + col.width;
+            doc.setDrawColor(224, 224, 224);
+            doc.setLineWidth(0.15);
+            doc.line(borderX, rowStartY, borderX, rowEndY);
+          }
+        });
+        
+        // Draw horizontal divider line at bottom of row
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, rowEndY, leftMargin + tableWidth, rowEndY);
+        
+        currentY = rowEndY;
+      });
+      
+      const tableBottom = currentY;
+      
+      // Ensure vertical borders extend fully from header to table bottom
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(224, 224, 224);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, tableBottom);
+        }
+      });
+
+      // Footer with page numbers
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(128, 128, 128);
+        const footerText = `Page ${i} of ${totalPages}`;
+        const footerWidth = doc.getTextWidth(footerText);
+        doc.text(footerText, (pageWidth - footerWidth) / 2, pageHeight - 10);
       }
 
       const filename = `Payroll_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
@@ -2199,29 +2897,204 @@ export default function ReportGeneration() {
     }
 
     try {
+      // Calculate totals for summary
+      const totals = payrollData.reduce((acc, item) => {
+        acc.basicSalary += Number(item.basic_salary || 0);
+        acc.overtimePay += Number(item.overtime_pay || 0);
+        acc.grossPay += Number(item.gross_pay || 0);
+        acc.deductions += Number(item.total_deductions || 0);
+        acc.netPay += Number(item.net_pay || 0);
+        return acc;
+      }, { basicSalary: 0, overtimePay: 0, grossPay: 0, deductions: 0, netPay: 0 });
+
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      // Build professional Excel template structure
       const worksheetData = [
-        ['Employee ID', 'Name', 'Department', 'Position', 'Period Start', 'Period End', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status']
+        // Header Section
+        ['CABUYAO CONCRETE DEVELOPMENT CORPORATION'],
+        [],
+        ['PAYROLL REPORT'],
+        [],
+        ['Period:', `${dateRange.startDate} to ${dateRange.endDate}`],
+        ['Generated on:', generatedDate],
+        [],
+        // Table Header
+        ['#', 'Employee ID', 'Employee Name', 'Department', 'Position', 'Period Start', 'Period End', 'Basic Salary', 'OT Pay', 'Gross Pay', 'Deductions', 'Net Pay', 'Status']
       ];
 
-      payrollData.forEach(item => {
-        const emp = item.employee || {};
+      // Add data rows
+      payrollData.forEach((item, index) => {
+        // Backend returns flat structure: employee_id_number, employee_name, department, position, etc.
+        const employeeId = item.employee_id_number || item.employee_id || item.id || 'N/A';
+        const employeeName = item.employee_name || 
+          (item.employee ? `${item.employee.first_name || ''} ${item.employee.last_name || ''}`.trim() : '') ||
+          'N/A';
+        
+        // Format status
+        let statusText = item.status || 'Draft';
+        if (statusText && typeof statusText === 'string') {
+          statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+          const statusMap = {
+            'draft': 'Draft',
+            'pending': 'Pending',
+            'processed': 'Processed',
+            'paid': 'Paid'
+          };
+          statusText = statusMap[statusText.toLowerCase()] || statusText;
+        }
+        
         worksheetData.push([
-          emp.employee_id || emp.id || 'N/A',
-          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
-          emp.department || 'N/A',
-          emp.position || 'N/A',
+          index + 1,
+          employeeId,
+          employeeName,
+          item.department || 'N/A',
+          item.position || 'N/A',
           item.period_start || 'N/A',
           item.period_end || 'N/A',
-          item.basic_salary || 0,
-          item.overtime_pay || 0,
-          item.gross_pay || 0,
-          item.total_deductions || 0,
-          item.net_pay || 0,
-          item.status || 'N/A'
+          Number(item.basic_salary || 0).toFixed(2),
+          Number(item.overtime_pay || 0).toFixed(2),
+          Number(item.gross_pay || 0).toFixed(2),
+          Number(item.total_deductions || 0).toFixed(2),
+          Number(item.net_pay || 0).toFixed(2),
+          statusText || 'Draft'
         ]);
       });
 
+      // Add summary section
+      worksheetData.push([]);
+      worksheetData.push(['SUMMARY']);
+      worksheetData.push(['Total Basic Salary:', totals.basicSalary.toFixed(2)]);
+      worksheetData.push(['Total OT Pay:', totals.overtimePay.toFixed(2)]);
+      worksheetData.push(['Total Gross Pay:', totals.grossPay.toFixed(2)]);
+      worksheetData.push(['Total Deductions:', totals.deductions.toFixed(2)]);
+      worksheetData.push(['Total Net Pay:', totals.netPay.toFixed(2)]);
+      worksheetData.push(['Total Employees:', payrollData.length]);
+
+      // Create worksheet
       const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability (increased widths for better text display)
+      const colWidths = [
+        { wch: 6 },   // # (slightly wider)
+        { wch: 18 },  // Employee ID (increased from 15)
+        { wch: 32 },  // Employee Name (increased from 25 for longer names)
+        { wch: 22 },  // Department (increased from 20)
+        { wch: 22 },  // Position (increased from 20)
+        { wch: 14 },  // Period Start (increased from 12)
+        { wch: 14 },  // Period End (increased from 12)
+        { wch: 16 },  // Basic Salary (increased from 15)
+        { wch: 14 },  // OT Pay (increased from 12)
+        { wch: 16 },  // Gross Pay (increased from 15)
+        { wch: 16 },  // Deductions (increased from 15)
+        { wch: 16 },  // Net Pay (increased from 15)
+        { wch: 14 }   // Status (increased from 12)
+      ];
+      ws['!cols'] = colWidths;
+
+      // Merge cells for header (company name and title)
+      if (!ws['!merges']) ws['!merges'] = [];
+      ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }); // Company name across all columns
+      ws['!merges'].push({ s: { r: 2, c: 0 }, e: { r: 2, c: 12 } }); // Report title across all columns
+
+      // Apply cell styles using XLSX's style support
+      // Note: XLSX has limited styling support, but we'll apply what's available
+      
+      // Company name cell (A1) - larger font, pastel blue background
+      const companyCellRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
+      if (!ws[companyCellRef]) ws[companyCellRef] = { t: 's', v: worksheetData[0][0] };
+      ws[companyCellRef].s = {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: '000000' } },
+        fill: { fgColor: { rgb: 'B3D9FF' } }, // Soft pastel blue
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+      };
+
+      // Report title cell (A3) - bold, slightly larger
+      const titleCellRef = XLSX.utils.encode_cell({ r: 2, c: 0 });
+      if (!ws[titleCellRef]) ws[titleCellRef] = { t: 's', v: worksheetData[2][0] };
+      ws[titleCellRef].s = {
+        font: { name: 'Arial', sz: 14, bold: true, color: { rgb: '0066CC' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+
+      // Table header row (row 7, index 7)
+      const headerRowIndex = 7;
+      const headerColumns = [
+        { idx: 0, name: '#', bg: 'E8F4F8' },           // Light blue
+        { idx: 1, name: 'Employee ID', bg: 'E8F4F8' }, // Light blue
+        { idx: 2, name: 'Employee Name', bg: 'E8F4F8' }, // Light blue
+        { idx: 3, name: 'Department', bg: 'F0E8F8' }, // Light pastel purple
+        { idx: 4, name: 'Position', bg: 'F0E8F8' },   // Light pastel purple
+        { idx: 5, name: 'Period Start', bg: 'FFF8E8' }, // Light pastel yellow
+        { idx: 6, name: 'Period End', bg: 'FFF8E8' },  // Light pastel yellow
+        { idx: 7, name: 'Basic Salary', bg: 'E8F8E8' }, // Light pastel green
+        { idx: 8, name: 'OT Pay', bg: 'E8F8E8' },      // Light pastel green
+        { idx: 9, name: 'Gross Pay', bg: 'E8F8E8' },  // Light pastel green
+        { idx: 10, name: 'Deductions', bg: 'FFE8E8' }, // Light pastel red
+        { idx: 11, name: 'Net Pay', bg: 'E8F8E8' },    // Light pastel green
+        { idx: 12, name: 'Status', bg: 'FFF8E8' }      // Light pastel yellow
+      ];
+
+      headerColumns.forEach(col => {
+        const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: col.idx });
+        const cell = ws[cellRef];
+        if (cell) {
+          cell.s = {
+            font: { name: 'Arial', sz: 11, bold: true, color: { rgb: '000000' } },
+            fill: { fgColor: { rgb: col.bg } },
+            alignment: { 
+              horizontal: col.idx === 0 ? 'center' : (col.idx >= 7 && col.idx <= 11 ? 'right' : 'left'), 
+              vertical: 'center' 
+            },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+      });
+
+      // Style summary section
+      const summaryStartRow = worksheetData.length - 7;
+      const summaryLabelRef = XLSX.utils.encode_cell({ r: summaryStartRow, c: 0 });
+      if (ws[summaryLabelRef]) {
+        ws[summaryLabelRef].s = {
+          font: { name: 'Arial', sz: 12, bold: true, color: { rgb: '000000' } },
+          fill: { fgColor: { rgb: 'FFE8E8' } }, // Light pastel red
+          alignment: { horizontal: 'left', vertical: 'center' }
+        };
+      }
+
+      // Style summary value rows
+      for (let i = 1; i <= 6; i++) {
+        const labelRef = XLSX.utils.encode_cell({ r: summaryStartRow + i, c: 0 });
+        const valueRef = XLSX.utils.encode_cell({ r: summaryStartRow + i, c: 1 });
+        
+        if (ws[labelRef]) {
+          ws[labelRef].s = {
+            font: { name: 'Arial', sz: 10, bold: true, color: { rgb: '000000' } },
+            fill: { fgColor: { rgb: 'F8F8F8' } }, // Light gray
+            alignment: { horizontal: 'left', vertical: 'center' }
+          };
+        }
+        
+        if (ws[valueRef]) {
+          ws[valueRef].s = {
+            font: { name: 'Arial', sz: 10, bold: true, color: { rgb: '000000' } },
+            fill: { fgColor: { rgb: 'F8F8F8' } }, // Light gray
+            alignment: { horizontal: 'right', vertical: 'center' },
+            numFmt: '#,##0.00' // Number format for currency
+          };
+        }
+      }
+
+      // Create workbook
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Payroll Report');
       
@@ -2244,9 +3117,26 @@ export default function ReportGeneration() {
       let csv = 'Employee ID,Name,Department,Position,Period Start,Period End,Basic Salary,OT Pay,Gross Pay,Deductions,Net Pay,Status\n';
       
       payrollData.forEach(item => {
-        const emp = item.employee || {};
-        const name = `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A';
-        csv += `"${emp.employee_id || emp.id || 'N/A'}","${name}","${emp.department || 'N/A'}","${emp.position || 'N/A'}","${item.period_start || 'N/A'}","${item.period_end || 'N/A'}","${item.basic_salary || 0}","${item.overtime_pay || 0}","${item.gross_pay || 0}","${item.total_deductions || 0}","${item.net_pay || 0}","${item.status || 'N/A'}"\n`;
+        // Backend returns flat structure
+        const employeeId = item.employee_id_number || item.employee_id || item.id || 'N/A';
+        const employeeName = item.employee_name || 
+          (item.employee ? `${item.employee.first_name || ''} ${item.employee.last_name || ''}`.trim() : '') ||
+          'N/A';
+        
+        // Format status
+        let statusText = item.status || 'Draft';
+        if (statusText && typeof statusText === 'string') {
+          statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+          const statusMap = {
+            'draft': 'Draft',
+            'pending': 'Pending',
+            'processed': 'Processed',
+            'paid': 'Paid'
+          };
+          statusText = statusMap[statusText.toLowerCase()] || statusText;
+        }
+        
+        csv += `"${employeeId}","${employeeName}","${item.department || 'N/A'}","${item.position || 'N/A'}","${item.period_start || 'N/A'}","${item.period_end || 'N/A'}","${item.basic_salary || 0}","${item.overtime_pay || 0}","${item.gross_pay || 0}","${item.total_deductions || 0}","${item.net_pay || 0}","${statusText || 'Draft'}"\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2267,64 +3157,347 @@ export default function ReportGeneration() {
     }
 
     try {
-      const doc = new jsPDF('landscape');
-      doc.setFontSize(16);
-      doc.text('Employee Report', 14, 15);
-      doc.setFontSize(10);
-      if (dateRange.startDate && dateRange.endDate) {
-        doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
-      }
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const leftMargin = margin;
+      const rightMargin = pageWidth - margin;
+      let currentY = margin;
       
-      const tableData = employeeData.map(item => {
+      // Helper function to add new page if needed
+      const checkPageBreak = (requiredHeight) => {
+        if (currentY + requiredHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+          return true;
+        }
+        return false;
+      };
+
+      // Enhanced Header Section with Background
+      // Company Name Header - Professional Format (Centered with background)
+      doc.setFillColor(44, 62, 80); // Dark blue-gray background
+      doc.rect(0, 0, pageWidth, 25, 'F'); // Header background
+      
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(255, 255, 255); // White text
+      const companyName = 'CABUYAO CONCRETE DEVELOPMENT CORPORATION';
+      const companyNameWidth = doc.getTextWidth(companyName);
+      doc.text(companyName, (pageWidth - companyNameWidth) / 2, 12);
+      
+      currentY = 30;
+      
+      // Report Title Section with accent
+      doc.setFillColor(240, 248, 255); // Light blue background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 18, 'F');
+      
+      // Report Title (Left side)
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 102, 204); // Blue color
+      const reportTitle = 'EMPLOYEE MASTER LIST';
+      doc.text(reportTitle, leftMargin + 3, currentY + 6);
+      doc.setTextColor(0, 0, 0); // Reset to black
+      
+      // Period Information (Right side of title box)
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      const periodText = dateRange.startDate && dateRange.endDate 
+        ? `Period: ${dateRange.startDate} to ${dateRange.endDate}`
+        : 'Period: All Records';
+      const periodWidth = doc.getTextWidth(periodText);
+      doc.text(periodText, rightMargin - periodWidth - 3, currentY + 6);
+      
+      // Generate Date (Right side of title box)
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const generatedText = `Generated: ${generatedDate}`;
+      const generatedWidth = doc.getTextWidth(generatedText);
+      doc.text(generatedText, rightMargin - generatedWidth - 3, currentY + 12);
+      
+      currentY += 22;
+
+      // Prepare table data with proper formatting and correct data access
+      const tableData = employeeData.map((item, index) => {
+        // Access employee profile - handle both normalized and raw data
         const profile = item.employee_profile || item;
-        return [
-          profile.employee_id || profile.id || 'N/A',
-          `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'N/A',
-          profile.department || 'N/A',
-          profile.position || 'N/A',
-          profile.email || 'N/A',
-          profile.employment_status || 'N/A',
-          profile.status || 'Active',
-          profile.hire_date || 'N/A',
-          `PHP ${(profile.salary || 0).toFixed(2)}`
-        ];
+        
+        // Employee ID: from employee_profile.employee_id (the actual employee ID like "EM1234")
+        const employeeId = profile.employee_id || profile.id || 'N/A';
+        
+        // Name: from employee profile
+        const firstName = profile.first_name || '';
+        const lastName = profile.last_name || '';
+        const name = `${firstName} ${lastName}`.trim() || 'N/A';
+        
+        // Department and Position
+        const department = profile.department || 'N/A';
+        const position = profile.position || 'N/A';
+        
+        // Email
+        const email = profile.email || 'N/A';
+        
+        // Employment Status
+        const employmentStatus = profile.employment_status || 'N/A';
+        
+        // Status
+        let statusText = profile.status || 'Active';
+        if (statusText && typeof statusText === 'string') {
+          statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+        }
+        
+        // Hire Date
+        const hireDate = profile.hire_date ? formatDate(profile.hire_date) : 'N/A';
+        
+        // Salary
+        const salary = profile.salary ? `PHP ${Number(profile.salary).toFixed(2)}` : 'N/A';
+        
+        return {
+          index: index + 1,
+          employeeId: employeeId,
+          name: name,
+          department: department,
+          position: position,
+          email: email,
+          employmentStatus: employmentStatus,
+          status: statusText,
+          hireDate: hireDate,
+          salary: salary
+        };
       });
 
-      if (doc.autoTable && typeof doc.autoTable === 'function') {
-        doc.autoTable({
-          head: [['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary']],
-          body: tableData,
-          startY: dateRange.startDate && dateRange.endDate ? 30 : 22,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [66, 139, 202] }
+      // Summary Statistics Box (after tableData is created)
+      const activeCount = tableData.filter(e => e.status.toLowerCase().includes('active')).length;
+      const totalCount = tableData.length;
+      const departmentsCount = new Set(tableData.map(e => e.department)).size;
+      
+      doc.setFillColor(245, 247, 250); // Light gray background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 12, 'F');
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('SUMMARY:', leftMargin + 3, currentY + 5);
+      
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      const summaryText = `Total Employees: ${totalCount} | Active: ${activeCount} | Departments: ${departmentsCount}`;
+      doc.text(summaryText, leftMargin + 35, currentY + 5);
+      
+      currentY += 16;
+
+      // Draw header line
+      doc.setDrawColor(44, 62, 80);
+      doc.setLineWidth(0.8);
+      doc.line(leftMargin, currentY, rightMargin, currentY);
+      currentY += 6;
+
+      // Table column definitions for landscape mode
+      const columns = [
+        { header: '#', width: 10, align: 'center' },
+        { header: 'Employee ID', width: 22, align: 'left' },
+        { header: 'Employee Name', width: 34, align: 'left' },
+        { header: 'Department', width: 26, align: 'left' },
+        { header: 'Position', width: 32, align: 'left' }, // Increased width for Position
+        { header: 'Email', width: 45, align: 'left' }, // Increased width for Email
+        { header: 'Employment Status', width: 30, align: 'left' },
+        { header: 'Status', width: 18, align: 'center' },
+        { header: 'Hire Date', width: 22, align: 'left' },
+        { header: 'Salary', width: 32, align: 'right' }
+      ];
+
+      // Calculate column positions
+      let colX = leftMargin;
+      const colPositions = columns.map(col => {
+        const pos = colX;
+        colX += col.width;
+        return pos;
+      });
+      
+      // Ensure table fits within page width
+      const totalTableWidth = colX - leftMargin;
+      if (totalTableWidth > (rightMargin - leftMargin)) {
+        // Adjust if needed - scale down proportionally
+        const scaleFactor = (rightMargin - leftMargin) / totalTableWidth;
+        columns.forEach(col => col.width *= scaleFactor);
+        // Recalculate positions
+        colX = leftMargin;
+        columns.forEach((col, i) => {
+          colPositions[i] = colX;
+          colX += col.width;
         });
-      } else {
-        // Fallback manual table
-        let yPos = dateRange.startDate && dateRange.endDate ? 30 : 22;
-        doc.setFontSize(10);
+      }
+
+      // Draw table header with solid dark gray background
+      const headerY = currentY;
+      const headerTop = headerY - 6;
+      const headerHeight = 10;
+      const headerBottom = headerTop + headerHeight;
+      const tableWidth = colPositions[colPositions.length - 1] + columns[columns.length - 1].width - leftMargin;
+      
+      doc.setFillColor(44, 62, 80); // Dark gray background (#2c3e80)
+      doc.rect(leftMargin, headerTop, tableWidth, headerHeight, 'F');
+      
+      doc.setFontSize(9);
         doc.setFont(undefined, 'bold');
-        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary'];
-        const colWidths = [25, 35, 30, 30, 40, 25, 20, 25, 25];
-        let xPos = 14;
-        headers.forEach((header, i) => {
-          doc.text(header.substring(0, 12), xPos, yPos);
-          xPos += colWidths[i];
-        });
-        yPos += 7;
-        doc.setFont(undefined, 'normal');
+      doc.setTextColor(255, 255, 255);
+      
+      // Draw header text
+      columns.forEach((col, i) => {
+        const cellX = colPositions[i];
+        const textX = col.align === 'center' 
+          ? cellX + (col.width / 2)
+          : col.align === 'right'
+          ? cellX + col.width - 3
+          : cellX + 3;
+        const textY = headerY + 2;
+        doc.text(col.header, textX, textY, { align: col.align === 'center' ? 'center' : col.align === 'right' ? 'right' : 'left' });
+      });
+      
+      // Draw vertical borders for header
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, headerBottom);
+        }
+      });
+      
+      currentY = headerBottom;
+      
+      // Draw light gray line under header
+      doc.setDrawColor(224, 224, 224);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, currentY, leftMargin + tableWidth, currentY);
+      currentY += 4;
+
+      // Draw table rows with light gray dividers
         doc.setFontSize(8);
-        tableData.forEach(row => {
-          if (yPos > 280) {
-            doc.addPage();
-            yPos = 20;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
+      
+      const rowHeight = 9;
+      const cellPadding = 3;
+      
+      tableData.forEach((row, rowIndex) => {
+        checkPageBreak(rowHeight + 2);
+        
+        const rowStartY = currentY;
+        const rowEndY = currentY + rowHeight;
+        
+        // Alternate row background
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(leftMargin, rowStartY, tableWidth, rowHeight, 'F');
+        }
+        
+        // Draw row data
+        columns.forEach((col, colIndex) => {
+          let cellValue = '';
+          switch(col.header) {
+            case '#':
+              cellValue = String(row.index);
+              break;
+            case 'Employee ID':
+              cellValue = String(row.employeeId);
+              break;
+            case 'Employee Name':
+              cellValue = row.name;
+              break;
+            case 'Department':
+              cellValue = row.department;
+              break;
+            case 'Position':
+              cellValue = row.position;
+              break;
+            case 'Email':
+              cellValue = row.email;
+              break;
+            case 'Employment Status':
+              cellValue = row.employmentStatus;
+              break;
+            case 'Status':
+              cellValue = row.status;
+              break;
+            case 'Hire Date':
+              cellValue = row.hireDate;
+              break;
+            case 'Salary':
+              cellValue = row.salary;
+              break;
           }
-          xPos = 14;
-          row.forEach((cell, i) => {
-            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
-            xPos += colWidths[i];
+          
+          // Truncate if too long
+          const maxWidth = col.width - (cellPadding * 2);
+          const textWidth = doc.getTextWidth(cellValue);
+          if (textWidth > maxWidth) {
+            let truncated = cellValue;
+            while (doc.getTextWidth(truncated + '...') > maxWidth && truncated.length > 0) {
+              truncated = truncated.slice(0, -1);
+            }
+            cellValue = truncated + '...';
+          }
+          
+          const cellX = colPositions[colIndex];
+          const textX = col.align === 'center' 
+            ? cellX + (col.width / 2)
+            : col.align === 'right'
+            ? cellX + col.width - cellPadding
+            : cellX + cellPadding;
+          const textY = currentY + 2;
+          
+          doc.text(cellValue, textX, textY, { 
+            align: col.align === 'center' ? 'center' : col.align === 'right' ? 'right' : 'left',
+            maxWidth: col.width - (cellPadding * 2)
           });
-          yPos += 7;
         });
+        
+        // Draw vertical borders for this row
+        columns.forEach((col, colIndex) => {
+          if (colIndex < columns.length - 1) {
+            const borderX = colPositions[colIndex] + col.width;
+            doc.setDrawColor(224, 224, 224);
+            doc.setLineWidth(0.15);
+            doc.line(borderX, rowStartY, borderX, rowEndY);
+          }
+        });
+        
+        // Draw horizontal divider line at bottom of row
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, rowEndY, leftMargin + tableWidth, rowEndY);
+        
+        currentY = rowEndY;
+      });
+      
+      const tableBottom = currentY;
+      
+      // Ensure vertical borders extend fully from header to table bottom
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(224, 224, 224);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, tableBottom);
+        }
+      });
+
+      // Footer with page numbers
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(128, 128, 128);
+        const footerText = `Page ${i} of ${totalPages}`;
+        const footerWidth = doc.getTextWidth(footerText);
+        doc.text(footerText, (pageWidth - footerWidth) / 2, pageHeight - 10);
       }
 
       const filename = `Employee_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.pdf`;
@@ -2343,7 +3516,25 @@ export default function ReportGeneration() {
     }
 
     try {
+      // Header rows for formal template
       const worksheetData = [
+        [], // Empty row for spacing
+        ['CABUYAO CONCRETE DEVELOPMENT CORPORATION'], // Company name
+        ['EMPLOYEE MASTER LIST'], // Report title
+        [], // Empty row
+        [
+          `Period: ${dateRange.startDate && dateRange.endDate ? `${dateRange.startDate} to ${dateRange.endDate}` : 'All Records'}`,
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          `Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+        ],
+        [], // Empty row
         ['Employee ID', 'Name', 'Department', 'Position', 'Email', 'Employment Status', 'Status', 'Hire Date', 'Salary', 'Contact Number']
       ];
 
@@ -2359,11 +3550,118 @@ export default function ReportGeneration() {
           profile.status || 'Active',
           profile.hire_date || 'N/A',
           profile.salary || 0,
-          profile.contact_number || 'N/A'
+          profile.contact_number || profile.phone || 'N/A' // Check both contact_number and phone
         ]);
       });
 
       const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability - increased widths for all columns
+      const colWidths = [
+        { wch: 18 },  // Employee ID (increased for visibility)
+        { wch: 32 },  // Name (increased significantly for longer names)
+        { wch: 22 },  // Department (increased for full visibility)
+        { wch: 28 },  // Position (increased for full visibility)
+        { wch: 35 },  // Email (increased for longer email addresses)
+        { wch: 22 },  // Employment Status (increased for visibility)
+        { wch: 15 },  // Status (increased slightly)
+        { wch: 18 },  // Hire Date (increased for date format)
+        { wch: 18 },  // Salary (increased for currency values)
+        { wch: 20 }   // Contact Number (increased for phone numbers)
+      ];
+      ws['!cols'] = colWidths;
+
+      // Style header rows (company name and title)
+      if (!ws['!merges']) ws['!merges'] = [];
+      ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 9 } }); // Company name across all columns
+      ws['!merges'].push({ s: { r: 2, c: 0 }, e: { r: 2, c: 9 } }); // Report title across all columns
+      ws['!merges'].push({ s: { r: 4, c: 0 }, e: { r: 4, c: 7 } }); // Period row
+      ws['!merges'].push({ s: { r: 4, c: 8 }, e: { r: 4, c: 9 } }); // Generated date row
+
+      // Apply styling to header cells
+      const companyNameCell = ws[XLSX.utils.encode_cell({ r: 1, c: 0 })];
+      if (companyNameCell) {
+        companyNameCell.s = {
+          font: { name: 'Arial', sz: 18, bold: true },
+          fill: { fgColor: { rgb: 'B3D9FF' } }, // Pastel blue background
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      }
+
+      const reportTitleCell = ws[XLSX.utils.encode_cell({ r: 2, c: 0 })];
+      if (reportTitleCell) {
+        reportTitleCell.s = {
+          font: { name: 'Arial', sz: 14, bold: true, color: { rgb: '0066CC' } }, // Blue text
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      }
+
+      // Style table header row (row 6, index 6)
+      for (let c = 0; c < 10; c++) {
+        const cellRef = XLSX.utils.encode_cell({ r: 6, c });
+        const cell = ws[cellRef];
+        if (cell) {
+          cell.s = {
+            font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '2c3e80' } }, // Dark blue-gray background
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: '000000' } },
+              bottom: { style: 'thin', color: { rgb: '000000' } },
+              left: { style: 'thin', color: { rgb: '000000' } },
+              right: { style: 'thin', color: { rgb: '000000' } }
+            }
+          };
+        }
+      }
+
+      // Apply category-based pastel backgrounds to data rows
+      employeeData.forEach((item, index) => {
+        const rowIndex = 7 + index; // Start from row 7 (after header row 6)
+        
+        for (let c = 0; c < 10; c++) {
+          const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c });
+          const cell = ws[cellRef];
+          if (cell) {
+            let bgColor = 'FFFFFF'; // Default white
+            
+            // Category-based backgrounds
+            if (c === 0 || c === 1) {
+              // Employee ID and Name - Light blue
+              bgColor = 'E6F3FF';
+            } else if (c === 2 || c === 3) {
+              // Department and Position - Pastel purple
+              bgColor = 'E6E6FA';
+            } else if (c === 4) {
+              // Email - Pastel yellow
+              bgColor = 'FFFACD';
+            } else if (c === 5 || c === 6) {
+              // Employment Status and Status - Pastel green
+              bgColor = 'E6FFE6';
+            } else if (c === 7) {
+              // Hire Date - Pastel orange
+              bgColor = 'FFE6CC';
+            } else if (c === 8) {
+              // Salary - Pastel blue
+              bgColor = 'CCE5FF';
+            } else if (c === 9) {
+              // Contact Number - Pastel pink
+              bgColor = 'FFE6F0';
+            }
+            
+            cell.s = {
+              fill: { fgColor: { rgb: bgColor } },
+              border: {
+                top: { style: 'thin', color: { rgb: 'E0E0E0' } },
+                bottom: { style: 'thin', color: { rgb: 'E0E0E0' } },
+                left: { style: 'thin', color: { rgb: 'E0E0E0' } },
+                right: { style: 'thin', color: { rgb: 'E0E0E0' } }
+              }
+            };
+          }
+        }
+      });
+
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Employee Report');
       
@@ -2409,65 +3707,402 @@ export default function ReportGeneration() {
     }
 
     try {
-      const doc = new jsPDF('landscape');
-      doc.setFontSize(16);
-      doc.text('Leave Request Report', 14, 15);
-      doc.setFontSize(10);
-      if (dateRange.startDate && dateRange.endDate) {
-        doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, 14, 22);
-      }
+      const doc = new jsPDF('landscape', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const leftMargin = margin;
+      const rightMargin = pageWidth - margin;
+      let currentY = margin;
       
-      const tableData = leaveData.map(item => {
-        const emp = item.employee?.employee_profile || item.employee || {};
-        return [
-          emp.employee_id || emp.id || 'N/A',
-          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
-          emp.department || 'N/A',
-          emp.position || 'N/A',
-          item.leave_type || 'N/A',
-          item.from || 'N/A',
-          item.to || 'N/A',
-          item.total_days || 0,
-          item.status || 'N/A',
-          item.reason || 'N/A'
-        ];
+      // Helper function to add new page if needed
+      const checkPageBreak = (requiredHeight) => {
+        if (currentY + requiredHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+          return true;
+        }
+        return false;
+      };
+
+      // Enhanced Header Section with Background
+      // Company Name Header - Professional Format (Centered with background)
+      doc.setFillColor(44, 62, 80); // Dark blue-gray background
+      doc.rect(0, 0, pageWidth, 25, 'F'); // Header background
+      
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(255, 255, 255); // White text
+      const companyName = 'CABUYAO CONCRETE DEVELOPMENT CORPORATION';
+      const companyNameWidth = doc.getTextWidth(companyName);
+      doc.text(companyName, (pageWidth - companyNameWidth) / 2, 12);
+      
+      currentY = 30;
+      
+      // Report Title Section with accent
+      doc.setFillColor(240, 248, 255); // Light blue background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 18, 'F');
+      
+      // Report Title (Left side)
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 102, 204); // Blue color
+      const reportTitle = 'LEAVE REPORT';
+      doc.text(reportTitle, leftMargin + 3, currentY + 6);
+      doc.setTextColor(0, 0, 0); // Reset to black
+      
+      // Period Information (Right side of title box)
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      const periodText = dateRange.startDate && dateRange.endDate 
+        ? `Period: ${dateRange.startDate} to ${dateRange.endDate}`
+        : 'Period: All Records';
+      const periodWidth = doc.getTextWidth(periodText);
+      doc.text(periodText, rightMargin - periodWidth - 3, currentY + 6);
+      
+      // Generate Date (Right side of title box)
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const generatedText = `Generated: ${generatedDate}`;
+      const generatedWidth = doc.getTextWidth(generatedText);
+      doc.text(generatedText, rightMargin - generatedWidth - 3, currentY + 12);
+      
+      currentY += 22;
+
+      // Prepare table data with proper formatting and correct data access
+      const tableData = leaveData.map((item, index) => {
+        // Access employee profile properly - handle both camelCase and snake_case
+        // Laravel may serialize as employee_profile (snake_case) or employeeProfile (camelCase)
+        const employeeProfile = item.employee?.employee_profile || item.employee?.employeeProfile || {};
+        const employee = item.employee || {};
+        
+        // Employee ID: from employee_profile.employee_id (the actual employee ID like "EM1234")
+        // This is the proper employee ID, not the user ID
+        // Fallback to employee.id (user ID) if profile doesn't exist
+        const employeeId = employeeProfile.employee_id || employee.id || item.employee_id || 'N/A';
+        
+        // Department: try item.department (direct on leave_requests), then employee profile, then employee
+        const department = item.department || employeeProfile.department || employee.department || 'N/A';
+        
+        // Position: from employee profile (it's stored there)
+        // This is the key field that was showing as N/A
+        const position = employeeProfile.position || 'N/A';
+        
+        // Name: from employee profile first, then employee (User model)
+        const firstName = employeeProfile.first_name || employee.first_name || '';
+        const lastName = employeeProfile.last_name || employee.last_name || '';
+        const name = `${firstName} ${lastName}`.trim() || item.employee_name || 'N/A';
+        
+        // Leave Type: use item.type (not leave_type)
+        const leaveType = item.type || item.leave_type || 'N/A';
+        
+        // Format dates
+        const fromDate = item.from ? formatDate(item.from) : 'N/A';
+        const toDate = item.to ? formatDate(item.to) : 'N/A';
+        
+        // Format status (capitalize first letter)
+        let statusText = item.status || 'N/A';
+        if (statusText !== 'N/A' && typeof statusText === 'string') {
+          statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+          // Map common status values
+          const statusMap = {
+            'pending': 'Pending',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'manager_approved': 'Manager Approved',
+            'manager_rejected': 'Manager Rejected'
+          };
+          statusText = statusMap[statusText.toLowerCase()] || statusText;
+        }
+        
+        return {
+          index: index + 1,
+          employeeId: employeeId,
+          name: name,
+          department: department,
+          position: position,
+          leaveType: leaveType,
+          from: fromDate,
+          to: toDate,
+          days: item.total_days || 0,
+          status: statusText,
+          reason: item.reason || ''
+        };
       });
 
-      if (doc.autoTable && typeof doc.autoTable === 'function') {
-        doc.autoTable({
-          head: [['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Reason']],
-          body: tableData,
-          startY: dateRange.startDate && dateRange.endDate ? 30 : 22,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [66, 139, 202] }
+      // Summary Statistics Box (after tableData is created) - Leave specific
+      const approvedCount = tableData.filter(e => e.status.toLowerCase().includes('approved')).length;
+      const pendingCount = tableData.filter(e => e.status.toLowerCase().includes('pending')).length;
+      const rejectedCount = tableData.filter(e => e.status.toLowerCase().includes('rejected')).length;
+      const managerApprovedCount = tableData.filter(e => e.status.toLowerCase().includes('manager approved')).length;
+      const managerRejectedCount = tableData.filter(e => e.status.toLowerCase().includes('manager rejected')).length;
+      const totalRequests = tableData.length;
+      const uniqueEmployees = new Set(tableData.map(e => e.employeeId)).size;
+      
+      // Calculate total leave days
+      const totalDays = tableData.reduce((sum, e) => {
+        const days = Number(e.days) || 0;
+        return sum + days;
+      }, 0);
+      
+      // Get unique leave types
+      const leaveTypes = new Set(tableData.map(e => e.leaveType).filter(t => t && t !== 'N/A'));
+      
+      doc.setFillColor(245, 247, 250); // Light gray background
+      doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 18, 'F');
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('SUMMARY:', leftMargin + 3, currentY + 5);
+      
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(60, 60, 60);
+      const summaryText = `Total Requests: ${totalRequests} | Employees: ${uniqueEmployees} | Total Days: ${totalDays}`;
+      doc.text(summaryText, leftMargin + 35, currentY + 5);
+      
+      // Status summary on second line
+      const statusText = `Approved: ${approvedCount} | Manager Approved: ${managerApprovedCount} | Pending: ${pendingCount} | Rejected: ${rejectedCount} | Manager Rejected: ${managerRejectedCount}`;
+      doc.text(statusText, leftMargin + 35, currentY + 10);
+      
+      // Leave types summary on third line
+      const leaveTypesText = `Leave Types: ${leaveTypes.size > 0 ? Array.from(leaveTypes).join(', ') : 'N/A'}`;
+      doc.text(leaveTypesText, leftMargin + 35, currentY + 15);
+      
+      currentY += 22;
+
+      // Draw header line
+      doc.setDrawColor(44, 62, 80);
+      doc.setLineWidth(0.8);
+      doc.line(leftMargin, currentY, rightMargin, currentY);
+      currentY += 6;
+
+      // Table column definitions for landscape mode
+      const columns = [
+        { header: '#', width: 10, align: 'center' },
+        { header: 'Employee ID', width: 25, align: 'left' },
+        { header: 'Employee Name', width: 35, align: 'left' },
+        { header: 'Department', width: 28, align: 'left' },
+        { header: 'Position', width: 28, align: 'left' },
+        { header: 'Leave Type', width: 25, align: 'left' },
+        { header: 'From', width: 22, align: 'left' },
+        { header: 'To', width: 22, align: 'left' },
+        { header: 'Days', width: 15, align: 'center' },
+        { header: 'Status', width: 25, align: 'center' },
+        { header: 'Reason', width: 50, align: 'left' } // Increased width for Reason column
+      ];
+
+      // Calculate column positions
+      let colX = leftMargin;
+      const colPositions = columns.map(col => {
+        const pos = colX;
+        colX += col.width;
+        return pos;
+      });
+      
+      // Ensure table fits within page width
+      const totalTableWidth = colX - leftMargin;
+      if (totalTableWidth > (rightMargin - leftMargin)) {
+        // Adjust if needed - scale down proportionally
+        const scaleFactor = (rightMargin - leftMargin) / totalTableWidth;
+        columns.forEach(col => col.width *= scaleFactor);
+        // Recalculate positions
+        colX = leftMargin;
+        columns.forEach((col, i) => {
+          colPositions[i] = colX;
+          colX += col.width;
         });
-      } else {
-        // Fallback manual table
-        let yPos = dateRange.startDate && dateRange.endDate ? 30 : 22;
-        doc.setFontSize(10);
+      }
+
+      // Draw table header with solid dark gray background
+      const headerY = currentY;
+      const headerTop = headerY - 6;
+      const headerHeight = 10;
+      const headerBottom = headerTop + headerHeight;
+      const tableWidth = colPositions[colPositions.length - 1] + columns[columns.length - 1].width - leftMargin;
+      
+      doc.setFillColor(44, 62, 80); // Dark gray background (#2c3e80)
+      doc.rect(leftMargin, headerTop, tableWidth, headerHeight, 'F');
+      
+      doc.setFontSize(9);
         doc.setFont(undefined, 'bold');
-        const headers = ['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Reason'];
-        const colWidths = [25, 35, 30, 30, 25, 25, 25, 15, 20, 30];
-        let xPos = 14;
-        headers.forEach((header, i) => {
-          doc.text(header.substring(0, 12), xPos, yPos);
-          xPos += colWidths[i];
-        });
-        yPos += 7;
-        doc.setFont(undefined, 'normal');
+      doc.setTextColor(255, 255, 255);
+      
+      // Draw header text
+      columns.forEach((col, i) => {
+        const cellX = colPositions[i];
+        const textX = col.align === 'center' 
+          ? cellX + (col.width / 2)
+          : cellX + 3;
+        const textY = headerY + 2;
+        doc.text(col.header, textX, textY, { align: col.align === 'center' ? 'center' : 'left' });
+      });
+      
+      // Draw vertical borders for header
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, headerBottom);
+        }
+      });
+      
+      currentY = headerBottom;
+      
+      // Draw light gray line under header
+      doc.setDrawColor(224, 224, 224);
+      doc.setLineWidth(0.2);
+      doc.line(leftMargin, currentY, leftMargin + tableWidth, currentY);
+      currentY += 4;
+
+      // Draw table rows with light gray dividers
         doc.setFontSize(8);
-        tableData.forEach(row => {
-          if (yPos > 280) {
-            doc.addPage();
-            yPos = 20;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
+      
+      const rowHeight = 9;
+      const cellPadding = 3;
+      
+      tableData.forEach((row, rowIndex) => {
+        checkPageBreak(rowHeight + 2);
+        
+        const rowStartY = currentY;
+        const rowEndY = currentY + rowHeight;
+        
+        // Alternate row background
+        if (rowIndex % 2 === 0) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(leftMargin, rowStartY, tableWidth, rowHeight, 'F');
+        }
+        
+        // Draw row data
+        columns.forEach((col, colIndex) => {
+          let cellValue = '';
+          switch(col.header) {
+            case '#':
+              cellValue = String(row.index);
+              break;
+            case 'Employee ID':
+              cellValue = String(row.employeeId);
+              break;
+            case 'Employee Name':
+              cellValue = row.name;
+              break;
+            case 'Department':
+              cellValue = row.department;
+              break;
+            case 'Position':
+              cellValue = row.position;
+              break;
+            case 'Leave Type':
+              cellValue = row.leaveType;
+              break;
+            case 'From':
+              cellValue = row.from;
+              break;
+            case 'To':
+              cellValue = row.to;
+              break;
+            case 'Days':
+              cellValue = String(row.days);
+              break;
+            case 'Status':
+              cellValue = row.status;
+              break;
+            case 'Reason':
+              cellValue = row.reason;
+              break;
           }
-          xPos = 14;
-          row.forEach((cell, i) => {
-            doc.text(String(cell || '').substring(0, Math.floor(colWidths[i] / 2.5)), xPos, yPos);
-            xPos += colWidths[i];
+          
+          // Truncate if too long
+          const maxWidth = col.width - (cellPadding * 2);
+          const textWidth = doc.getTextWidth(cellValue);
+          if (textWidth > maxWidth) {
+            let truncated = cellValue;
+            while (doc.getTextWidth(truncated + '...') > maxWidth && truncated.length > 0) {
+              truncated = truncated.slice(0, -1);
+            }
+            cellValue = truncated + '...';
+          }
+          
+          const cellX = colPositions[colIndex];
+          const textX = col.align === 'center' 
+            ? cellX + (col.width / 2)
+            : cellX + cellPadding;
+          const textY = currentY + 2;
+          
+          // Apply status color coding
+          if (col.header === 'Status') {
+            const statusLower = cellValue.toLowerCase();
+            if (statusLower.includes('approved')) {
+              doc.setTextColor(34, 139, 34); // Green for approved
+              doc.setFont(undefined, 'bold');
+            } else if (statusLower.includes('rejected')) {
+              doc.setTextColor(220, 53, 69); // Red for rejected
+            } else if (statusLower.includes('pending')) {
+              doc.setTextColor(255, 193, 7); // Orange for pending
+            } else {
+              doc.setTextColor(0, 0, 0); // Black for others
+            }
+          } else {
+            doc.setTextColor(0, 0, 0);
+            doc.setFont(undefined, 'normal');
+          }
+          
+          doc.text(cellValue, textX, textY, { 
+            align: col.align === 'center' ? 'center' : 'left',
+            maxWidth: col.width - (cellPadding * 2)
           });
-          yPos += 7;
+          
+          // Reset text color and font
+          doc.setTextColor(0, 0, 0);
+          doc.setFont(undefined, 'normal');
         });
+        
+        // Draw vertical borders for this row
+        columns.forEach((col, colIndex) => {
+          if (colIndex < columns.length - 1) {
+            const borderX = colPositions[colIndex] + col.width;
+            doc.setDrawColor(224, 224, 224);
+            doc.setLineWidth(0.15);
+            doc.line(borderX, rowStartY, borderX, rowEndY);
+          }
+        });
+        
+        // Draw horizontal divider line at bottom of row
+        doc.setDrawColor(224, 224, 224);
+        doc.setLineWidth(0.2);
+        doc.line(leftMargin, rowEndY, leftMargin + tableWidth, rowEndY);
+        
+        currentY = rowEndY;
+      });
+      
+      const tableBottom = currentY;
+      
+      // Ensure vertical borders extend fully from header to table bottom
+      columns.forEach((col, i) => {
+        if (i < columns.length - 1) {
+          const borderX = colPositions[i] + col.width;
+          doc.setDrawColor(224, 224, 224);
+          doc.setLineWidth(0.15);
+          doc.line(borderX, headerTop, borderX, tableBottom);
+        }
+      });
+
+      // Footer with page numbers
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(128, 128, 128);
+        const footerText = `Page ${i} of ${totalPages}`;
+        const footerWidth = doc.getTextWidth(footerText);
+        doc.text(footerText, (pageWidth - footerWidth) / 2, pageHeight - 10);
       }
 
       const filename = `Leave_Report_${dateRange.startDate || 'all'}_to_${dateRange.endDate || 'all'}.pdf`;
@@ -2486,28 +4121,170 @@ export default function ReportGeneration() {
     }
 
     try {
+      const generatedDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      // Build professional Excel template structure
       const worksheetData = [
-        ['Employee ID', 'Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Total Days', 'Status', 'Reason', 'Terms']
+        // Header Section
+        ['CABUYAO CONCRETE DEVELOPMENT CORPORATION'],
+        [],
+        ['LEAVE REPORT'],
+        [],
+        ['Period:', dateRange.startDate && dateRange.endDate 
+          ? `${dateRange.startDate} to ${dateRange.endDate}`
+          : 'All Records'],
+        ['Generated on:', generatedDate],
+        [],
+        // Table Header
+        ['#', 'Employee ID', 'Employee Name', 'Department', 'Position', 'Leave Type', 'From', 'To', 'Days', 'Status', 'Reason', 'Terms']
       ];
 
-      leaveData.forEach(item => {
-        const emp = item.employee?.employee_profile || item.employee || {};
+      // Add data rows with proper data access
+      leaveData.forEach((item, index) => {
+        // Access employee profile properly - handle both camelCase and snake_case
+        const employeeProfile = item.employee?.employee_profile || item.employee?.employeeProfile || {};
+        const employee = item.employee || {};
+        
+        // Employee ID: from employee_profile.employee_id (the actual employee ID like "EM1234")
+        const employeeId = employeeProfile.employee_id || employee.id || item.employee_id || 'N/A';
+        
+        // Department: try item.department (direct on leave_requests), then employee profile
+        const department = item.department || employeeProfile.department || employee.department || 'N/A';
+        
+        // Position: from employee profile
+        const position = employeeProfile.position || 'N/A';
+        
+        // Name: from employee profile first, then employee (User model)
+        const firstName = employeeProfile.first_name || employee.first_name || '';
+        const lastName = employeeProfile.last_name || employee.last_name || '';
+        const name = `${firstName} ${lastName}`.trim() || item.employee_name || 'N/A';
+        
+        // Leave Type: use item.type (not leave_type)
+        const leaveType = item.type || item.leave_type || 'N/A';
+        
+        // Format dates
+        const fromDate = item.from ? formatDate(item.from) : 'N/A';
+        const toDate = item.to ? formatDate(item.to) : 'N/A';
+        
+        // Format status
+        let statusText = item.status || 'N/A';
+        if (statusText !== 'N/A' && typeof statusText === 'string') {
+          statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1).toLowerCase();
+          const statusMap = {
+            'pending': 'Pending',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'manager_approved': 'Manager Approved',
+            'manager_rejected': 'Manager Rejected'
+          };
+          statusText = statusMap[statusText.toLowerCase()] || statusText;
+        }
+        
+        // Terms
+        const terms = item.terms || 'N/A';
+        
         worksheetData.push([
-          emp.employee_id || emp.id || 'N/A',
-          `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'N/A',
-          emp.department || 'N/A',
-          emp.position || 'N/A',
-          item.leave_type || 'N/A',
-          item.from || 'N/A',
-          item.to || 'N/A',
+          index + 1,
+          employeeId,
+          name,
+          department,
+          position,
+          leaveType,
+          fromDate,
+          toDate,
           item.total_days || 0,
-          item.status || 'N/A',
+          statusText,
           item.reason || 'N/A',
-          item.terms || 'N/A'
+          terms
         ]);
       });
 
+      // Create worksheet
       const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability - increased widths for all columns
+      const colWidths = [
+        { wch: 6 },   // #
+        { wch: 18 },  // Employee ID (increased for visibility)
+        { wch: 32 },  // Employee Name (increased significantly for longer names)
+        { wch: 22 },  // Department (increased for full visibility)
+        { wch: 22 },  // Position (increased for full visibility)
+        { wch: 20 },  // Leave Type (increased for longer leave type names)
+        { wch: 14 },  // From (increased for date format)
+        { wch: 14 },  // To (increased for date format)
+        { wch: 10 },  // Days (sufficient for numbers)
+        { wch: 18 },  // Status (increased for longer status text)
+        { wch: 40 },  // Reason (significantly increased for longer reasons)
+        { wch: 16 }   // Terms (increased for "with PAY" / "without PAY")
+      ];
+      ws['!cols'] = colWidths;
+
+      // Merge cells for header (company name and title)
+      if (!ws['!merges']) ws['!merges'] = [];
+      ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }); // Company name across all columns
+      ws['!merges'].push({ s: { r: 2, c: 0 }, e: { r: 2, c: 11 } }); // Report title across all columns
+
+      // Apply cell styles using XLSX's style support
+      // Company name cell (A1) - larger font, pastel blue background
+      const companyCellRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
+      if (!ws[companyCellRef]) ws[companyCellRef] = { t: 's', v: worksheetData[0][0] };
+      ws[companyCellRef].s = {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: '000000' } },
+        fill: { fgColor: { rgb: 'B3D9FF' } }, // Soft pastel blue
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+      };
+
+      // Report title cell (A3) - bold, slightly larger
+      const titleCellRef = XLSX.utils.encode_cell({ r: 2, c: 0 });
+      if (!ws[titleCellRef]) ws[titleCellRef] = { t: 's', v: worksheetData[2][0] };
+      ws[titleCellRef].s = {
+        font: { name: 'Arial', sz: 14, bold: true, color: { rgb: '0066CC' } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+
+      // Table header row (row 7, index 7)
+      const headerRowIndex = 7;
+      const headerColumns = [
+        { idx: 0, name: '#', bg: 'E8F4F8' },           // Light blue
+        { idx: 1, name: 'Employee ID', bg: 'E8F4F8' }, // Light blue
+        { idx: 2, name: 'Employee Name', bg: 'E8F4F8' }, // Light blue
+        { idx: 3, name: 'Department', bg: 'F0E8F8' },  // Light pastel purple
+        { idx: 4, name: 'Position', bg: 'F0E8F8' },   // Light pastel purple
+        { idx: 5, name: 'Leave Type', bg: 'FFF8E8' },  // Light pastel yellow
+        { idx: 6, name: 'From', bg: 'FFF8E8' },       // Light pastel yellow
+        { idx: 7, name: 'To', bg: 'FFF8E8' },         // Light pastel yellow
+        { idx: 8, name: 'Days', bg: 'E8F8E8' },       // Light pastel green
+        { idx: 9, name: 'Status', bg: 'FFF8E8' },     // Light pastel yellow
+        { idx: 10, name: 'Reason', bg: 'FFE8E8' },    // Light pastel red
+        { idx: 11, name: 'Terms', bg: 'E8F8E8' }      // Light pastel green
+      ];
+
+      headerColumns.forEach(col => {
+        const cellRef = XLSX.utils.encode_cell({ r: headerRowIndex, c: col.idx });
+        const cell = ws[cellRef];
+        if (cell) {
+          cell.s = {
+            font: { name: 'Arial', sz: 11, bold: true, color: { rgb: '000000' } },
+            fill: { fgColor: { rgb: col.bg } },
+            alignment: { 
+              horizontal: col.idx === 0 || col.idx === 8 ? 'center' : 'left', 
+              vertical: 'center' 
+            },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+      });
+
+      // Create workbook
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Leave Report');
       
@@ -2814,8 +4591,15 @@ export default function ReportGeneration() {
   const renderAttendanceReport = () => {
     if (loading) {
       return (
-        <tr>
-          <td colSpan="6" className="text-center text-muted py-4">
+        <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+          <td colSpan="6" style={{ 
+            padding: '2rem 1rem',
+            textAlign: 'center',
+            color: '#6c757d',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            borderRight: 'none'
+          }}>
             Generating attendance insights...
           </td>
         </tr>
@@ -2824,8 +4608,15 @@ export default function ReportGeneration() {
 
     if (!attendanceData || attendanceData.length === 0) {
       return (
-        <tr>
-          <td colSpan="6" className="text-center text-muted py-4">
+        <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+          <td colSpan="6" style={{ 
+            padding: '2rem 1rem',
+            textAlign: 'center',
+            color: '#6c757d',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            borderRight: 'none'
+          }}>
             No attendance records found for the selected criteria.
           </td>
         </tr>
@@ -2843,44 +4634,146 @@ export default function ReportGeneration() {
       return (
         <tr
           key={record.id || `${employee.employee_id}-${record.date}-${index}`}
-          style={{ cursor: 'pointer' }}
+          style={{ 
+            cursor: 'pointer',
+            borderBottom: '1px solid #e0e0e0',
+            backgroundColor: index % 2 === 0 ? '#ffffff' : '#fafafa',
+            transition: 'background-color 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f5f5f5';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#ffffff' : '#fafafa';
+          }}
           title="View detailed attendance for this employee"
           onClick={() => openEmployeeAttendanceDetail(employee)}
         >
-          <td style={{ padding: '1rem', fontWeight: '600', color: '#667eea' }}>{index + 1}</td>
-          <td style={{ padding: '1rem' }}>
-            <div className="fw-semibold text-dark">{employeeName}</div>
-            <div className="text-muted small">
-              {(employee.employee_id || employee.id || '—')}{' '}
+          <td style={{ 
+            padding: '0.875rem 1rem', 
+            fontWeight: '500', 
+            color: '#495057',
+            textAlign: 'left',
+            fontSize: '0.875rem',
+            borderRight: '1px solid #e0e0e0',
+            verticalAlign: 'middle'
+          }}>{index + 1}</td>
+          <td style={{ 
+            padding: '0.875rem 1rem',
+            borderRight: '1px solid #e0e0e0',
+            verticalAlign: 'middle'
+          }}>
+            <div style={{ 
+              fontWeight: '600', 
+              color: '#212529',
+              fontSize: '0.875rem',
+              marginBottom: '0.25rem',
+              lineHeight: '1.4'
+            }}>{employeeName}</div>
+            <div style={{ 
+              color: '#6c757d',
+              fontSize: '0.75rem',
+              lineHeight: '1.3'
+            }}>
+              <span style={{ fontWeight: '500' }}>ID: {(employee.employee_id || employee.id || '—')}</span>
               {(employee.department || employee.position) && (
-                <>
+                <span style={{ marginLeft: '0.5rem', color: '#adb5bd' }}>
                   • {employee.department || 'No Department'}
                   {employee.position ? ` • ${employee.position}` : ''}
-                </>
+                </span>
               )}
             </div>
           </td>
-          <td style={{ padding: '1rem' }}>
-            <div className="fw-semibold text-dark">{formatDate(record.date)}</div>
-            {record.remarks && <div className="text-muted small">Remarks: {record.remarks}</div>}
+          <td style={{ 
+            padding: '0.875rem 1rem',
+            borderRight: '1px solid #e0e0e0',
+            verticalAlign: 'middle'
+          }}>
+            <div style={{ 
+              fontWeight: '500', 
+              color: '#212529',
+              fontSize: '0.875rem',
+              lineHeight: '1.4'
+            }}>{formatDate(record.date)}</div>
+            {record.remarks && (
+              <div style={{ 
+                color: '#6c757d',
+                fontSize: '0.75rem',
+                marginTop: '0.25rem',
+                fontStyle: 'italic',
+                lineHeight: '1.3'
+              }}>Note: {record.remarks}</div>
+            )}
           </td>
-          <td className="text-center" style={{ padding: '1rem' }}>
+          <td style={{ 
+            padding: '0.875rem 1rem',
+            textAlign: 'center',
+            borderRight: '1px solid #e0e0e0',
+            verticalAlign: 'middle'
+          }}>
             <Badge
               bg={getAttendanceBadgeVariant(record.status)}
               className="fw-semibold text-uppercase"
-              style={{ fontSize: '0.75rem', letterSpacing: '0.03em' }}
+              style={{ 
+                fontSize: '0.6875rem', 
+                letterSpacing: '0.03em',
+                padding: '0.375rem 0.625rem',
+                fontWeight: '600'
+              }}
             >
               {record.status || 'No Record'}
             </Badge>
           </td>
-          <td className="text-center" style={{ padding: '1rem' }}>
-            <div className="fw-semibold text-dark">{formatTime(record.clock_in)}</div>
-            {record.break_out && <div className="text-muted small">Break Out: {formatTime(record.break_out)}</div>}
+          <td style={{ 
+            padding: '0.875rem 1rem',
+            textAlign: 'center',
+            borderRight: '1px solid #e0e0e0',
+            verticalAlign: 'middle'
+          }}>
+            <div style={{ 
+              fontWeight: '600', 
+              color: '#212529',
+              fontSize: '0.875rem',
+              marginBottom: '0.125rem',
+              lineHeight: '1.4'
+            }}>{formatTime(record.clock_in)}</div>
+            {record.break_out && (
+              <div style={{ 
+                color: '#6c757d',
+                fontSize: '0.75rem',
+                lineHeight: '1.3'
+              }}>Break: {formatTime(record.break_out)}</div>
+            )}
           </td>
-          <td className="text-center" style={{ padding: '1rem' }}>
-            <div className="fw-semibold text-dark">{formatTime(record.clock_out)}</div>
-            {record.break_in && <div className="text-muted small">Break In: {formatTime(record.break_in)}</div>}
-            <div className="text-muted small">Total: {netHours}</div>
+          <td style={{ 
+            padding: '0.875rem 1rem',
+            textAlign: 'center',
+            verticalAlign: 'middle'
+          }}>
+            <div style={{ 
+              fontWeight: '600', 
+              color: '#212529',
+              fontSize: '0.875rem',
+              marginBottom: '0.125rem',
+              lineHeight: '1.4'
+            }}>{formatTime(record.clock_out)}</div>
+            {record.break_in && (
+              <div style={{ 
+                color: '#6c757d',
+                fontSize: '0.75rem',
+                marginBottom: '0.125rem',
+                lineHeight: '1.3'
+              }}>Resume: {formatTime(record.break_in)}</div>
+            )}
+            <div style={{ 
+              color: '#495057',
+              fontSize: '0.75rem',
+              fontWeight: '500',
+              marginTop: '0.25rem',
+              paddingTop: '0.25rem',
+              borderTop: '1px solid #e9ecef',
+              lineHeight: '1.3'
+            }}>Total: {netHours}</div>
           </td>
         </tr>
       );
@@ -4668,10 +6561,18 @@ export default function ReportGeneration() {
         </Card.Header>
         <Card.Body style={{ padding: '1.5rem' }}>
           
-          <div className="table-responsive">
-            <Table hover className="mb-0" style={{ 
-              borderCollapse: 'separate',
-              borderSpacing: '0'
+          <div className="table-responsive" style={{ margin: '0', padding: '0' }}>
+            <Table className="mb-0" style={{ 
+              borderCollapse: 'collapse',
+              borderSpacing: '0',
+              width: '100%',
+              fontSize: '0.875rem',
+              fontFamily: 'Arial, sans-serif',
+              margin: '0',
+              backgroundColor: '#ffffff',
+              border: '1px solid #dee2e6',
+              borderRadius: '4px',
+              overflow: 'hidden'
             }}>
               <thead>
                 {reportType === 'performance' && (
@@ -4702,15 +6603,76 @@ export default function ReportGeneration() {
                 )}
                 {reportType === 'attendance' && (
                   <tr style={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white'
+                    backgroundColor: '#2c3e50',
+                    color: '#ffffff',
+                    borderBottom: '2px solid #000000'
                   }}>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>#</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Employee</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Date</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Status</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Time In</th>
-                    <th style={{ padding: '1rem', fontWeight: '600', border: 'none' }}>Time Out</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'left',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '5%'
+                    }}>#</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'left',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '25%'
+                    }}>Employee</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'left',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '12%'
+                    }}>Date</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'center',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '15%'
+                    }}>Status</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'center',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '18%'
+                    }}>Time In</th>
+                    <th style={{ 
+                      padding: '0.75rem 1rem', 
+                      fontWeight: '700', 
+                      border: 'none',
+                      borderBottom: '2px solid #000000',
+                      textAlign: 'center',
+                      fontSize: '0.8125rem',
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase',
+                      width: '25%'
+                    }}>Time Out</th>
                   </tr>
                 )}
                 {reportType === 'payroll' && (

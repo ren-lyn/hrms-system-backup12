@@ -87,7 +87,7 @@ class LeaveRequestController extends Controller
     public function index() {
         // Return all leave requests - filtering by year will be done on frontend
         // This ensures pending requests from any year are still accessible
-        return LeaveRequest::with(['employee', 'approvedBy', 'managerApprovedBy'])->latest()->get();
+        return LeaveRequest::with(['employee.employeeProfile', 'approvedBy', 'managerApprovedBy'])->latest()->get();
     }
 
     /**
@@ -101,7 +101,7 @@ class LeaveRequestController extends Controller
         }
 
         $leaveRequests = LeaveRequest::where('employee_id', $user->id)
-            ->with(['employee', 'approvedBy', 'managerApprovedBy'])
+            ->with(['employee.employeeProfile', 'approvedBy', 'managerApprovedBy'])
             ->latest()
             ->get();
 

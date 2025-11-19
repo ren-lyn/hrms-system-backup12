@@ -468,6 +468,7 @@ class ReportController extends Controller
                     'undertime_deduction' => (float) $payroll->undertime_deduction,
                     'cash_advance_deduction' => (float) $payroll->cash_advance_deduction,
                     'other_deductions' => (float) $payroll->other_deductions,
+                    'status' => $payroll->status ?? 'Pending',
                 ];
             });
 
