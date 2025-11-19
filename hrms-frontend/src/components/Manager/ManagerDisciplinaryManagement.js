@@ -99,6 +99,13 @@ const ManagerDisciplinaryManagement = () => {
   const [previousViolations, setPreviousViolations] = useState(null);
   const [checkingViolations, setCheckingViolations] = useState(false);
 
+  // Employee search
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [selectedEmployeeDisplay, setSelectedEmployeeDisplay] = useState('');
+  const [employeeDepartmentFilter, setEmployeeDepartmentFilter] = useState('all');
+  const [showEmployeeFilterDropdown, setShowEmployeeFilterDropdown] = useState(false);
+
   useEffect(() => {
     initializeComponent();
   }, []);
@@ -110,6 +117,43 @@ const ManagerDisciplinaryManagement = () => {
       loadInvestigations();
     }
   }, [activeTab, currentPage, reportFilters, investigationPage, investigationFilters]);
+
+  // Close employee dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showEmployeeDropdown && !event.target.closest('.form-group')) {
+        setShowEmployeeDropdown(false);
+      }
+      if (showEmployeeFilterDropdown && !event.target.closest('button') && !event.target.closest('[style*="zIndex: 1001"]') && !event.target.closest('[style*="maxHeight: \'300px\'"]')) {
+        setShowEmployeeFilterDropdown(false);
+      }
+    };
+
+    if (showEmployeeDropdown || showEmployeeFilterDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showEmployeeDropdown, showEmployeeFilterDropdown]);
+
+  // Handle department filter changes - clear selected employee if it doesn't match the new department
+  useEffect(() => {
+    if (employeeDepartmentFilter !== 'all' && reportForm.employee_id) {
+      const selectedEmployee = employees.find(emp => emp.id === reportForm.employee_id);
+      if (selectedEmployee && selectedEmployee.department?.toLowerCase() !== employeeDepartmentFilter.toLowerCase()) {
+        // Clear selected employee if it doesn't match the department filter
+        setReportForm(prev => ({ ...prev, employee_id: '' }));
+        setSelectedEmployeeDisplay('');
+        setEmployeeSearchQuery('');
+      }
+    }
+    
+    // Show dropdown when department is selected (and we're in the report modal)
+    if (employeeDepartmentFilter !== 'all' && showReportModal) {
+      setShowEmployeeDropdown(true);
+    }
+  }, [employeeDepartmentFilter, employees, reportForm.employee_id, showReportModal]);
 
   const initializeComponent = async () => {
     try {
@@ -215,6 +259,77 @@ const ManagerDisciplinaryManagement = () => {
       }
     }
   };
+
+  const handleEmployeeSearch = (query) => {
+    setEmployeeSearchQuery(query);
+    
+    // Show dropdown if there's a query or if a department is selected
+    if (query || employeeDepartmentFilter !== 'all') {
+      setShowEmployeeDropdown(true);
+    } else {
+      setShowEmployeeDropdown(false);
+    }
+    
+    if (!query) {
+      setReportForm(prev => ({ ...prev, employee_id: '' }));
+      setSelectedEmployeeDisplay('');
+    }
+  };
+
+  const handleEmployeeSelect = (employee) => {
+    setReportForm(prev => ({ ...prev, employee_id: employee.id }));
+    setSelectedEmployeeDisplay(`${employee.first_name} ${employee.last_name} (${employee.employee_id}) - ${employee.department}`);
+    setEmployeeSearchQuery('');
+    setShowEmployeeDropdown(false);
+    
+    // Clear error
+    if (reportFormErrors.employee_id) {
+      setReportFormErrors(prev => ({ ...prev, employee_id: '' }));
+    }
+    
+    // Check for previous violations if category is also selected
+    if (reportForm.disciplinary_category_id) {
+      checkForPreviousViolations(employee.id, reportForm.disciplinary_category_id);
+    }
+  };
+
+  // Get unique departments from employees
+  const uniqueDepartments = [...new Set(employees.map(emp => emp.department).filter(dept => dept))].sort();
+
+  const filteredEmployees = employees.filter(employee => {
+    // First, filter by department if one is selected
+    if (employeeDepartmentFilter !== 'all') {
+      const employeeDepartment = (employee.department || '').toLowerCase();
+      const selectedDepartment = employeeDepartmentFilter.toLowerCase();
+      
+      // If department doesn't match, exclude this employee
+      if (employeeDepartment !== selectedDepartment) {
+        return false;
+      }
+    }
+    
+    // If a search query exists, filter by search query within the selected department
+    if (employeeSearchQuery) {
+      const searchLower = employeeSearchQuery.toLowerCase();
+      const fullName = `${employee.first_name} ${employee.last_name}`.toLowerCase();
+      const employeeId = (employee.employee_id || '').toLowerCase();
+      const department = (employee.department || '').toLowerCase();
+      
+      // Return true if search matches name, ID, or department
+      return fullName.includes(searchLower) || 
+             employeeId.includes(searchLower) || 
+             department.includes(searchLower);
+    }
+    
+    // If no search query but department is selected, show all employees from that department
+    // (The department filter above already ensured we only have employees from that department)
+    if (employeeDepartmentFilter !== 'all') {
+      return true;
+    }
+    
+    // If no department selected and no search query, don't show any employees (wait for user to type or select department)
+    return false;
+  });
   
   const checkForPreviousViolations = async (employeeId, categoryId) => {
     try {
@@ -340,6 +455,11 @@ const ManagerDisciplinaryManagement = () => {
     });
     setReportFormErrors({});
     setPreviousViolations(null);
+    setEmployeeSearchQuery('');
+    setSelectedEmployeeDisplay('');
+    setShowEmployeeDropdown(false);
+    setEmployeeDepartmentFilter('all');
+    setShowEmployeeFilterDropdown(false);
   };
 
   const handleFilterChange = (field, value) => {
@@ -989,7 +1109,10 @@ const ManagerDisciplinaryManagement = () => {
       </Row>
 
       {/* Report Modal */}
-      <Modal show={showReportModal} onHide={() => setShowReportModal(false)} size="xl">
+      <Modal show={showReportModal} onHide={() => {
+        setShowReportModal(false);
+        setShowEmployeeDropdown(false);
+      }} size="xl">
         <Modal.Header closeButton>
           <Modal.Title>
             <i className="fas fa-exclamation-triangle me-2"></i>
@@ -997,23 +1120,196 @@ const ManagerDisciplinaryManagement = () => {
           </Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleSubmitReport}>
-          <Modal.Body>
+          <Modal.Body onClick={(e) => {
+            // Close dropdown when clicking outside the input
+            if (!e.target.closest('.form-group') || !e.target.closest('input')) {
+              setShowEmployeeDropdown(false);
+            }
+          }}>
             <Row>
               <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Employee *</Form.Label>
-                  <Form.Select
-                    value={reportForm.employee_id}
-                    onChange={(e) => handleReportFormChange('employee_id', e.target.value)}
+                <Form.Group className="mb-3" style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <Form.Label style={{ marginBottom: 0 }}>Employee *</Form.Label>
+                    <div style={{ position: 'relative' }}>
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setShowEmployeeFilterDropdown(!showEmployeeFilterDropdown);
+                        }}
+                        style={{
+                          padding: '0.25rem 0.5rem',
+                          fontSize: '0.875rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}
+                      >
+                        <i className="fas fa-filter"></i>
+                        {employeeDepartmentFilter !== 'all' && (
+                          <span className="badge bg-primary" style={{ fontSize: '0.7rem', marginLeft: '0.25rem' }}>
+                            {employeeDepartmentFilter}
+                          </span>
+                        )}
+                      </Button>
+                      {showEmployeeFilterDropdown && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            zIndex: 1001,
+                            backgroundColor: '#fff',
+                            border: '1px solid #ced4da',
+                            borderRadius: '0.375rem',
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            minWidth: '150px',
+                            marginTop: '0.25rem',
+                            maxHeight: '300px',
+                            overflowY: 'auto'
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div
+                            onClick={() => {
+                              setEmployeeDepartmentFilter('all');
+                              setShowEmployeeFilterDropdown(false);
+                              setShowEmployeeDropdown(false);
+                              setEmployeeSearchQuery('');
+                            }}
+                            style={{
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f0f0f0',
+                              backgroundColor: employeeDepartmentFilter === 'all' ? '#f8f9fa' : '#fff',
+                              fontWeight: employeeDepartmentFilter === 'all' ? '600' : '400'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (employeeDepartmentFilter !== 'all') {
+                                e.target.style.backgroundColor = '#f8f9fa';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (employeeDepartmentFilter !== 'all') {
+                                e.target.style.backgroundColor = '#fff';
+                              }
+                            }}
+                          >
+                            All Departments
+                          </div>
+                          {uniqueDepartments.map((dept, index) => (
+                            <div
+                              key={dept}
+                              onClick={() => {
+                                setEmployeeDepartmentFilter(dept);
+                                setShowEmployeeFilterDropdown(false);
+                                setShowEmployeeDropdown(true);
+                                setEmployeeSearchQuery('');
+                              }}
+                              style={{
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderBottom: index < uniqueDepartments.length - 1 ? '1px solid #f0f0f0' : 'none',
+                                backgroundColor: employeeDepartmentFilter === dept ? '#f8f9fa' : '#fff',
+                                fontWeight: employeeDepartmentFilter === dept ? '600' : '400'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (employeeDepartmentFilter !== dept) {
+                                  e.target.style.backgroundColor = '#f8f9fa';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (employeeDepartmentFilter !== dept) {
+                                  e.target.style.backgroundColor = '#fff';
+                                }
+                              }}
+                            >
+                              {dept}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <Form.Control
+                    type="text"
+                    placeholder="Search employee by name, ID, or department..."
+                    value={selectedEmployeeDisplay || employeeSearchQuery}
+                    onChange={(e) => handleEmployeeSearch(e.target.value)}
+                    onFocus={() => {
+                      if (!selectedEmployeeDisplay) {
+                        // Show dropdown if department is selected or if there's a search query
+                        if (employeeDepartmentFilter !== 'all' || employeeSearchQuery) {
+                          setShowEmployeeDropdown(true);
+                        }
+                      }
+                    }}
                     isInvalid={!!reportFormErrors.employee_id}
-                  >
-                    <option value="">Select Employee</option>
-                    {employees.map(employee => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.first_name} {employee.last_name} ({employee.employee_id}) - {employee.department}
-                      </option>
-                    ))}
-                  </Form.Select>
+                    autoComplete="off"
+                  />
+                  {showEmployeeDropdown && filteredEmployees.length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 1000,
+                        backgroundColor: '#fff',
+                        border: '1px solid #ced4da',
+                        borderTop: 'none',
+                        borderRadius: '0 0 0.375rem 0.375rem',
+                        maxHeight: '250px',
+                        overflowY: 'auto',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                      }}
+                    >
+                      {filteredEmployees.map(employee => (
+                        <div
+                          key={employee.id}
+                          onClick={() => handleEmployeeSelect(employee)}
+                          style={{
+                            padding: '10px 15px',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid #f0f0f0',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.target.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.target.style.backgroundColor = '#fff'}
+                        >
+                          <div style={{ fontWeight: '500', color: '#212529' }}>
+                            {employee.first_name} {employee.last_name}
+                          </div>
+                          <small style={{ color: '#6c757d' }}>
+                            {employee.employee_id} - {employee.department}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {showEmployeeDropdown && employeeSearchQuery && filteredEmployees.length === 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 1000,
+                        backgroundColor: '#fff',
+                        border: '1px solid #ced4da',
+                        borderTop: 'none',
+                        borderRadius: '0 0 0.375rem 0.375rem',
+                        padding: '15px',
+                        textAlign: 'center',
+                        color: '#6c757d',
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+                      }}
+                    >
+                      No employees found
+                    </div>
+                  )}
                   <Form.Control.Feedback type="invalid">
                     {reportFormErrors.employee_id}
                   </Form.Control.Feedback>
