@@ -20,7 +20,7 @@ const EmbeddedLeaveForm = () => {
     name: '',
     dateFiled: new Date().toISOString().split('T')[0],
     department: '',
-    leaveType: 'Sick Leave',
+    leaveType: '', // Will be set after gender is loaded and filtered
     startDate: null,
     endDate: null,
     totalDays: 0,
@@ -43,6 +43,7 @@ const EmbeddedLeaveForm = () => {
   const [loadingLeaveSummary, setLoadingLeaveSummary] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentBreakdown, setPaymentBreakdown] = useState(null);
+  const [employeeGender, setEmployeeGender] = useState(null);
 
   const storedRole = useMemo(() => {
     const roleFromStorage = localStorage.getItem('role');
@@ -200,6 +201,11 @@ const EmbeddedLeaveForm = () => {
         const profile = profileData.profile;
         const fullName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
         
+        // Store employee gender from cache for filtering leave types
+        if (profile.gender) {
+          setEmployeeGender(profile.gender);
+        }
+        
         setFormData(prev => ({
           ...prev,
           name: fullName,
@@ -208,7 +214,7 @@ const EmbeddedLeaveForm = () => {
           company: 'Cabuyao Concrete Development Corporation'
         }));
         
-        console.log('Form data loaded from cache:', { name: fullName, department: profile.department });
+        console.log('Form data loaded from cache:', { name: fullName, department: profile.department, gender: profile.gender });
         
         // Still fetch fresh data in background
         fetchFreshEmployeeData();
@@ -277,6 +283,11 @@ const EmbeddedLeaveForm = () => {
                            profileData.name || 
                            `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim();
         
+        // Store employee gender for filtering leave types
+        if (profileData.gender) {
+          setEmployeeGender(profileData.gender);
+        }
+        
         setFormData(prev => ({
           ...prev,
           name: employeeName || prev.name,
@@ -308,12 +319,63 @@ const EmbeddedLeaveForm = () => {
     }
   }, [activeTab]);
 
+  // Get filtered leave type options based on gender
+  const getFilteredLeaveTypeOptions = useMemo(() => {
+    const allLeaveTypes = [
+      { value: 'Sick Leave', label: 'Sick Leave' },
+      { value: 'Vacation Leave', label: 'Vacation Leave' },
+      { value: 'Emergency Leave', label: 'Emergency Leave' },
+      { value: 'Maternity Leave', label: 'Maternity Leave' },
+      { value: 'Paternity Leave', label: 'Paternity Leave' },
+      { value: 'Leave for Victims of Violence Against Women and Their Children (VAWC)', label: 'Leave for Victims of Violence Against Women and Their Children (VAWC)' },
+      { value: 'Parental Leave', label: 'Parental Leave' },
+      { value: "Women's Special Leave", label: "Women's Special Leave" },
+      { value: 'Personal Leave', label: 'Personal Leave' },
+      { value: 'Bereavement Leave', label: 'Bereavement Leave' }
+    ];
+
+    if (employeeGender === 'Female') {
+      // Hide paternity leave for females
+      return allLeaveTypes.filter(lt => lt.value !== 'Paternity Leave');
+    } else if (employeeGender === 'Male') {
+      // Hide maternity, VAWC, and women's special leave for males
+      return allLeaveTypes.filter(lt => 
+        lt.value !== 'Maternity Leave' && 
+        lt.value !== 'Leave for Victims of Violence Against Women and Their Children (VAWC)' &&
+        lt.value !== "Women's Special Leave"
+      );
+    }
+    
+    // If gender is not set, return all types (will be filtered by backend API)
+    return allLeaveTypes;
+  }, [employeeGender]);
+
   // Load data on component initialization
   useEffect(() => {
     loadEmployeeData();
     loadLeaveData();
     fetchLeaveSummary();
   }, []);
+
+  // Set default leave type when gender is loaded and options are filtered
+  useEffect(() => {
+    if (getFilteredLeaveTypeOptions.length > 0 && !formData.leaveType) {
+      // Set to first available leave type after filtering
+      setFormData(prev => ({
+        ...prev,
+        leaveType: getFilteredLeaveTypeOptions[0].value
+      }));
+    } else if (getFilteredLeaveTypeOptions.length > 0 && formData.leaveType) {
+      // If current leave type is not in filtered options, reset to first available
+      const isCurrentTypeAvailable = getFilteredLeaveTypeOptions.some(opt => opt.value === formData.leaveType);
+      if (!isCurrentTypeAvailable) {
+        setFormData(prev => ({
+          ...prev,
+          leaveType: getFilteredLeaveTypeOptions[0].value
+        }));
+      }
+    }
+  }, [getFilteredLeaveTypeOptions, formData.leaveType]);
 
   // Fetch leave summary with automatic payment status
   const fetchLeaveSummary = async () => {
@@ -463,6 +525,7 @@ const EmbeddedLeaveForm = () => {
   };
 
   // Get maximum allowed days for each leave type
+
   const getMaxDaysForLeaveType = (leaveType) => {
     const leaveLimits = {
       'Sick Leave': 8,
@@ -1485,23 +1548,24 @@ const EmbeddedLeaveForm = () => {
                   <Form.Group className="form-group">
                     <Form.Label className="form-label text-responsive-md">Leave Type <span className="required">*</span></Form.Label>
                     <Form.Select
-                      value={formData.leaveType}
+                      value={formData.leaveType || (getFilteredLeaveTypeOptions.length > 0 ? getFilteredLeaveTypeOptions[0].value : '')}
                       onChange={(e) => {
                         setFormData({ ...formData, leaveType: e.target.value });
                         // No need to refresh summary - it shows all types
                       }}
                       className="form-select responsive-form-control"
                       required
+                      disabled={getFilteredLeaveTypeOptions.length === 0}
                     >
-                      <option value="Sick Leave">Sick Leave</option>
-                      <option value="Vacation Leave">Vacation Leave</option>
-                      <option value="Emergency Leave">Emergency Leave</option>
-                      <option value="Maternity Leave">Maternity Leave</option>
-                      <option value="Paternity Leave">Paternity Leave</option>
-                      <option value="Leave for Victims of Violence Against Women and Their Children (VAWC)">Leave for Victims of Violence Against Women and Their Children (VAWC)</option>
-                      <option value="Parental Leave">Parental Leave</option>
-                      <option value="Women's Special Leave">Women's Special Leave</option>
-                      <option value="Personal Leave">Personal Leave</option>
+                      {getFilteredLeaveTypeOptions.length === 0 ? (
+                        <option value="">Loading leave types...</option>
+                      ) : (
+                        getFilteredLeaveTypeOptions.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))
+                      )}
                     </Form.Select>
                   </Form.Group>
                 </div>

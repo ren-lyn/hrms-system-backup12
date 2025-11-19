@@ -34,6 +34,7 @@ const LeaveApplicationForm = ({ onBack }) => {
   const [loadingLeaveSummary, setLoadingLeaveSummary] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentBreakdown, setPaymentBreakdown] = useState(null);
+  const [employeeGender, setEmployeeGender] = useState(null);
 
   // Auto-fill user info and check eligibility on component mount
   useEffect(() => {
@@ -127,6 +128,11 @@ const LeaveApplicationForm = ({ onBack }) => {
                            profileData.name || 
                            `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim();
         
+        // Store employee gender for filtering leave types
+        if (profileData.gender) {
+          setEmployeeGender(profileData.gender);
+        }
+        
         setFormData(prev => ({
           ...prev,
           name: employeeName || prev.name,
@@ -169,8 +175,8 @@ const LeaveApplicationForm = ({ onBack }) => {
       }
     } catch (error) {
       console.error('Error fetching leave types:', error);
-      // Set default leave types if API fails
-      const defaultTypes = [
+      // Set default leave types if API fails, filtered by gender
+      const allDefaultTypes = [
         { type: 'Vacation Leave', entitled_days: 5 },
         { type: 'Sick Leave', entitled_days: 8 },
         { type: 'Emergency Leave', entitled_days: 8 },
@@ -182,6 +188,21 @@ const LeaveApplicationForm = ({ onBack }) => {
         { type: "Women's Special Leave", entitled_days: 60 },
         { type: 'Parental Leave', entitled_days: 7 }
       ];
+      
+      // Filter based on gender
+      let defaultTypes = allDefaultTypes;
+      if (employeeGender === 'Female') {
+        // Hide paternity leave for females
+        defaultTypes = allDefaultTypes.filter(lt => lt.type !== 'Paternity Leave');
+      } else if (employeeGender === 'Male') {
+        // Hide maternity, VAWC, and women's special leave for males
+        defaultTypes = allDefaultTypes.filter(lt => 
+          lt.type !== 'Maternity Leave' && 
+          lt.type !== 'Leave for Victims of Violence Against Women and Their Children (VAWC)' &&
+          lt.type !== "Women's Special Leave"
+        );
+      }
+      
       setLeaveTypes(defaultTypes);
       
       const entitlements = {};
@@ -782,20 +803,36 @@ const LeaveApplicationForm = ({ onBack }) => {
                           {leaveType.type} ({leaveType.entitled_days} days)
                         </option>
                       ))
-                    ) : (
-                      <>
-                        <option value="Vacation Leave">Vacation Leave (5 days)</option>
-                        <option value="Sick Leave">Sick Leave (8 days)</option>
-                        <option value="Emergency Leave">Emergency Leave (8 days)</option>
-                        <option value="Personal Leave">Personal Leave (5 days)</option>
-                        <option value="Bereavement Leave">Bereavement Leave (5 days)</option>
-                        <option value="Maternity Leave">Maternity Leave (105 days)</option>
-                        <option value="Paternity Leave">Paternity Leave (7 days)</option>
-                        <option value="Leave for Victims of Violence Against Women and Their Children (VAWC)">VAWC Leave (10 days)</option>
-                        <option value="Women's Special Leave">Women's Special Leave (60 days)</option>
-                        <option value="Parental Leave">Parental Leave (7 days)</option>
-                      </>
-                    )}
+                    ) : (() => {
+                      // Fallback leave types filtered by gender
+                      const fallbackTypes = [
+                        { value: 'Vacation Leave', label: 'Vacation Leave (5 days)' },
+                        { value: 'Sick Leave', label: 'Sick Leave (8 days)' },
+                        { value: 'Emergency Leave', label: 'Emergency Leave (8 days)' },
+                        { value: 'Personal Leave', label: 'Personal Leave (5 days)' },
+                        { value: 'Bereavement Leave', label: 'Bereavement Leave (5 days)' },
+                        { value: 'Maternity Leave', label: 'Maternity Leave (105 days)' },
+                        { value: 'Paternity Leave', label: 'Paternity Leave (7 days)' },
+                        { value: 'Leave for Victims of Violence Against Women and Their Children (VAWC)', label: 'VAWC Leave (10 days)' },
+                        { value: "Women's Special Leave", label: "Women's Special Leave (60 days)" },
+                        { value: 'Parental Leave', label: 'Parental Leave (7 days)' }
+                      ];
+                      
+                      let filteredFallback = fallbackTypes;
+                      if (employeeGender === 'Female') {
+                        filteredFallback = fallbackTypes.filter(lt => lt.value !== 'Paternity Leave');
+                      } else if (employeeGender === 'Male') {
+                        filteredFallback = fallbackTypes.filter(lt => 
+                          lt.value !== 'Maternity Leave' && 
+                          lt.value !== 'Leave for Victims of Violence Against Women and Their Children (VAWC)' &&
+                          lt.value !== "Women's Special Leave"
+                        );
+                      }
+                      
+                      return filteredFallback.map(lt => (
+                        <option key={lt.value} value={lt.value}>{lt.label}</option>
+                      ));
+                    })()}
                   </Form.Select>
                   {/* Show current leave type entitlement */}
                   {leaveEntitlements[formData.leaveType] && (

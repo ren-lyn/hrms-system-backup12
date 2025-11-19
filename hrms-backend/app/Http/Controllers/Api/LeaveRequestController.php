@@ -821,15 +821,56 @@ class LeaveRequestController extends Controller
      */
     /**
      * Get available leave types with their entitlements and settings
+     * Filters leave types based on employee's gender
      */
     public function getLeaveTypes()
     {
         $entitlements = config('leave.entitlements');
         $settings = config('leave.settings');
         
+        // Get employee gender for filtering
+        $user = Auth::user();
+        $gender = null;
+        
+        if ($user && $user instanceof \App\Models\User) {
+            // Load employee profile relationship if not already loaded
+            if (!$user->relationLoaded('employeeProfile')) {
+                $user->load('employeeProfile');
+            }
+            
+            if ($user->employeeProfile) {
+                $gender = $user->employeeProfile->gender;
+            }
+        }
+        
+        // Define gender-restricted leave types
+        $femaleOnlyLeaveTypes = [
+            'Maternity Leave',
+            'Leave for Victims of Violence Against Women and Their Children (VAWC)',
+            'Women\'s Special Leave'
+        ];
+        
+        $maleOnlyLeaveTypes = [
+            'Paternity Leave'
+        ];
+        
         $leaveTypes = [];
         
         foreach ($entitlements as $leaveType => $entitledDays) {
+            // Skip leave types based on gender
+            // For Female users: Hide Paternity Leave
+            if ($gender === 'Female' && in_array($leaveType, $maleOnlyLeaveTypes)) {
+                continue; // Hide paternity leave for females
+            }
+            
+            // For Male users: Hide Maternity Leave, VAWC Leave, and Women's Special Leave
+            if ($gender === 'Male' && in_array($leaveType, $femaleOnlyLeaveTypes)) {
+                continue; // Hide maternity, VAWC, and women's special leave for males
+            }
+            
+            // If gender is not set (null), show all leave types (for backward compatibility)
+            // But ideally, gender should always be set for employees
+            
             $leaveTypes[] = [
                 'type' => $leaveType,
                 'entitled_days' => $entitledDays,

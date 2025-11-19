@@ -60,13 +60,13 @@ const EmployeeRecords = () => {
   
   // Define field categories for edit restrictions
   const nonEditableAfterSave = [
-    'first_name', 'last_name', 'nickname', 'place_of_birth', 'gender', 'birth_date',
+    'first_name', 'last_name', 'nickname', 'place_of_birth', 'birth_date',
     'position', 'department', 'employment_status', 'hire_date', 'salary', 'tenurity',
     'sss', 'philhealth', 'pagibig', 'tin_no'
   ];
   
   const limitedEditFields = [
-    'civil_status', 'email', 'contact_number', 'emergency_contact_name', 'emergency_contact_phone',
+    'civil_status', 'gender', 'email', 'contact_number', 'emergency_contact_name', 'emergency_contact_phone',
     'province', 'barangay', 'city', 'postal_code', 'present_address'
   ];
   
@@ -441,7 +441,7 @@ const EmployeeRecords = () => {
     
     // Auto-set role_id when position changes
     if (name === 'position') {
-      updates.role_id = roleMap[value] || '';
+      updates.role_id = roleMap[value] || null;
     }
     
     // Auto-calculate age when birth_date changes
@@ -494,10 +494,22 @@ const EmployeeRecords = () => {
     setIsSaving(true);
 
     try {
+      // Clean formData: remove empty role_id or convert to integer
+      const cleanedFormData = { ...formData };
+      if (cleanedFormData.role_id === '' || cleanedFormData.role_id === null || cleanedFormData.role_id === undefined) {
+        delete cleanedFormData.role_id;
+      } else {
+        // Ensure role_id is an integer
+        cleanedFormData.role_id = parseInt(cleanedFormData.role_id, 10);
+        if (isNaN(cleanedFormData.role_id)) {
+          delete cleanedFormData.role_id;
+        }
+      }
+
       if (editingEmployee) {
         await axios.put(
           `http://localhost:8000/api/employees/${editingEmployee.id}`,
-          formData,
+          cleanedFormData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         toast.dismiss(loadingToast);
@@ -554,7 +566,7 @@ const EmployeeRecords = () => {
       } else {
         await axios.post(
           'http://localhost:8000/api/employees',
-          formData,
+          cleanedFormData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         toast.dismiss(loadingToast);
@@ -654,7 +666,7 @@ const EmployeeRecords = () => {
     }
     
     const position = emp.employee_profile?.position || '';
-    const role_id = roleMap[position] || '';
+    const role_id = roleMap[position] || null;
     const profile = emp.employee_profile;
 
     const formDataObj = {
@@ -1736,11 +1748,18 @@ const EmployeeRecords = () => {
                   </div>
                   <div className="col-md-6">
                     <Form.Group>
-                      <Form.Label>Gender</Form.Label>
+                      <Form.Label>
+                        Gender {getFieldHighlight('gender').badge}
+                        {getRemainingEdits('gender') !== null && (
+                          <small className="text-muted ms-2">({getRemainingEdits('gender')} edits remaining)</small>
+                        )}
+                      </Form.Label>
                       <Form.Select 
                         name="gender" 
                         value={formData.gender} 
                         onChange={handleInputChange}
+                        className={`${getFieldHighlight('gender').className}`}
+                        style={{...getFieldHighlight('gender').style}}
                         disabled={!canEditField('gender')}
                       >
                         <option value="">Select Gender</option>

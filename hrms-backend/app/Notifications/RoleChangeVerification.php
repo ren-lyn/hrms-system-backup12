@@ -13,13 +13,13 @@ class RoleChangeVerification extends Notification
         $this->data = $data;
     }
 
-    public function via($notifiable)
+    public function via(object $notifiable): array
     {
         // Use database channel for immediate persistence (no queue worker needed)
         return ['database'];
     }
 
-    public function toArray($notifiable)
+    public function toArray(object $notifiable): array
     {
         return [
             'type' => 'role_change_verification',
@@ -35,5 +35,3 @@ class RoleChangeVerification extends Notification
         ];
     }
 }
-
-
