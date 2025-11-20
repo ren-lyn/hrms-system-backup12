@@ -88,42 +88,50 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
       
       switch (notificationAction.action) {
         case 'OPEN_EVALUATION':
-          if (onOpenEvaluation && notificationAction.id) {
+          if (onOpenEvaluation) {
+            // Always navigate, even if no ID - will go to evaluation list
             onOpenEvaluation(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_DISCIPLINARY':
           if (onOpenDisciplinary) {
+            // Always navigate to disciplinary module
             onOpenDisciplinary(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_LEAVE':
-          if (onOpenLeave && notificationAction.id) {
+          if (onOpenLeave) {
+            // Always navigate to leave management, even if no ID
             onOpenLeave(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_CASH_ADVANCE':
-          if (onOpenCashAdvance && notificationAction.id) {
+          if (onOpenCashAdvance) {
+            // Always navigate to cash advance module, even if no ID
             onOpenCashAdvance(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_CALENDAR':
           if (onOpenCalendar) {
+            // Always navigate to calendar module
             onOpenCalendar(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_JOB_APPLICATIONS':
           if (onOpenJobApplications) {
+            // Always navigate to onboarding module (where job applications are managed)
             onOpenJobApplications(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_JOB_POSTINGS':
           if (onOpenJobPostings) {
+            // Always navigate to job postings module
             onOpenJobPostings(notificationAction.id, notificationAction.data);
           }
           break;
         case 'OPEN_BENEFIT_CLAIM':
           if (onOpenBenefitClaim) {
+            // Always navigate to benefits management module
             onOpenBenefitClaim(notificationAction.id, notificationAction.data);
           }
           break;

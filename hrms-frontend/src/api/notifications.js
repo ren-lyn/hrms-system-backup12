@@ -22,7 +22,10 @@ export const getNotificationTypes = () => ({
   JOB_POSTING_CREATED: 'job_posting_created',
   LEAVE_REQUEST_SUBMITTED_HR: 'leave_request_submitted_hr',
   INVESTIGATION_ASSIGNED: 'investigation_assigned',
-  BENEFIT_CLAIM_STATUS_CHANGED: 'benefit_claim_status_changed'
+  BENEFIT_CLAIM_STATUS_CHANGED: 'benefit_claim_status_changed',
+  INTERVIEW_SCHEDULED: 'interview_scheduled',
+  ORIENTATION_SCHEDULED: 'orientation_scheduled',
+  ONBOARDING_UPDATE: 'onboarding_update'
 });
 
 // Helper function to get notification icon
@@ -50,6 +53,9 @@ export const getNotificationIcon = (type) => {
     case types.JOB_APPLICATION_SUBMITTED:
     case types.JOB_APPLICATION_STATUS_CHANGED:
     case types.JOB_POSTING_CREATED:
+    case types.INTERVIEW_SCHEDULED:
+    case types.ORIENTATION_SCHEDULED:
+    case types.ONBOARDING_UPDATE:
       return '💼';
     case types.BENEFIT_CLAIM_STATUS_CHANGED:
       return '📋';
@@ -149,9 +155,12 @@ export const getNotificationAction = (notification) => {
       };
     case types.JOB_APPLICATION_SUBMITTED:
     case types.JOB_APPLICATION_STATUS_CHANGED:
+    case types.INTERVIEW_SCHEDULED:
+    case types.ORIENTATION_SCHEDULED:
+    case types.ONBOARDING_UPDATE:
       return {
         action: 'OPEN_JOB_APPLICATIONS',
-        id: notification.application_id,
+        id: notification.application_id || notification.interview_id,
         data: notification
       };
     case types.JOB_POSTING_CREATED:

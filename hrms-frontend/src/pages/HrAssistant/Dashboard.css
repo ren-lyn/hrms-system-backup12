@@ -224,6 +224,41 @@ body, html {
     color: #cbd5e0;
 }
 
+/* Bell notification component styling in header */
+.header-right .btn-link {
+    color: #ffffff !important;
+    text-decoration: none;
+    padding: 0.5rem;
+    border: none;
+    background: transparent;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.header-right .btn-link:hover {
+    color: #cbd5e0 !important;
+    transform: scale(1.1);
+    background: transparent !important;
+}
+
+.header-right .btn-link:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.header-right .btn-link .badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    min-width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .profile-tab img {
     height: 30px;
     width: 30px;

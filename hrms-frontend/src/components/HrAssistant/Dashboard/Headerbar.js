@@ -1,8 +1,8 @@
 // src/components/HrAssistant/Dashboard/HeaderBar.js
 import React from 'react';
-import { FaEnvelope, FaBell } from 'react-icons/fa';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useUserProfile from '../../../hooks/useUserProfile';
+import Bell from '../../Notifications/Bell';
 
 const HeaderBar = () => {
   const location = useLocation();
@@ -15,6 +15,51 @@ const HeaderBar = () => {
   const handleProfileClick = () => {
     // Navigate to HR Assistant profile page
     navigate('/dashboard/hr-assistant/profile');
+  };
+
+  // Notification handlers for HR Assistant - Always navigate regardless of ID presence
+  const handleOpenLeave = (leaveId, data) => {
+    // Always navigate to Leave Management module
+    navigate('/dashboard/hr-assistant/leave');
+  };
+
+  const handleOpenCashAdvance = (cashAdvanceId, data) => {
+    // Always navigate to Cash Advance module
+    navigate('/dashboard/hr-assistant/cash-advances');
+  };
+
+  const handleOpenEvaluation = (evaluationId, data) => {
+    // Navigate to specific evaluation form if ID provided, otherwise to evaluation list
+    if (evaluationId) {
+      navigate(`/dashboard/hr-assistant/evaluation/${evaluationId}/form`);
+    } else {
+      navigate('/dashboard/hr-assistant/evaluation');
+    }
+  };
+
+  const handleOpenDisciplinary = (disciplinaryId, data) => {
+    // Always navigate to Disciplinary Action module
+    navigate('/dashboard/hr-assistant/disciplinary');
+  };
+
+  const handleOpenCalendar = (eventId, data) => {
+    // Always navigate to Calendar module
+    navigate('/dashboard/hr-assistant/my-calendar');
+  };
+
+  const handleOpenJobApplications = (applicationId, data) => {
+    // Always navigate to Onboarding module (where job applications are managed)
+    navigate('/dashboard/hr-assistant/onboarding');
+  };
+
+  const handleOpenJobPostings = (jobPostingId, data) => {
+    // Always navigate to Job Postings module
+    navigate('/dashboard/hr-assistant/job-postings');
+  };
+
+  const handleOpenBenefitClaim = (benefitClaimId, data) => {
+    // Always navigate to Benefits Management module
+    navigate('/dashboard/hr-assistant/benefits-management');
   };
 
   if (pathname.includes('employee-records')) pageTitle = 'Employee Records';
@@ -39,8 +84,18 @@ const HeaderBar = () => {
         <h2>{pageTitle}</h2>
       </div>
       <div className="header-right">
-        <FaEnvelope style={{ color: '#ffffff' }} />
-        <FaBell style={{ color: '#ffffff' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Bell 
+            onOpenLeave={handleOpenLeave}
+            onOpenCashAdvance={handleOpenCashAdvance}
+            onOpenEvaluation={handleOpenEvaluation}
+            onOpenDisciplinary={handleOpenDisciplinary}
+            onOpenCalendar={handleOpenCalendar}
+            onOpenJobApplications={handleOpenJobApplications}
+            onOpenJobPostings={handleOpenJobPostings}
+            onOpenBenefitClaim={handleOpenBenefitClaim}
+          />
+        </div>
         <div className="profile-tab" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="profile-name" style={{ fontSize: '14px', fontWeight: '500', color: '#ffffff' }}>
             {loading ? 'Loading...' : userProfile?.name || 'User'}
