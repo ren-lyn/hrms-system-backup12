@@ -18,7 +18,9 @@ export const getNotificationTypes = () => ({
   DISCIPLINARY_REPORT_SUBMITTED: 'disciplinary_report_submitted',
   DISCIPLINARY_REPORT_SUBMITTED_TO_MANAGER: 'disciplinary_report_submitted_to_manager',
   JOB_APPLICATION_SUBMITTED: 'job_application_submitted',
+  ONBOARDING_APPLICATION_SUBMITTED: 'onboarding_application_submitted', // Backend uses this type
   JOB_APPLICATION_STATUS_CHANGED: 'job_application_status_changed',
+  ONBOARDING_STATUS_CHANGED: 'onboarding_status_changed', // Used for offer acceptance and status updates
   JOB_POSTING_CREATED: 'job_posting_created',
   LEAVE_REQUEST_SUBMITTED_HR: 'leave_request_submitted_hr',
   INVESTIGATION_ASSIGNED: 'investigation_assigned',
@@ -51,7 +53,9 @@ export const getNotificationIcon = (type) => {
     case types.MEETING_INVITATION:
       return '👥';
     case types.JOB_APPLICATION_SUBMITTED:
+    case types.ONBOARDING_APPLICATION_SUBMITTED:
     case types.JOB_APPLICATION_STATUS_CHANGED:
+    case types.ONBOARDING_STATUS_CHANGED:
     case types.JOB_POSTING_CREATED:
     case types.INTERVIEW_SCHEDULED:
     case types.ORIENTATION_SCHEDULED:
@@ -110,6 +114,32 @@ export const sendDisciplinaryNotification = async (disciplinaryActionId, employe
     throw error;
   }
 };
+
+// Send job application submitted notification to HR Assistant
+export const sendJobApplicationSubmittedNotification = async (applicationId, jobPostingId, applicantId, additionalData = {}) => {
+  try {
+    const notificationData = {
+      type: 'onboarding_application_submitted',
+      title: 'New Job Application Submitted',
+      message: 'A new job application has been submitted and requires review. Please check the onboarding dashboard.',
+      application_id: applicationId,
+      job_posting_id: jobPostingId,
+      applicant_id: applicantId,
+      target_role: 'HR Assistant', // Specify HR Assistant should receive this
+      metadata: {
+        submitted_at: new Date().toISOString(),
+        ...additionalData
+      }
+    };
+
+    const response = await API.post('/notifications/send-job-application', notificationData);
+    console.log('Job application notification sent successfully:', response.data);
+    return response;
+  } catch (error) {
+    console.error('Failed to send job application notification:', error);
+    throw error;
+  }
+};
 // Helper function to determine if notification should trigger specific action
 export const getNotificationAction = (notification) => {
   const types = getNotificationTypes();
@@ -154,7 +184,9 @@ export const getNotificationAction = (notification) => {
         data: notification
       };
     case types.JOB_APPLICATION_SUBMITTED:
+    case types.ONBOARDING_APPLICATION_SUBMITTED:
     case types.JOB_APPLICATION_STATUS_CHANGED:
+    case types.ONBOARDING_STATUS_CHANGED:
     case types.INTERVIEW_SCHEDULED:
     case types.ORIENTATION_SCHEDULED:
     case types.ONBOARDING_UPDATE:

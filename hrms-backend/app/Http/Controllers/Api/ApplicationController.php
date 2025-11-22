@@ -163,10 +163,11 @@ class ApplicationController extends Controller
             'resume_path' => $resumePath,
         ]);
 
-        // Send notification to HR Staff only (Job Applications are HR Staff's responsibility)
+        // Send notification to HR Staff and HR Assistant (Job Applications require both roles' attention)
         try {
             $application->load(['jobPosting', 'applicant']);
             
+            // Notify HR Staff
             $hrStaff = \App\Models\User::whereHas('role', function($query) {
                 $query->where('name', 'HR Staff');
             })->get();
@@ -175,11 +176,21 @@ class ApplicationController extends Controller
                 $hr->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
             }
 
+            // Notify HR Assistant
+            $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                $query->where('name', 'HR Assistant');
+            })->get();
+
+            foreach ($hrAssistants as $hrAssistant) {
+                $hrAssistant->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
+            }
+
             Log::info('Onboarding application submission notifications sent', [
                 'application_id' => $application->id,
                 'applicant_id' => $applicant->id,
                 'job_posting_id' => $request->job_posting_id,
-                'hr_staff_notified' => $hrStaff->count()
+                'hr_staff_notified' => $hrStaff->count(),
+                'hr_assistants_notified' => $hrAssistants->count()
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to send job application submission notifications', [
@@ -979,8 +990,11 @@ class ApplicationController extends Controller
             
             DB::commit();
             
-            // Send notification to HR about accepted offer
+            // Send notification to HR Staff and HR Assistant about accepted offer
             try {
+                $application->load(['jobPosting', 'applicant']);
+                
+                // Notify HR Staff
                 $hrStaff = \App\Models\User::whereHas('role', function($query) {
                     $query->where('name', 'HR Staff');
                 })->get();
@@ -989,9 +1003,19 @@ class ApplicationController extends Controller
                     $hr->notify(new \App\Notifications\OnboardingStatusChanged($application));
                 }
                 
+                // Notify HR Assistant
+                $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'HR Assistant');
+                })->get();
+
+                foreach ($hrAssistants as $hrAssistant) {
+                    $hrAssistant->notify(new \App\Notifications\OnboardingStatusChanged($application));
+                }
+                
                 Log::info('Offer acceptance notifications sent to HR', [
                     'application_id' => $id,
-                    'hr_staff_count' => $hrStaff->count()
+                    'hr_staff_count' => $hrStaff->count(),
+                    'hr_assistants_count' => $hrAssistants->count()
                 ]);
             } catch (\Exception $e) {
                 Log::error('Failed to send offer acceptance notification', [

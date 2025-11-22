@@ -82,7 +82,7 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
       setUnread(prev => Math.max(0, prev - 1));
       setOpen(false);
       
-      // Use the enhanced notification action handler
+      // Use the enhanced notification action handler (it handles both 'onboarding_application_submitted' and 'job_application_submitted' types)
       const notificationAction = getNotificationAction(n);
       // Removed verbose logging
       
@@ -228,7 +228,9 @@ const Bell = ({ onOpenLeave, onOpenDisciplinary, onOpenCashAdvance, onOpenEvalua
                         {getRelativeTime(n.created_at)}
                       </div>
                     </div>
-                    <div style={{ fontSize: '1.1rem', marginLeft: '8px' }}>{getNotificationIcon(n.type)}</div>
+                    <div style={{ fontSize: '1.1rem', marginLeft: '8px' }}>
+                      {getNotificationIcon(n.type)}
+                    </div>
                   </div>
                 </button>
               ))}

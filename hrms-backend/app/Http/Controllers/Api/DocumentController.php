@@ -1263,6 +1263,10 @@ class DocumentController extends Controller
                 $attributes[$identifierField] = $identifierValue;
             }
 
+            // Determine if we should notify HR (new submission or re-upload after rejection/approval)
+            $isNewSubmission = !$existingSubmission || empty($existingSubmission->file_path);
+            $shouldNotify = $isNewSubmission || ($existingSubmission && $existingSubmission->status !== 'pending');
+
             $submission = DocumentSubmission::updateOrCreate(
                 [
                     'application_id' => $applicationId,
@@ -1270,6 +1274,50 @@ class DocumentController extends Controller
                 ],
                 $attributes
             );
+
+            // Send notification to HR Staff and HR Assistant when a document is uploaded
+            if ($shouldNotify) {
+                try {
+                    $application->load(['jobPosting', 'applicant']);
+                    
+                    // Notify HR Staff
+                    $hrStaff = \App\Models\User::whereHas('role', function($query) {
+                        $query->where('name', 'HR Staff');
+                    })->get();
+
+                    foreach ($hrStaff as $hr) {
+                        $hr->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
+                    }
+                    
+                    // Notify HR Assistant
+                    $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                        $query->where('name', 'HR Assistant');
+                    })->get();
+
+                    foreach ($hrAssistants as $hrAssistant) {
+                        $hrAssistant->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
+                    }
+                    
+                    $documentName = $requirement->document_name ?? 'document';
+                    
+                    Log::info('Individual document upload notification sent to HR', [
+                        'application_id' => $applicationId,
+                        'requirement_id' => $requirementId,
+                        'document_name' => $documentName,
+                        'is_new_submission' => $isNewSubmission,
+                        'previous_status' => $existingSubmission ? $existingSubmission->status : 'none',
+                        'hr_staff_notified' => $hrStaff->count(),
+                        'hr_assistants_notified' => $hrAssistants->count()
+                    ]);
+                } catch (\Exception $e) {
+                    // Don't fail the upload if notification fails
+                    Log::error('Failed to send document upload notification', [
+                        'application_id' => $applicationId,
+                        'requirement_id' => $requirementId,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
 
             $overview = $this->buildDocumentOverview($application->fresh());
 
@@ -1421,6 +1469,44 @@ class DocumentController extends Controller
                 ->update([
                     'submitted_at' => now(),
                 ]);
+
+            // Send notification to HR Staff and HR Assistant about submitted documents
+            try {
+                $application->load(['jobPosting', 'applicant']);
+                $submittedCount = DocumentSubmission::where('application_id', $applicationId)
+                    ->where('status', 'pending')
+                    ->count();
+                
+                // Notify HR Staff
+                $hrStaff = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'HR Staff');
+                })->get();
+
+                foreach ($hrStaff as $hr) {
+                    $hr->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
+                }
+                
+                // Notify HR Assistant
+                $hrAssistants = \App\Models\User::whereHas('role', function($query) {
+                    $query->where('name', 'HR Assistant');
+                })->get();
+
+                foreach ($hrAssistants as $hrAssistant) {
+                    $hrAssistant->notify(new \App\Notifications\OnboardingApplicationSubmitted($application));
+                }
+                
+                Log::info('Document submission notifications sent to HR', [
+                    'application_id' => $applicationId,
+                    'documents_submitted' => $submittedCount,
+                    'hr_staff_notified' => $hrStaff->count(),
+                    'hr_assistants_notified' => $hrAssistants->count()
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send document submission notification', [
+                    'application_id' => $applicationId,
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             return response()->json([
                 'success' => true,
