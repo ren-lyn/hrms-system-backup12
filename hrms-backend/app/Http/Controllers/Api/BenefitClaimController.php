@@ -219,15 +219,89 @@ class BenefitClaimController extends Controller
             // Handle supporting documents file upload (optional - can be multiple)
             $supportingDocsPaths = [];
             $supportingDocsNames = [];
+            $supportingDocsProcessed = false; // Flag to track if we've processed via Method 1
             
             // Handle supporting documents file storage
-            // Always use allFiles() to get files reliably, regardless of format
+            // Try multiple methods to get supporting documents
+            // Method 1: Check if supporting_documents is an array of files
+            if ($request->hasFile('supporting_documents')) {
+                $supportingDocsFiles = $request->file('supporting_documents');
+                
+                // Handle both single file and array of files
+                if (is_array($supportingDocsFiles)) {
+                    foreach ($supportingDocsFiles as $index => $file) {
+                        if ($file && $file->isValid()) {
+                            $supportingDocsName = time() . '_' . uniqid() . '_supporting_' . $file->getClientOriginalName();
+                            $supportingDocsPath = $file->storeAs('benefit_claims/supporting_docs', $supportingDocsName, 'public');
+                            
+                            if (!$supportingDocsPath) {
+                                throw new \Exception("Failed to store supporting document: {$file->getClientOriginalName()}");
+                            }
+                            
+                            $supportingDocsPaths[] = $supportingDocsPath;
+                            $supportingDocsNames[] = $supportingDocsName;
+                            
+                            if (config('app.debug')) {
+                                Log::info('Stored supporting document (array method)', [
+                                    'index' => $index,
+                                    'original_name' => $file->getClientOriginalName(),
+                                    'stored_path' => $supportingDocsPath
+                                ]);
+                            }
+                        }
+                    }
+                } elseif ($supportingDocsFiles && $supportingDocsFiles->isValid()) {
+                    // Single file
+                    $file = $supportingDocsFiles;
+                    $supportingDocsName = time() . '_' . uniqid() . '_supporting_' . $file->getClientOriginalName();
+                    $supportingDocsPath = $file->storeAs('benefit_claims/supporting_docs', $supportingDocsName, 'public');
+                    
+                    if (!$supportingDocsPath) {
+                        throw new \Exception("Failed to store supporting document: {$file->getClientOriginalName()}");
+                    }
+                    
+                    $supportingDocsPaths[] = $supportingDocsPath;
+                    $supportingDocsNames[] = $supportingDocsName;
+                    
+                    if (config('app.debug')) {
+                        Log::info('Stored supporting document (single file method)', [
+                            'original_name' => $file->getClientOriginalName(),
+                            'stored_path' => $supportingDocsPath
+                        ]);
+                    }
+                }
+                $supportingDocsProcessed = true; // Mark as processed
+            }
+            
+            // Method 2: Check allFiles() for normalized array keys (supporting_documents.0, supporting_documents.1, etc.)
             $allFilesForStorage = $request->allFiles();
             
-            foreach ($allFilesForStorage as $key => $file) {
-                // Match array format: supporting_documents.0 (Laravel normalizes [0] to .0)
-                if (preg_match('/^supporting_documents\.(\d+)$/', $key)) {
-                    if ($file && $file->isValid()) {
+            // Log all files received for debugging
+            if (config('app.debug')) {
+                $fileKeysInfo = [];
+                foreach ($allFilesForStorage as $key => $file) {
+                    $fileKeysInfo[$key] = [
+                        'type' => gettype($file),
+                        'is_array' => is_array($file),
+                        'is_file' => is_object($file) && method_exists($file, 'isValid'),
+                    ];
+                }
+                
+                Log::info('Files received in benefit claim submission', [
+                    'all_file_keys' => array_keys($allFilesForStorage),
+                    'file_keys_info' => $fileKeysInfo,
+                    'has_application_form' => $request->hasFile('application_form'),
+                    'has_supporting_documents' => $request->hasFile('supporting_documents'),
+                    'supporting_documents_type' => $request->hasFile('supporting_documents') ? gettype($request->file('supporting_documents')) : 'none',
+                    'supporting_documents_is_array' => $request->hasFile('supporting_documents') && is_array($request->file('supporting_documents')),
+                ]);
+            }
+            
+            // Method 2a: Check if supporting_documents exists as a nested array in allFiles()
+            // Only process if we haven't already processed via Method 1
+            if (!$supportingDocsProcessed && isset($allFilesForStorage['supporting_documents']) && is_array($allFilesForStorage['supporting_documents'])) {
+                foreach ($allFilesForStorage['supporting_documents'] as $index => $file) {
+                    if ($file && is_object($file) && method_exists($file, 'isValid') && $file->isValid()) {
                         $supportingDocsName = time() . '_' . uniqid() . '_supporting_' . $file->getClientOriginalName();
                         $supportingDocsPath = $file->storeAs('benefit_claims/supporting_docs', $supportingDocsName, 'public');
                         
@@ -237,19 +311,59 @@ class BenefitClaimController extends Controller
                         
                         $supportingDocsPaths[] = $supportingDocsPath;
                         $supportingDocsNames[] = $supportingDocsName;
-                    }
-                } elseif ($key === 'supporting_documents' && !is_array($file)) {
-                    // Single file format (backward compatibility) - only if it's not an array
-                    if ($file && $file->isValid()) {
-                        $supportingDocsName = time() . '_supporting_' . $file->getClientOriginalName();
-                        $supportingDocsPath = $file->storeAs('benefit_claims/supporting_docs', $supportingDocsName, 'public');
                         
-                        if (!$supportingDocsPath) {
-                            throw new \Exception("Failed to store supporting document: {$file->getClientOriginalName()}");
+                        if (config('app.debug')) {
+                            Log::info('Stored supporting document (nested array method)', [
+                                'index' => $index,
+                                'original_name' => $file->getClientOriginalName(),
+                                'stored_path' => $supportingDocsPath
+                            ]);
                         }
-                        
-                        $supportingDocsPaths[] = $supportingDocsPath;
-                        $supportingDocsNames[] = $supportingDocsName;
+                    }
+                }
+            }
+            
+            // Method 2b: Process files from allFiles() that might be in normalized format (supporting_documents.0, supporting_documents.1, etc.)
+            foreach ($allFilesForStorage as $key => $file) {
+                // Skip application_form as it's handled separately
+                if ($key === 'application_form') {
+                    continue;
+                }
+                
+                // Skip if we already processed this via Method 1 or Method 2a
+                if ($key === 'supporting_documents') {
+                    continue;
+                }
+                
+                // Match array format: supporting_documents.0 (Laravel normalizes [0] to .0)
+                // Also check for supporting_documents[0] format that might not be normalized
+                $isSupportingDoc = false;
+                
+                if (preg_match('/^supporting_documents\.(\d+)$/', $key)) {
+                    // Array format: supporting_documents.0
+                    $isSupportingDoc = true;
+                } elseif (preg_match('/^supporting_documents\[(\d+)\]$/', $key)) {
+                    // Array format: supporting_documents[0] (if not normalized)
+                    $isSupportingDoc = true;
+                }
+                
+                if ($isSupportingDoc && $file && is_object($file) && method_exists($file, 'isValid') && $file->isValid()) {
+                    $supportingDocsName = time() . '_' . uniqid() . '_supporting_' . $file->getClientOriginalName();
+                    $supportingDocsPath = $file->storeAs('benefit_claims/supporting_docs', $supportingDocsName, 'public');
+                    
+                    if (!$supportingDocsPath) {
+                        throw new \Exception("Failed to store supporting document: {$file->getClientOriginalName()}");
+                    }
+                    
+                    $supportingDocsPaths[] = $supportingDocsPath;
+                    $supportingDocsNames[] = $supportingDocsName;
+                    
+                    if (config('app.debug')) {
+                        Log::info('Stored supporting document (normalized key method)', [
+                            'key' => $key,
+                            'original_name' => $file->getClientOriginalName(),
+                            'stored_path' => $supportingDocsPath
+                        ]);
                     }
                 }
             }
@@ -278,6 +392,22 @@ class BenefitClaimController extends Controller
             // Store as JSON if multiple documents, or as string if single
             $documentsPathJson = count($allDocumentPaths) > 1 ? json_encode($allDocumentPaths) : ($allDocumentPaths[0] ?? null);
             $documentsNameJson = count($allDocumentNames) > 1 ? json_encode($allDocumentNames) : ($allDocumentNames[0] ?? null);
+
+            // Log document storage for debugging
+            if (config('app.debug')) {
+                Log::info('Storing benefit claim documents', [
+                    'total_documents' => count($allDocumentPaths),
+                    'application_form' => $applicationFormPath ? 'yes' : 'no',
+                    'application_form_path' => $applicationFormPath,
+                    'supporting_docs_count' => count($supportingDocsPaths),
+                    'supporting_docs_paths' => $supportingDocsPaths,
+                    'all_document_paths' => $allDocumentPaths,
+                    'all_document_names' => $allDocumentNames,
+                    'is_json' => count($allDocumentPaths) > 1,
+                    'documents_path_json' => $documentsPathJson,
+                    'documents_name_json' => $documentsNameJson
+                ]);
+            }
 
             $benefitClaim = BenefitClaim::create([
                 'user_id' => $user->id,
@@ -432,9 +562,442 @@ class BenefitClaimController extends Controller
     }
 
     /**
+     * Get all documents for a benefit claim
+     */
+    public function getDocuments($id)
+    {
+        try {
+            $claim = BenefitClaim::findOrFail($id);
+            
+            // Check if user has permission (employee who filed it or HR)
+            $user = Auth::user();
+            if ($claim->user_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'HR Admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            
+            if (!$claim->supporting_documents_path) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'message' => 'No documents found in database'
+                ]);
+            }
+            
+            // Parse documents - handle both JSON array and single string
+            $documentsPath = $claim->supporting_documents_path;
+            $documentsName = $claim->supporting_documents_name;
+            
+            // Log raw database values for debugging
+            if (config('app.debug')) {
+                Log::info('Raw database values for benefit claim documents', [
+                    'claim_id' => $id,
+                    'supporting_documents_path_raw' => $documentsPath,
+                    'supporting_documents_name_raw' => $documentsName,
+                    'path_length' => strlen($documentsPath ?? ''),
+                    'name_length' => strlen($documentsName ?? ''),
+                    'is_json_path' => json_decode($documentsPath, true) !== null,
+                    'is_json_name' => json_decode($documentsName, true) !== null
+                ]);
+            }
+            
+            // Decode JSON, handling escaped characters
+            $decoded = json_decode($documentsPath, true);
+            $jsonError = json_last_error();
+            
+            // If JSON decode fails, try unescaping first (in case of double-encoded JSON)
+            if ($jsonError !== JSON_ERROR_NONE) {
+                $unescaped = stripslashes($documentsPath);
+                $decoded = json_decode($unescaped, true);
+                $jsonError = json_last_error();
+            }
+            
+            $isJsonArray = ($jsonError === JSON_ERROR_NONE && is_array($decoded));
+            
+            // Normalize paths in decoded array (remove escaped backslashes)
+            if ($isJsonArray) {
+                $decoded = array_map(function($path) {
+                    // Replace escaped backslashes with forward slashes
+                    return str_replace(['\\/', '\\\\'], '/', $path);
+                }, $decoded);
+            }
+            
+            // Log for debugging
+            if (config('app.debug')) {
+                Log::info('Getting benefit claim documents', [
+                    'claim_id' => $id,
+                    'is_json_array' => $isJsonArray,
+                    'json_error' => $jsonError,
+                    'json_error_msg' => json_last_error_msg(),
+                    'documents_path' => $documentsPath,
+                    'documents_name' => $documentsName,
+                    'decoded_paths' => $isJsonArray ? $decoded : [$documentsPath],
+                    'decoded_count' => $isJsonArray ? count($decoded) : 1,
+                    'decoded_paths_detail' => $isJsonArray ? array_map(function($p) {
+                        return [
+                            'path' => $p,
+                            'normalized' => ltrim($p, '/'),
+                            'exists' => Storage::disk('public')->exists($p) || Storage::disk('public')->exists(ltrim($p, '/'))
+                        ];
+                    }, $decoded) : []
+                ]);
+            }
+            
+            $documents = [];
+            
+            if ($isJsonArray) {
+                // Multiple documents
+                $paths = $decoded;
+                $names = json_decode($documentsName, true);
+                
+                if (!is_array($names)) {
+                    $names = [];
+                }
+                
+                foreach ($paths as $index => $path) {
+                    // Normalize path (remove leading slashes if any)
+                    $normalizedPath = ltrim($path, '/');
+                    
+                    // Try multiple path variations to find the file
+                    $possiblePaths = [
+                        $path,
+                        $normalizedPath,
+                        ltrim(str_replace('storage/', '', $path), '/'),
+                        ltrim(str_replace('public/', '', $path), '/'),
+                    ];
+                    
+                    $fileExists = false;
+                    $actualPath = $path;
+                    
+                    foreach ($possiblePaths as $tryPath) {
+                        if (Storage::disk('public')->exists($tryPath)) {
+                            $fileExists = true;
+                            $actualPath = $tryPath;
+                            break;
+                        }
+                    }
+                    
+                    if ($fileExists) {
+                        $fileName = $names[$index] ?? basename($actualPath);
+                        
+                        // Determine document type based on actual path or filename
+                        // Priority: completion_evidence > application_forms > supporting_docs
+                        // Use actualPath (the path that exists) for detection
+                        $isCompletionEvidence = strpos($actualPath, 'completion_evidence') !== false || 
+                                                strpos($fileName, 'completion_evidence') !== false;
+                        $isApplicationForm = strpos($actualPath, 'application_forms') !== false || 
+                                            (strpos($fileName, 'application') !== false && !$isCompletionEvidence);
+                        $isSupportingDoc = strpos($actualPath, 'supporting_docs') !== false && !$isCompletionEvidence && !$isApplicationForm;
+                        
+                        $source = 'employee'; // Default
+                        $type = 'unknown';
+                        $label = 'Document';
+                        
+                        if ($isCompletionEvidence) {
+                            $source = 'hr_assistant';
+                            $type = 'completion_evidence';
+                            $label = 'HR Assistant - Evidence of Completion';
+                        } elseif ($isApplicationForm) {
+                            $source = 'employee';
+                            $type = 'application_form';
+                            $label = 'Employee - Application Form';
+                        } elseif ($isSupportingDoc) {
+                            $source = 'employee';
+                            $type = 'supporting_document';
+                            $label = 'Employee - Supporting Document';
+                        } else {
+                            // Fallback: try to determine from filename patterns
+                            if (strpos($fileName, 'application') !== false) {
+                                $source = 'employee';
+                                $type = 'application_form';
+                                $label = 'Employee - Application Form';
+                            } elseif (strpos($fileName, 'supporting') !== false) {
+                                $source = 'employee';
+                                $type = 'supporting_document';
+                                $label = 'Employee - Supporting Document';
+                            } else {
+                                // Default to supporting document if we can't determine
+                                $source = 'employee';
+                                $type = 'supporting_document';
+                                $label = 'Employee - Supporting Document';
+                            }
+                        }
+                        
+                        $documents[] = [
+                            'index' => $index,
+                            'path' => $actualPath,
+                            'name' => $fileName,
+                            'url' => Storage::disk('public')->url($actualPath),
+                            'download_url' => url("/api/benefit-claims/{$id}/document?index={$index}"),
+                            'source' => $source,
+                            'type' => $type,
+                            'label' => $label
+                        ];
+                    } else {
+                        // Try to find the file with different path variations
+                        $possiblePaths = [
+                            $path,
+                            $normalizedPath,
+                            'benefit_claims/' . basename($path),
+                            ltrim(str_replace('storage/', '', $path), '/'),
+                        ];
+                        
+                        $foundPath = null;
+                        foreach ($possiblePaths as $tryPath) {
+                            if (Storage::disk('public')->exists($tryPath)) {
+                                $foundPath = $tryPath;
+                                $fileExists = true;
+                                break;
+                            }
+                        }
+                        
+                        if ($fileExists && $foundPath) {
+                            // File found with alternative path
+                            $fileName = $names[$index] ?? basename($foundPath);
+                            
+                            // Determine document type
+                            $isCompletionEvidence = strpos($foundPath, 'completion_evidence') !== false || 
+                                                    strpos($fileName, 'completion_evidence') !== false;
+                            $isApplicationForm = strpos($foundPath, 'application_forms') !== false || 
+                                                (strpos($fileName, 'application') !== false && !$isCompletionEvidence);
+                            $isSupportingDoc = strpos($foundPath, 'supporting_docs') !== false && !$isCompletionEvidence && !$isApplicationForm;
+                            
+                            $source = 'employee';
+                            $type = 'unknown';
+                            $label = 'Document';
+                            
+                            if ($isCompletionEvidence) {
+                                $source = 'hr_assistant';
+                                $type = 'completion_evidence';
+                                $label = 'HR Assistant - Evidence of Completion';
+                            } elseif ($isApplicationForm) {
+                                $source = 'employee';
+                                $type = 'application_form';
+                                $label = 'Employee - Application Form';
+                            } elseif ($isSupportingDoc || strpos($fileName, 'supporting') !== false) {
+                                $source = 'employee';
+                                $type = 'supporting_document';
+                                $label = 'Employee - Supporting Document';
+                            } else {
+                                $source = 'employee';
+                                $type = 'supporting_document';
+                                $label = 'Employee - Supporting Document';
+                            }
+                            
+                            $documents[] = [
+                                'index' => $index,
+                                'path' => $foundPath,
+                                'name' => $fileName,
+                                'url' => Storage::disk('public')->url($foundPath),
+                                'download_url' => url("/api/benefit-claims/{$id}/document?index={$index}"),
+                                'source' => $source,
+                                'type' => $type,
+                                'label' => $label
+                            ];
+                            
+                            Log::info('Found document with alternative path', [
+                                'claim_id' => $id,
+                                'original_path' => $path,
+                                'found_path' => $foundPath
+                            ]);
+                        } else {
+                            // Log missing files for debugging
+                            Log::warning('Benefit claim document file not found', [
+                                'claim_id' => $id,
+                                'index' => $index,
+                                'path' => $path,
+                                'normalized_path' => $normalizedPath,
+                                'file_exists' => $fileExists,
+                                'storage_path' => Storage::disk('public')->path($path),
+                                'all_paths_tried' => $possiblePaths
+                            ]);
+                        }
+                    }
+                }
+                
+                // Log final document count for debugging
+                if (config('app.debug')) {
+                    $missingFiles = [];
+                    foreach ($paths as $idx => $p) {
+                        $found = false;
+                        foreach ($documents as $doc) {
+                            if ($doc['index'] === $idx || basename($doc['path']) === basename($p)) {
+                                $found = true;
+                                break;
+                            }
+                        }
+                        if (!$found) {
+                            $missingFiles[] = [
+                                'index' => $idx,
+                                'path' => $p,
+                                'name' => $names[$idx] ?? basename($p),
+                                'exists' => Storage::disk('public')->exists($p) || Storage::disk('public')->exists(ltrim($p, '/'))
+                            ];
+                        }
+                    }
+                    
+                    Log::info('Retrieved benefit claim documents', [
+                        'claim_id' => $id,
+                        'total_paths_in_db' => count($paths),
+                        'documents_found' => count($documents),
+                        'missing_files' => $missingFiles,
+                        'document_types' => array_column($documents, 'type'),
+                        'all_paths' => $paths
+                    ]);
+                }
+            } else {
+                // Single document
+                if (Storage::disk('public')->exists($documentsPath)) {
+                    $fileName = $documentsName ?? basename($documentsPath);
+                    
+                    // Determine document type
+                    $isCompletionEvidence = strpos($documentsPath, 'completion_evidence') !== false || 
+                                            strpos($fileName, 'completion_evidence') !== false;
+                    $isApplicationForm = strpos($documentsPath, 'application_forms') !== false || 
+                                        (strpos($fileName, 'application') !== false && !$isCompletionEvidence);
+                    $isSupportingDoc = strpos($documentsPath, 'supporting_docs') !== false && !$isCompletionEvidence && !$isApplicationForm;
+                    
+                    $source = 'employee';
+                    $type = 'unknown';
+                    $label = 'Document';
+                    
+                    if ($isCompletionEvidence) {
+                        $source = 'hr_assistant';
+                        $type = 'completion_evidence';
+                        $label = 'HR Assistant - Evidence of Completion';
+                    } elseif ($isApplicationForm) {
+                        $source = 'employee';
+                        $type = 'application_form';
+                        $label = 'Employee - Application Form';
+                    } elseif ($isSupportingDoc) {
+                        $source = 'employee';
+                        $type = 'supporting_document';
+                        $label = 'Employee - Supporting Document';
+                    } else {
+                        // Fallback
+                        if (strpos($fileName, 'application') !== false) {
+                            $type = 'application_form';
+                            $label = 'Employee - Application Form';
+                        } elseif (strpos($fileName, 'supporting') !== false) {
+                            $type = 'supporting_document';
+                            $label = 'Employee - Supporting Document';
+                        } else {
+                            $type = 'supporting_document';
+                            $label = 'Employee - Document';
+                        }
+                    }
+                    
+                    $documents[] = [
+                        'index' => 0,
+                        'path' => $documentsPath,
+                        'name' => $fileName,
+                        'url' => Storage::disk('public')->url($documentsPath),
+                        'download_url' => url("/api/benefit-claims/{$id}/document?index=0"),
+                        'source' => $source,
+                        'type' => $type,
+                        'label' => $label
+                    ];
+                }
+            }
+            
+            // Sort documents: application form first, then supporting docs, then completion evidence
+            usort($documents, function($a, $b) {
+                $order = ['application_form' => 1, 'supporting_document' => 2, 'completion_evidence' => 3, 'unknown' => 4];
+                $orderA = $order[$a['type']] ?? 4;
+                $orderB = $order[$b['type']] ?? 4;
+                if ($orderA === $orderB) {
+                    return $a['index'] <=> $b['index'];
+                }
+                return $orderA <=> $orderB;
+            });
+            
+            // Re-index after sorting
+            $documents = array_values($documents);
+            foreach ($documents as $idx => &$doc) {
+                $doc['index'] = $idx;
+                // Update download URL to use new index
+                $doc['download_url'] = url("/api/benefit-claims/{$id}/document?index={$idx}");
+            }
+            unset($doc);
+            
+            // Count documents by type for summary
+            $summary = [
+                'application_form' => 0,
+                'supporting_document' => 0,
+                'completion_evidence' => 0,
+                'unknown' => 0
+            ];
+            
+            foreach ($documents as $doc) {
+                $type = $doc['type'] ?? 'unknown';
+                if (isset($summary[$type])) {
+                    $summary[$type]++;
+                } else {
+                    $summary['unknown']++;
+                }
+            }
+            
+            // Build debug info showing what should be there vs what was found
+            $debugInfo = null;
+            if (config('app.debug')) {
+                $expectedDocs = [];
+                if ($isJsonArray) {
+                    foreach ($decoded as $idx => $p) {
+                        $expectedDocs[] = [
+                            'index' => $idx,
+                            'path' => $p,
+                            'name' => (is_array($names) && isset($names[$idx])) ? $names[$idx] : basename($p),
+                            'exists' => Storage::disk('public')->exists($p) || Storage::disk('public')->exists(ltrim($p, '/')),
+                            'type_expected' => strpos($p, 'application_forms') !== false ? 'application_form' : 
+                                             (strpos($p, 'supporting_docs') !== false ? 'supporting_document' : 
+                                             (strpos($p, 'completion_evidence') !== false ? 'completion_evidence' : 'unknown'))
+                        ];
+                    }
+                } else {
+                    $expectedDocs[] = [
+                        'index' => 0,
+                        'path' => $documentsPath,
+                        'name' => $documentsName ?? basename($documentsPath),
+                        'exists' => Storage::disk('public')->exists($documentsPath) || Storage::disk('public')->exists(ltrim($documentsPath, '/')),
+                        'type_expected' => strpos($documentsPath, 'application_forms') !== false ? 'application_form' : 
+                                         (strpos($documentsPath, 'supporting_docs') !== false ? 'supporting_document' : 
+                                         (strpos($documentsPath, 'completion_evidence') !== false ? 'completion_evidence' : 'unknown'))
+                    ];
+                }
+                
+                $debugInfo = [
+                    'total_paths_in_db' => $isJsonArray ? count($decoded) : 1,
+                    'documents_found' => count($documents),
+                    'expected_documents' => $expectedDocs,
+                    'found_document_types' => array_column($documents, 'type'),
+                    'found_document_labels' => array_column($documents, 'label'),
+                    'raw_paths' => $isJsonArray ? $decoded : [$documentsPath],
+                    'raw_names' => $isJsonArray ? (is_array($names) ? $names : []) : [$documentsName]
+                ];
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $documents,
+                'count' => count($documents),
+                'summary' => $summary,
+                'debug' => $debugInfo
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting benefit claim documents: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get documents'
+            ], 500);
+        }
+    }
+
+    /**
      * Download supporting document
      */
-    public function downloadDocument($id)
+    public function downloadDocument(Request $request, $id)
     {
         try {
             $claim = BenefitClaim::findOrFail($id);
@@ -455,19 +1018,84 @@ class BenefitClaimController extends Controller
                 ], 403);
             }
 
-            if (!Storage::disk('public')->exists($claim->supporting_documents_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File not found'
-                ], 404);
+            // Handle both single file path and JSON array of paths
+            $documentsPath = $claim->supporting_documents_path;
+            $documentsName = $claim->supporting_documents_name;
+            
+            // Try to decode as JSON (for multiple documents)
+            $decoded = json_decode($documentsPath, true);
+            $isJsonArray = (json_last_error() === JSON_ERROR_NONE && is_array($decoded));
+            
+            if ($isJsonArray) {
+                // Multiple documents - get the first one or specified index
+                $documentIndex = $request->query('index', 0);
+                $documentPaths = $decoded;
+                
+                if (!isset($documentPaths[$documentIndex])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Document index not found'
+                    ], 404);
+                }
+                
+                $filePath = $documentPaths[$documentIndex];
+                
+                // Get corresponding name
+                $documentNames = json_decode($documentsName, true);
+                $fileName = (is_array($documentNames) && isset($documentNames[$documentIndex])) 
+                    ? $documentNames[$documentIndex] 
+                    : 'document.pdf';
+            } else {
+                // Single file path
+                $filePath = $documentsPath;
+                $fileName = $documentsName ?? 'document.pdf';
             }
 
-            return Storage::disk('public')->download(
-                $claim->supporting_documents_path,
-                $claim->supporting_documents_name ?? 'document.pdf'
-            );
+            // Check if file exists - try both original and normalized paths
+            $actualPath = $filePath;
+            if (!Storage::disk('public')->exists($filePath)) {
+                // Try normalized path
+                if (Storage::disk('public')->exists($normalizedPath)) {
+                    $actualPath = $normalizedPath;
+                } else {
+                    // Try other path variations
+                    $possiblePaths = [
+                        $normalizedPath,
+                        'benefit_claims/' . basename($filePath),
+                        ltrim(str_replace('storage/', '', $filePath), '/'),
+                    ];
+                    
+                    $found = false;
+                    foreach ($possiblePaths as $tryPath) {
+                        if (Storage::disk('public')->exists($tryPath)) {
+                            $actualPath = $tryPath;
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        Log::warning('Benefit claim document not found', [
+                            'claim_id' => $id,
+                            'file_path' => $filePath,
+                            'normalized_path' => $normalizedPath,
+                            'is_json' => $isJsonArray,
+                            'index' => $documentIndex ?? 0,
+                            'all_paths_tried' => array_merge([$filePath, $normalizedPath], $possiblePaths)
+                        ]);
+                        
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'File not found'
+                        ], 404);
+                    }
+                }
+            }
+
+            return Storage::disk('public')->download($actualPath, $fileName);
         } catch (\Exception $e) {
             Log::error('Error downloading benefit claim document: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to download document'
@@ -597,6 +1225,10 @@ class BenefitClaimController extends Controller
     public function updateStatus(Request $request, $id)
     {
         try {
+            // Get status from request - POST requests parse FormData correctly
+            $status = $request->input('status');
+            
+            // Validate status
             $validator = Validator::make($request->all(), [
                 'status' => 'required|in:submitted,under_review,approved_by_hr,for_submission_to_agency,completed,rejected',
             ]);
@@ -607,17 +1239,129 @@ class BenefitClaimController extends Controller
                     'errors' => $validator->errors()
                 ], 422);
             }
+            
+            // Get status after validation
+            $status = $request->input('status');
 
             $claim = BenefitClaim::findOrFail($id);
             $oldStatus = $claim->status;
-            $newStatus = $request->status;
+            $newStatus = $status;
+
+            // Check if user is HR Assistant
+            $user = Auth::user();
+            $roleName = strtolower($user->role->name ?? '');
+            $isHrAssistant = $roleName === 'hr assistant';
+
+            // Initialize updateData array
+            $updateData = [];
+            
+            // If HR Assistant is trying to set status to "completed", handle evidence upload
+            if ($isHrAssistant && $newStatus === 'completed') {
+                // Require completion evidence file upload
+                if (!$request->hasFile('completion_evidence')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Completion evidence file is required when marking claim as completed. Please upload evidence of completion.'
+                    ], 422);
+                }
+
+                // Validate the uploaded file
+                $file = $request->file('completion_evidence');
+                if (!$file || !$file->isValid()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid file uploaded. Please ensure the file is valid.'
+                    ], 422);
+                }
+
+                // Validate file type and size
+                $allowedMimes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+                $maxSize = 5120; // 5MB in KB
+                
+                $fileExtension = strtolower($file->getClientOriginalExtension());
+                if (!in_array($fileExtension, $allowedMimes) && 
+                    !in_array($file->getMimeType(), ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid file type. Allowed types: pdf, doc, docx, jpg, jpeg, png.'
+                    ], 422);
+                }
+                
+                if ($file->getSize() > $maxSize * 1024) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'File size exceeds maximum allowed size of 5MB.'
+                    ], 422);
+                }
+
+                // Store completion evidence file
+                $completionEvidenceName = time() . '_completion_evidence_' . $file->getClientOriginalName();
+                $completionEvidencePath = $file->storeAs('benefit_claims/completion_evidence', $completionEvidenceName, 'public');
+                
+                if (!$completionEvidencePath) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to store completion evidence file.'
+                    ], 500);
+                }
+
+                // Merge completion evidence with existing documents
+                $existingPaths = [];
+                $existingNames = [];
+                
+                if ($claim->supporting_documents_path) {
+                    $documentsPath = $claim->supporting_documents_path;
+                    $decoded = json_decode($documentsPath, true);
+                    
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        // It's a JSON array
+                        $existingPaths = $decoded;
+                    } else {
+                        // It's a single string
+                        $existingPaths = [$documentsPath];
+                    }
+                }
+                
+                if ($claim->supporting_documents_name) {
+                    $documentsName = $claim->supporting_documents_name;
+                    $decoded = json_decode($documentsName, true);
+                    
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        // It's a JSON array
+                        $existingNames = $decoded;
+                    } else {
+                        // It's a single string
+                        $existingNames = [$documentsName];
+                    }
+                }
+
+                // Add completion evidence to existing documents
+                $existingPaths[] = $completionEvidencePath;
+                $existingNames[] = $completionEvidenceName;
+
+                // Store as JSON if multiple documents, or as string if single
+                $allDocumentsPath = count($existingPaths) > 1 ? json_encode($existingPaths) : $existingPaths[0];
+                $allDocumentsName = count($existingNames) > 1 ? json_encode($existingNames) : $existingNames[0];
+
+                // Store merged documents in updateData to ensure they're saved
+                $updateData['supporting_documents_path'] = $allDocumentsPath;
+                $updateData['supporting_documents_name'] = $allDocumentsName;
+                
+                // Log for debugging
+                if (config('app.debug')) {
+                    Log::info('Merging completion evidence with existing documents', [
+                        'claim_id' => $id,
+                        'existing_count' => count($existingPaths) - 1,
+                        'total_after_merge' => count($existingPaths),
+                        'completion_evidence_path' => $completionEvidencePath
+                    ]);
+                }
+            }
 
             // Update status
-            $updateData = [
-                'status' => $newStatus,
-                'reviewed_by' => Auth::id(),
-                'reviewed_at' => now(),
-            ];
+            $updateData['status'] = $newStatus;
+            $updateData['reviewed_by'] = Auth::id();
+            $updateData['reviewed_at'] = now();
 
             // If status is rejected, require rejection reason
             if ($newStatus === 'rejected') {
@@ -648,6 +1392,7 @@ class BenefitClaimController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Error updating benefit claim status: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update benefit claim status'

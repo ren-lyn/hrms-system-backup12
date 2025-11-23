@@ -40,17 +40,29 @@ class MultipleAccountsLeaveSeeder extends Seeder
             $totalDays = $endDate->diffInDays($startDate) + 1;
             $status = ['pending', 'approved', 'rejected'][array_rand(['pending', 'approved', 'rejected'])];
 
+            // Calculate automatic payment terms based on employee tenure
+            // This properly categorizes Sick Leave and Emergency Leave as SIL for employees with 1+ year tenure
+            // and assigns 8 days with pay for SIL
+            $paymentTerms = LeaveRequest::calculateAutomaticPaymentTerms(
+                $user->id,
+                $type,
+                $totalDays,
+                $startDate->year
+            );
+
             LeaveRequest::create([
                 'employee_id' => $user->id,
                 'company' => 'Cabuyao Concrete Development Corporation',
                 'employee_name' => trim(($profile->first_name ?? $user->first_name) . ' ' . ($profile->last_name ?? $user->last_name)),
                 'department' => $profile->department ?? 'Not Set',
                 'type' => $type,
-                'terms' => rand(0, 1) ? 'with PAY' : 'without PAY',
-                'leave_category' => $type === 'Emergency Leave' ? 'Emergency Leave (EL)' : 'Service Incentive Leave (SIL)',
+                'terms' => $paymentTerms['terms'],
+                'leave_category' => $paymentTerms['leave_category'],
                 'from' => $startDate->toDateString(),
                 'to' => $endDate->toDateString(),
                 'total_days' => $totalDays,
+                'with_pay_days' => $paymentTerms['with_pay_days'],
+                'without_pay_days' => $paymentTerms['without_pay_days'],
                 'total_hours' => $totalDays * 8,
                 'date_filed' => Carbon::now()->toDateTimeString(),
                 'reason' => $type === 'Sick Leave' ? 'Medical rest' : 'Personal matter',

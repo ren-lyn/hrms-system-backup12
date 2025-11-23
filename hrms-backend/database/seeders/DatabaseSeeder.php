@@ -25,12 +25,12 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             DefaultAccountsSeeder::class,
             MultipleAccountsSeeder::class,
-            MultipleAccountsLeaveSeeder::class,
+            //MultipleAccountsLeaveSeeder::class, // Disabled - removes approved leave requests from seeders
             DisciplinaryCategorySeeder::class,
             //EmployeeProfileSeeder::class,
             //JobPostingSeeder::class,
             //ApplicantSeeder::class,
-            MultipleAccountsLeaveSeeder::class,
+            //MultipleAccountsLeaveSeeder::class, // Disabled - removes approved leave requests from seeders
             //EvaluationResultsSeeder::class, // Disabled - evaluations created in DefaultAccountsSeeder and MultipleAccountsSeeder
             CashAdvanceSeeder::class,
             //ApplicationSeeder::class,
@@ -45,8 +45,9 @@ class DatabaseSeeder extends Seeder
             //ResignationFlagSeeder::class,
             SecuritySettingsSeeder::class,
             Holiday2025To2050Seeder::class,
-            ApprovedLeaveRequestSeeder::class,
+            //ApprovedLeaveRequestSeeder::class, // Disabled - removes approved leave requests from seeders
             ApprovedOvertimeRequestSeeder::class,
+            RenelynConcinaSILSeeder::class, // Create 8 approved SIL days for Renelyn Concina
             //EmployeeProfileSeeder::class,
         ]);
 

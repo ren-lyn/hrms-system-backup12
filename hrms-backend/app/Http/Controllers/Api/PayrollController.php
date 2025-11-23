@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 
@@ -53,10 +54,149 @@ class PayrollController extends Controller
 
         $payrolls = $query->paginate($request->get('per_page', 50));
 
+        // Add 13th month pay breakdown to each payroll and convert to array
+        $payrollsArray = $payrolls->getCollection()->map(function ($payroll) use ($request) {
+            // Load employee relationship if not already loaded
+            if (!$payroll->relationLoaded('employee')) {
+                $payroll->load('employee');
+            }
+            
+            // Calculate breakdown if employee exists and has a salary
+            $breakdown = [];
+            
+            // Always calculate breakdown if we have 13th month pay
+            if ($payroll->thirteenth_month_pay > 0) {
+                if ($payroll->employee && $payroll->employee->salary > 0) {
+                    try {
+                        $breakdownData = $this->calculateThirteenthMonthPayWithBreakdown(
+                            $payroll->employee,
+                            $payroll->period_start,
+                            $payroll->period_end
+                        );
+                        $breakdown = $breakdownData['breakdown'] ?? [];
+                        
+                        // Log for debugging
+                        if (config('app.debug')) {
+                            \Log::info('13th Month Breakdown calculated for payroll ' . $payroll->id, [
+                                'breakdown_count' => count($breakdown),
+                                'thirteenth_month_pay' => $payroll->thirteenth_month_pay,
+                                'employee_id' => $payroll->employee->id,
+                                'employee_salary' => $payroll->employee->salary,
+                                'breakdown_data' => $breakdown
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        \Log::error('Error calculating 13th month breakdown for payroll ' . $payroll->id . ': ' . $e->getMessage());
+                        \Log::error('Stack trace: ' . $e->getTraceAsString());
+                        $breakdown = []; // Reset to empty on error
+                    }
+                }
+                
+                // ALWAYS create a breakdown if we have 13th month pay, even if calculation failed
+                if (empty($breakdown) || !is_array($breakdown) || count($breakdown) === 0) {
+                    $breakdown = [
+                        [
+                            'description' => 'Base 13th Month Pay',
+                            'calculation' => 'Calculated based on months worked during the year',
+                            'amount' => round($payroll->thirteenth_month_pay, 2)
+                        ],
+                        [
+                            'description' => 'Total 13th Month Pay',
+                            'calculation' => '',
+                            'amount' => round($payroll->thirteenth_month_pay, 2),
+                            'is_total' => true
+                        ]
+                    ];
+                }
+            }
+            
+            // Convert payroll to array
+            $payrollArray = $payroll->toArray();
+            
+            // CRITICAL: Explicitly add breakdown AFTER toArray() to ensure it's included
+            // Use direct assignment to ensure it's definitely in the array
+            $payrollArray['thirteenth_month_pay_breakdown'] = $breakdown;
+            
+            // Ensure employee data is included
+            if ($payroll->employee) {
+                $payrollArray['employee'] = $payroll->employee->toArray();
+            }
+            
+            // Force the breakdown to be in the array - verify it exists
+            if (!isset($payrollArray['thirteenth_month_pay_breakdown'])) {
+                $payrollArray['thirteenth_month_pay_breakdown'] = $breakdown;
+            }
+            
+            // Debug: Log the breakdown being added
+            if (config('app.debug')) {
+                \Log::debug('Payroll ' . $payroll->id . ' breakdown:', [
+                    'breakdown' => $breakdown,
+                    'breakdown_count' => count($breakdown),
+                    'has_breakdown_key' => isset($payrollArray['thirteenth_month_pay_breakdown']),
+                    'breakdown_in_array' => array_key_exists('thirteenth_month_pay_breakdown', $payrollArray),
+                    'payroll_array_keys' => array_keys($payrollArray)
+                ]);
+            }
+            
+            return $payrollArray;
+        })->toArray();
+
+        // Verify breakdown is included in response (debug)
+        if (config('app.debug') && count($payrollsArray) > 0) {
+            $samplePayroll = $payrollsArray[0];
+            \Log::debug('Sample payroll in response:', [
+                'id' => $samplePayroll['id'] ?? 'N/A',
+                'thirteenth_month_pay' => $samplePayroll['thirteenth_month_pay'] ?? 'N/A',
+                'has_breakdown' => isset($samplePayroll['thirteenth_month_pay_breakdown']),
+                'breakdown_count' => isset($samplePayroll['thirteenth_month_pay_breakdown']) ? count($samplePayroll['thirteenth_month_pay_breakdown']) : 0,
+                'breakdown_keys' => array_keys($samplePayroll)
+            ]);
+        }
+        
+        // Double-check: Ensure breakdown is in all payrolls with 13th month pay
+        foreach ($payrollsArray as &$payrollItem) {
+            if (($payrollItem['thirteenth_month_pay'] ?? 0) > 0 && !isset($payrollItem['thirteenth_month_pay_breakdown'])) {
+                // Recalculate if missing
+                $payrollModel = Payroll::with('employee')->find($payrollItem['id']);
+                if ($payrollModel && $payrollModel->employee && $payrollModel->employee->salary > 0) {
+                    try {
+                        $breakdownData = $this->calculateThirteenthMonthPayWithBreakdown(
+                            $payrollModel->employee,
+                            $payrollModel->period_start,
+                            $payrollModel->period_end
+                        );
+                        $payrollItem['thirteenth_month_pay_breakdown'] = $breakdownData['breakdown'] ?? [];
+                    } catch (\Exception $e) {
+                        $payrollItem['thirteenth_month_pay_breakdown'] = [];
+                    }
+                } else {
+                    $payrollItem['thirteenth_month_pay_breakdown'] = [];
+                }
+            }
+        }
+        unset($payrollItem); // Break reference
+        
+        // Final verification: Log breakdown status for all payrolls with 13th month pay
+        if (config('app.debug')) {
+            $payrollsWith13thMonth = array_filter($payrollsArray, function($p) {
+                return ($p['thirteenth_month_pay'] ?? 0) > 0;
+            });
+            \Log::debug('Final verification - Payrolls with 13th month pay:', [
+                'count' => count($payrollsWith13thMonth),
+                'breakdown_status' => array_map(function($p) {
+                    return [
+                        'id' => $p['id'],
+                        'has_breakdown' => isset($p['thirteenth_month_pay_breakdown']),
+                        'breakdown_count' => isset($p['thirteenth_month_pay_breakdown']) ? count($p['thirteenth_month_pay_breakdown']) : 0
+                    ];
+                }, $payrollsWith13thMonth)
+            ]);
+        }
+        
         return response()->json([
             'success' => true,
             'data' => [
-                'payrolls' => $payrolls->items(),
+                'payrolls' => $payrollsArray,
                 'pagination' => [
                     'current_page' => $payrolls->currentPage(),
                     'last_page' => $payrolls->lastPage(),
@@ -218,23 +358,154 @@ class PayrollController extends Controller
         // Count leave days with pay (weekdays only)
         $leaveWithPayDays = $this->countLeaveWithPayDays($leaveRequests, $periodStart, $periodEnd, $attendances);
 
-        // Count absences (days with status 'Absent' or no attendance record)
-        // Get all weekdays in the period (excluding weekends)
+        // Calculate absences using the formula: Total Weekdays - Days Worked - Leave Days with Pay - Holidays = Absences
+        // Also explicitly count days with "Absent" status in attendance records
         $periodStartCarbon = Carbon::parse($periodStart);
         $periodEndCarbon = Carbon::parse($periodEnd);
+        
+        // Count total weekdays in the period
         $totalWeekdays = 0;
+        $holidayCount = 0;
         $currentDate = $periodStartCarbon->copy();
         
         while ($currentDate->lte($periodEndCarbon)) {
-            // Count only weekdays (Monday = 1, Friday = 5)
-            if ($currentDate->dayOfWeek >= 1 && $currentDate->dayOfWeek <= 5) {
+            if ($currentDate->dayOfWeek >= 1 && $currentDate->dayOfWeek <= 5) { // Weekdays only
                 $totalWeekdays++;
+                // Check if it's a holiday
+                $dateString = $currentDate->format('Y-m-d');
+                if (\App\Models\Holiday::isHolidayDate($dateString)) {
+                    $holidayCount++;
+                }
             }
             $currentDate->addDay();
         }
-
-        // Count absences: total weekdays minus days worked (excluding leave days)
-        $absences = max(0, $totalWeekdays - $actualDaysWorked - $leaveWithPayDays);
+        
+        // Build attendance map for quick lookup
+        $attendanceMap = [];
+        $absentDaysFromRecords = 0;
+        
+        foreach ($attendances as $att) {
+            $attDate = $att->date instanceof \Carbon\Carbon 
+                ? $att->date 
+                : Carbon::parse($att->date);
+            $dateKey = $attDate->format('Y-m-d');
+            
+            // Store in map
+            $attendanceMap[$dateKey] = $att;
+            
+            // Count days with "Absent" status (but exclude holidays and leaves)
+            $status = trim($att->status ?? '');
+            $isHoliday = \App\Models\Holiday::isHolidayDate($dateKey);
+            
+            if ($status === 'Absent' && !$isHoliday) {
+                // Check if it's not a leave with pay
+                $isLeaveWithPay = false;
+                foreach ($leaveRequests as $leave) {
+                    if ($leave->terms === 'with PAY' || $leave->with_pay_days > 0) {
+                        $leaveStart = Carbon::parse($leave->from);
+                        $leaveEnd = Carbon::parse($leave->to);
+                        if ($attDate->gte($leaveStart) && $attDate->lte($leaveEnd)) {
+                            $isLeaveWithPay = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$isLeaveWithPay) {
+                    $absentDaysFromRecords++;
+                }
+            }
+        }
+        
+        // Get leave dates with pay for exclusion
+        $leaveWithPayDates = [];
+        foreach ($leaveRequests as $leave) {
+            if ($leave->terms === 'with PAY' || $leave->with_pay_days > 0) {
+                $leaveStart = Carbon::parse(max($leave->from, $periodStart));
+                $leaveEnd = Carbon::parse(min($leave->to, $periodEnd));
+                $current = $leaveStart->copy();
+                
+                while ($current->lte($leaveEnd)) {
+                    if ($current->dayOfWeek >= 1 && $current->dayOfWeek <= 5) {
+                        $leaveWithPayDates[] = $current->format('Y-m-d');
+                    }
+                    $current->addDay();
+                }
+            }
+        }
+        
+        // Count weekdays with no attendance record that should be absences
+        $unrecordedAbsences = 0;
+        $currentDate = $periodStartCarbon->copy();
+        
+        while ($currentDate->lte($periodEndCarbon)) {
+            if ($currentDate->dayOfWeek >= 1 && $currentDate->dayOfWeek <= 5) {
+                $dateString = $currentDate->format('Y-m-d');
+                
+                // Skip if holiday
+                if (\App\Models\Holiday::isHolidayDate($dateString)) {
+                    $currentDate->addDay();
+                    continue;
+                }
+                
+                // Skip if leave with pay
+                if (in_array($dateString, $leaveWithPayDates)) {
+                    $currentDate->addDay();
+                    continue;
+                }
+                
+                // If no attendance record exists, it's an absence
+                if (!isset($attendanceMap[$dateString])) {
+                    $unrecordedAbsences++;
+                }
+            }
+            $currentDate->addDay();
+        }
+        
+        // Count all unique absent dates
+        $allAbsentDates = [];
+        
+        // Step 1: Add explicit absences from attendance records with status "Absent"
+        // If an attendance record has status "Absent", it should always count as an absence,
+        // regardless of whether it's a holiday date. Only exclude if it's a leave with pay.
+        foreach ($attendances as $att) {
+            $attDate = $att->date instanceof \Carbon\Carbon 
+                ? $att->date 
+                : Carbon::parse($att->date);
+            $dateKey = $attDate->format('Y-m-d');
+            $status = trim($att->status ?? '');
+            
+            if ($status === 'Absent') {
+                $isLeaveWithPay = in_array($dateKey, $leaveWithPayDates);
+                
+                // Count as absence if not a leave with pay
+                // Note: Explicit "Absent" status always counts, even on holidays
+                if (!$isLeaveWithPay) {
+                    $allAbsentDates[$dateKey] = true;
+                }
+            }
+        }
+        
+        // Step 2: Add weekdays with no attendance record (unrecorded absences)
+        $currentDate = $periodStartCarbon->copy();
+        while ($currentDate->lte($periodEndCarbon)) {
+            if ($currentDate->dayOfWeek >= 1 && $currentDate->dayOfWeek <= 5) {
+                $dateString = $currentDate->format('Y-m-d');
+                
+                // Check if it's not a holiday, not a leave with pay, and has no attendance record
+                $isHoliday = \App\Models\Holiday::isHolidayDate($dateString);
+                $isLeaveWithPay = in_array($dateString, $leaveWithPayDates);
+                $hasAttendanceRecord = isset($attendanceMap[$dateString]);
+                
+                if (!$isHoliday && !$isLeaveWithPay && !$hasAttendanceRecord) {
+                    $allAbsentDates[$dateString] = true;
+                }
+            }
+            $currentDate->addDay();
+        }
+        
+        // Final absences count = unique absent dates
+        $absences = count($allAbsentDates);
 
         // Total payable days = actual days worked + approved leave days with pay
         $totalPayableDays = $actualDaysWorked + $leaveWithPayDays;
@@ -264,7 +535,9 @@ class PayrollController extends Controller
 
         // Calculate 13th month pay (visible for all payroll periods, but not included in gross pay)
         // Formula: (Basic Salary per Month × Months Worked during the Year) / 12
-        $thirteenthMonthPay = $this->calculateThirteenthMonthPay($employee, $periodStart, $periodEnd);
+        // PLUS: Unused leave days with pay converted to cash
+        $thirteenthMonthPayData = $this->calculateThirteenthMonthPayWithBreakdown($employee, $periodStart, $periodEnd);
+        $thirteenthMonthPay = $thirteenthMonthPayData['total'];
 
         // Calculate late deduction with 15-minute grace period (only if employee is assigned to Late Penalty)
         $lateDeduction = $this->calculateLateDeduction($employee, $attendances);
@@ -288,8 +561,92 @@ class PayrollController extends Controller
         // Ensure gross pay never goes negative
         $grossPay = max(0, $grossPay);
 
-        // Calculate tax deductions from assigned taxes
-        $taxDeductions = $this->calculateAssignedTaxes($employee, $periodStart, $periodEnd);
+        // Calculate SSS contributions based on Monthly Salary Credit (MSC) - 2025 rate
+        // SSS contributions are based on the employee's monthly salary, not gross pay
+        $monthlySalary = $employee->salary ?? 0;
+        $sssContributions = $this->calculateSSSContributions($monthlySalary);
+        
+        // Calculate Pag-IBIG contributions based on monthly compensation - 2025 rate
+        // Pag-IBIG contributions are based on the employee's monthly salary, not gross pay
+        $pagibigContributions = $this->calculatePagIbigContributions($monthlySalary);
+        
+        // Calculate PhilHealth contributions based on Monthly Basic Salary (MBS) - 2025 rate
+        // PhilHealth contributions are based on the employee's monthly salary, not gross pay
+        $philhealthContributions = $this->calculatePhilHealthContributions($monthlySalary);
+        
+        // Calculate monthly factor for payroll period
+        // SSS, Pag-IBIG, and PhilHealth contributions are calculated monthly, so we need to prorate based on payroll period length
+        // If payroll period is 6-7 days (1 week), divide contributions by 4 (since there are 4 weeks in a month)
+        // If payroll period is 15 days (half month), divide contributions by 2
+        // If payroll period is full month (30-31 days), no division (multiply by 1.0)
+        $monthlyFactor = $this->getMonthlyFactorForPeriod($periodStart, $periodEnd);
+        
+        // Calculate SSS contributions (prorated for payroll period)
+        // Always calculate SSS from MSC for ALL employees - do not use assigned taxes
+        // Total employee contribution: Regular SS (5%) + MPF (5%)
+        $sssEmployeeDeduction = $sssContributions['employee'] * $monthlyFactor;
+        // Total employer contribution: Regular SS (10%) + MPF (10%)
+        $sssEmployerContribution = $sssContributions['employer'] * $monthlyFactor;
+        // EC (Employees' Compensation) contribution: ₱10 or ₱30 (paid by employer only)
+        $sssECContribution = $sssContributions['ec'] * $monthlyFactor;
+        // Total employer contribution = Regular SS (employer) + MPF (employer) + EC
+        $sssEmployerTotal = $sssContributions['employer_total'] * $monthlyFactor;
+        // Total remittance = Employee + Employer (Regular SS + MPF + EC)
+        $sssTotalRemittance = $sssContributions['total'] * $monthlyFactor;
+        // MSC used for calculation
+        $sssMSC = $sssContributions['msc'];
+        
+        // Regular SS contributions (prorated)
+        $sssRegularSSMSC = $sssContributions['regular_ss']['msc'];
+        $sssRegularSSEmployee = $sssContributions['regular_ss']['employee'] * $monthlyFactor;
+        $sssRegularSSEmployer = $sssContributions['regular_ss']['employer'] * $monthlyFactor;
+        $sssRegularSSTotal = $sssContributions['regular_ss']['total'] * $monthlyFactor;
+        
+        // MPF contributions (prorated)
+        $sssMPFMSC = $sssContributions['mpf']['msc'];
+        $sssMPFEmployee = $sssContributions['mpf']['employee'] * $monthlyFactor;
+        $sssMPFEmployer = $sssContributions['mpf']['employer'] * $monthlyFactor;
+        $sssMPFTotal = $sssContributions['mpf']['total'] * $monthlyFactor;
+        
+        // Calculate Pag-IBIG contributions (prorated for payroll period)
+        // Always calculate Pag-IBIG from monthly salary for ALL employees - do not use assigned taxes
+        // Employee contribution: 1% or 2% based on salary (capped at ₱100)
+        $pagibigEmployeeDeduction = $pagibigContributions['employee'] * $monthlyFactor;
+        // Employer contribution: 2% (capped at ₱100)
+        $pagibigEmployerContribution = $pagibigContributions['employer'] * $monthlyFactor;
+        // Total contribution = Employee + Employer
+        $pagibigTotalContribution = $pagibigContributions['total'] * $monthlyFactor;
+        // Salary base used for calculation
+        $pagibigSalaryBase = $pagibigContributions['salary_base'];
+        
+        // Calculate PhilHealth contributions (prorated for payroll period)
+        // Always calculate PhilHealth from monthly salary for ALL employees - do not use assigned taxes
+        // Employee contribution: 50% of total premium
+        $philhealthEmployeeDeduction = $philhealthContributions['employee'] * $monthlyFactor;
+        // Employer contribution: 50% of total premium
+        $philhealthEmployerContribution = $philhealthContributions['employer'] * $monthlyFactor;
+        // Total premium = Employee + Employer
+        $philhealthTotalContribution = $philhealthContributions['total'] * $monthlyFactor;
+        // MBS used for calculation
+        $philhealthMBS = $philhealthContributions['mbs'];
+
+        // Calculate tax deductions from assigned taxes (SSS, Pag-IBIG, and PhilHealth are excluded and calculated separately)
+        $taxDeductions = $this->calculateAssignedTaxes($employee, $periodStart, $periodEnd, true, true, true);
+        
+        // Always use calculated SSS contribution based on MSC (2025 rate) for all employees
+        // Set SSS deduction to the calculated amount
+        $taxDeductions['sss'] = $sssEmployeeDeduction;
+        $taxDeductions['total'] += $sssEmployeeDeduction;
+        
+        // Always use calculated Pag-IBIG contribution based on monthly salary (2025 rate) for all employees
+        // Set Pag-IBIG deduction to the calculated amount
+        $taxDeductions['pagibig'] = $pagibigEmployeeDeduction;
+        $taxDeductions['total'] += $pagibigEmployeeDeduction;
+        
+        // Always use calculated PhilHealth contribution based on monthly salary (2025 rate) for all employees
+        // Set PhilHealth deduction to the calculated amount
+        $taxDeductions['philhealth'] = $philhealthEmployeeDeduction;
+        $taxDeductions['total'] += $philhealthEmployeeDeduction;
         
         // Calculate income tax based on gross pay (if not already included in assigned taxes)
         if ($taxDeductions['tax'] == 0) {
@@ -325,6 +682,9 @@ class PayrollController extends Controller
         $otherDed = max(0, round($assignedDeductions, 2)); // Other deductions excluding late/undertime/cash advance
         $totalDed = max(0, round($totalDeductions, 2));
 
+        // Store 13th month pay breakdown as JSON in notes or as an attribute
+        $thirteenthMonthBreakdown = json_encode($thirteenthMonthPayData['breakdown']);
+        
         // Update payroll with calculated values
         $payroll->update([
             'days_worked' => $actualDaysWorked,
@@ -335,8 +695,27 @@ class PayrollController extends Controller
             'holiday_pay' => round($holidayPay, 2),
             'thirteenth_month_pay' => round($thirteenthMonthPay, 2),
             'sss_deduction' => $sssDed,
+            'sss_employer_contribution' => max(0, round($sssEmployerContribution, 2)),
+            'sss_ec_contribution' => max(0, round($sssECContribution, 2)),
+            'sss_employer_total' => max(0, round($sssEmployerTotal, 2)),
+            'sss_total_remittance' => max(0, round($sssTotalRemittance, 2)),
+            'sss_msc' => round($sssMSC, 2),
+            'sss_regular_ss_msc' => round($sssRegularSSMSC, 2),
+            'sss_regular_ss_employee' => max(0, round($sssRegularSSEmployee, 2)),
+            'sss_regular_ss_employer' => max(0, round($sssRegularSSEmployer, 2)),
+            'sss_regular_ss_total' => max(0, round($sssRegularSSTotal, 2)),
+            'sss_mpf_msc' => round($sssMPFMSC, 2),
+            'sss_mpf_employee' => max(0, round($sssMPFEmployee, 2)),
+            'sss_mpf_employer' => max(0, round($sssMPFEmployer, 2)),
+            'sss_mpf_total' => max(0, round($sssMPFTotal, 2)),
             'philhealth_deduction' => $philhealthDed,
+            'philhealth_employer_contribution' => max(0, round($philhealthEmployerContribution, 2)),
+            'philhealth_total_contribution' => max(0, round($philhealthTotalContribution, 2)),
+            'philhealth_mbs' => round($philhealthMBS, 2),
             'pagibig_deduction' => $pagibigDed,
+            'pagibig_employer_contribution' => max(0, round($pagibigEmployerContribution, 2)),
+            'pagibig_total_contribution' => max(0, round($pagibigTotalContribution, 2)),
+            'pagibig_salary_base' => round($pagibigSalaryBase, 2),
             'tax_deduction' => $taxDed,
             'late_deduction' => $lateDed,
             'undertime_deduction' => $undertimeDed,
@@ -346,7 +725,14 @@ class PayrollController extends Controller
             'net_pay' => round($netPay, 2),
         ]);
 
-        return $payroll->fresh(['employee', 'payrollPeriod']);
+        $payroll = $payroll->fresh(['employee', 'payrollPeriod']);
+        
+        // Add 13th month pay breakdown as an attribute
+        $payroll->setAttribute('thirteenth_month_pay_breakdown', $thirteenthMonthPayData['breakdown']);
+        $payroll->thirteenth_month_pay_breakdown = $thirteenthMonthPayData['breakdown'];
+        $payroll->makeVisible('thirteenth_month_pay_breakdown');
+        
+        return $payroll;
     }
 
     /**
@@ -863,21 +1249,73 @@ class PayrollController extends Controller
     }
 
     /**
-     * Calculate 13th month pay
+     * Calculate unused leave days with pay for the year
+     * Returns the total number of unused paid leave days that can be converted to cash
+     * 
+     * Only counts SIL (Service Incentive Leave) unused days:
+     * - SIL (Sick Leave + Emergency Leave): 8 days maximum
+     * 
+     * Only SIL can be converted to cash and added to 13th month pay.
+     * Other leave types (Vacation, Personal, Bereavement, etc.) cannot be converted to cash.
+     * 
+     * @param EmployeeProfile $employee
+     * @param int $year
+     * @return int Total unused SIL days with pay (0-8)
+     */
+    private function calculateUnusedLeaveDaysWithPay(EmployeeProfile $employee, int $year): int
+    {
+        $userId = $employee->user_id;
+        
+        // Calculate employee tenure
+        $tenureInMonths = LeaveRequest::calculateEmployeeTenure($userId);
+        
+        // Only employees with 1 year or more tenure are eligible for paid leave
+        if ($tenureInMonths < 12) {
+            return 0;
+        }
+        
+        // Calculate unused days for SIL (Sick Leave + Emergency Leave share 8 days)
+        // Only SIL can be converted to cash for 13th month pay
+        $usedSILDays = LeaveRequest::where('employee_id', $userId)
+            ->whereIn('type', ['Sick Leave', 'Emergency Leave'])
+            ->whereYear('from', $year)
+            ->whereIn('status', ['approved'])
+            ->sum('with_pay_days');
+        
+        // Ensure usedSILDays is never negative (in case of data issues)
+        $usedSILDays = max(0, (float) $usedSILDays);
+        
+        $silEntitled = 8; // SIL gets 8 days WITH PAY for employees with 1+ year tenure
+        
+        // Calculate unused SIL days
+        // Formula: unused = entitled - used
+        // Ensure unused is between 0 and entitled (cap at entitled amount)
+        $unusedSIL = $silEntitled - $usedSILDays;
+        $unusedSIL = max(0, min($silEntitled, $unusedSIL));
+        
+        return (int) $unusedSIL;
+    }
+
+    /**
+     * Calculate 13th month pay with breakdown
      * Formula: (Basic Salary per Month × Months Worked during the Year) / 12
+     * PLUS: Unused leave days with pay converted to cash
      * 
      * @param EmployeeProfile $employee
      * @param string $periodStart
      * @param string $periodEnd
-     * @return float
+     * @return array ['total' => float, 'breakdown' => array]
      */
-    private function calculateThirteenthMonthPay(EmployeeProfile $employee, $periodStart, $periodEnd): float
+    private function calculateThirteenthMonthPayWithBreakdown(EmployeeProfile $employee, $periodStart, $periodEnd): array
     {
         // Get employee's monthly basic salary
         $monthlyBasicSalary = $employee->salary ?? 0;
         
         if ($monthlyBasicSalary <= 0) {
-            return 0;
+            return [
+                'total' => 0,
+                'breakdown' => []
+            ];
         }
 
         // Get the year from the payroll period end date
@@ -905,7 +1343,10 @@ class PayrollController extends Controller
         
         // Ensure calculation start is before calculation end
         if ($calculationStart->gt($calculationEnd)) {
-            return 0;
+            return [
+                'total' => 0,
+                'breakdown' => []
+            ];
         }
         
         // Count months worked during the year
@@ -932,17 +1373,373 @@ class PayrollController extends Controller
         // Total salary = monthly basic salary × months worked
         $totalSalaryEarned = $monthlyBasicSalary * $monthsWorked;
         
-        // Calculate 13th month pay: total salary earned / 12
-        $thirteenthMonthPay = $totalSalaryEarned / 12;
+        // Calculate base 13th month pay: total salary earned / 12
+        $baseThirteenthMonthPay = $totalSalaryEarned / 12;
         
-        return round($thirteenthMonthPay, 2);
+        // Calculate unused leave days with pay and convert to cash
+        $unusedLeaveDays = $this->calculateUnusedLeaveDaysWithPay($employee, $year);
+        
+        // Calculate daily rate (monthly salary / 26 working days)
+        $dailyRate = $monthlyBasicSalary / 26;
+        
+        // Convert unused leave days to cash
+        $unusedLeaveCash = $unusedLeaveDays * $dailyRate;
+        
+        // Add unused leave cash to 13th month pay
+        $thirteenthMonthPay = $baseThirteenthMonthPay + $unusedLeaveCash;
+        
+        // Build breakdown
+        $breakdown = [
+            [
+                'description' => 'Base 13th Month Pay',
+                'calculation' => "₱" . number_format($monthlyBasicSalary, 2) . " × {$monthsWorked} months ÷ 12",
+                'amount' => round($baseThirteenthMonthPay, 2)
+            ]
+        ];
+        
+        if ($unusedLeaveDays > 0) {
+            $breakdown[] = [
+                'description' => 'Unused Leave Days (Converted to Cash)',
+                'calculation' => "{$unusedLeaveDays} days × ₱" . number_format($dailyRate, 2) . " (daily rate)",
+                'amount' => round($unusedLeaveCash, 2)
+            ];
+        }
+        
+        // Always add the total row
+        $breakdown[] = [
+            'description' => 'Total 13th Month Pay',
+            'calculation' => '',
+            'amount' => round($thirteenthMonthPay, 2),
+            'is_total' => true
+        ];
+        
+        // Ensure breakdown is never empty
+        if (empty($breakdown)) {
+            $breakdown = [
+                [
+                    'description' => 'Total 13th Month Pay',
+                    'calculation' => 'No breakdown available',
+                    'amount' => round($thirteenthMonthPay, 2),
+                    'is_total' => true
+                ]
+            ];
+        }
+        
+        return [
+            'total' => round($thirteenthMonthPay, 2),
+            'breakdown' => $breakdown
+        ];
+    }
+
+    /**
+     * Calculate 13th month pay (legacy method for backward compatibility)
+     * 
+     * @param EmployeeProfile $employee
+     * @param string $periodStart
+     * @param string $periodEnd
+     * @return float
+     */
+    private function calculateThirteenthMonthPay(EmployeeProfile $employee, $periodStart, $periodEnd): float
+    {
+        $data = $this->calculateThirteenthMonthPayWithBreakdown($employee, $periodStart, $periodEnd);
+        return $data['total'];
+    }
+
+    /**
+     * Get Monthly Salary Credit (MSC) from employee's monthly salary based on 2025 SSS table
+     * SSS contributions are based on MSC brackets, not exact salary
+     * 
+     * @param float $monthlySalary Employee's monthly salary
+     * @return float Monthly Salary Credit
+     */
+    private function getMonthlySalaryCredit(float $monthlySalary): float
+    {
+        // Handle edge cases
+        if ($monthlySalary <= 0) {
+            return 5000.00; // Minimum MSC
+        }
+
+        // SSS 2025 Contribution Table - Monthly Salary Credit brackets
+        // Format: [min_salary, max_salary, msc]
+        $mscBrackets = [
+            [0, 5249.99, 5000.00],
+            [5250.00, 5749.99, 5500.00],
+            [5750.00, 6249.99, 6000.00],
+            [6250.00, 6749.99, 6500.00],
+            [6750.00, 7249.99, 7000.00],
+            [7250.00, 7749.99, 7500.00],
+            [7750.00, 8249.99, 8000.00],
+            [8250.00, 8749.99, 8500.00],
+            [8750.00, 9249.99, 9000.00],
+            [9250.00, 9749.99, 9500.00],
+            [9750.00, 10249.99, 10000.00],
+            [10250.00, 10749.99, 10500.00],
+            [10750.00, 11249.99, 11000.00],
+            [11250.00, 11749.99, 11500.00],
+            [11750.00, 12249.99, 12000.00],
+            [12250.00, 12749.99, 12500.00],
+            [12750.00, 13249.99, 13000.00],
+            [13250.00, 13749.99, 13500.00],
+            [13750.00, 14249.99, 14000.00],
+            [14250.00, 14749.99, 14500.00],
+            [14750.00, 15249.99, 15000.00],
+            [15250.00, 15749.99, 15500.00],
+            [15750.00, 16249.99, 16000.00],
+            [16250.00, 16749.99, 16500.00],
+            [16750.00, 17249.99, 17000.00],
+            [17250.00, 17749.99, 17500.00],
+            [17750.00, 18249.99, 18000.00],
+            [18250.00, 18749.99, 18500.00],
+            [18750.00, 19249.99, 19000.00],
+            [19250.00, 19749.99, 19500.00],
+            [19750.00, 20249.99, 20000.00],
+            [20250.00, 20749.99, 20500.00],
+            [20750.00, 21249.99, 21000.00],
+            [21250.00, 21749.99, 21500.00],
+            [21750.00, 22249.99, 22000.00],
+            [22250.00, 22749.99, 22500.00],
+            [22750.00, 23249.99, 23000.00],
+            [23250.00, 23749.99, 23500.00],
+            [23750.00, 24249.99, 24000.00],
+            [24250.00, 24749.99, 24500.00],
+            [24750.00, 25249.99, 25000.00],
+            [25250.00, 25749.99, 25500.00],
+            [25750.00, 26249.99, 26000.00],
+            [26250.00, 26749.99, 26500.00],
+            [26750.00, 27249.99, 27000.00],
+            [27250.00, 27749.99, 27500.00],
+            [27750.00, 28249.99, 28000.00],
+            [28250.00, 28749.99, 28500.00],
+            [28750.00, 29249.99, 29000.00],
+            [29250.00, 29749.99, 29500.00],
+            [29750.00, 30249.99, 30000.00],
+            [30250.00, 30749.99, 30500.00],
+            [30750.00, 31249.99, 31000.00],
+            [31250.00, 31749.99, 31500.00],
+            [31750.00, 32249.99, 32000.00],
+            [32250.00, 32749.99, 32500.00],
+            [32750.00, 33249.99, 33000.00],
+            [33250.00, 33749.99, 33500.00],
+            [33750.00, 34249.99, 34000.00],
+            [34250.00, 34749.99, 34500.00],
+            [34750.00, PHP_FLOAT_MAX, 35000.00], // Maximum MSC for salaries 34,750 and above
+        ];
+
+        // Find the appropriate MSC bracket
+        foreach ($mscBrackets as $bracket) {
+            [$min, $max, $msc] = $bracket;
+            if ($monthlySalary >= $min && $monthlySalary <= $max) {
+                return $msc;
+            }
+        }
+
+        // Fallback to maximum MSC if salary exceeds all brackets
+        return 35000.00;
+    }
+
+    /**
+     * Calculate SSS contributions based on Monthly Salary Credit (MSC)
+     * Based on 2025 SSS Contribution Table
+     * 
+     * Regular SS Contribution = 15% of MSC up to ₱20,000 (10% employer + 5% employee)
+     * MPF (Member's Provident Fund) = 15% of MSC above ₱20,000 (10% employer + 5% employee)
+     * Employer also pays EC (Employees' Compensation):
+     *   - ₱10.00 for MSC below ₱15,000
+     *   - ₱30.00 for MSC ₱15,000 and above
+     * 
+     * @param float $monthlySalary Employee's monthly salary
+     * @return array ['msc' => float, 'employee' => float, 'employer' => float, 'ec' => float, 'employer_total' => float, 'total' => float, 'regular_ss' => array, 'mpf' => array]
+     */
+    private function calculateSSSContributions(float $monthlySalary): array
+    {
+        // Get Monthly Salary Credit from salary
+        $msc = $this->getMonthlySalaryCredit($monthlySalary);
+
+        // MPF threshold: ₱20,000
+        $mpfThreshold = 20000.00;
+        $employeeRate = 0.05; // 5%
+        $employerRate = 0.10; // 10%
+        $contributionRate = 0.15; // 15% total
+
+        // Calculate Regular SS (for MSC up to ₱20,000)
+        $regularSSMSC = min($msc, $mpfThreshold);
+        $regularSSEmployee = $regularSSMSC * $employeeRate; // 5% of Regular SS MSC
+        $regularSSEmployer = $regularSSMSC * $employerRate; // 10% of Regular SS MSC
+        $regularSSTotal = $regularSSEmployee + $regularSSEmployer; // 15% of Regular SS MSC
+
+        // Calculate MPF (for MSC above ₱20,000)
+        $mpfMSC = max(0, $msc - $mpfThreshold);
+        $mpfEmployee = $mpfMSC * $employeeRate; // 5% of MPF MSC
+        $mpfEmployer = $mpfMSC * $employerRate; // 10% of MPF MSC
+        $mpfTotal = $mpfEmployee + $mpfEmployer; // 15% of MPF MSC
+
+        // Total contributions (Regular SS + MPF)
+        $totalEmployeeContribution = $regularSSEmployee + $mpfEmployee;
+        $totalEmployerContribution = $regularSSEmployer + $mpfEmployer;
+
+        // Employees' Compensation (EC) - paid by employer only
+        // ₱10.00 for MSC below ₱15,000
+        // ₱30.00 for MSC ₱15,000 and above
+        $ecContribution = 10.00;
+        if ($msc >= 15000.00) {
+            $ecContribution = 30.00;
+        }
+
+        // Total employer contribution = Regular SS (employer) + MPF (employer) + EC
+        $totalEmployerShare = $totalEmployerContribution + $ecContribution;
+
+        // Grand total = Employee + Employer (Regular SS + MPF + EC)
+        $grandTotal = $totalEmployeeContribution + $totalEmployerShare;
+
+        return [
+            'msc' => round($msc, 2),
+            'employee' => round($totalEmployeeContribution, 2),
+            'employer' => round($totalEmployerContribution, 2),
+            'ec' => round($ecContribution, 2),
+            'employer_total' => round($totalEmployerShare, 2),
+            'total' => round($grandTotal, 2),
+            'regular_ss' => [
+                'msc' => round($regularSSMSC, 2),
+                'employee' => round($regularSSEmployee, 2),
+                'employer' => round($regularSSEmployer, 2),
+                'total' => round($regularSSTotal, 2)
+            ],
+            'mpf' => [
+                'msc' => round($mpfMSC, 2),
+                'employee' => round($mpfEmployee, 2),
+                'employer' => round($mpfEmployer, 2),
+                'total' => round($mpfTotal, 2)
+            ]
+        ];
+    }
+
+    /**
+     * Calculate Pag-IBIG contributions based on monthly compensation - 2025 rates
+     * 
+     * Rules:
+     * - If monthly compensation ≤ ₱1,500: Employee 1%, Employer 2%
+     * - If monthly compensation > ₱1,500: Employee 2%, Employer 2%
+     * - Maximum salary base for computation: ₱5,000
+     * - If salary > ₱5,000, use ₱5,000 as base
+     * - Maximum employee contribution: ₱100 (2% of ₱5,000)
+     * - Maximum employer contribution: ₱100 (2% of ₱5,000)
+     * 
+     * @param float $monthlySalary Employee's monthly salary
+     * @return array ['employee' => float, 'employer' => float, 'total' => float, 'salary_base' => float]
+     */
+    private function calculatePagIbigContributions(float $monthlySalary): array
+    {
+        // Maximum salary base for Pag-IBIG computation
+        $maxSalaryBase = 5000.00;
+        
+        // Determine the salary base (capped at ₱5,000)
+        $salaryBase = min($monthlySalary, $maxSalaryBase);
+        
+        // Handle edge cases
+        if ($monthlySalary <= 0) {
+            return [
+                'salary_base' => 0,
+                'employee' => 0,
+                'employer' => 0,
+                'total' => 0
+            ];
+        }
+        
+        // Determine contribution rates based on monthly compensation
+        if ($monthlySalary <= 1500.00) {
+            // Employee earns ₱1,500 or below: Employee 1%, Employer 2%
+            $employeeRate = 0.01; // 1%
+            $employerRate = 0.02; // 2%
+        } else {
+            // Employee earns more than ₱1,500: Both 2%
+            $employeeRate = 0.02; // 2%
+            $employerRate = 0.02; // 2%
+        }
+        
+        // Calculate contributions based on salary base
+        $employeeContribution = $salaryBase * $employeeRate;
+        $employerContribution = $salaryBase * $employerRate;
+        
+        // Cap contributions at maximum (₱100 each)
+        $maxEmployeeContribution = 100.00; // 2% of ₱5,000
+        $maxEmployerContribution = 100.00; // 2% of ₱5,000
+        
+        $employeeContribution = min($employeeContribution, $maxEmployeeContribution);
+        $employerContribution = min($employerContribution, $maxEmployerContribution);
+        
+        // Total contribution
+        $totalContribution = $employeeContribution + $employerContribution;
+        
+        return [
+            'salary_base' => round($salaryBase, 2),
+            'employee' => round($employeeContribution, 2),
+            'employer' => round($employerContribution, 2),
+            'total' => round($totalContribution, 2)
+        ];
+    }
+
+    /**
+     * Calculate PhilHealth contributions based on Monthly Basic Salary (MBS) - 2025 rates
+     * 
+     * Rules:
+     * - If MBS ≤ ₱10,000: Premium = ₱500 (fixed)
+     * - If MBS is between ₱10,000.01 and ₱99,999.99: Premium = 5% of MBS, but must be between ₱500 and ₱5,000
+     * - If MBS ≥ ₱100,000: Premium = ₱5,000 (maximum)
+     * - After getting total premium, divide equally: 50% employee, 50% employer
+     * 
+     * @param float $monthlySalary Employee's monthly basic salary
+     * @return array ['employee' => float, 'employer' => float, 'total' => float, 'mbs' => float]
+     */
+    private function calculatePhilHealthContributions(float $monthlySalary): array
+    {
+        // Handle edge cases
+        if ($monthlySalary <= 0) {
+            return [
+                'mbs' => 0,
+                'employee' => 0,
+                'employer' => 0,
+                'total' => 0
+            ];
+        }
+        
+        $mbs = $monthlySalary;
+        $totalPremium = 0;
+        
+        // Calculate total premium based on MBS
+        if ($mbs <= 10000.00) {
+            // If MBS ≤ ₱10,000: Premium = ₱500 (fixed)
+            $totalPremium = 500.00;
+        } elseif ($mbs >= 100000.00) {
+            // If MBS ≥ ₱100,000: Premium = ₱5,000 (maximum)
+            $totalPremium = 5000.00;
+        } else {
+            // If MBS is between ₱10,000.01 and ₱99,999.99: Premium = 5% of MBS
+            // But must be between ₱500 and ₱5,000
+            $calculatedPremium = $mbs * 0.05; // 5% of MBS
+            $totalPremium = max(500.00, min(5000.00, $calculatedPremium)); // Clamp between ₱500 and ₱5,000
+        }
+        
+        // Divide total premium equally: 50% employee, 50% employer
+        $employeeContribution = $totalPremium * 0.50; // 50%
+        $employerContribution = $totalPremium * 0.50; // 50%
+        
+        return [
+            'mbs' => round($mbs, 2),
+            'employee' => round($employeeContribution, 2),
+            'employer' => round($employerContribution, 2),
+            'total' => round($totalPremium, 2)
+        ];
     }
 
     /**
      * Calculate tax deductions from assigned taxes
      * Taxes are deducted per payroll period (fixed amount per period)
+     * 
+     * @param bool $excludeSSS If true, exclude SSS from calculation (SSS is calculated separately from MSC)
+     * @param bool $excludePagIbig If true, exclude Pag-IBIG from calculation (Pag-IBIG is calculated separately from monthly salary)
+     * @param bool $excludePhilHealth If true, exclude PhilHealth from calculation (PhilHealth is calculated separately from monthly salary)
      */
-    private function calculateAssignedTaxes(EmployeeProfile $employee, $periodStart = null, $periodEnd = null): array
+    private function calculateAssignedTaxes(EmployeeProfile $employee, $periodStart = null, $periodEnd = null, bool $excludeSSS = false, bool $excludePagIbig = false, bool $excludePhilHealth = false): array
     {
         // Get all active tax assignments for the employee
         // Only employees with assigned taxes will have tax deductions
@@ -992,14 +1789,29 @@ class PayrollController extends Controller
             
             // Match taxes more flexibly - check for SSS, PhilHealth, Pag-IBIG
             if (strpos($taxName, 'sss') !== false) {
-                // SSS Contribution - sum all SSS taxes
-                $sssDeduction += $effectiveRate;
+                // SSS Contribution - exclude if $excludeSSS is true (calculated separately from MSC)
+                if (!$excludeSSS) {
+                    $sssDeduction += $effectiveRate;
+                } else {
+                    // Skip SSS - it's calculated separately from MSC for all employees
+                    continue;
+                }
             } elseif (strpos($taxName, 'philhealth') !== false) {
-                // PhilHealth Contribution
-                $philhealthDeduction += $effectiveRate;
+                // PhilHealth Contribution - exclude if $excludePhilHealth is true (calculated separately from monthly salary)
+                if (!$excludePhilHealth) {
+                    $philhealthDeduction += $effectiveRate;
+                } else {
+                    // Skip PhilHealth - it's calculated separately from monthly salary for all employees
+                    continue;
+                }
             } elseif (strpos($taxName, 'pag-ibig') !== false || strpos($taxName, 'pagibig') !== false) {
-                // Pag-IBIG Contribution
-                $pagibigDeduction += $effectiveRate;
+                // Pag-IBIG Contribution - exclude if $excludePagIbig is true (calculated separately from monthly salary)
+                if (!$excludePagIbig) {
+                    $pagibigDeduction += $effectiveRate;
+                } else {
+                    // Skip Pag-IBIG - it's calculated separately from monthly salary for all employees
+                    continue;
+                }
             } else {
                 // For other taxes (like income tax), these are fixed per period
                 // Note: Income tax based on gross pay will be calculated separately
@@ -1010,11 +1822,49 @@ class PayrollController extends Controller
             $totalTaxDeduction += $effectiveRate;
         }
 
-        $weeksFactor = $this->getWeeksFactorForPeriod($periodStart, $periodEnd);
-        $sssDeduction *= $weeksFactor;
-        $philhealthDeduction *= $weeksFactor;
-        $pagibigDeduction *= $weeksFactor;
-        $totalTaxDeduction = $sssDeduction + $philhealthDeduction + $pagibigDeduction + $otherTaxDeduction;
+        // Calculate monthly factor for payroll period
+        // If payroll period is 6-7 days, divide by 4; if 15 days, divide by 2; if full month, no division
+        $monthlyFactor = $this->getMonthlyFactorForPeriod($periodStart, $periodEnd);
+        
+        // Apply monthly factor to taxes (PhilHealth, Pag-IBIG)
+        // These are typically calculated monthly, so we prorate based on payroll period length
+        // Note: SSS is excluded from here and calculated separately from MSC for all employees
+        // Note: Pag-IBIG is excluded from here and calculated separately from monthly salary for all employees
+        // Note: PhilHealth is excluded from here and calculated separately from monthly salary for all employees
+        if (!$excludePhilHealth) {
+            $philhealthDeduction *= $monthlyFactor;
+        }
+        if (!$excludePagIbig) {
+            $pagibigDeduction *= $monthlyFactor;
+        }
+        
+        // Calculate total tax deduction based on which taxes are excluded
+        // Build total incrementally based on what's included
+        $totalTaxDeduction = 0;
+        
+        // Add SSS if not excluded
+        if (!$excludeSSS) {
+            // Use the same monthly factor calculation as the main payroll calculation
+            // If payroll period is 6-7 days, divide by 4; if 15 days, divide by 2; if full month, no division
+            $monthlyFactor = $this->getMonthlyFactorForPeriod($periodStart, $periodEnd);
+            if ($sssDeduction > 0) {
+                $sssDeduction = $sssDeduction * $monthlyFactor;
+            }
+            $totalTaxDeduction += $sssDeduction;
+        }
+        
+        // Add PhilHealth if not excluded
+        if (!$excludePhilHealth) {
+            $totalTaxDeduction += $philhealthDeduction;
+        }
+        
+        // Add Pag-IBIG if not excluded
+        if (!$excludePagIbig) {
+            $totalTaxDeduction += $pagibigDeduction;
+        }
+        
+        // Always add other taxes
+        $totalTaxDeduction += $otherTaxDeduction;
 
         return [
             'sss' => round($sssDeduction, 2),
@@ -1046,6 +1896,77 @@ class PayrollController extends Controller
         $weeks = (int) round($days / 7);
 
         return max(1, $weeks);
+    }
+
+    /**
+     * Calculate monthly factor for payroll period
+     * Used to prorate SSS, Pag-IBIG, and PhilHealth contributions based on period length
+     * 
+     * Rules:
+     * - 6-7 days (1 week): divide by 4 (factor = 0.25)
+     * - 15 days (half month): divide by 2 (factor = 0.5)
+     * - 30-31 days (full month): no division (factor = 1.0)
+     * - For other periods, interpolate based on days
+     * 
+     * @param mixed $periodStart
+     * @param mixed $periodEnd
+     * @return float
+     */
+    private function getMonthlyFactorForPeriod($periodStart, $periodEnd): float
+    {
+        if (!$periodStart || !$periodEnd) {
+            return 1.0;
+        }
+
+        try {
+            $start = Carbon::parse($periodStart);
+            $end = Carbon::parse($periodEnd);
+        } catch (\Exception $e) {
+            return 1.0;
+        }
+
+        if ($start->gt($end)) {
+            return 1.0;
+        }
+
+        $days = $start->diffInDays($end) + 1;
+
+        // 6-7 days (1 week): divide by 4 (factor = 0.25)
+        if ($days >= 6 && $days <= 7) {
+            return 0.25;
+        }
+        
+        // 15 days (half month): divide by 2 (factor = 0.5)
+        if ($days == 15) {
+            return 0.5;
+        }
+        
+        // 30-31 days (full month): no division (factor = 1.0)
+        if ($days >= 30 && $days <= 31) {
+            return 1.0;
+        }
+        
+        // For other periods, interpolate based on days
+        // Linear interpolation between known points:
+        // - 7 days = 0.25
+        // - 15 days = 0.5
+        // - 30 days = 1.0
+        
+        if ($days < 6) {
+            // Less than 1 week: use 1 week rate (0.25)
+            return 0.25;
+        } elseif ($days < 15) {
+            // Between 7-14 days: interpolate between 0.25 and 0.5
+            // Linear interpolation: factor = 0.25 + (days - 7) * (0.5 - 0.25) / (15 - 7)
+            return 0.25 + ($days - 7) * 0.25 / 8;
+        } elseif ($days < 30) {
+            // Between 15-29 days: interpolate between 0.5 and 1.0
+            // Linear interpolation: factor = 0.5 + (days - 15) * (1.0 - 0.5) / (30 - 15)
+            return 0.5 + ($days - 15) * 0.5 / 15;
+        } else {
+            // More than 31 days: cap at 1.0 (full month)
+            return 1.0;
+        }
     }
 
     /**
@@ -1133,24 +2054,76 @@ class PayrollController extends Controller
 
     /**
      * Download payslip as PDF
+     * Employees can only download their own payslips
+     * HR Assistant, HR Staff, and Managers can download any employee's payslip
      */
     public function downloadPayslip($id)
     {
         try {
             $user = Auth::user();
-            $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
+            
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Please log in again.'
+                ], 401);
+            }
+            
+            // Load user role relationship explicitly
+            $user->load('role');
+            $userRole = $user->role ? $user->role->name : null;
+            
+            // Check if user is HR Assistant, HR Staff, or Manager (can download any payslip)
+            $isHR = in_array($userRole, ['HR Assistant', 'HR Staff', 'Manager']);
+            
+            // Load payroll with relationships
+            if ($isHR) {
+                // HR can download any employee's payslip
+                $payroll = Payroll::with(['employee', 'payrollPeriod'])
+                    ->where('id', $id)
+                    ->first();
+                
+                if (!$payroll) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payslip not found'
+                    ], 404);
+                }
+                
+                // The employee relationship returns EmployeeProfile directly
+                $employeeProfile = $payroll->employee;
+            } else {
+                // Employees can only download their own payslips
+                $employeeProfile = EmployeeProfile::where('user_id', $user->id)->first();
 
-            if (!$employeeProfile) {
-                return response()->json(['error' => 'Employee profile not found'], 404);
+                if (!$employeeProfile) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Employee profile not found'
+                    ], 404);
+                }
+
+                $payroll = Payroll::with(['employee', 'payrollPeriod'])
+                    ->where('id', $id)
+                    ->where('employee_id', $employeeProfile->id)
+                    ->first();
+                    
+                if (!$payroll) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Payslip not found or you do not have permission to access it'
+                    ], 404);
+                }
             }
 
-            // Load payroll with relationships
-            $payroll = Payroll::with(['employee', 'payrollPeriod'])
-                ->where('id', $id)
-                ->where('employee_id', $employeeProfile->id)
-                ->firstOrFail();
+            if (!$employeeProfile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee profile not found for this payroll'
+                ], 404);
+            }
 
-            // Generate PDF
+            // Generate PDF using the same template employees see
             $pdf = Pdf::loadView('pdf.payslip', compact('payroll', 'employeeProfile'));
             $pdf->setPaper('a4', 'portrait');
 
@@ -1165,6 +2138,11 @@ class PayrollController extends Controller
                 'message' => 'Payslip not found or you do not have permission to access it'
             ], 404);
         } catch (\Exception $e) {
+            Log::error('Payslip download error: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'payroll_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to download payslip: ' . $e->getMessage()

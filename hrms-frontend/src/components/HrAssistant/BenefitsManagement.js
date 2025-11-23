@@ -24,6 +24,8 @@ function BenefitsManagement() {
   const [claimDetails, setClaimDetails] = useState(null);
   const [documentViewerUrl, setDocumentViewerUrl] = useState(null);
   const [documentViewerType, setDocumentViewerType] = useState(null);
+  const [allDocuments, setAllDocuments] = useState([]);
+  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedClaimForRejection, setSelectedClaimForRejection] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -55,6 +57,9 @@ function BenefitsManagement() {
     description: '',
     supporting_documents: null
   });
+
+  const [completionEvidence, setCompletionEvidence] = useState(null);
+  const [showCompletionUpload, setShowCompletionUpload] = useState(false);
 
   const [filterStatus, setFilterStatus] = useState('all');
   const [claimSearchTerm, setClaimSearchTerm] = useState('');
@@ -315,6 +320,38 @@ function BenefitsManagement() {
     }
   };
 
+  const loadDocument = async (index) => {
+    try {
+      setLoading(true);
+      const doc = allDocuments[index];
+      const docResponse = await axios.get(doc.download_url, {
+        responseType: 'blob'
+      });
+      
+      // Determine file type
+      const contentType = docResponse.headers['content-type'] || '';
+      const fileName = doc.name;
+      const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+      const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+      
+      // Revoke previous URL
+      if (documentViewerUrl) {
+        window.URL.revokeObjectURL(documentViewerUrl);
+      }
+      
+      // Create object URL for viewing
+      const url = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
+      setDocumentViewerUrl(url);
+      setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
+      setCurrentDocumentIndex(index);
+    } catch (error) {
+      console.error('Error loading document:', error);
+      toast.error('Failed to load document');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleRejectClaim = async (claimId, reason) => {
     if (!reason || reason.trim().length < 10) {
       toast.error('Rejection reason must be at least 10 characters long');
@@ -353,6 +390,28 @@ function BenefitsManagement() {
                            error.response?.data?.errors?.rejection_reason?.[0] ||
                            'Failed to reject benefit claim';
       toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStatusUpdate = async (claimId, newStatus) => {
+    try {
+      setLoading(true);
+      const response = await axios.put(`/benefit-claims/${claimId}/status`, {
+        status: newStatus
+      });
+      
+      if (response.data.success) {
+        toast.success('Status updated successfully');
+        // Refresh claim details
+        const claimResponse = await axios.get(`/benefit-claims/${claimId}`);
+        setClaimDetails(claimResponse.data.data || claimResponse.data);
+        await fetchBenefitClaims();
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error(error.response?.data?.message || 'Failed to update status');
     } finally {
       setLoading(false);
     }
@@ -1550,12 +1609,16 @@ function BenefitsManagement() {
           setShowClaimDetailsModal(false);
           setSelectedClaim(null);
           setClaimDetails(null);
+          setCompletionEvidence(null);
+          setShowCompletionUpload(false);
           // Clean up document viewer URL
           if (documentViewerUrl) {
             window.URL.revokeObjectURL(documentViewerUrl);
             setDocumentViewerUrl(null);
             setDocumentViewerType(null);
           }
+          setAllDocuments([]);
+          setCurrentDocumentIndex(0);
         }}
         size="lg"
       >
@@ -1772,33 +1835,19 @@ function BenefitsManagement() {
                             Update Status <span className="text-danger">*</span>
                           </Form.Label>
                           <Form.Select
-                            value={claim.status}
-                            onChange={async (e) => {
+                            value={showCompletionUpload ? 'completed' : claim.status}
+                            onChange={(e) => {
                               const newStatus = e.target.value;
-                              if (newStatus === 'rejected') {
+                              if (newStatus === 'completed' && claim.status !== 'completed') {
+                                // Show file upload field for completion evidence
+                                setShowCompletionUpload(true);
+                              } else if (newStatus === 'rejected') {
                                 // Open reject modal if rejecting
                                 setShowClaimDetailsModal(false);
                                 openRejectModal(claim);
-                              } else {
-                                try {
-                                  setLoading(true);
-                                  const response = await axios.put(`/benefit-claims/${claim.id}/status`, {
-                                    status: newStatus
-                                  });
-                                  
-                                  if (response.data.success) {
-                                    toast.success('Status updated successfully');
-                                    // Refresh claim details
-                                    const claimResponse = await axios.get(`/benefit-claims/${claim.id}`);
-                                    setClaimDetails(claimResponse.data.data || claimResponse.data);
-                                    await fetchBenefitClaims();
-                                  }
-                                } catch (error) {
-                                  console.error('Error updating status:', error);
-                                  toast.error(error.response?.data?.message || 'Failed to update status');
-                                } finally {
-                                  setLoading(false);
-                                }
+                              } else if (newStatus !== 'completed' && newStatus !== claim.status) {
+                                // For other statuses, update immediately
+                                handleStatusUpdate(claim.id, newStatus);
                               }
                             }}
                             disabled={loading || claim.status === 'completed'}
@@ -1812,8 +1861,98 @@ function BenefitsManagement() {
                           </Form.Select>
                           <Form.Text className="text-muted">
                             Select a status to update this claim. Employee will be notified of the status change.
+                            {claim.status !== 'completed' && ' For "Completed" status, you must upload completion evidence.'}
                           </Form.Text>
                         </div>
+
+                        {/* Completion Evidence Upload Field */}
+                        {showCompletionUpload && claim.status !== 'completed' && (
+                          <div className="mb-3 p-3 border rounded bg-light">
+                            <Form.Label className="fw-bold">
+                              Completion Evidence <span className="text-danger">*</span>
+                            </Form.Label>
+                            <Form.Control
+                              type="file"
+                              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  // Validate file size (5MB max)
+                                  if (file.size > 5 * 1024 * 1024) {
+                                    toast.error('File size must be less than 5MB');
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  setCompletionEvidence(file);
+                                }
+                              }}
+                            />
+                            <Form.Text className="text-muted">
+                              Upload evidence of completion (PDF, DOC, DOCX, JPG, JPEG, PNG - Max 5MB)
+                            </Form.Text>
+                            {completionEvidence && (
+                              <div className="mt-2">
+                                <Badge bg="info">
+                                  <FaFileAlt className="me-1" />
+                                  {completionEvidence.name}
+                                </Badge>
+                              </div>
+                            )}
+                            <div className="mt-3">
+                              <Button
+                                variant="success"
+                                onClick={async () => {
+                                  if (!completionEvidence) {
+                                    toast.error('Please upload completion evidence file');
+                                    return;
+                                  }
+                                  
+                                  try {
+                                    setLoading(true);
+                                    const formData = new FormData();
+                                    formData.append('status', 'completed');
+                                    formData.append('completion_evidence', completionEvidence);
+                                    formData.append('_method', 'PUT');
+                                    
+                                    // Use POST with _method=PUT for FormData compatibility (Laravel method spoofing)
+                                    const response = await axios.post(`/benefit-claims/${claim.id}/status`, formData);
+                                    
+                                    if (response.data.success) {
+                                      toast.success('Status updated to completed successfully');
+                                      // Reset form
+                                      setCompletionEvidence(null);
+                                      setShowCompletionUpload(false);
+                                      // Refresh claim details
+                                      const claimResponse = await axios.get(`/benefit-claims/${claim.id}`);
+                                      setClaimDetails(claimResponse.data.data || claimResponse.data);
+                                      await fetchBenefitClaims();
+                                    }
+                                  } catch (error) {
+                                    console.error('Error updating status:', error);
+                                    toast.error(error.response?.data?.message || 'Failed to update status');
+                                  } finally {
+                                    setLoading(false);
+                                  }
+                                }}
+                                disabled={loading || !completionEvidence}
+                                className="me-2"
+                              >
+                                <FaCheckCircle className="me-1" />
+                                Update to Completed
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => {
+                                  setShowCompletionUpload(false);
+                                  setCompletionEvidence(null);
+                                }}
+                                disabled={loading}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </Card.Body>
                     </Card>
                   </Col>
@@ -1855,6 +1994,11 @@ function BenefitsManagement() {
                         </h6>
                       </Card.Header>
                       <Card.Body>
+                        <Alert variant="info" className="mb-3">
+                          <small>
+                            <strong>Document Types:</strong> Application Form (Employee) • Supporting Documents (Employee) • Evidence of Completion (HR Assistant)
+                          </small>
+                        </Alert>
                         <div className="d-flex gap-2 mb-3">
                         <Button
                           variant="primary"
@@ -1862,25 +2006,44 @@ function BenefitsManagement() {
                           className="px-4"
                           onClick={async () => {
                           try {
-                            const response = await axios.get(`/benefit-claims/${claim.id}/document`, {
-                              responseType: 'blob'
-                            });
+                            setLoading(true);
+                            // Fetch all documents
+                            const documentsResponse = await axios.get(`/benefit-claims/${claim.id}/documents`);
                             
-                            // Determine file type
-                            const contentType = response.headers['content-type'] || '';
-                            const fileName = claim.supporting_documents_name || `benefit-claim-${claim.id}-documents.pdf`;
-                            const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
-                            const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+                            console.log('Documents response:', documentsResponse.data);
                             
-                            // Create object URL for viewing
-                            const url = window.URL.createObjectURL(new Blob([response.data], { type: contentType }));
-                            setDocumentViewerUrl(url);
-                            setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
-                            
-                            toast.success('Document loaded successfully');
+                            if (documentsResponse.data.success && documentsResponse.data.data.length > 0) {
+                              console.log('Total documents found:', documentsResponse.data.data.length);
+                              console.log('Document types:', documentsResponse.data.data.map(d => d.label));
+                              setAllDocuments(documentsResponse.data.data);
+                              setCurrentDocumentIndex(0);
+                              
+                              // Load the first document
+                              const firstDoc = documentsResponse.data.data[0];
+                              const docResponse = await axios.get(firstDoc.download_url, {
+                                responseType: 'blob'
+                              });
+                              
+                              // Determine file type
+                              const contentType = docResponse.headers['content-type'] || '';
+                              const fileName = firstDoc.name;
+                              const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+                              const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+                              
+                              // Create object URL for viewing
+                              const url = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
+                              setDocumentViewerUrl(url);
+                              setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
+                              
+                              toast.success(`${documentsResponse.data.data.length} document(s) loaded successfully`);
+                            } else {
+                              toast.error('No documents available');
+                            }
                           } catch (error) {
-                            console.error('Error loading document:', error);
-                            toast.error('Failed to load document');
+                            console.error('Error loading documents:', error);
+                            toast.error('Failed to load documents');
+                          } finally {
+                            setLoading(false);
                           }
                         }}
                       >
@@ -1920,13 +2083,51 @@ function BenefitsManagement() {
                         </div>
                         
                         {/* Document Viewer */}
-                        {documentViewerUrl && (
+                        {documentViewerUrl && allDocuments.length > 0 && (
                       <Card className="mt-3">
                         <Card.Header className="d-flex justify-content-between align-items-center">
-                          <span>
-                            <FaFileAlt className="me-2" />
-                            Document Preview
-                          </span>
+                          <div className="d-flex align-items-center gap-3">
+                            <span>
+                              <FaFileAlt className="me-2" />
+                              Document Preview
+                            </span>
+                            {allDocuments.length > 1 && (
+                              <div className="d-flex align-items-center gap-2">
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (currentDocumentIndex > 0) {
+                                      const newIndex = currentDocumentIndex - 1;
+                                      await loadDocument(newIndex);
+                                    }
+                                  }}
+                                  disabled={currentDocumentIndex === 0 || loading}
+                                >
+                                  Previous
+                                </Button>
+                                <span className="text-muted">
+                                  {currentDocumentIndex + 1} of {allDocuments.length}
+                                </span>
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (currentDocumentIndex < allDocuments.length - 1) {
+                                      const newIndex = currentDocumentIndex + 1;
+                                      await loadDocument(newIndex);
+                                    }
+                                  }}
+                                  disabled={currentDocumentIndex === allDocuments.length - 1 || loading}
+                                >
+                                  Next
+                                </Button>
+                              </div>
+                            )}
+                            <Badge bg={allDocuments[currentDocumentIndex]?.source === 'hr_assistant' ? 'success' : 'info'}>
+                              {allDocuments[currentDocumentIndex]?.label || allDocuments[currentDocumentIndex]?.name || 'Document'}
+                            </Badge>
+                          </div>
                           <Button
                             variant="outline-secondary"
                             size="sm"
@@ -1934,6 +2135,8 @@ function BenefitsManagement() {
                               window.URL.revokeObjectURL(documentViewerUrl);
                               setDocumentViewerUrl(null);
                               setDocumentViewerType(null);
+                              setAllDocuments([]);
+                              setCurrentDocumentIndex(0);
                             }}
                           >
                             Close

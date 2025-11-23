@@ -51,6 +51,7 @@ class MultipleAccountsSeeder extends Seeder
             ['first_name' => 'Hans Axle', 'last_name' => 'Consuelo', 'email' => 'hans.consuelo@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Mark Vincent', 'last_name' => 'Aguado', 'email' => 'mark.aguado@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
             ['first_name' => 'Francisco', 'last_name' => 'Carbonell', 'email' => 'kiko.carbonell@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
+            ['first_name' => 'Luisa Joy', 'last_name' => 'Catindig', 'email' => 'luisajoy.catindig@company.com', 'role' => 'Employee', 'position' => 'Staff', 'department' => 'Production Department', 'salary' => 13520],
 
             // Admins
             ['first_name' => 'Admin', 'last_name' => 'One', 'email' => 'admin.one@company.com', 'role' => 'Admin', 'position' => 'Admin', 'department' => 'IT Department', 'salary' => 13520],
@@ -93,6 +94,11 @@ class MultipleAccountsSeeder extends Seeder
                 $pagibigNumber = 'PG-' . sprintf('%09d', rand(100000000, 999999999));
                 $tinNumber = sprintf('%03d-%03d-%03d-%03d', rand(100, 999), rand(100, 999), rand(100, 999), rand(100, 999));
                 
+                // Set hire date to 1 year ago for Luisa Joy Catindig, otherwise 120 days ago
+                $hireDate = ($u['first_name'] === 'Luisa Joy' && $u['last_name'] === 'Catindig') 
+                    ? now()->subYear()->toDateString() 
+                    : now()->subDays(120)->toDateString();
+                
                 $profile = $user->employeeProfile()->updateOrCreate([], [
                     'employee_id' => 'EM' . $employeeCounter,
                     'first_name' => $u['first_name'],
@@ -101,7 +107,7 @@ class MultipleAccountsSeeder extends Seeder
                     'position' => $u['position'],
                     'department' => $u['department'],
                     'employment_status' => 'Full Time',
-                    'hire_date' => now()->subDays(120)->toDateString(),
+                    'hire_date' => $hireDate,
                     'salary' => $u['salary'] ?? 13520, // Use provided salary or default to 13520
                     'status' => 'active', // Explicitly set status to active
                     'sss' => $sssNumber,

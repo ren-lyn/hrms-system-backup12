@@ -532,12 +532,19 @@ const LeaveApplicationForm = ({ onBack }) => {
             'Parental Leave': 7
           };
           maxWithPayDays = withPayDaysConfig[formData.leaveType] || requestedDays;
-          // Calculate used days for this specific leave type
-          const thisYearLeaves = leaveSummary.leaves_this_year || [];
-          usedWithPayDays = thisYearLeaves
-            .filter(leave => leave.type === formData.leaveType && leave.terms === 'with PAY' && leave.status === 'approved')
-            .reduce((sum, leave) => sum + (leave.total_days || 0), 0);
-          remainingWithPayDays = Math.max(0, maxWithPayDays - usedWithPayDays);
+          // Calculate used days for this specific leave type - use with_pay_days from summary
+          if (leaveSummary.with_pay_summary?.by_type?.[formData.leaveType]) {
+            const typeSummary = leaveSummary.with_pay_summary.by_type[formData.leaveType];
+            usedWithPayDays = typeSummary.used || 0;
+            remainingWithPayDays = typeSummary.remaining || 0;
+          } else {
+            // Fallback: calculate from leaves_this_year using with_pay_days (not total_days)
+            const thisYearLeaves = leaveSummary.leaves_this_year || [];
+            usedWithPayDays = thisYearLeaves
+              .filter(leave => leave.type === formData.leaveType && leave.terms === 'with PAY' && leave.status === 'approved')
+              .reduce((sum, leave) => sum + (leave.with_pay_days || 0), 0);
+            remainingWithPayDays = Math.max(0, maxWithPayDays - usedWithPayDays);
+          }
         } else {
           // Less than 1 year: other leaves are unpaid
           maxWithPayDays = 0;

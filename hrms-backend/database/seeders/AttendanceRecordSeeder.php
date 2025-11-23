@@ -4,6 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Attendance;
 use App\Models\EmployeeProfile;
+use App\Models\Holiday;
+use App\Models\LeaveRequest;
 use Illuminate\Database\Seeder;
 use Carbon\Carbon;
 
@@ -11,7 +13,7 @@ class AttendanceRecordSeeder extends Seeder
 {
     /**
      * Run the database seeds.
-     * Creates attendance records for July, August, and September
+     * Creates attendance records for January through November
      */
     public function run(): void
     {
@@ -30,31 +32,31 @@ class AttendanceRecordSeeder extends Seeder
 
         $this->command->info("Found {$employees->count()} employees. Generating attendance records...");
 
-        // Define months: January through September
-        // Use current year, or previous year if current month is before September
+        // Define months: January through November
+        // Use current year
         $currentYear = Carbon::now()->year;
-        $currentMonth = Carbon::now()->month;
-        
-        // If we're before September, use previous year
-        $year = ($currentMonth < 9) ? $currentYear - 1 : $currentYear;
         
         $months = [
-            ['year' => $year, 'month' => 1], // January
-            ['year' => $year, 'month' => 2], // February
-            ['year' => $year, 'month' => 3], // March
-            ['year' => $year, 'month' => 4], // April
-            ['year' => $year, 'month' => 5], // May
-            ['year' => $year, 'month' => 6], // June
-            ['year' => $year, 'month' => 7], // July
-            ['year' => $year, 'month' => 8], // August
-            ['year' => $year, 'month' => 9], // September
+            ['year' => $currentYear, 'month' => 1], // January
+            ['year' => $currentYear, 'month' => 2], // February
+            ['year' => $currentYear, 'month' => 3], // March
+            ['year' => $currentYear, 'month' => 4], // April
+            ['year' => $currentYear, 'month' => 5], // May
+            ['year' => $currentYear, 'month' => 6], // June
+            ['year' => $currentYear, 'month' => 7], // July
+            ['year' => $currentYear, 'month' => 8], // August
+            ['year' => $currentYear, 'month' => 9], // September
+            ['year' => $currentYear, 'month' => 10], // October
+            ['year' => $currentYear, 'month' => 11], // November
         ];
 
         $bar = $this->command->getOutput()->createProgressBar($employees->count() * count($months));
         $bar->start();
 
-        $highRiskTarget = 2;
-        $mediumRiskTarget = 5;
+        // Minimize lates and undertime - make most employees low risk
+        // Only 1 high risk employee, 2 medium risk, rest are low risk
+        $highRiskTarget = 1;
+        $mediumRiskTarget = 2;
 
         foreach ($employees as $index => $employee) {
             if ($index < $highRiskTarget) {
@@ -73,7 +75,7 @@ class AttendanceRecordSeeder extends Seeder
 
         $bar->finish();
         $this->command->newLine();
-        $this->command->info("Successfully generated attendance records for {$employees->count()} employees across 3 months.");
+        $this->command->info("Successfully generated attendance records for {$employees->count()} employees across 11 months (January through November).");
     }
 
     /**
@@ -94,8 +96,36 @@ class AttendanceRecordSeeder extends Seeder
                 continue;
             }
 
-            // Generate attendance record
-            $this->generateAttendanceRecord($employee, $currentDate->copy(), $riskProfile);
+            // Check if it's a holiday
+            $dateString = $currentDate->format('Y-m-d');
+            $holiday = Holiday::isHolidayDate($dateString);
+            
+            if ($holiday) {
+                // Mark as holiday - most employees don't work on holidays
+                // Only 10% chance to work on holidays (for essential services)
+                $workOnHoliday = $this->seededRandom($employee, $currentDate, 1, 100, 'work_on_holiday') <= 10;
+                
+                if ($workOnHoliday) {
+                    // Employee worked on holiday - generate normal attendance with holiday status
+                    $this->generateAttendanceRecord($employee, $currentDate->copy(), $riskProfile, true);
+                } else {
+                    // Employee did not work on holiday
+                    Attendance::updateOrCreate(
+                        [
+                            'employee_id' => $employee->id,
+                            'date' => $dateString,
+                        ],
+                        [
+                            'employee_biometric_id' => $employee->employee_id ?? null,
+                            'status' => 'Holiday (No Work)',
+                            'remarks' => $holiday->name . ' (' . $holiday->type . ' Holiday)',
+                        ]
+                    );
+                }
+            } else {
+                // Generate normal attendance record
+                $this->generateAttendanceRecord($employee, $currentDate->copy(), $riskProfile);
+            }
             
             $currentDate->addDay();
         }
@@ -104,30 +134,62 @@ class AttendanceRecordSeeder extends Seeder
     /**
      * Generate a single attendance record with random scenarios
      */
-    private function generateAttendanceRecord(EmployeeProfile $employee, Carbon $date, string $riskProfile): void
+    private function generateAttendanceRecord(EmployeeProfile $employee, Carbon $date, string $riskProfile, bool $isHoliday = false): void
     {
+        // Improved distributions to minimize lates and undertime
         $riskAdjustments = [
             'low' => [
-                'absence_threshold' => 1,
+                'absence_threshold' => 1, // Very few absences
                 'leave_threshold' => 5,
-                'clock_in_distribution' => [93, 99, 100, 100],
-                'clock_out_distribution' => [78, 84, 98, 100],
+                // 98% on time, 99% slight late, 100% very late (minimal)
+                'clock_in_distribution' => [98, 99, 100, 100],
+                // 95% on time, 97% early, 100% overtime (minimal undertime)
+                'clock_out_distribution' => [95, 97, 100, 100],
             ],
             'medium' => [
-                'absence_threshold' => 3,
-                'leave_threshold' => 9,
-                'clock_in_distribution' => [82, 94, 99, 100],
-                'clock_out_distribution' => [68, 78, 95, 100],
+                'absence_threshold' => 2, // Few absences
+                'leave_threshold' => 7,
+                // 90% on time, 96% slight late, 99% very late (minimal)
+                'clock_in_distribution' => [90, 96, 99, 100],
+                // 85% on time, 92% early, 98% overtime (minimal undertime)
+                'clock_out_distribution' => [85, 92, 98, 100],
             ],
             'high' => [
-                'absence_threshold' => 12,
-                'leave_threshold' => 20,
-                'clock_in_distribution' => [45, 70, 88, 100],
-                'clock_out_distribution' => [45, 70, 92, 100],
+                'absence_threshold' => 5, // Moderate absences
+                'leave_threshold' => 12,
+                // 75% on time, 85% slight late, 95% very late
+                'clock_in_distribution' => [75, 85, 95, 100],
+                // 70% on time, 80% early, 90% overtime
+                'clock_out_distribution' => [70, 80, 90, 100],
             ],
         ];
 
         $config = $riskAdjustments[$riskProfile] ?? $riskAdjustments['medium'];
+
+        // Check if employee has an approved leave request for this date
+        $userId = $employee->user_id;
+        if ($userId) {
+            $hasApprovedLeave = LeaveRequest::where('employee_id', $userId)
+                ->where('status', 'approved')
+                ->whereDate('from', '<=', $date->format('Y-m-d'))
+                ->whereDate('to', '>=', $date->format('Y-m-d'))
+                ->exists();
+            
+            if ($hasApprovedLeave) {
+                Attendance::updateOrCreate(
+                    [
+                        'employee_id' => $employee->id,
+                        'date' => $date->format('Y-m-d'),
+                    ],
+                    [
+                        'employee_biometric_id' => $employee->employee_id ?? null,
+                        'status' => 'On Leave',
+                        'remarks' => 'On leave',
+                    ]
+                );
+                return;
+            }
+        }
 
         // Deterministic chance for different scenarios based on risk profile
         $scenario = $this->seededRandom($employee, $date, 1, 100, 'attendance_scenario_'.$riskProfile);
@@ -143,22 +205,6 @@ class AttendanceRecordSeeder extends Seeder
                     'employee_biometric_id' => $employee->employee_id ?? null,
                     'status' => 'Absent',
                     'remarks' => 'Absent',
-                ]
-            );
-            return;
-        }
-
-        // Risk-adjusted chance of being on leave
-        if ($scenario <= $config['leave_threshold']) {
-            Attendance::updateOrCreate(
-                [
-                    'employee_id' => $employee->id,
-                    'date' => $date->format('Y-m-d'),
-                ],
-                [
-                    'employee_biometric_id' => $employee->employee_id ?? null,
-                    'status' => 'On Leave',
-                    'remarks' => 'On leave',
                 ]
             );
             return;
@@ -211,7 +257,14 @@ class AttendanceRecordSeeder extends Seeder
         }
 
         // Determine status
-        $status = $this->determineStatus($clockInTime, $clockOutTime, $standardClockIn, $gracePeriodEnd, $standardClockOut);
+        if ($isHoliday) {
+            $status = 'Holiday (Worked)';
+            $holiday = Holiday::isHolidayDate($date->format('Y-m-d'));
+            $remarks = $holiday ? $holiday->name . ' (' . $holiday->type . ' Holiday - Worked)' : 'Holiday (Worked)';
+        } else {
+            $status = $this->determineStatus($clockInTime, $clockOutTime, $standardClockIn, $gracePeriodEnd, $standardClockOut);
+            $remarks = $this->generateRemarks($status, $clockInTime, $clockOutTime);
+        }
 
         // Create attendance record
         Attendance::updateOrCreate(
@@ -229,7 +282,7 @@ class AttendanceRecordSeeder extends Seeder
                 'overtime_hours' => round($overtimeHours, 2),
                 'undertime_hours' => round($undertimeHours, 2),
                 'status' => $status,
-                'remarks' => $this->generateRemarks($status, $clockInTime, $clockOutTime),
+                'remarks' => $remarks,
             ]
         );
     }
@@ -248,9 +301,9 @@ class AttendanceRecordSeeder extends Seeder
     {
         $scenario = $this->seededRandom($employee, $date, 1, 100, 'clock_in_scenario');
 
-        // On time or within buffer
+        // On time or within buffer (8:00 - 8:10, minimizing late arrivals)
         if ($scenario <= $distribution[0]) {
-            $minutes = $this->seededRandom($employee, $date, 0, 10, 'clock_in_on_time');
+            $minutes = $this->seededRandom($employee, $date, 0, 5, 'clock_in_on_time'); // Reduced from 10 to 5 minutes
             return $standardClockIn->copy()->addMinutes($minutes);
         }
 
@@ -285,12 +338,16 @@ class AttendanceRecordSeeder extends Seeder
     {
         $scenario = $this->seededRandom($employee, $date, 1, 100, 'clock_out_scenario');
 
+        // On time or slightly late (minimizing early outs)
         if ($scenario <= $distribution[0]) {
-            return $standardClockOut->copy();
+            // 95-100% of cases: on time or slightly late (1-5 minutes)
+            $minutesLate = $this->seededRandom($employee, $date, 0, 5, 'clock_out_on_time');
+            return $standardClockOut->copy()->addMinutes($minutesLate);
         }
 
+        // Very few early outs (minimized)
         if ($scenario <= $distribution[1]) {
-            $minutesEarly = $this->seededRandom($employee, $date, 1, 30, 'clock_out_early');
+            $minutesEarly = $this->seededRandom($employee, $date, 1, 10, 'clock_out_early'); // Reduced from 30 to 10 minutes
             return $standardClockOut->copy()->subMinutes($minutesEarly);
         }
 

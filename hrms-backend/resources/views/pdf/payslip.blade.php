@@ -247,26 +247,8 @@
                         <td>Basic Salary</td>
                         <td>PHP {{ number_format($payroll->basic_salary ?? 0, 2) }}</td>
                     </tr>
-                    @if(($payroll->overtime_pay ?? 0) > 0)
-                    <tr>
-                        <td>Overtime Pay</td>
-                        <td>PHP {{ number_format($payroll->overtime_pay, 2) }}</td>
-                    </tr>
-                    @endif
-                    @if(($payroll->holiday_pay ?? 0) > 0)
-                    <tr>
-                        <td>Holiday Pay</td>
-                        <td>PHP {{ number_format($payroll->holiday_pay, 2) }}</td>
-                    </tr>
-                    @endif
-                    @if(($payroll->allowances ?? 0) > 0)
-                    <tr>
-                        <td>Allowances</td>
-                        <td>PHP {{ number_format($payroll->allowances, 2) }}</td>
-                    </tr>
-                    @endif
                     <tr class="total-row">
-                        <td><strong>Total Earnings (Gross Pay)</strong></td>
+                        <td><strong>Gross Pay</strong></td>
                         <td><strong>PHP {{ number_format($payroll->gross_pay ?? 0, 2) }}</strong></td>
                     </tr>
                 </tbody>
@@ -285,25 +267,25 @@
                 <tbody>
                     @if(($payroll->sss_deduction ?? 0) > 0)
                     <tr>
-                        <td>SSS</td>
+                        <td>SSS Contribution (Employee)</td>
                         <td>PHP {{ number_format($payroll->sss_deduction, 2) }}</td>
                     </tr>
                     @endif
                     @if(($payroll->philhealth_deduction ?? 0) > 0)
                     <tr>
-                        <td>PhilHealth</td>
+                        <td>PhilHealth (Employee)</td>
                         <td>PHP {{ number_format($payroll->philhealth_deduction, 2) }}</td>
                     </tr>
                     @endif
                     @if(($payroll->pagibig_deduction ?? 0) > 0)
                     <tr>
-                        <td>Pag-IBIG</td>
+                        <td>Pag-IBIG (Employee)</td>
                         <td>PHP {{ number_format($payroll->pagibig_deduction, 2) }}</td>
                     </tr>
                     @endif
                     @if(($payroll->tax_deduction ?? 0) > 0)
                     <tr>
-                        <td>Tax</td>
+                        <td>Income Tax</td>
                         <td>PHP {{ number_format($payroll->tax_deduction, 2) }}</td>
                     </tr>
                     @endif
@@ -323,12 +305,6 @@
                     <tr>
                         <td>Cash Advance</td>
                         <td>PHP {{ number_format($payroll->cash_advance_deduction, 2) }}</td>
-                    </tr>
-                    @endif
-                    @if(($payroll->other_deductions ?? 0) > 0)
-                    <tr>
-                        <td>Other Deductions</td>
-                        <td>PHP {{ number_format($payroll->other_deductions, 2) }}</td>
                     </tr>
                     @endif
                     <tr class="total-row">

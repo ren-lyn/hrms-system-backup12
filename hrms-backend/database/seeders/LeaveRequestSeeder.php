@@ -44,16 +44,28 @@ class LeaveRequestSeeder extends Seeder
                 $daysDiff = $endDate->diffInDays($startDate) + 1;
                 $leaveType = $leaveTypes[array_rand($leaveTypes)];
                 
+                // Calculate automatic payment terms based on employee tenure
+                // This properly categorizes Sick Leave and Emergency Leave as SIL for employees with 1+ year tenure
+                // and assigns 8 days with pay for SIL
+                $paymentTerms = LeaveRequest::calculateAutomaticPaymentTerms(
+                    $employee->id,
+                    $leaveType,
+                    $daysDiff,
+                    $startDate->year
+                );
+                
                 LeaveRequest::create([
                     'employee_id' => $employee->id,
                     'company' => 'Cabuyao Concrete Development Corporation',
                     'department' => 'Department ' . chr(65 + ($i % 5)), // Department A, B, C, etc.
                     'type' => $leaveType,
-                    'terms' => rand(0, 1) ? 'with PAY' : 'without PAY',
-                    'leave_category' => $leaveType === 'Emergency Leave' ? 'Emergency Leave (EL)' : 'Service Incentive Leave (SIL)',
+                    'terms' => $paymentTerms['terms'],
+                    'leave_category' => $paymentTerms['leave_category'],
                     'from' => $startDate->toDateString(),
                     'to' => $endDate->toDateString(),
                     'total_days' => $daysDiff,
+                    'with_pay_days' => $paymentTerms['with_pay_days'],
+                    'without_pay_days' => $paymentTerms['without_pay_days'],
                     'total_hours' => $daysDiff * 8,
                     'date_filed' => now(),
                     'reason' => $reasons[array_rand($reasons)],

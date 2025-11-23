@@ -229,24 +229,6 @@ const ViewPayslip = () => {
                       <td>Basic Salary:</td>
                       <td className="text-end">{formatCurrency(selectedPayroll.basic_salary)}</td>
                     </tr>
-                    {selectedPayroll.overtime_pay > 0 && (
-                      <tr>
-                        <td>Overtime Pay:</td>
-                        <td className="text-end">{formatCurrency(selectedPayroll.overtime_pay)}</td>
-                      </tr>
-                    )}
-                    {selectedPayroll.holiday_pay > 0 && (
-                      <tr>
-                        <td>Holiday Pay:</td>
-                        <td className="text-end">{formatCurrency(selectedPayroll.holiday_pay)}</td>
-                      </tr>
-                    )}
-                    {selectedPayroll.allowances > 0 && (
-                      <tr>
-                        <td>Allowances:</td>
-                        <td className="text-end">{formatCurrency(selectedPayroll.allowances)}</td>
-                      </tr>
-                    )}
                     <tr className="fw-bold">
                       <td>Gross Pay:</td>
                       <td className="text-end text-success">{formatCurrency(selectedPayroll.gross_pay)}</td>
@@ -260,25 +242,25 @@ const ViewPayslip = () => {
                   <tbody>
                     {selectedPayroll.sss_deduction > 0 && (
                       <tr>
-                        <td>SSS:</td>
+                        <td>SSS Contribution (Employee):</td>
                         <td className="text-end">{formatCurrency(selectedPayroll.sss_deduction)}</td>
                       </tr>
                     )}
                     {selectedPayroll.philhealth_deduction > 0 && (
                       <tr>
-                        <td>PhilHealth:</td>
+                        <td>PhilHealth (Employee):</td>
                         <td className="text-end">{formatCurrency(selectedPayroll.philhealth_deduction)}</td>
                       </tr>
                     )}
                     {selectedPayroll.pagibig_deduction > 0 && (
                       <tr>
-                        <td>Pag-IBIG:</td>
+                        <td>Pag-IBIG (Employee):</td>
                         <td className="text-end">{formatCurrency(selectedPayroll.pagibig_deduction)}</td>
                       </tr>
                     )}
                     {selectedPayroll.tax_deduction > 0 && (
                       <tr>
-                        <td>Tax:</td>
+                        <td>Income Tax:</td>
                         <td className="text-end">{formatCurrency(selectedPayroll.tax_deduction)}</td>
                       </tr>
                     )}
@@ -298,12 +280,6 @@ const ViewPayslip = () => {
                       <tr>
                         <td>Cash Advance:</td>
                         <td className="text-end">{formatCurrency(selectedPayroll.cash_advance_deduction)}</td>
-                      </tr>
-                    )}
-                    {selectedPayroll.other_deductions > 0 && (
-                      <tr>
-                        <td>Other Deductions:</td>
-                        <td className="text-end">{formatCurrency(selectedPayroll.other_deductions)}</td>
                       </tr>
                     )}
                     <tr className="fw-bold">

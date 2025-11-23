@@ -363,6 +363,8 @@ Route::middleware('auth:sanctum')->post('/notifications/verify-role-change', [No
         Route::put('/benefit-claims/{id}/approve', [BenefitClaimController::class, 'approve']); // Approve claim
         Route::put('/benefit-claims/{id}/reject', [BenefitClaimController::class, 'reject']); // Reject claim
         Route::put('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']); // Update claim status
+        Route::post('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']); // Update claim status (POST for FormData with method spoofing)
+        Route::get('/benefit-claims/{id}/documents', [BenefitClaimController::class, 'getDocuments']); // Get all documents
         Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // Download document
         Route::put('/employees/{employeeId}/benefits/terminate', [BenefitClaimController::class, 'terminateEnrollment']); // Terminate enrollment
         Route::get('/benefit-contributions/report', [BenefitClaimController::class, 'generateContributionReport']); // Generate report

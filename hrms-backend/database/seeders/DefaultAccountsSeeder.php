@@ -208,7 +208,7 @@ class DefaultAccountsSeeder extends Seeder
             'department' => 'Operations',
             'employment_status' => 'Full Time',
             'salary' => 13520,
-            'hire_date' => now()->subMonths(6)->toDateString(),
+            'hire_date' => '2023-01-15', // Same hire date as HR Assistant (Renelyn Concina)
             'status' => 'active', // Explicitly set status to active
              'sss' => '12-3456789-3',
             'philhealth' => 'PH-345678901',

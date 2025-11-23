@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Table, Form, Modal, Badge, InputGroup, Tabs, Tab } from 'react-bootstrap';
-import { FaMoneyCheckAlt, FaCalculator, FaCalendarAlt, FaEye, FaPrint, FaPlus, FaTrash, FaEdit, FaChevronDown, FaChevronRight, FaUserCheck, FaMinusCircle, FaReceipt, FaSync, FaCheckDouble } from 'react-icons/fa';
+import { FaMoneyCheckAlt, FaCalculator, FaCalendarAlt, FaEye, FaPrint, FaDownload, FaPlus, FaTrash, FaEdit, FaChevronDown, FaChevronRight, FaUserCheck, FaMinusCircle, FaReceipt, FaSync, FaCheckDouble } from 'react-icons/fa';
 import axios from '../../axios';
 import { toast } from 'react-toastify';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -87,7 +87,30 @@ const PayrollDashboard = () => {
           period_end: selectedPeriod.end
         }
       });
-      setPayrolls(response.data.data?.payrolls || response.data.data || []);
+      const payrollsData = response.data.data?.payrolls || response.data.data || [];
+      
+      // Debug: Log first payroll to check breakdown
+      if (payrollsData.length > 0) {
+        const samplePayroll = payrollsData[0];
+        console.log('Sample payroll data:', samplePayroll);
+        console.log('13th Month Pay:', samplePayroll.thirteenth_month_pay);
+        console.log('Has Breakdown Key:', 'thirteenth_month_pay_breakdown' in samplePayroll);
+        console.log('Breakdown:', samplePayroll?.thirteenth_month_pay_breakdown);
+        console.log('All keys:', Object.keys(samplePayroll));
+        
+        // Check if breakdown exists for payrolls with 13th month pay
+        payrollsData.forEach((p, idx) => {
+          if (p.thirteenth_month_pay > 0) {
+            console.log(`Payroll ${p.id} (index ${idx}):`, {
+              has_breakdown: 'thirteenth_month_pay_breakdown' in p,
+              breakdown_value: p.thirteenth_month_pay_breakdown,
+              is_array: Array.isArray(p.thirteenth_month_pay_breakdown)
+            });
+          }
+        });
+      }
+      
+      setPayrolls(payrollsData);
     } catch (error) {
       console.error('Error fetching payrolls:', error);
       toast.error('Failed to load payroll data');
@@ -2066,61 +2089,287 @@ const PayrollDashboard = () => {
         <Modal.Body>
           {selectedPayroll && (
             <div>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <strong>Days Worked:</strong> {selectedPayroll.days_worked || 0}
-                </Col>
-                <Col md={6}>
-                  <strong>Absences:</strong> {selectedPayroll.absences || 0}
-                </Col>
-              </Row>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <strong>Basic Salary:</strong> {formatCurrency(selectedPayroll.basic_salary)}
-                </Col>
-                <Col md={6}>
-                  <strong>Overtime Pay:</strong> {formatCurrency(selectedPayroll.overtime_pay)}
-                </Col>
-              </Row>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <strong>Holiday Pay:</strong> {formatCurrency(selectedPayroll.holiday_pay || 0)}
-                </Col>
-                <Col md={6}>
-                  <strong>13th Month Pay:</strong> {formatCurrency(selectedPayroll.thirteenth_month_pay || 0)}
-                </Col>
-              </Row>
-              <Row className="mb-3">
-                <Col md={6}>
-                  <strong>Gross Pay:</strong> {formatCurrency(selectedPayroll.gross_pay)}
-                </Col>
-                <Col md={6}>
-                  <strong>Status:</strong> {getStatusBadge(selectedPayroll.status)}
-                </Col>
-              </Row>
-              <hr />
-              <h6>Deductions</h6>
-              <Row className="mb-2">
-                <Col md={6}>SSS: {formatCurrency(selectedPayroll.sss_deduction || 0)}</Col>
-                <Col md={6}>PhilHealth: {formatCurrency(selectedPayroll.philhealth_deduction || 0)}</Col>
-              </Row>
-              <Row className="mb-2">
-                <Col md={6}>Pag-IBIG: {formatCurrency(selectedPayroll.pagibig_deduction || 0)}</Col>
-                <Col md={6}>Tax: {formatCurrency(selectedPayroll.tax_deduction || 0)}</Col>
-              </Row>
-              <Row className="mb-2">
-                <Col md={6}>Late Penalty: {formatCurrency(selectedPayroll.late_deduction || 0)}</Col>
-                <Col md={6}>Undertime Penalty: {formatCurrency(selectedPayroll.undertime_deduction || 0)}</Col>
-              </Row>
-              <Row className="mb-2">
-                <Col md={6}>Cash Advance: {formatCurrency(selectedPayroll.cash_advance_deduction || 0)}</Col>
-                <Col md={6}>Other Deductions: {formatCurrency(selectedPayroll.other_deductions || 0)}</Col>
-              </Row>
-              <Row className="mb-2">
-                <Col md={12}><strong>Total Deductions:</strong> {formatCurrency(selectedPayroll.total_deductions)}</Col>
-              </Row>
-              <hr />
-              <h5>Net Pay: {formatCurrency(selectedPayroll.net_pay)}</h5>
+              {/* Basic Information Table */}
+              <h6 className="mb-3">Basic Information</h6>
+              <Table striped bordered hover size="sm" className="mb-4">
+                <tbody>
+                  <tr>
+                    <td><strong>Days Worked</strong></td>
+                    <td>{selectedPayroll.days_worked || 0}</td>
+                    <td><strong>Absences</strong></td>
+                    <td>{selectedPayroll.absences || 0}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Status</strong></td>
+                    <td colSpan="3">{getStatusBadge(selectedPayroll.status)}</td>
+                  </tr>
+                </tbody>
+              </Table>
+
+              {/* Earnings Table */}
+              <h6 className="mb-3">Earnings</h6>
+              <Table striped bordered hover size="sm" className="mb-4">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th className="text-end">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Basic Salary</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.basic_salary)}</td>
+                  </tr>
+                  <tr>
+                    <td>Overtime Pay</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.overtime_pay)}</td>
+                  </tr>
+                  <tr>
+                    <td>Holiday Pay</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.holiday_pay || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>13th Month Pay</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.thirteenth_month_pay || 0)}</td>
+                  </tr>
+                  <tr className="table-primary">
+                    <td><strong>Gross Pay</strong></td>
+                    <td className="text-end"><strong>{formatCurrency(selectedPayroll.gross_pay)}</strong></td>
+                  </tr>
+                </tbody>
+              </Table>
+
+              {/* 13th Month Pay Breakdown */}
+              {selectedPayroll && selectedPayroll.thirteenth_month_pay !== undefined && selectedPayroll.thirteenth_month_pay !== null && selectedPayroll.thirteenth_month_pay > 0 && (
+                <>
+                  <h6 className="mb-3">
+                    13th Month Pay Breakdown
+                  </h6>
+                  {selectedPayroll.thirteenth_month_pay_breakdown && 
+                   Array.isArray(selectedPayroll.thirteenth_month_pay_breakdown) && 
+                   selectedPayroll.thirteenth_month_pay_breakdown.length > 0 ? (
+                    <Table striped bordered hover size="sm" className="mb-4">
+                      <thead>
+                        <tr>
+                          <th>Description</th>
+                          <th className="text-end">Calculation</th>
+                          <th className="text-end">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPayroll.thirteenth_month_pay_breakdown.map((item, index) => (
+                          <tr 
+                            key={index}
+                            className={item.is_total ? 'table-primary' : ''}
+                          >
+                            <td>
+                              {item.is_total ? <strong>{item.description}</strong> : item.description}
+                            </td>
+                            <td className="text-end text-muted">
+                              {item.calculation || '-'}
+                            </td>
+                            <td className="text-end">
+                              {item.is_total ? <strong>{formatCurrency(item.amount)}</strong> : formatCurrency(item.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  ) : (
+                    <div className="alert alert-info mb-4">
+                      <strong>Breakdown calculation in progress.</strong> Please refresh the page or recalculate the payroll to see the detailed breakdown.
+                      {process.env.NODE_ENV === 'development' && (
+                        <div className="mt-2" style={{ fontSize: '0.85rem', fontFamily: 'monospace' }}>
+                          <div>Debug Info:</div>
+                          <div>13th Month Pay: {selectedPayroll.thirteenth_month_pay}</div>
+                          <div>Has Breakdown: {selectedPayroll.thirteenth_month_pay_breakdown ? 'Yes' : 'No'}</div>
+                          <div>Breakdown Type: {typeof selectedPayroll.thirteenth_month_pay_breakdown}</div>
+                          <div>Is Array: {Array.isArray(selectedPayroll.thirteenth_month_pay_breakdown) ? 'Yes' : 'No'}</div>
+                          <div>Breakdown Value: {JSON.stringify(selectedPayroll.thirteenth_month_pay_breakdown)}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* SSS Contributions Table */}
+              {(selectedPayroll.sss_employer_contribution || selectedPayroll.sss_ec_contribution || selectedPayroll.sss_employer_total || selectedPayroll.sss_deduction) && (
+                <>
+                  <h6 className="mb-3">
+                    SSS Contributions (2025 Rate - MSC: {formatCurrency(selectedPayroll.sss_msc || 0)})
+                  </h6>
+                  <Table striped bordered hover size="sm" className="mb-4">
+                    <thead>
+                      <tr>
+                        <th>Description</th>
+                        <th className="text-end">Employee</th>
+                        <th className="text-end">Employer</th>
+                        <th className="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Regular SS (5% / 10%)</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.sss_regular_ss_employee || 0)}</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.sss_regular_ss_employer || 0)}</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.sss_regular_ss_total || 0)}</td>
+                      </tr>
+                      {(selectedPayroll.sss_mpf_employee > 0 || selectedPayroll.sss_mpf_employer > 0) && (
+                        <tr>
+                          <td>MPF (Member's Provident Fund) (5% / 10%)</td>
+                          <td className="text-end">{formatCurrency(selectedPayroll.sss_mpf_employee || 0)}</td>
+                          <td className="text-end">{formatCurrency(selectedPayroll.sss_mpf_employer || 0)}</td>
+                          <td className="text-end">{formatCurrency(selectedPayroll.sss_mpf_total || 0)}</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td>EC (Employees' Compensation)</td>
+                        <td className="text-end">-</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.sss_ec_contribution || 0)}</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.sss_ec_contribution || 0)}</td>
+                      </tr>
+                      <tr className="table-success">
+                        <td><strong>Total Employer Share</strong></td>
+                        <td className="text-end">-</td>
+                        <td className="text-end"><strong>{formatCurrency(selectedPayroll.sss_employer_total || 0)}</strong></td>
+                        <td className="text-end">-</td>
+                      </tr>
+                      <tr className="table-primary">
+                        <td><strong>Total SSS Remittance</strong></td>
+                        <td className="text-end">-</td>
+                        <td className="text-end">-</td>
+                        <td className="text-end"><strong>{formatCurrency(selectedPayroll.sss_total_remittance || 0)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </Table>
+                </>
+              )}
+
+              {/* Pag-IBIG Contributions Table */}
+              {(selectedPayroll.pagibig_employer_contribution || selectedPayroll.pagibig_deduction || selectedPayroll.pagibig_total_contribution) && (
+                <>
+                  <h6 className="mb-3">
+                    Pag-IBIG Contributions (2025 Rate - Salary Base: {formatCurrency(selectedPayroll.pagibig_salary_base || 0)})
+                  </h6>
+                  <Table striped bordered hover size="sm" className="mb-4">
+                    <thead>
+                      <tr>
+                        <th>Description</th>
+                        <th className="text-end">Employee</th>
+                        <th className="text-end">Employer</th>
+                        <th className="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Regular Contribution (1% / 2% or 2% / 2%)</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.pagibig_deduction || 0)}</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.pagibig_employer_contribution || 0)}</td>
+                        <td className="text-end">{formatCurrency(
+                          (parseFloat(selectedPayroll.pagibig_deduction) || 0) + 
+                          (parseFloat(selectedPayroll.pagibig_employer_contribution) || 0)
+                        )}</td>
+                      </tr>
+                      <tr className="table-primary">
+                        <td><strong>Total Pag-IBIG Contribution</strong></td>
+                        <td className="text-end">-</td>
+                        <td className="text-end">-</td>
+                        <td className="text-end"><strong>{formatCurrency(selectedPayroll.pagibig_total_contribution || 0)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </Table>
+                </>
+              )}
+
+              {/* PhilHealth Contributions Table */}
+              {(selectedPayroll.philhealth_employer_contribution || selectedPayroll.philhealth_deduction || selectedPayroll.philhealth_total_contribution) && (
+                <>
+                  <h6 className="mb-3">
+                    PhilHealth Contributions (2025 Rate - MBS: {formatCurrency(selectedPayroll.philhealth_mbs || 0)})
+                  </h6>
+                  <Table striped bordered hover size="sm" className="mb-4">
+                    <thead>
+                      <tr>
+                        <th>Description</th>
+                        <th className="text-end">Employee</th>
+                        <th className="text-end">Employer</th>
+                        <th className="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Regular Premium (5% of MBS, 50% / 50%)</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.philhealth_deduction || 0)}</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.philhealth_employer_contribution || 0)}</td>
+                        <td className="text-end">{formatCurrency(
+                          (parseFloat(selectedPayroll.philhealth_deduction) || 0) + 
+                          (parseFloat(selectedPayroll.philhealth_employer_contribution) || 0)
+                        )}</td>
+                      </tr>
+                      <tr className="table-primary">
+                        <td><strong>Total PhilHealth Premium</strong></td>
+                        <td className="text-end">-</td>
+                        <td className="text-end">-</td>
+                        <td className="text-end"><strong>{formatCurrency(selectedPayroll.philhealth_total_contribution || 0)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </Table>
+                </>
+              )}
+
+              {/* Deductions Table */}
+              <h6 className="mb-3">Deductions</h6>
+              <Table striped bordered hover size="sm" className="mb-4">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th className="text-end">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SSS (Employee Contribution)</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.sss_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>PhilHealth</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.philhealth_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Pag-IBIG</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.pagibig_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Tax</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.tax_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Late Penalty</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.late_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Undertime Penalty</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.undertime_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Cash Advance</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.cash_advance_deduction || 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Other Deductions</td>
+                    <td className="text-end">{formatCurrency(selectedPayroll.other_deductions || 0)}</td>
+                  </tr>
+                  <tr className="table-danger">
+                    <td><strong>Total Deductions</strong></td>
+                    <td className="text-end"><strong>{formatCurrency(selectedPayroll.total_deductions)}</strong></td>
+                  </tr>
+                  <tr className="table-success">
+                    <td><strong>Net Pay</strong></td>
+                    <td className="text-end"><strong className="text-success">{formatCurrency(selectedPayroll.net_pay)}</strong></td>
+                  </tr>
+                </tbody>
+              </Table>
             </div>
           )}
         </Modal.Body>
@@ -2128,9 +2377,81 @@ const PayrollDashboard = () => {
           <Button variant="secondary" onClick={() => setShowDetailsModal(false)}>
             Close
           </Button>
-          <Button variant="primary" onClick={() => window.print()}>
-            <FaPrint className="me-2" />
-            Print
+          <Button 
+            variant="primary" 
+            onClick={async () => {
+              if (!selectedPayroll) return;
+              
+              try {
+                const response = await axios.get(`http://localhost:8000/api/payrolls/${selectedPayroll.id}/download`, {
+                  headers: {
+                    Authorization: `Bearer ${localStorage.getItem('token')}`
+                  },
+                  responseType: 'blob',
+                  validateStatus: function (status) {
+                    return status >= 200 && status < 300;
+                  }
+                });
+
+                // Check if response is an error JSON instead of PDF
+                const contentType = response.headers['content-type'] || '';
+                if (contentType.includes('application/json')) {
+                  const text = await response.data.text();
+                  const errorData = JSON.parse(text);
+                  throw new Error(errorData.message || errorData.error || 'Failed to download payslip');
+                }
+
+                // Create blob from response data
+                const blob = new Blob([response.data], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+                
+                // Create download link and trigger download
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `payslip_${selectedPayroll.id}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                toast.success('Payslip downloaded successfully');
+              } catch (err) {
+                console.error('Error downloading payslip:', err);
+                let errorMessage = 'Failed to download payslip. Please try again.';
+                
+                if (err.response) {
+                  // Handle error response
+                  const status = err.response.status;
+                  if (status === 404) {
+                    errorMessage = 'Payslip not found or you do not have permission to access it.';
+                  } else if (status === 401) {
+                    errorMessage = 'Unauthorized. Please log in again.';
+                  } else if (status === 403) {
+                    errorMessage = 'You do not have permission to download this payslip.';
+                  } else if (err.response.data) {
+                    try {
+                      // Try to parse error message from blob or JSON response
+                      if (err.response.data instanceof Blob) {
+                        const text = await err.response.data.text();
+                        const errorData = JSON.parse(text);
+                        errorMessage = errorData.message || errorData.error || errorMessage;
+                      } else if (typeof err.response.data === 'object') {
+                        errorMessage = err.response.data.message || err.response.data.error || errorMessage;
+                      }
+                    } catch (parseErr) {
+                      // If parsing fails, use default message
+                      console.error('Error parsing error response:', parseErr);
+                    }
+                  }
+                } else if (err.message) {
+                  errorMessage = err.message;
+                }
+                
+                toast.error(errorMessage);
+              }
+            }}
+          >
+            <FaDownload className="me-2" />
+            Download PDF
           </Button>
         </Modal.Footer>
       </Modal>
