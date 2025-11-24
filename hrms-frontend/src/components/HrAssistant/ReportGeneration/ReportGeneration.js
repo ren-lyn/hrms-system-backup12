@@ -2549,6 +2549,11 @@ export default function ReportGeneration() {
       
       currentY += 22;
 
+      // Helper function to format currency with comma separators
+      const formatCurrency = (amount) => {
+        return `PHP ${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      };
+
       // Prepare table data with proper formatting
       const tableData = payrollData.map((item, index) => {
         try {
@@ -2574,11 +2579,11 @@ export default function ReportGeneration() {
             index: index + 1,
             employeeId: employeeId,
             name: employeeName,
-            basicSalary: `PHP ${Number(item.basic_salary || 0).toFixed(2)}`,
-            overtimePay: `PHP ${Number(item.overtime_pay || 0).toFixed(2)}`,
-            grossPay: `PHP ${Number(item.gross_pay || 0).toFixed(2)}`,
-            deductions: `PHP ${Number(item.total_deductions || 0).toFixed(2)}`,
-            netPay: `PHP ${Number(item.net_pay || 0).toFixed(2)}`,
+            basicSalary: formatCurrency(item.basic_salary),
+            overtimePay: formatCurrency(item.overtime_pay),
+            grossPay: formatCurrency(item.gross_pay),
+            deductions: formatCurrency(item.total_deductions),
+            netPay: formatCurrency(item.net_pay),
             status: statusText || 'Draft'
           };
         } catch (err) {
@@ -2645,10 +2650,6 @@ export default function ReportGeneration() {
       doc.text(statusSummary, leftMargin + 3, currentY + 12);
       
       // Financial summary (second line)
-      const formatCurrency = (amount) => {
-        return `PHP ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      };
-      
       const financialLine1 = `Gross Pay: ${formatCurrency(totalGrossPay)}  |  Net Pay: ${formatCurrency(totalNetPay)}`;
       doc.text(financialLine1, leftMargin + 3, currentY + 17);
       
@@ -3222,6 +3223,11 @@ export default function ReportGeneration() {
       
       currentY += 22;
 
+      // Helper function to format currency with comma separators
+      const formatCurrency = (amount) => {
+        return `PHP ${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      };
+
       // Prepare table data with proper formatting and correct data access
       const tableData = employeeData.map((item, index) => {
         // Access employee profile - handle both normalized and raw data
@@ -3254,8 +3260,8 @@ export default function ReportGeneration() {
         // Hire Date
         const hireDate = profile.hire_date ? formatDate(profile.hire_date) : 'N/A';
         
-        // Salary
-        const salary = profile.salary ? `PHP ${Number(profile.salary).toFixed(2)}` : 'N/A';
+        // Salary - format with comma separators for thousands
+        const salary = profile.salary ? formatCurrency(profile.salary) : 'N/A';
         
         return {
           index: index + 1,
@@ -3772,6 +3778,19 @@ export default function ReportGeneration() {
       
       currentY += 22;
 
+      // Helper function to format dates as MM/DD/YY
+      const formatDateMMDDYY = (value) => {
+        if (!value) return 'N/A';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return 'N/A';
+        }
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = String(date.getFullYear()).slice(-2);
+        return `${month}/${day}/${year}`;
+      };
+
       // Prepare table data with proper formatting and correct data access
       const tableData = leaveData.map((item, index) => {
         // Access employee profile properly - handle both camelCase and snake_case
@@ -3799,9 +3818,9 @@ export default function ReportGeneration() {
         // Leave Type: use item.type (not leave_type)
         const leaveType = item.type || item.leave_type || 'N/A';
         
-        // Format dates
-        const fromDate = item.from ? formatDate(item.from) : 'N/A';
-        const toDate = item.to ? formatDate(item.to) : 'N/A';
+        // Format dates as MM/DD/YY
+        const fromDate = item.from ? formatDateMMDDYY(item.from) : 'N/A';
+        const toDate = item.to ? formatDateMMDDYY(item.to) : 'N/A';
         
         // Format status (capitalize first letter)
         let statusText = item.status || 'N/A';
@@ -3887,12 +3906,12 @@ export default function ReportGeneration() {
         { header: 'Employee Name', width: 35, align: 'left' },
         { header: 'Department', width: 28, align: 'left' },
         { header: 'Position', width: 28, align: 'left' },
-        { header: 'Leave Type', width: 25, align: 'left' },
+        { header: 'Leave Type', width: 32, align: 'left' }, // Increased width for Leave Type
         { header: 'From', width: 22, align: 'left' },
         { header: 'To', width: 22, align: 'left' },
         { header: 'Days', width: 15, align: 'center' },
         { header: 'Status', width: 25, align: 'center' },
-        { header: 'Reason', width: 50, align: 'left' } // Increased width for Reason column
+        { header: 'Reason', width: 48, align: 'left' } // Slightly reduced to accommodate Leave Type increase
       ];
 
       // Calculate column positions
