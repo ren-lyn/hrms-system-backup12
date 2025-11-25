@@ -1969,26 +1969,110 @@ export default function ReportGeneration() {
         };
       });
 
-      // Summary Statistics Box (after tableData is created)
-      const presentCount = tableData.filter(e => e.status.toLowerCase().includes('present')).length;
-      const absentCount = tableData.filter(e => e.status.toLowerCase().includes('absent')).length;
-      const lateCount = tableData.filter(e => e.status.toLowerCase().includes('late')).length;
-      const onLeaveCount = tableData.filter(e => e.status.toLowerCase().includes('leave')).length;
-      const totalRecords = tableData.length;
+      // Summary Statistics Box - Use attendanceStats if available (matches dashboard), otherwise calculate from data
+      let presentCount, absentCount, lateCount, onLeaveCount, totalRecords, attendanceRate, absentRate, lateRate;
+      
+      if (attendanceStats) {
+        // Use stats from backend API (matches dashboard exactly)
+        presentCount = attendanceStats.present_count || 0;
+        absentCount = attendanceStats.absent_count || 0;
+        lateCount = attendanceStats.late_count || 0;
+        onLeaveCount = attendanceStats.on_leave_count || 0;
+        totalRecords = attendanceStats.total_records || 0;
+        attendanceRate = Number(attendanceStats.attendance_rate ?? 0);
+        absentRate = totalRecords > 0 ? (absentCount / totalRecords) * 100 : 0;
+        lateRate = totalRecords > 0 ? (lateCount / totalRecords) * 100 : 0;
+      } else {
+        // Fallback: Calculate from tableData using backend logic
+        // Present includes: Present, Late (also counted as present), Undertime (also counted as present), 
+        // Overtime (also counted as present), Holiday (Worked)
+        let present = 0, absent = 0, late = 0, onLeave = 0;
+        
+        tableData.forEach(e => {
+          const status = (e.status || '').trim();
+          
+          switch (status) {
+            case 'Present':
+              present++;
+              break;
+            case 'Late':
+              late++;
+              present++; // Late is also considered present
+              break;
+            case 'Undertime':
+              present++; // Undertime is also considered present
+              break;
+            case 'Overtime':
+              present++; // Overtime is also considered present
+              break;
+            case 'On Leave':
+              onLeave++;
+              break;
+            case 'Holiday (No Work)':
+              // Not counted in present, absent, or onLeave
+              break;
+            case 'Holiday (Worked)':
+              present++;
+              break;
+            case 'Absent':
+              absent++;
+              break;
+            // Handle compound statuses
+            default:
+              if (status.toLowerCase().includes('late')) {
+                late++;
+                present++; // Late variants are also considered present
+              } else if (status.toLowerCase() === 'absent') {
+                absent++;
+              } else if (status.toLowerCase() === 'on leave' || status.toLowerCase() === 'leave') {
+                onLeave++;
+              } else if (status.toLowerCase().includes('present') || 
+                         status.toLowerCase().includes('overtime') || 
+                         status.toLowerCase().includes('undertime')) {
+                present++;
+              }
+              break;
+          }
+        });
+        
+        presentCount = present;
+        absentCount = absent;
+        lateCount = late;
+        onLeaveCount = onLeave;
+        totalRecords = presentCount + absentCount + onLeaveCount;
+        attendanceRate = totalRecords > 0 ? (presentCount / totalRecords) * 100 : 0;
+        absentRate = totalRecords > 0 ? (absentCount / totalRecords) * 100 : 0;
+        lateRate = totalRecords > 0 ? (lateCount / totalRecords) * 100 : 0;
+      }
+      
       const uniqueEmployees = new Set(tableData.map(e => e.employeeId)).size;
       
       doc.setFillColor(245, 247, 250); // Light gray background
       doc.rect(leftMargin, currentY, pageWidth - (margin * 2), 12, 'F');
       
-      doc.setFontSize(9);
+      doc.setFontSize(8); // Smaller font to fit more text
       doc.setFont(undefined, 'bold');
       doc.setTextColor(0, 0, 0);
       doc.text('SUMMARY:', leftMargin + 3, currentY + 5);
       
       doc.setFont(undefined, 'normal');
       doc.setTextColor(60, 60, 60);
-      const summaryText = `Total Records: ${totalRecords} | Employees: ${uniqueEmployees} | Present: ${presentCount} | Absent: ${absentCount} | Late: ${lateCount} | On Leave: ${onLeaveCount}`;
-      doc.text(summaryText, leftMargin + 35, currentY + 5);
+      
+      // Format summary in single row matching dashboard format
+      // Match the exact format from Attendance Overview dashboard
+      const summaryText = `ATTENDANCE RATE: ${attendanceRate.toFixed(1)}% (${presentCount} of ${totalRecords} records marked present) | ABSENCES: ${absentCount} (${absentRate.toFixed(1)}% of records) | LATE ARRIVALS: ${lateCount} (${lateRate.toFixed(1)}% of records) | ON LEAVE: ${onLeaveCount} ${onLeaveCount > 0 ? '(Approved leaves within range)' : '(No leave records in range)'}`;
+      
+      // Check if text fits, if not use compact format
+      const availableWidth = (pageWidth - (margin * 2)) - 40;
+      const textWidth = doc.getTextWidth(summaryText);
+      
+      let finalSummaryText = summaryText;
+      if (textWidth > availableWidth) {
+        // Use compact format if full text doesn't fit
+        finalSummaryText = `Rate: ${attendanceRate.toFixed(1)}% (${presentCount}/${totalRecords}) | Absent: ${absentCount} (${absentRate.toFixed(1)}%) | Late: ${lateCount} (${lateRate.toFixed(1)}%) | Leave: ${onLeaveCount}`;
+      }
+      
+      doc.text(finalSummaryText, leftMargin + 35, currentY + 5);
       
       currentY += 16;
 

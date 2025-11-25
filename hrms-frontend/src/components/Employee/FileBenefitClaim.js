@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Card, Form, Button, Row, Col, Alert, Table, Badge, ListGroup, Tabs, Tab } from 'react-bootstrap';
-import { FaFileAlt, FaUpload, FaInfoCircle, FaCheckCircle, FaTimesCircle, FaUser, FaTrash, FaClock, FaHistory } from 'react-icons/fa';
+import { Container, Card, Form, Button, Row, Col, Alert, Table, Badge, ListGroup, Tabs, Tab, Modal } from 'react-bootstrap';
+import { FaFileAlt, FaUpload, FaInfoCircle, FaCheckCircle, FaTimesCircle, FaUser, FaTrash, FaClock, FaHistory, FaEye, FaDownload } from 'react-icons/fa';
 import axios from '../../axios';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
@@ -13,6 +13,13 @@ const FileBenefitClaim = () => {
   const [employeeProfile, setEmployeeProfile] = useState(null);
   const [myClaims, setMyClaims] = useState([]);
   const [activeTab, setActiveTab] = useState('form');
+  const [showClaimDetailsModal, setShowClaimDetailsModal] = useState(false);
+  const [selectedClaim, setSelectedClaim] = useState(null);
+  const [claimDetails, setClaimDetails] = useState(null);
+  const [documentViewerUrl, setDocumentViewerUrl] = useState(null);
+  const [documentViewerType, setDocumentViewerType] = useState(null);
+  const [allDocuments, setAllDocuments] = useState([]);
+  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
 
   const [claimForm, setClaimForm] = useState({
     benefit_type: '',
@@ -482,8 +489,42 @@ const FileBenefitClaim = () => {
      claim.status !== 'pending') // Legacy support
   );
 
+  // Helper function to load document for preview
+  const loadDocument = async (index) => {
+    try {
+      setLoading(true);
+      const doc = allDocuments[index];
+      
+      // Fetch document as blob using axios (includes auth headers)
+      if (doc.preview_url) {
+        const docResponse = await axios.get(doc.preview_url, {
+          responseType: 'blob'
+        });
+        
+        // Determine file type
+        const contentType = docResponse.headers['content-type'] || '';
+        const fileName = doc.name;
+        const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+        const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+        
+        // Create blob URL for preview (iframe/img can use this)
+        const blobUrl = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
+        setDocumentViewerUrl(blobUrl);
+        setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
+        setCurrentDocumentIndex(index);
+      } else {
+        throw new Error('Document preview URL not available');
+      }
+    } catch (error) {
+      console.error('Error loading document:', error);
+      toast.error('Failed to load document for preview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Helper function to render claim card
-  const renderClaimCard = (claim) => (
+  const renderClaimCard = (claim, showViewButton = false) => (
     <div key={claim.id} className="mb-3 p-3 border rounded">
       <div className="d-flex justify-content-between align-items-start mb-2">
         <div>
@@ -512,6 +553,30 @@ const FileBenefitClaim = () => {
             <strong>Rejection Reason:</strong> {claim.rejection_reason}
           </small>
         </Alert>
+      )}
+      {showViewButton && (
+        <div className="mt-3">
+          <Button
+            variant="info"
+            size="sm"
+            onClick={async () => {
+              setSelectedClaim(claim);
+              // Fetch full claim details
+              try {
+                const response = await axios.get(`/benefit-claims/${claim.id}`);
+                setClaimDetails(response.data.data || response.data);
+                setShowClaimDetailsModal(true);
+              } catch (error) {
+                console.error('Error fetching claim details:', error);
+                // If fetch fails, use the claim data from the list
+                setClaimDetails(claim);
+                setShowClaimDetailsModal(true);
+              }
+            }}
+          >
+            <FaEye /> View
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -949,13 +1014,407 @@ const FileBenefitClaim = () => {
                 </div>
               ) : (
                 <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                  {historyClaims.map(renderClaimCard)}
+                  {historyClaims.map(claim => renderClaimCard(claim, true))}
                 </div>
               )}
             </Card.Body>
           </Card>
         </Tab>
       </Tabs>
+
+      {/* Claim Details Modal */}
+      <Modal
+        show={showClaimDetailsModal}
+        onHide={() => {
+          setShowClaimDetailsModal(false);
+          setSelectedClaim(null);
+          setClaimDetails(null);
+          // Clean up document viewer URL
+          if (documentViewerUrl) {
+            window.URL.revokeObjectURL(documentViewerUrl);
+            setDocumentViewerUrl(null);
+            setDocumentViewerType(null);
+          }
+          setAllDocuments([]);
+          setCurrentDocumentIndex(0);
+        }}
+        size="lg"
+      >
+        <Modal.Header closeButton className="border-bottom bg-light">
+          <Modal.Title className="d-flex align-items-center">
+            <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}>
+              <FaFileAlt className="text-primary" />
+            </div>
+            <div>
+              <h5 className="mb-0">Benefit Claim Details</h5>
+              <small className="text-muted">Claim ID: {claimDetails?.id || selectedClaim?.id || 'N/A'}</small>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {claimDetails || selectedClaim ? (() => {
+            const claim = claimDetails || selectedClaim;
+            
+            // Format claim ID helper
+            const formatClaimId = (id) => {
+              if (!id) return 'N/A';
+              return `BC-${String(id).padStart(6, '0')}`;
+            };
+            
+            return (
+              <div>
+                {/* Status Banner */}
+                <div className={`mb-4 p-3 rounded ${
+                  claim.status === 'completed' || claim.status === 'approved_by_hr' ? 'bg-success bg-opacity-10 border border-success' : 
+                  claim.status === 'rejected' ? 'bg-danger bg-opacity-10 border border-danger' : 
+                  claim.status === 'for_submission_to_agency' ? 'bg-primary bg-opacity-10 border border-primary' :
+                  claim.status === 'under_review' ? 'bg-warning bg-opacity-10 border border-warning' :
+                  'bg-info bg-opacity-10 border border-info'
+                }`}>
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <h5 className="mb-1 d-flex align-items-center">
+                        {getStatusBadge(claim.status)}
+                        <span className="ms-2 fw-normal">{formatClaimId(claim.id)}</span>
+                      </h5>
+                      <p className="mb-0 text-muted small">
+                        {claim.benefit_type?.toUpperCase() || 'N/A'} - {claim.claim_type || 'N/A'}
+                      </p>
+                    </div>
+                    <div className="text-end">
+                      <p className="mb-0 small text-muted">Date Filed</p>
+                      <p className="mb-0 fw-semibold">
+                        {claim.created_at 
+                          ? format(new Date(claim.created_at), 'MMM dd, yyyy HH:mm')
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <Row className="g-3">
+                  {/* Claim Information Card */}
+                  <Col md={12}>
+                    <Card className="h-100 border-0 shadow-sm">
+                      <Card.Header className="bg-info bg-opacity-10 border-0">
+                        <h6 className="mb-0 d-flex align-items-center">
+                          <FaFileAlt className="me-2 text-info" />
+                          Claim Information
+                        </h6>
+                      </Card.Header>
+                      <Card.Body>
+                        <div className="mb-3">
+                          <p className="text-muted small mb-1">Benefit Type</p>
+                          <div className="mb-3">
+                            <Badge bg="info" className="px-3 py-2">{claim.benefit_type?.toUpperCase() || 'N/A'}</Badge>
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <p className="text-muted small mb-1">Claim Type</p>
+                          <p className="mb-0 fw-semibold">{claim.claim_type || 'N/A'}</p>
+                        </div>
+                        {claim.reviewed_at && (
+                          <div className="mb-3">
+                            <p className="text-muted small mb-1">Reviewed At</p>
+                            <p className="mb-0 fw-semibold">
+                              {format(new Date(claim.reviewed_at), 'MMM dd, yyyy HH:mm')}
+                            </p>
+                          </div>
+                        )}
+                      </Card.Body>
+                    </Card>
+                  </Col>
+
+                  {/* Description Card */}
+                  <Col md={12}>
+                    <Card className="border-0 shadow-sm">
+                      <Card.Header className="bg-light border-0">
+                        <h6 className="mb-0 d-flex align-items-center">
+                          <FaInfoCircle className="me-2 text-primary" />
+                          Description / Reason for Claim
+                        </h6>
+                      </Card.Header>
+                      <Card.Body>
+                        <p className="mb-0" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                          {claim.description || 'No description provided'}
+                        </p>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  
+                  {claim.rejection_reason && (
+                    <Col md={12}>
+                      <Alert variant="danger" className="mb-0">
+                        <Alert.Heading className="h6 mb-2 d-flex align-items-center">
+                          <FaTimesCircle className="me-2" />
+                          Rejection Reason
+                        </Alert.Heading>
+                        <p className="mb-0">{claim.rejection_reason}</p>
+                      </Alert>
+                    </Col>
+                  )}
+                  
+                  {(claim.supporting_documents_path || claim.supporting_documents_name || claim.application_form_path) && (
+                    <Col md={12}>
+                      <Card className="border-0 shadow-sm">
+                        <Card.Header className="bg-light border-0">
+                          <h6 className="mb-0 d-flex align-items-center">
+                            <FaFileAlt className="me-2 text-primary" />
+                            Documents
+                          </h6>
+                        </Card.Header>
+                        <Card.Body>
+                          <Alert variant="info" className="mb-3">
+                            <small>
+                              <strong>Document Types:</strong> Application Form • Supporting Documents
+                            </small>
+                          </Alert>
+                          <div className="d-flex gap-2 mb-3">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="px-4"
+                              onClick={async () => {
+                                try {
+                                  setLoading(true);
+                                  // Fetch all documents
+                                  const documentsResponse = await axios.get(`/benefit-claims/${claim.id}/documents`);
+                                  
+                                  if (documentsResponse.data.success && documentsResponse.data.data.length > 0) {
+                                    setAllDocuments(documentsResponse.data.data);
+                                    setCurrentDocumentIndex(0);
+                                    
+                                    // Load the first document for preview
+                                    const firstDoc = documentsResponse.data.data[0];
+                                    if (firstDoc.preview_url) {
+                                      // Fetch document as blob using axios (includes auth headers)
+                                      try {
+                                        const docResponse = await axios.get(firstDoc.preview_url, {
+                                          responseType: 'blob'
+                                        });
+                                        
+                                        // Determine file type
+                                        const contentType = docResponse.headers['content-type'] || '';
+                                        const fileName = firstDoc.name;
+                                        const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+                                        const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+                                        
+                                        // Create blob URL for preview (iframe/img can use this)
+                                        const blobUrl = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
+                                        setDocumentViewerUrl(blobUrl);
+                                        setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
+                                        
+                                        toast.success(`${documentsResponse.data.data.length} document(s) loaded successfully`);
+                                      } catch (docError) {
+                                        console.error('Error loading document for preview:', docError);
+                                        toast.error('Failed to load document for preview');
+                                      }
+                                    } else {
+                                      toast.error('Document preview URL not available');
+                                    }
+                                  } else {
+                                    toast.error('No documents available');
+                                  }
+                                } catch (error) {
+                                  console.error('Error loading documents:', error);
+                                  toast.error('Failed to load documents');
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              disabled={loading}
+                            >
+                              <FaEye className="me-2" />
+                              View Documents
+                            </Button>
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              className="px-4"
+                              onClick={async () => {
+                                try {
+                                  const response = await axios.get(`/benefit-claims/${claim.id}/document`, {
+                                    responseType: 'blob'
+                                  });
+                                  
+                                  // Create download link
+                                  const url = window.URL.createObjectURL(new Blob([response.data]));
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.setAttribute('download', claim.supporting_documents_name || `benefit-claim-${claim.id}-documents.pdf`);
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  link.remove();
+                                  window.URL.revokeObjectURL(url);
+                                  
+                                  toast.success('Document downloaded successfully');
+                                } catch (error) {
+                                  console.error('Error downloading document:', error);
+                                  toast.error('Failed to download document');
+                                }
+                              }}
+                            >
+                              <FaDownload className="me-2" />
+                              Download Documents
+                            </Button>
+                          </div>
+                          
+                          {/* Document Viewer */}
+                          {documentViewerUrl && allDocuments.length > 0 && (
+                            <Card className="mt-3">
+                              <Card.Header className="d-flex justify-content-between align-items-center">
+                                <div className="d-flex align-items-center gap-3">
+                                  <span>
+                                    <FaFileAlt className="me-2" />
+                                    Document Preview
+                                  </span>
+                                  {allDocuments.length > 1 && (
+                                    <div className="d-flex align-items-center gap-2">
+                                      <Button
+                                        variant="outline-secondary"
+                                        size="sm"
+                                        onClick={async () => {
+                                          if (currentDocumentIndex > 0) {
+                                            const newIndex = currentDocumentIndex - 1;
+                                            await loadDocument(newIndex);
+                                          }
+                                        }}
+                                        disabled={currentDocumentIndex === 0 || loading}
+                                      >
+                                        Previous
+                                      </Button>
+                                      <span className="text-muted">
+                                        {currentDocumentIndex + 1} of {allDocuments.length}
+                                      </span>
+                                      <Button
+                                        variant="outline-secondary"
+                                        size="sm"
+                                        onClick={async () => {
+                                          if (currentDocumentIndex < allDocuments.length - 1) {
+                                            const newIndex = currentDocumentIndex + 1;
+                                            await loadDocument(newIndex);
+                                          }
+                                        }}
+                                        disabled={currentDocumentIndex === allDocuments.length - 1 || loading}
+                                      >
+                                        Next
+                                      </Button>
+                                    </div>
+                                  )}
+                                  <Badge bg="info">
+                                    {allDocuments[currentDocumentIndex]?.label || allDocuments[currentDocumentIndex]?.name || 'Document'}
+                                  </Badge>
+                                </div>
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    window.URL.revokeObjectURL(documentViewerUrl);
+                                    setDocumentViewerUrl(null);
+                                    setDocumentViewerType(null);
+                                    setAllDocuments([]);
+                                    setCurrentDocumentIndex(0);
+                                  }}
+                                >
+                                  Close
+                                </Button>
+                              </Card.Header>
+                              <Card.Body style={{ padding: 0, maxHeight: '500px', overflow: 'auto' }}>
+                                {documentViewerType === 'pdf' && (
+                                  <iframe
+                                    src={`${documentViewerUrl}#toolbar=1`}
+                                    title="PDF Document"
+                                    style={{
+                                      width: '100%',
+                                      height: '500px',
+                                      border: 'none',
+                                      borderRadius: '0 0 0.375rem 0.375rem'
+                                    }}
+                                    onError={() => {
+                                      console.error('Failed to load PDF in iframe');
+                                      toast.error('Failed to load PDF document');
+                                    }}
+                                  />
+                                )}
+                                {documentViewerType === 'image' && (
+                                  <div className="text-center p-3">
+                                    <img
+                                      src={documentViewerUrl}
+                                      alt="Document"
+                                      style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '500px',
+                                        height: 'auto',
+                                        borderRadius: '8px',
+                                        display: 'block',
+                                        margin: '0 auto',
+                                        objectFit: 'contain'
+                                      }}
+                                      onError={(e) => {
+                                        console.error('Failed to load image');
+                                        toast.error('Failed to load image document');
+                                        e.target.style.display = 'none';
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                                {documentViewerType === 'other' && (
+                                  <div className="text-center p-5">
+                                    <FaFileAlt size={48} className="text-muted mb-3" />
+                                    <p className="text-muted">Preview not available for this file type</p>
+                                    <Button
+                                      variant="outline-primary"
+                                      size="sm"
+                                      onClick={() => {
+                                        const link = document.createElement('a');
+                                        link.href = documentViewerUrl;
+                                        link.download = claim.supporting_documents_name || `benefit-claim-${claim.id}-documents`;
+                                        link.target = '_blank';
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                      }}
+                                    >
+                                      <FaDownload className="me-2" />
+                                      Download Document
+                                    </Button>
+                                  </div>
+                                )}
+                              </Card.Body>
+                            </Card>
+                          )}
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  )}
+                </Row>
+              </div>
+            );
+          })() : (
+            <div className="text-center py-4">
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => {
+            setShowClaimDetailsModal(false);
+            setSelectedClaim(null);
+            setClaimDetails(null);
+            if (documentViewerUrl) {
+              window.URL.revokeObjectURL(documentViewerUrl);
+              setDocumentViewerUrl(null);
+              setDocumentViewerType(null);
+            }
+            setAllDocuments([]);
+            setCurrentDocumentIndex(0);
+          }}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

@@ -9,7 +9,30 @@ import {
   faCalendarCheck,
   faChartLine
 } from '@fortawesome/free-solid-svg-icons';
+import {
+  Chart,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
 import api from '../../axios';
+
+// Register Chart.js components
+Chart.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const CACHE_KEY = 'evaluationAnalyticsSummary';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -52,6 +75,7 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
   const [metrics, setMetrics] = useState(null);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const chartRef = useRef(null);
+  const chartInstanceRef = useRef(null);
 
   const fetchEvaluationSummary = useMemo(() => async ({ silent = false } = {}) => {
     if (!silent) {
@@ -226,6 +250,174 @@ const EvaluationAnalyticsSection = ({ expanded = false }) => {
 
     fetchEvaluationSummary({ silent: warmCache });
   }, [cacheHydrated, fetchEvaluationSummary]);
+
+  // Render chart when metrics change
+  useEffect(() => {
+    if (!metrics || !metrics.recent || metrics.recent.length === 0) {
+      // Clean up chart if no data
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
+      }
+      return;
+    }
+
+    if (!chartRef.current) return;
+
+    // Clean up existing chart instance
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy();
+      chartInstanceRef.current = null;
+    }
+
+    const ctx = chartRef.current.getContext('2d');
+    if (!ctx) return;
+
+    // Reverse recent evaluations to show chronological order (oldest to newest)
+    const chronologicalEvaluations = [...metrics.recent].reverse();
+
+    // Prepare chart data from recent evaluations
+    const chartData = {
+      labels: chronologicalEvaluations.map((evaluation) => {
+        // Format date as short month/day
+        try {
+          // Try to parse the formatted date string
+          const date = new Date(evaluation.date);
+          if (isNaN(date.getTime())) {
+            // If parsing fails, try to parse from submitted_at if available
+            return evaluation.date;
+          }
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } catch {
+          return evaluation.date || 'N/A';
+        }
+      }),
+      datasets: [
+        {
+          label: 'Evaluation Score (%)',
+          data: chronologicalEvaluations.map((evaluation) => evaluation.percentage),
+          borderColor: 'rgba(59, 130, 246, 1)',
+          backgroundColor: expanded 
+            ? 'rgba(59, 130, 246, 0.1)' 
+            : 'rgba(59, 130, 246, 0.2)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: expanded ? 4 : 3,
+          pointHoverRadius: expanded ? 6 : 5,
+          pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+        }
+      ]
+    };
+
+    const chartOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: expanded,
+          position: 'top',
+          labels: {
+            font: {
+              size: 12,
+              weight: '500'
+            },
+            color: '#64748b',
+            padding: 15,
+            usePointStyle: true
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleColor: '#ffffff',
+          bodyColor: '#e2e8f0',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 1,
+          padding: 12,
+          displayColors: true,
+          callbacks: {
+            label: function(context) {
+              const evaluation = chronologicalEvaluations[context.dataIndex];
+              return [
+                `Score: ${context.parsed.y}%`,
+                evaluation?.title ? `Form: ${evaluation.title}` : '',
+                evaluation?.status ? `Status: ${evaluation.status}` : ''
+              ].filter(Boolean);
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: expanded,
+            color: 'rgba(148, 163, 184, 0.1)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#64748b',
+            font: {
+              size: 11,
+              weight: '500'
+            }
+          }
+        },
+        y: {
+          beginAtZero: false,
+          min: 0,
+          max: 100,
+          grid: {
+            color: 'rgba(148, 163, 184, 0.1)',
+            drawBorder: false
+          },
+          ticks: {
+            color: '#64748b',
+            font: {
+              size: 11,
+              weight: '500'
+            },
+            callback: function(value) {
+              return value + '%';
+            },
+            stepSize: expanded ? 10 : 20
+          }
+        }
+      },
+      animation: {
+        duration: 800,
+        easing: 'easeOutQuart'
+      }
+    };
+
+    // Create new chart instance
+    chartInstanceRef.current = new Chart(ctx, {
+      type: 'line',
+      data: chartData,
+      options: chartOptions
+    });
+
+    // Cleanup function
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [metrics, expanded]);
+
+  // Handle window resize for chart
+  useEffect(() => {
+    const handleResize = () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.resize();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   if (loading) {
     return (

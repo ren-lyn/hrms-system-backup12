@@ -304,6 +304,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Benefit Claims - Employee routes
     Route::get('/benefit-claims/my-claims', [BenefitClaimController::class, 'myClaims']); // Employee's own claims
     Route::post('/benefit-claims', [BenefitClaimController::class, 'store']); // Employee file claim
+    Route::get('/benefit-claims/{id}/documents', [BenefitClaimController::class, 'getDocuments']); // Employee view own claim documents
+    Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // Employee download own claim document
+    Route::get('/benefit-claims/{id}/preview', [BenefitClaimController::class, 'previewDocument']); // Employee preview document (for viewing, not downloading)
 });
 
 //Cash Advances
@@ -364,8 +367,7 @@ Route::middleware('auth:sanctum')->post('/notifications/verify-role-change', [No
         Route::put('/benefit-claims/{id}/reject', [BenefitClaimController::class, 'reject']); // Reject claim
         Route::put('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']); // Update claim status
         Route::post('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']); // Update claim status (POST for FormData with method spoofing)
-        Route::get('/benefit-claims/{id}/documents', [BenefitClaimController::class, 'getDocuments']); // Get all documents
-        Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // Download document
+        // Documents routes removed - handled by employee routes below, controller checks permissions
         Route::put('/employees/{employeeId}/benefits/terminate', [BenefitClaimController::class, 'terminateEnrollment']); // Terminate enrollment
         Route::get('/benefit-contributions/report', [BenefitClaimController::class, 'generateContributionReport']); // Generate report
     });

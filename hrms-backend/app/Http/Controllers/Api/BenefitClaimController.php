@@ -729,7 +729,8 @@ class BenefitClaimController extends Controller
                             'index' => $index,
                             'path' => $actualPath,
                             'name' => $fileName,
-                            'url' => Storage::disk('public')->url($actualPath),
+                            'url' => asset('storage/' . $actualPath),
+                            'preview_url' => url("/api/benefit-claims/{$id}/preview?index={$index}"),
                             'download_url' => url("/api/benefit-claims/{$id}/document?index={$index}"),
                             'source' => $source,
                             'type' => $type,
@@ -790,7 +791,8 @@ class BenefitClaimController extends Controller
                                 'index' => $index,
                                 'path' => $foundPath,
                                 'name' => $fileName,
-                                'url' => Storage::disk('public')->url($foundPath),
+                                'url' => asset('storage/' . $foundPath),
+                                'preview_url' => url("/api/benefit-claims/{$id}/preview?index={$index}"),
                                 'download_url' => url("/api/benefit-claims/{$id}/document?index={$index}"),
                                 'source' => $source,
                                 'type' => $type,
@@ -893,7 +895,8 @@ class BenefitClaimController extends Controller
                         'index' => 0,
                         'path' => $documentsPath,
                         'name' => $fileName,
-                        'url' => Storage::disk('public')->url($documentsPath),
+                        'url' => asset('storage/' . $documentsPath),
+                        'preview_url' => url("/api/benefit-claims/{$id}/preview?index=0"),
                         'download_url' => url("/api/benefit-claims/{$id}/document?index=0"),
                         'source' => $source,
                         'type' => $type,
@@ -917,7 +920,8 @@ class BenefitClaimController extends Controller
             $documents = array_values($documents);
             foreach ($documents as $idx => &$doc) {
                 $doc['index'] = $idx;
-                // Update download URL to use new index
+                // Update preview and download URLs to use new index
+                $doc['preview_url'] = url("/api/benefit-claims/{$id}/preview?index={$idx}");
                 $doc['download_url'] = url("/api/benefit-claims/{$id}/document?index={$idx}");
             }
             unset($doc);
@@ -1053,6 +1057,7 @@ class BenefitClaimController extends Controller
 
             // Check if file exists - try both original and normalized paths
             $actualPath = $filePath;
+            $normalizedPath = ltrim(str_replace('storage/', '', $filePath), '/');
             if (!Storage::disk('public')->exists($filePath)) {
                 // Try normalized path
                 if (Storage::disk('public')->exists($normalizedPath)) {
@@ -1092,13 +1097,110 @@ class BenefitClaimController extends Controller
                 }
             }
 
-            return Storage::disk('public')->download($actualPath, $fileName);
+            return response()->download(Storage::disk('public')->path($actualPath), $fileName);
         } catch (\Exception $e) {
             Log::error('Error downloading benefit claim document: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to download document'
+            ], 500);
+        }
+    }
+
+    /**
+     * Preview document (serve file for viewing, not downloading)
+     */
+    public function previewDocument(Request $request, $id)
+    {
+        try {
+            $claim = BenefitClaim::findOrFail($id);
+            
+            // Check if user has permission (employee who filed it or HR)
+            $user = Auth::user();
+            if ($claim->user_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'HR Admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            if (!$claim->supporting_documents_path) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No supporting document available'
+                ], 404);
+            }
+
+            // Handle both single file path and JSON array of paths
+            $documentsPath = $claim->supporting_documents_path;
+            $documentsName = $claim->supporting_documents_name;
+            
+            // Try to decode as JSON (for multiple documents)
+            $decoded = json_decode($documentsPath, true);
+            $isJsonArray = (json_last_error() === JSON_ERROR_NONE && is_array($decoded));
+            
+            if ($isJsonArray) {
+                // Multiple documents - get the specified index
+                $documentIndex = $request->query('index', 0);
+                $documentPaths = $decoded;
+                
+                if (!isset($documentPaths[$documentIndex])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Document index not found'
+                    ], 404);
+                }
+                
+                $filePath = $documentPaths[$documentIndex];
+            } else {
+                // Single file path
+                $filePath = $documentsPath;
+            }
+
+            // Check if file exists - try both original and normalized paths
+            $actualPath = $filePath;
+            $normalizedPath = ltrim(str_replace('storage/', '', $filePath), '/');
+            
+            if (!Storage::disk('public')->exists($filePath)) {
+                // Try normalized path
+                if (Storage::disk('public')->exists($normalizedPath)) {
+                    $actualPath = $normalizedPath;
+                } else {
+                    // Try other path variations
+                    $possiblePaths = [
+                        $normalizedPath,
+                        'benefit_claims/' . basename($filePath),
+                        ltrim(str_replace('storage/', '', $filePath), '/'),
+                    ];
+                    
+                    $found = false;
+                    foreach ($possiblePaths as $tryPath) {
+                        if (Storage::disk('public')->exists($tryPath)) {
+                            $actualPath = $tryPath;
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'File not found'
+                        ], 404);
+                    }
+                }
+            }
+
+            // Serve file for viewing (not downloading)
+            $fullPath = Storage::disk('public')->path($actualPath);
+            return response()->file($fullPath);
+        } catch (\Exception $e) {
+            Log::error('Error previewing benefit claim document: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to preview document'
             ], 500);
         }
     }

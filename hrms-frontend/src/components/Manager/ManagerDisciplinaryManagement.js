@@ -121,8 +121,14 @@ const ManagerDisciplinaryManagement = () => {
   // Close employee dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (showEmployeeDropdown && !event.target.closest('.form-group')) {
-        setShowEmployeeDropdown(false);
+      // Check if click is outside the employee dropdown
+      if (showEmployeeDropdown) {
+        const formGroup = event.target.closest('.form-group');
+        const employeeDropdown = event.target.closest('[data-employee-dropdown]');
+        // Don't close if clicking inside form-group or the dropdown itself
+        if (!formGroup && !employeeDropdown) {
+          setShowEmployeeDropdown(false);
+        }
       }
       if (showEmployeeFilterDropdown && !event.target.closest('button') && !event.target.closest('[style*="zIndex: 1001"]') && !event.target.closest('[style*="maxHeight: \'300px\'"]')) {
         setShowEmployeeFilterDropdown(false);
@@ -1251,6 +1257,7 @@ const ManagerDisciplinaryManagement = () => {
                   />
                   {showEmployeeDropdown && filteredEmployees.length > 0 && (
                     <div
+                      data-employee-dropdown
                       style={{
                         position: 'absolute',
                         top: '100%',
@@ -1269,7 +1276,14 @@ const ManagerDisciplinaryManagement = () => {
                       {filteredEmployees.map(employee => (
                         <div
                           key={employee.id}
-                          onClick={() => handleEmployeeSelect(employee)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEmployeeSelect(employee);
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault(); // Prevent input from losing focus
+                          }}
                           style={{
                             padding: '10px 15px',
                             cursor: 'pointer',
@@ -1291,6 +1305,7 @@ const ManagerDisciplinaryManagement = () => {
                   )}
                   {showEmployeeDropdown && employeeSearchQuery && filteredEmployees.length === 0 && (
                     <div
+                      data-employee-dropdown
                       style={{
                         position: 'absolute',
                         top: '100%',
