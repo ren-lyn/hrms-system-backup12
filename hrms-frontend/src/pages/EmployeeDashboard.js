@@ -33,7 +33,9 @@ import {
   faChevronRight,
   faEdit,
   faEye,
-  faFileAlt
+  faFileAlt,
+  faDollarSign,
+  faCoins
 } from '@fortawesome/free-solid-svg-icons';
 
 // Lazy load components for better performance
@@ -51,6 +53,7 @@ const RequestEditAttendance = React.lazy(() => import('../components/Employee/Re
 const ViewAttendanceRecords = React.lazy(() => import('../components/Employee/ViewAttendanceRecords'));
 const FileBenefitClaim = React.lazy(() => import('../components/Employee/FileBenefitClaim'));
 const ViewPayslip = React.lazy(() => import('../components/Employee/ViewPayslip'));
+const LeaveMonetizationRequest = React.lazy(() => import('../components/Employee/LeaveMonetizationRequest'));
 
 
 const EmployeeDashboard = () => {
@@ -253,6 +256,7 @@ const EmployeeDashboard = () => {
       case 'request-edit-attendance': return 'Request Edit Attendance';
       case 'overtime-request': return 'Overtime Request';
       case 'file-benefit-claim': return 'File Benefit Claim Request';
+      case 'leave-monetization': return 'File Request of Leave Monetization';
       case 'view-payslip': return 'View Payslip';
       default: return 'Dashboard';
     }
@@ -673,6 +677,12 @@ const EmployeeDashboard = () => {
             <FileBenefitClaim />
           </Suspense>
         );
+      case 'leave-monetization':
+        return (
+          <Suspense fallback={<LoadingFallback message="Loading leave monetization form..." />}>
+            <LeaveMonetizationRequest />
+          </Suspense>
+        );
       case 'view-payslip':
         return (
           <Suspense fallback={<LoadingFallback message="Loading payslip..." />}>
@@ -736,6 +746,13 @@ const EmployeeDashboard = () => {
             >
               <FontAwesomeIcon icon={faFileAlt} />
               <span>File Benefit Claim Request</span>
+            </button>
+            <button
+              className={`hrms-unified-nav-link ${activeView === 'leave-monetization' ? 'hrms-unified-active' : ''}`}
+              onClick={() => setActiveView('leave-monetization')}
+            >
+              <FontAwesomeIcon icon={faCoins} />
+              <span>File Request of Leave Monetization</span>
             </button>
             <button
               className={`hrms-unified-nav-link ${activeView === 'view-payslip' ? 'hrms-unified-active' : ''}`}

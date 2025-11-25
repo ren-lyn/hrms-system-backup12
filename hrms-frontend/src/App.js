@@ -49,6 +49,7 @@ const ReportGeneration = lazy(() => import('./components/HrAssistant/ReportGener
 const PredictiveTurnoverAnalytics = lazy(() => import('./components/HrAssistant/PredictiveTurnoverAnalytics/PredictiveTurnoverAnalytics'));
 const OTManagement = lazy(() => import('./components/HrAssistant/OTManagement/OTManagement'));
 const BenefitsManagement = lazy(() => import('./components/HrAssistant/BenefitsManagement'));
+const LeaveMonetizationManagement = lazy(() => import('./components/HrAssistant/LeaveMonetizationManagement'));
 
 // Loading component
 const LoadingSpinner = () => (
@@ -143,6 +144,7 @@ function App() {
           <Route path="attendance-edit-requests" element={<AttendanceEditRequests />} />
           <Route path="payroll" element={<PayrollDashboard />} />
           <Route path="benefits-management" element={<BenefitsManagement />} />
+          <Route path="monetization-management" element={<LeaveMonetizationManagement />} />
           <Route path="ot-management" element={<OTManagement />} />
           <Route path="report-generation" element={<ReportGeneration />} />
           <Route path="predictive-turnover-analytics" element={<PredictiveTurnoverAnalytics />} />

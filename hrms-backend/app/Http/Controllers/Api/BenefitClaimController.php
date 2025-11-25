@@ -12,9 +12,41 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Notifications\BenefitClaimStatusChanged;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class BenefitClaimController extends Controller
 {
+    /**
+     * Helper method to authenticate user from bearer token
+     * This is needed for routes outside auth:sanctum middleware
+     */
+    private function authenticateUser(Request $request = null)
+    {
+        // Use provided request or get current request
+        $request = $request ?? request();
+        
+        // First try to get user from Auth (works if middleware authenticated)
+        $user = Auth::user();
+        
+        // If not authenticated, try to authenticate from bearer token
+        if (!$user) {
+            $bearerToken = $request->bearerToken();
+            if ($bearerToken) {
+                $accessToken = PersonalAccessToken::findToken($bearerToken);
+                if ($accessToken) {
+                    $user = $accessToken->tokenable;
+                    // Load role relationship if not already loaded
+                    if (!$user->relationLoaded('role')) {
+                        $user->load('role');
+                    }
+                    // Set the authenticated user for this request
+                    Auth::setUser($user);
+                }
+            }
+        }
+        
+        return $user;
+    }
     /**
      * Get all benefit claims (for HR Assistant)
      */
@@ -570,11 +602,22 @@ class BenefitClaimController extends Controller
             $claim = BenefitClaim::findOrFail($id);
             
             // Check if user has permission (employee who filed it or HR)
-            $user = Auth::user();
-            if ($claim->user_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'HR Admin'])) {
+            $user = $this->authenticateUser();
+            if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized - User not authenticated'
+                ], 401);
+            }
+            
+            // Check if user is the owner or has HR role
+            $userRoleName = $user->role?->name ?? '';
+            $isHR = in_array($userRoleName, ['HR Assistant', 'HR Staff', 'HR Admin']);
+            
+            if ($claim->user_id !== $user->id && !$isHR) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - Insufficient permissions'
                 ], 403);
             }
             
@@ -1014,11 +1057,22 @@ class BenefitClaimController extends Controller
             }
 
             // Check if user has permission (employee who filed it or HR)
-            $user = Auth::user();
-            if ($claim->user_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'HR Admin'])) {
+            $user = $this->authenticateUser($request);
+            if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized - User not authenticated'
+                ], 401);
+            }
+            
+            // Check if user is the owner or has HR role
+            $userRoleName = $user->role?->name ?? '';
+            $isHR = in_array($userRoleName, ['HR Assistant', 'HR Staff', 'HR Admin']);
+            
+            if ($claim->user_id !== $user->id && !$isHR) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - Insufficient permissions'
                 ], 403);
             }
 
@@ -1026,16 +1080,38 @@ class BenefitClaimController extends Controller
             $documentsPath = $claim->supporting_documents_path;
             $documentsName = $claim->supporting_documents_name;
             
-            // Try to decode as JSON (for multiple documents)
+            // Try to decode as JSON (for multiple documents) - handle escaped characters
             $decoded = json_decode($documentsPath, true);
-            $isJsonArray = (json_last_error() === JSON_ERROR_NONE && is_array($decoded));
+            $jsonError = json_last_error();
+            
+            // If JSON decode fails, try unescaping first (in case of double-encoded JSON)
+            if ($jsonError !== JSON_ERROR_NONE) {
+                $unescaped = stripslashes($documentsPath);
+                $decoded = json_decode($unescaped, true);
+                $jsonError = json_last_error();
+            }
+            
+            $isJsonArray = ($jsonError === JSON_ERROR_NONE && is_array($decoded));
+            
+            // Normalize paths in decoded array (remove escaped backslashes)
+            if ($isJsonArray) {
+                $decoded = array_map(function($path) {
+                    // Replace escaped backslashes with forward slashes
+                    return str_replace(['\\/', '\\\\'], '/', $path);
+                }, $decoded);
+            }
             
             if ($isJsonArray) {
                 // Multiple documents - get the first one or specified index
-                $documentIndex = $request->query('index', 0);
+                $documentIndex = (int) $request->query('index', 0);
                 $documentPaths = $decoded;
                 
                 if (!isset($documentPaths[$documentIndex])) {
+                    Log::warning('Document index not found', [
+                        'claim_id' => $id,
+                        'index' => $documentIndex,
+                        'total_documents' => count($documentPaths)
+                    ]);
                     return response()->json([
                         'success' => false,
                         'message' => 'Document index not found'
@@ -1046,64 +1122,124 @@ class BenefitClaimController extends Controller
                 
                 // Get corresponding name
                 $documentNames = json_decode($documentsName, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $documentNames = json_decode(stripslashes($documentsName), true);
+                }
                 $fileName = (is_array($documentNames) && isset($documentNames[$documentIndex])) 
                     ? $documentNames[$documentIndex] 
-                    : 'document.pdf';
+                    : (basename($filePath) ?: 'document.pdf');
             } else {
-                // Single file path
-                $filePath = $documentsPath;
-                $fileName = $documentsName ?? 'document.pdf';
+                // Single file path - normalize it
+                $filePath = str_replace(['\\/', '\\\\'], '/', $documentsPath);
+                $fileName = $documentsName ?? (basename($filePath) ?: 'document.pdf');
             }
 
-            // Check if file exists - try both original and normalized paths
-            $actualPath = $filePath;
-            $normalizedPath = ltrim(str_replace('storage/', '', $filePath), '/');
-            if (!Storage::disk('public')->exists($filePath)) {
-                // Try normalized path
-                if (Storage::disk('public')->exists($normalizedPath)) {
-                    $actualPath = $normalizedPath;
-                } else {
-                    // Try other path variations
-                    $possiblePaths = [
-                        $normalizedPath,
-                        'benefit_claims/' . basename($filePath),
-                        ltrim(str_replace('storage/', '', $filePath), '/'),
-                    ];
-                    
-                    $found = false;
-                    foreach ($possiblePaths as $tryPath) {
-                        if (Storage::disk('public')->exists($tryPath)) {
-                            $actualPath = $tryPath;
-                            $found = true;
-                            break;
-                        }
+            // Normalize the file path (remove leading slashes, handle storage prefix)
+            $normalizedPath = ltrim(str_replace(['storage/', 'public/'], '', $filePath), '/');
+            
+            // Log for debugging
+            if (config('app.debug')) {
+                Log::info('Downloading benefit claim document', [
+                    'claim_id' => $id,
+                    'original_path' => $filePath,
+                    'normalized_path' => $normalizedPath,
+                    'is_json' => $isJsonArray,
+                    'index' => $documentIndex ?? null,
+                    'file_name' => $fileName
+                ]);
+            }
+            
+            // Try multiple path variations to find the file
+            $possiblePaths = [
+                $filePath,
+                $normalizedPath,
+                ltrim($filePath, '/'),
+                ltrim($normalizedPath, '/'),
+            ];
+            
+            // Add specific benefit claim paths
+            if (strpos($normalizedPath, 'benefit_claims/') === false) {
+                $possiblePaths[] = 'benefit_claims/' . basename($normalizedPath);
+                $possiblePaths[] = 'benefit_claims/' . basename($filePath);
+            }
+            
+            $actualPath = null;
+            $found = false;
+            
+            foreach ($possiblePaths as $tryPath) {
+                if (empty($tryPath)) {
+                    continue;
+                }
+                
+                try {
+                    if (Storage::disk('public')->exists($tryPath)) {
+                        $actualPath = $tryPath;
+                        $found = true;
+                        break;
                     }
-                    
-                    if (!$found) {
-                        Log::warning('Benefit claim document not found', [
-                            'claim_id' => $id,
-                            'file_path' => $filePath,
-                            'normalized_path' => $normalizedPath,
-                            'is_json' => $isJsonArray,
-                            'index' => $documentIndex ?? 0,
-                            'all_paths_tried' => array_merge([$filePath, $normalizedPath], $possiblePaths)
-                        ]);
-                        
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'File not found'
-                        ], 404);
-                    }
+                } catch (\Exception $e) {
+                    // Continue trying other paths
+                    continue;
                 }
             }
-
-            return response()->download(Storage::disk('public')->path($actualPath), $fileName);
+            
+            if (!$found || !$actualPath) {
+                Log::warning('Benefit claim document not found', [
+                    'claim_id' => $id,
+                    'file_path' => $filePath,
+                    'normalized_path' => $normalizedPath,
+                    'is_json' => $isJsonArray,
+                    'index' => $documentIndex ?? null,
+                    'all_paths_tried' => $possiblePaths
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found'
+                ], 404);
+            }
+            
+            // Verify the file path is valid before attempting download
+            try {
+                $fullPath = Storage::disk('public')->path($actualPath);
+                
+                if (!file_exists($fullPath) || !is_file($fullPath)) {
+                    Log::error('File path exists in storage but not on filesystem', [
+                        'claim_id' => $id,
+                        'storage_path' => $actualPath,
+                        'full_path' => $fullPath,
+                        'file_exists' => file_exists($fullPath),
+                        'is_file' => is_file($fullPath)
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'File not found on server'
+                    ], 404);
+                }
+                
+                return response()->download($fullPath, $fileName);
+            } catch (\Exception $e) {
+                Log::error('Error getting file path or downloading', [
+                    'claim_id' => $id,
+                    'storage_path' => $actualPath,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e; // Re-throw to be caught by outer catch
+            }
         } catch (\Exception $e) {
             Log::error('Error downloading benefit claim document: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('Request details', [
+                'claim_id' => $id ?? 'unknown',
+                'index' => $request->query('index'),
+                'user_id' => Auth::id() ?? 'not authenticated'
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to download document'
+                'message' => 'Failed to download document',
+                'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -1117,11 +1253,22 @@ class BenefitClaimController extends Controller
             $claim = BenefitClaim::findOrFail($id);
             
             // Check if user has permission (employee who filed it or HR)
-            $user = Auth::user();
-            if ($claim->user_id !== $user->id && !in_array($user->role->name ?? '', ['HR Assistant', 'HR Staff', 'HR Admin'])) {
+            $user = $this->authenticateUser($request);
+            if (!$user) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized'
+                    'message' => 'Unauthorized - User not authenticated'
+                ], 401);
+            }
+            
+            // Check if user is the owner or has HR role
+            $userRoleName = $user->role?->name ?? '';
+            $isHR = in_array($userRoleName, ['HR Assistant', 'HR Staff', 'HR Admin']);
+            
+            if ($claim->user_id !== $user->id && !$isHR) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - Insufficient permissions'
                 ], 403);
             }
 
@@ -1136,16 +1283,38 @@ class BenefitClaimController extends Controller
             $documentsPath = $claim->supporting_documents_path;
             $documentsName = $claim->supporting_documents_name;
             
-            // Try to decode as JSON (for multiple documents)
+            // Try to decode as JSON (for multiple documents) - handle escaped characters
             $decoded = json_decode($documentsPath, true);
-            $isJsonArray = (json_last_error() === JSON_ERROR_NONE && is_array($decoded));
+            $jsonError = json_last_error();
+            
+            // If JSON decode fails, try unescaping first (in case of double-encoded JSON)
+            if ($jsonError !== JSON_ERROR_NONE) {
+                $unescaped = stripslashes($documentsPath);
+                $decoded = json_decode($unescaped, true);
+                $jsonError = json_last_error();
+            }
+            
+            $isJsonArray = ($jsonError === JSON_ERROR_NONE && is_array($decoded));
+            
+            // Normalize paths in decoded array (remove escaped backslashes)
+            if ($isJsonArray) {
+                $decoded = array_map(function($path) {
+                    // Replace escaped backslashes with forward slashes
+                    return str_replace(['\\/', '\\\\'], '/', $path);
+                }, $decoded);
+            }
             
             if ($isJsonArray) {
                 // Multiple documents - get the specified index
-                $documentIndex = $request->query('index', 0);
+                $documentIndex = (int) $request->query('index', 0);
                 $documentPaths = $decoded;
                 
                 if (!isset($documentPaths[$documentIndex])) {
+                    Log::warning('Document index not found for preview', [
+                        'claim_id' => $id,
+                        'index' => $documentIndex,
+                        'total_documents' => count($documentPaths)
+                    ]);
                     return response()->json([
                         'success' => false,
                         'message' => 'Document index not found'
@@ -1154,53 +1323,116 @@ class BenefitClaimController extends Controller
                 
                 $filePath = $documentPaths[$documentIndex];
             } else {
-                // Single file path
-                $filePath = $documentsPath;
+                // Single file path - normalize it
+                $filePath = str_replace(['\\/', '\\\\'], '/', $documentsPath);
             }
 
-            // Check if file exists - try both original and normalized paths
-            $actualPath = $filePath;
-            $normalizedPath = ltrim(str_replace('storage/', '', $filePath), '/');
+            // Normalize the file path (remove leading slashes, handle storage prefix)
+            $normalizedPath = ltrim(str_replace(['storage/', 'public/'], '', $filePath), '/');
             
-            if (!Storage::disk('public')->exists($filePath)) {
-                // Try normalized path
-                if (Storage::disk('public')->exists($normalizedPath)) {
-                    $actualPath = $normalizedPath;
-                } else {
-                    // Try other path variations
-                    $possiblePaths = [
-                        $normalizedPath,
-                        'benefit_claims/' . basename($filePath),
-                        ltrim(str_replace('storage/', '', $filePath), '/'),
-                    ];
-                    
-                    $found = false;
-                    foreach ($possiblePaths as $tryPath) {
-                        if (Storage::disk('public')->exists($tryPath)) {
-                            $actualPath = $tryPath;
-                            $found = true;
-                            break;
-                        }
+            // Log for debugging
+            if (config('app.debug')) {
+                Log::info('Previewing benefit claim document', [
+                    'claim_id' => $id,
+                    'original_path' => $filePath,
+                    'normalized_path' => $normalizedPath,
+                    'is_json' => $isJsonArray,
+                    'index' => $documentIndex ?? null
+                ]);
+            }
+            
+            // Try multiple path variations to find the file
+            $possiblePaths = [
+                $filePath,
+                $normalizedPath,
+                ltrim($filePath, '/'),
+                ltrim($normalizedPath, '/'),
+            ];
+            
+            // Add specific benefit claim paths
+            if (strpos($normalizedPath, 'benefit_claims/') === false) {
+                $possiblePaths[] = 'benefit_claims/' . basename($normalizedPath);
+                $possiblePaths[] = 'benefit_claims/' . basename($filePath);
+            }
+            
+            $actualPath = null;
+            $found = false;
+            
+            foreach ($possiblePaths as $tryPath) {
+                if (empty($tryPath)) {
+                    continue;
+                }
+                
+                try {
+                    if (Storage::disk('public')->exists($tryPath)) {
+                        $actualPath = $tryPath;
+                        $found = true;
+                        break;
                     }
-                    
-                    if (!$found) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'File not found'
-                        ], 404);
-                    }
+                } catch (\Exception $e) {
+                    // Continue trying other paths
+                    continue;
                 }
             }
-
-            // Serve file for viewing (not downloading)
-            $fullPath = Storage::disk('public')->path($actualPath);
-            return response()->file($fullPath);
+            
+            if (!$found || !$actualPath) {
+                Log::warning('Benefit claim document not found for preview', [
+                    'claim_id' => $id,
+                    'file_path' => $filePath,
+                    'normalized_path' => $normalizedPath,
+                    'is_json' => $isJsonArray,
+                    'index' => $documentIndex ?? null,
+                    'all_paths_tried' => $possiblePaths
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File not found'
+                ], 404);
+            }
+            
+            // Verify the file path is valid before attempting to serve
+            try {
+                $fullPath = Storage::disk('public')->path($actualPath);
+                
+                if (!file_exists($fullPath) || !is_file($fullPath)) {
+                    Log::error('File path exists in storage but not on filesystem (preview)', [
+                        'claim_id' => $id,
+                        'storage_path' => $actualPath,
+                        'full_path' => $fullPath,
+                        'file_exists' => file_exists($fullPath),
+                        'is_file' => is_file($fullPath)
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'File not found on server'
+                    ], 404);
+                }
+                
+                // Serve file for viewing (not downloading)
+                return response()->file($fullPath);
+            } catch (\Exception $e) {
+                Log::error('Error getting file path or previewing', [
+                    'claim_id' => $id,
+                    'storage_path' => $actualPath,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e; // Re-throw to be caught by outer catch
+            }
         } catch (\Exception $e) {
             Log::error('Error previewing benefit claim document: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('Request details', [
+                'claim_id' => $id ?? 'unknown',
+                'index' => $request->query('index'),
+                'user_id' => Auth::id() ?? 'not authenticated'
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to preview document'
+                'message' => 'Failed to preview document',
+                'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
     }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\LeaveRequest;
+use App\Models\LeaveMonetizationRequest;
 use App\Models\User;
 use App\Models\EmployeeProfile;
 use App\Models\HrCalendarEvent;
@@ -132,6 +133,22 @@ class LeaveRequestController extends Controller
         
         $leaveBalances = [];
         
+        // Get approved monetization days for this year (affects SIL only)
+        $approvedMonetizationDays = LeaveMonetizationRequest::where('employee_id', $user->id)
+            ->where('leave_year', $currentYear)
+            ->where('status', 'approved')
+            ->sum('requested_days');
+        
+        // Calculate SIL shared pool (Sick Leave + Emergency Leave share 8 days)
+        $silTypes = ['Sick Leave', 'Emergency Leave'];
+        $usedSILDays = LeaveRequest::where('employee_id', $user->id)
+            ->whereIn('type', $silTypes)
+            ->where('status', 'approved')
+            ->whereYear('from', $currentYear)
+            ->sum('total_days');
+        $silEntitled = $entitlements['Sick Leave'] ?? 8; // Default to 8 if not configured
+        $remainingSIL = max(0, $silEntitled - $usedSILDays - (float) $approvedMonetizationDays);
+        
         // Calculate balance for each leave type
         foreach ($entitlements as $leaveType => $entitledDays) {
             $usedDays = LeaveRequest::where('employee_id', $user->id)
@@ -140,7 +157,12 @@ class LeaveRequestController extends Controller
                 ->whereYear('from', $currentYear)
                 ->sum('total_days');
             
-            $remaining = max(0, $entitledDays - $usedDays);
+            // For SIL types, use the shared pool calculation
+            if (in_array($leaveType, $silTypes)) {
+                $remaining = $remainingSIL;
+            } else {
+                $remaining = max(0, $entitledDays - $usedDays);
+            }
             
             // Format key for consistent API response
             $key = strtolower(str_replace(' ', '_', $leaveType));
@@ -149,7 +171,8 @@ class LeaveRequestController extends Controller
                 'type' => $leaveType,
                 'entitled' => $entitledDays,
                 'used' => $usedDays,
-                'remaining' => $remaining
+                'remaining' => $remaining,
+                'monetized' => in_array($leaveType, $silTypes) ? (float) $approvedMonetizationDays : 0
             ];
             
             // Add special notes for certain leave types
@@ -186,7 +209,9 @@ class LeaveRequestController extends Controller
             'type' => 'required|string|in:Vacation Leave,Sick Leave,Emergency Leave,Maternity Leave,Paternity Leave,Personal Leave,Bereavement Leave,Leave for Victims of Violence Against Women and Their Children (VAWC),Women\'s Special Leave,Parental Leave',
             'from' => 'required|date',
             'to' => 'required|date|after_or_equal:from',
-            'total_days' => 'nullable|integer|min:1',
+            'leave_duration' => 'nullable|in:whole_day,half_day',
+            'half_day_period' => 'nullable|required_if:leave_duration,half_day|in:am,pm',
+            'total_days' => 'nullable|numeric|min:0.5',
             // total_hours is now automatically calculated as total_days * 8
             'reason' => 'required|string|max:500',
             'signature' => 'nullable|file|mimes:pdf,jpg,jpeg,png,gif|max:2048',
@@ -207,7 +232,24 @@ class LeaveRequestController extends Controller
         // Calculate total days if not provided (needed for validation)
         $fromDate = Carbon::parse($validated['from']);
         $toDate = Carbon::parse($validated['to']);
-        $totalDays = $validated['total_days'] ?? $fromDate->diffInDays($toDate) + 1;
+        $leaveDuration = $validated['leave_duration'] ?? 'whole_day';
+        $halfDayPeriod = $validated['half_day_period'] ?? null;
+        
+        // Calculate total days based on date range and leave duration
+        $baseDays = $fromDate->diffInDays($toDate) + 1;
+        
+        if ($leaveDuration === 'half_day') {
+            // For half-day: if single day, it's 0.5; if multi-day, it's (baseDays - 1) + 0.5
+            // Example: Jan 1-3 with half-day = 2 full days + 0.5 = 2.5 days
+            $totalDays = $baseDays === 1 ? 0.5 : (($baseDays - 1) + 0.5);
+        } else {
+            $totalDays = $baseDays;
+        }
+        
+        // Use provided total_days if available (from frontend calculation)
+        if (isset($validated['total_days']) && $validated['total_days'] > 0) {
+            $totalDays = (float) $validated['total_days'];
+        }
 
         // Check if employee has an active leave (not yet ended)
         $activeLeavCheck = LeaveRequest::checkActiveLeave($user->id);
@@ -270,8 +312,10 @@ class LeaveRequestController extends Controller
         $leaveRequest->without_pay_days = $paymentTerms['without_pay_days'];
         $leaveRequest->from = $validated['from'];
         $leaveRequest->to = $validated['to'];
+        $leaveRequest->leave_duration = $leaveDuration;
+        $leaveRequest->half_day_period = $halfDayPeriod;
         $leaveRequest->total_days = $totalDays;
-        $leaveRequest->total_hours = $totalDays * 8; // Automatically calculate: 8 hours per day
+        $leaveRequest->total_hours = $totalDays * 8; // Automatically calculate: 8 hours per day (supports fractional)
         $leaveRequest->date_filed = now();
         $leaveRequest->reason = $validated['reason'];
         
@@ -1121,7 +1165,18 @@ class LeaveRequestController extends Controller
             ->whereIn('status', $approvedStatuses)
             ->sum('with_pay_days');
         
+        // Calculate remaining SIL days
         $remainingSILDays = max(0, $silDays - $usedSILDays);
+        
+        // Subtract approved monetization days from remaining leave balance
+        // When a monetization request is approved, those days are "used" and should not be available for leave
+        $approvedMonetizationDays = LeaveMonetizationRequest::where('employee_id', $user->id)
+            ->where('leave_year', $currentYear)
+            ->where('status', 'approved')
+            ->sum('requested_days');
+        
+        // Subtract approved monetization days from remaining balance
+        $remainingSILDays = max(0, $remainingSILDays - (float) $approvedMonetizationDays);
 
         // Get all leaves for current year
         $allLeavesEloquent = LeaveRequest::where('employee_id', $user->id)
@@ -1168,6 +1223,7 @@ class LeaveRequestController extends Controller
             'entitled' => $eligibleForPaidLeave ? $silDays : 0,
             'used' => $eligibleForPaidLeave ? $usedSILDays : 0,
             'remaining' => $eligibleForPaidLeave ? $remainingSILDays : 0,
+            'monetized' => $eligibleForPaidLeave ? (float) $approvedMonetizationDays : 0,
             'shared_pool' => true,
             'shared_types' => $silSharedTypes,
         ];
@@ -1302,6 +1358,7 @@ class LeaveRequestController extends Controller
                 'max_with_pay_days' => $silDays,
                 'used_with_pay_days' => $usedSILDays,
                 'remaining_with_pay_days' => $remainingSILDays,
+                'monetized_days' => (float) $approvedMonetizationDays,
                 'percentage_used' => $silDays > 0 ? round(($usedSILDays / $silDays) * 100, 1) : 0
             ],
             'other_leaves_paid' => $otherLeavesPaid,

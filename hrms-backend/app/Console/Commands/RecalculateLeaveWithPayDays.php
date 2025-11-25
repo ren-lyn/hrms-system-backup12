@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\LeaveRequest;
-use App\Models\User;
 use Carbon\Carbon;
 
 class RecalculateLeaveWithPayDays extends Command
@@ -14,14 +13,14 @@ class RecalculateLeaveWithPayDays extends Command
      *
      * @var string
      */
-    protected $signature = 'leave:recalculate-with-pay-days {--employee-id= : Specific employee ID to recalculate}';
+    protected $signature = 'leave:recalculate-with-pay-days {--employee-id= : Recalculate for specific employee ID} {--year= : Recalculate for specific year}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Recalculate with_pay_days for existing approved leave requests';
+    protected $description = 'Recalculate with_pay_days for existing leave requests based on total_days and leave_duration';
 
     /**
      * Execute the console command.
@@ -29,72 +28,50 @@ class RecalculateLeaveWithPayDays extends Command
     public function handle()
     {
         $employeeId = $this->option('employee-id');
-        
-        $query = LeaveRequest::whereIn('status', ['approved', 'manager_approved'])
-            ->where(function($q) {
-                $q->whereNull('with_pay_days')
-                  ->orWhere('with_pay_days', 0)
-                  ->orWhereNull('without_pay_days');
-            });
-        
+        $year = $this->option('year') ?? Carbon::now()->year;
+
+        $query = LeaveRequest::whereYear('from', $year)
+            ->whereIn('status', ['approved', 'manager_approved', 'pending']);
+
         if ($employeeId) {
             $query->where('employee_id', $employeeId);
         }
-        
-        $leaveRequests = $query->get();
-        
-        if ($leaveRequests->isEmpty()) {
-            $this->info('No leave requests found that need recalculation.');
-            return 0;
-        }
-        
-        $this->info("Found {$leaveRequests->count()} leave request(s) to recalculate.");
-        
+
+        $leaves = $query->get();
+        $this->info("Found {$leaves->count()} leave requests to recalculate.");
+
         $updated = 0;
         $skipped = 0;
-        
-        foreach ($leaveRequests as $leaveRequest) {
-            $employee = User::find($leaveRequest->employee_id);
-            
-            if (!$employee) {
-                $this->warn("Employee ID {$leaveRequest->employee_id} not found for leave request {$leaveRequest->id}. Skipping.");
-                $skipped++;
-                continue;
-            }
-            
-            // Get the year of the leave request
-            $leaveYear = Carbon::parse($leaveRequest->from)->year;
-            
-            // Temporarily set with_pay_days to 0 so it's excluded from the calculation
-            $originalWithPayDays = $leaveRequest->with_pay_days ?? 0;
-            $leaveRequest->with_pay_days = 0;
-            $leaveRequest->save();
-            
-            // Now recalculate payment terms (this will exclude the current leave from used days)
+
+        foreach ($leaves as $leave) {
+            // Recalculate payment terms based on current total_days
             $paymentTerms = LeaveRequest::calculateAutomaticPaymentTerms(
-                $leaveRequest->employee_id,
-                $leaveRequest->type,
-                $leaveRequest->total_days,
-                $leaveYear
+                $leave->employee_id,
+                $leave->type,
+                $leave->total_days,
+                $year
             );
-            
-            // Update the leave request with recalculated values
-            $leaveRequest->with_pay_days = $paymentTerms['with_pay_days'];
-            $leaveRequest->without_pay_days = $paymentTerms['without_pay_days'];
-            $leaveRequest->terms = $paymentTerms['terms'];
-            $leaveRequest->leave_category = $paymentTerms['leave_category'];
-            
-            $leaveRequest->save();
-            $updated++;
-            
-            $this->info("Updated leave request {$leaveRequest->id} (Employee: {$employee->first_name} {$employee->last_name}, Type: {$leaveRequest->type}): with_pay_days = {$leaveRequest->with_pay_days}, without_pay_days = {$leaveRequest->without_pay_days}");
+
+            // Only update if with_pay_days has changed
+            $oldWithPayDays = $leave->with_pay_days;
+            $newWithPayDays = $paymentTerms['with_pay_days'];
+
+            // Round to 2 decimal places for comparison
+            if (round($oldWithPayDays, 2) !== round($newWithPayDays, 2)) {
+                $leave->with_pay_days = $newWithPayDays;
+                $leave->without_pay_days = $paymentTerms['without_pay_days'];
+                $leave->terms = $paymentTerms['terms'];
+                $leave->leave_category = $paymentTerms['leave_category'];
+                $leave->save();
+
+                $this->line("Updated Leave ID {$leave->id}: with_pay_days {$oldWithPayDays} → {$newWithPayDays}");
+                $updated++;
+            } else {
+                $skipped++;
+            }
         }
-        
-        $this->info("\nRecalculation complete!");
-        $this->info("Updated: {$updated}");
-        $this->info("Skipped: {$skipped}");
-        
+
+        $this->info("Recalculation complete: {$updated} updated, {$skipped} skipped.");
         return 0;
     }
 }
-

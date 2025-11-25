@@ -23,6 +23,8 @@ const EmbeddedLeaveForm = () => {
     leaveType: '', // Will be set after gender is loaded and filtered
     startDate: null,
     endDate: null,
+    leaveDuration: 'whole_day', // 'whole_day' or 'half_day'
+    halfDayPeriod: null, // 'am' or 'pm' - only when leaveDuration is 'half_day'
     totalDays: 0,
     totalHours: 0,
     reason: '',
@@ -621,7 +623,7 @@ const EmbeddedLeaveForm = () => {
   };
 
 
-  const calculateDaysAndHours = (startDate, endDate) => {
+  const calculateDaysAndHours = (startDate, endDate, leaveDuration, halfDayPeriod) => {
     if (!startDate || !endDate) return { days: 0, hours: 0 };
 
     // Calculate the difference in milliseconds
@@ -633,8 +635,20 @@ const EmbeddedLeaveForm = () => {
     // Ensure minimum 1 day if same date is selected
     if (days < 1) days = 1;
     
-    // Calculate total working hours (assuming 8 hours per working day)
-    // This is just for reference - actual hours should be manually set for partial days
+    // Handle half-day leave
+    if (leaveDuration === 'half_day') {
+      // If it's a single day (startDate === endDate), it's 0.5 days
+      if (days === 1) {
+        days = 0.5;
+      } else {
+        // For multi-day leave with half-day:
+        // Full days = (total days - 1) + 0.5 (for the half-day)
+        // Example: Jan 1-3 with half-day = 2 full days + 0.5 = 2.5 days
+        days = (days - 1) + 0.5;
+      }
+    }
+    
+    // Calculate total working hours (8 hours per full day, 4 hours per half day)
     const totalWorkingHours = days * 8;
 
     return { 
@@ -644,22 +658,40 @@ const EmbeddedLeaveForm = () => {
   };
 
   const handleStartDateChange = (date) => {
-    const { days } = calculateDaysAndHours(date, formData.endDate);
+    const { days, hours } = calculateDaysAndHours(date, formData.endDate, formData.leaveDuration, formData.halfDayPeriod);
     setFormData(prev => ({
       ...prev,
       startDate: date,
       totalDays: days,
-      totalHours: 0
+      totalHours: hours
     }));
   };
 
   const handleEndDateChange = (date) => {
-    const { days } = calculateDaysAndHours(formData.startDate, date);
+    const { days, hours } = calculateDaysAndHours(formData.startDate, date, formData.leaveDuration, formData.halfDayPeriod);
     setFormData(prev => ({
       ...prev,
       endDate: date,
       totalDays: days,
-      totalHours: 0
+      totalHours: hours
+    }));
+  };
+
+  const handleLeaveDurationChange = (duration) => {
+    const { days, hours } = calculateDaysAndHours(formData.startDate, formData.endDate, duration, formData.halfDayPeriod);
+    setFormData(prev => ({
+      ...prev,
+      leaveDuration: duration,
+      halfDayPeriod: duration === 'half_day' ? (prev.halfDayPeriod || 'am') : null,
+      totalDays: days,
+      totalHours: hours
+    }));
+  };
+
+  const handleHalfDayPeriodChange = (period) => {
+    setFormData(prev => ({
+      ...prev,
+      halfDayPeriod: period
     }));
   };
 
@@ -1036,15 +1068,14 @@ const EmbeddedLeaveForm = () => {
       submitData.append('type', formData.leaveType);
       submitData.append('from', formatDateForAPI(formData.startDate));
       submitData.append('to', formatDateForAPI(formData.endDate));
-      submitData.append('total_days', formData.totalDays || 1);
-      // Only send total_hours if it's greater than 0 (for partial day leaves)
-      // For full day leaves, send 0
-      if (formData.totalHours > 0 && formData.totalHours <= 8) {
-        submitData.append('total_hours', formData.totalHours);
-      } else {
-        // For full day leaves, send 0
-        submitData.append('total_hours', 0);
+      submitData.append('leave_duration', formData.leaveDuration || 'whole_day');
+      if (formData.leaveDuration === 'half_day' && formData.halfDayPeriod) {
+        submitData.append('half_day_period', formData.halfDayPeriod);
       }
+      submitData.append('total_days', formData.totalDays || 1);
+      // Calculate total hours based on actual days (including fractional)
+      const calculatedHours = formData.totalDays * 8;
+      submitData.append('total_hours', calculatedHours);
       submitData.append('reason', formData.reason || 'Leave request');
       
       // Add attachment file if provided
@@ -1095,6 +1126,8 @@ const EmbeddedLeaveForm = () => {
         leaveType: 'Sick Leave',
         startDate: null,
         endDate: null,
+        leaveDuration: 'whole_day',
+        halfDayPeriod: null,
         totalDays: 0,
         totalHours: 0,
         reason: '',
@@ -1193,7 +1226,9 @@ const EmbeddedLeaveForm = () => {
         status: displayStatus,
         startDate: request.from ? new Date(request.from).toLocaleDateString() : 'N/A',
         endDate: request.to ? new Date(request.to).toLocaleDateString() : 'N/A',
-        totalDays: request.total_days || 0,
+        totalDays: parseFloat(request.total_days) || 0,
+        leaveDuration: request.leave_duration || 'whole_day',
+        halfDayPeriod: request.half_day_period || null,
         reason: request.reason || 'N/A',
         severity: severity
       };
@@ -1240,8 +1275,28 @@ const EmbeddedLeaveForm = () => {
                   </td>
                   <td className="total-days-cell">
                     <div className="total-days-badge">
-                      <span className="days-count text-responsive-sm">{row.totalDays}</span>
-                      <span className="days-label text-responsive-sm">day{row.totalDays > 1 ? 's' : ''}</span>
+                      <span className="days-count text-responsive-sm">
+                        {(() => {
+                          const days = parseFloat(row.totalDays) || 0;
+                          return days % 1 === 0 ? days : days.toFixed(1);
+                        })()}
+                      </span>
+                      <span className="days-label text-responsive-sm">
+                        {(() => {
+                          const days = parseFloat(row.totalDays) || 0;
+                          return `day${days % 1 === 0 ? (days > 1 ? 's' : '') : 's'}`;
+                        })()}
+                      </span>
+                      {row.leaveDuration === 'half_day' && (
+                        <span className="half-day-indicator text-responsive-xs" style={{ 
+                          display: 'block', 
+                          fontSize: '0.75em', 
+                          color: '#6c757d',
+                          marginTop: '2px'
+                        }}>
+                          (Half-day: {row.halfDayPeriod?.toUpperCase() || 'AM/PM'})
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="reason-cell">
@@ -1276,7 +1331,9 @@ const EmbeddedLeaveForm = () => {
     const currentDepartment = userInfo.department || formData.department || 'N/A';
     
     // Create table data from leave history
-    const historyTableData = leaveHistory.map((request, index) => ({
+    const historyTableData = leaveHistory.map((request, index) => {
+      const totalDays = parseFloat(request.total_days) || 0;
+      return {
       department: request.department || currentDepartment,
       name: request.employee_name || currentUser,
       leaveType: request.type,
@@ -1286,14 +1343,17 @@ const EmbeddedLeaveForm = () => {
               request.status === 'completed' ? 'Approved' : 'Completed',
       startDate: request.from ? new Date(request.from).toLocaleDateString() : 'N/A',
       endDate: request.to ? new Date(request.to).toLocaleDateString() : 'N/A', 
-      totalDays: request.total_days || 0,
-      totalHours: request.total_hours || (request.total_days ? request.total_days * 8 : 0),
+        totalDays: totalDays,
+        totalHours: parseFloat(request.total_hours) || (totalDays * 8),
+        leaveDuration: request.leave_duration || 'whole_day',
+        halfDayPeriod: request.half_day_period || null,
       requestId: request.id,
       reason: request.reason,
       approvedDate: request.approved_at ? new Date(request.approved_at).toLocaleDateString() : 'N/A',
       severity: request.status === 'approved' || request.status === 'completed' ? 'success' : 
                request.status === 'rejected' ? 'danger' : 'info'
-    }));
+      };
+    });
 
     const handleViewRequest = async (requestId) => {
       // Find the request in the history
@@ -1410,8 +1470,28 @@ const EmbeddedLeaveForm = () => {
                   </td>
                   <td className="total-days-cell">
                     <div className="total-days-badge">
-                      <span className="days-count">{row.totalDays}</span>
-                      <span className="days-label">day{row.totalDays > 1 ? 's' : ''}</span>
+                      <span className="days-count">
+                        {(() => {
+                          const days = parseFloat(row.totalDays) || 0;
+                          return days % 1 === 0 ? days : days.toFixed(1);
+                        })()}
+                      </span>
+                      <span className="days-label">
+                        {(() => {
+                          const days = parseFloat(row.totalDays) || 0;
+                          return `day${days % 1 === 0 ? (days > 1 ? 's' : '') : 's'}`;
+                        })()}
+                      </span>
+                      {row.leaveDuration === 'half_day' && (
+                        <span className="half-day-indicator" style={{ 
+                          display: 'block', 
+                          fontSize: '0.75em', 
+                          color: '#6c757d',
+                          marginTop: '2px'
+                        }}>
+                          (Half-day: {row.halfDayPeriod?.toUpperCase() || 'AM/PM'})
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="actions-cell">
@@ -1647,12 +1727,85 @@ const EmbeddedLeaveForm = () => {
                     </div>
                   </Form.Group>
                 </div>
+              </div>
+
+              {/* Leave Duration Row */}
+              <div className="responsive-form-row">
                 <div className="responsive-form-col">
                   <Form.Group className="form-group">
-                    <Form.Label className="form-label text-responsive-md">Total Days</Form.Label>
+                    <Form.Label className="form-label text-responsive-md">
+                      Leave Duration <span className="required">*</span>
+                    </Form.Label>
+                    <Form.Select
+                      value={formData.leaveDuration}
+                      onChange={(e) => handleLeaveDurationChange(e.target.value)}
+                      className="form-select responsive-form-control"
+                      required
+                    >
+                      <option value="whole_day">Whole Day</option>
+                      <option value="half_day">Half Day (0.5 day deduction)</option>
+                    </Form.Select>
+                    <Form.Text className="text-muted" style={{ fontSize: '0.85em', display: 'block', marginTop: '6px' }}>
+                      <strong>ℹ️ What is Leave Duration?</strong><br/>
+                      • <strong>Whole Day:</strong> Full day leave (1.0 day deduction). You'll be absent for the entire working day.<br/>
+                      • <strong>Half Day:</strong> Partial day leave (0.5 day deduction). You'll be absent for either the morning (AM) or afternoon (PM) only. 
+                      {formData.leaveDuration === 'half_day' && formData.startDate && formData.endDate && 
+                        formData.startDate.getTime() === formData.endDate.getTime() && 
+                        ' For single-day half-day leave, you can choose AM or PM below.'}
+                      {formData.leaveDuration === 'half_day' && formData.startDate && formData.endDate && 
+                        formData.startDate.getTime() !== formData.endDate.getTime() && 
+                        ' For multi-day leave with half-day, the half-day will be applied to your start or end date based on your selection below.'}
+                    </Form.Text>
+                  </Form.Group>
+                </div>
+                {formData.leaveDuration === 'half_day' && (
+                  <div className="responsive-form-col">
+                    <Form.Group className="form-group">
+                      <Form.Label className="form-label text-responsive-md">
+                        Half-Day Period <span className="required">*</span>
+                      </Form.Label>
+                      <Form.Select
+                        value={formData.halfDayPeriod || 'am'}
+                        onChange={(e) => handleHalfDayPeriodChange(e.target.value)}
+                        className="form-select responsive-form-control"
+                        required
+                      >
+                        <option value="am">AM (Morning - 8:00 AM to 12:00 PM)</option>
+                        <option value="pm">PM (Afternoon - 1:00 PM to 5:00 PM)</option>
+                      </Form.Select>
+                      <Form.Text className="text-muted" style={{ fontSize: '0.85em', display: 'block', marginTop: '6px' }}>
+                        <strong>ℹ️ Half-Day Period Selection:</strong><br/>
+                        • <strong>AM (Morning):</strong> You'll be absent from 8:00 AM to 12:00 PM. You're expected to report in the afternoon (1:00 PM onwards).<br/>
+                        • <strong>PM (Afternoon):</strong> You'll be absent from 1:00 PM to 5:00 PM. You're expected to report in the morning (8:00 AM to 12:00 PM).
+                        {formData.startDate && formData.endDate && formData.startDate.getTime() !== formData.endDate.getTime() && 
+                          ' For multi-day leave, this half-day period applies to the start date of your leave.'}
+                      </Form.Text>
+                    </Form.Group>
+                  </div>
+                )}
+                <div className="responsive-form-col">
+                  <Form.Group className="form-group">
+                    <Form.Label className="form-label text-responsive-md">Total Days Deduction</Form.Label>
                     <div className="total-days-display">
-                      <span className="days-number text-responsive-lg">{formData.totalDays}</span>
-                      <span className="total-hours-text text-responsive-sm">{formData.totalDays === 0 ? '0 total hours' : `${formData.totalDays * 8} total hours`}</span>
+                      <span className="days-number text-responsive-lg">
+                        {(() => {
+                          const days = parseFloat(formData.totalDays) || 0;
+                          return days % 1 === 0 ? days : days.toFixed(1);
+                        })()}
+                      </span>
+                      <span className="total-hours-text text-responsive-sm">
+                        {(() => {
+                          const days = parseFloat(formData.totalDays) || 0;
+                          if (days === 0) return '0 total hours';
+                          const hours = days * 8;
+                          return days % 1 === 0 ? `${hours} total hours` : `${hours.toFixed(1)} total hours`;
+                        })()}
+                      </span>
+                      {formData.leaveDuration === 'half_day' && (
+                        <div style={{ fontSize: '0.75em', color: '#6c757d', marginTop: '4px' }}>
+                          (Half-day: {parseFloat(formData.totalDays) || 0} day deduction)
+                        </div>
+                      )}
                     </div>
                   </Form.Group>
                 </div>

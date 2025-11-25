@@ -8,7 +8,7 @@ import {
   FaPlaneDeparture, FaDollarSign, FaStarHalfAlt, FaExclamationTriangle, FaUserPlus,
   FaChartLine, FaSignOutAlt, FaBriefcase, FaClipboardList, FaCalendarAlt,
   FaEye, FaChartBar, FaFileAlt, FaClock, FaChevronDown, FaChevronRight, FaEdit,
-  FaCheckCircle, FaCog, FaHistory
+  FaCheckCircle, FaCog, FaHistory, FaCoins
   
 } from "react-icons/fa";
 
@@ -104,7 +104,7 @@ const Sidebar = () => {
         <div className="hrms-dropdown-container">
           <button
             className={`hrms-unified-nav-link hrms-dropdown-toggle ${
-              location.pathname.includes('/payroll') || location.pathname.includes('/benefits-management') ? 'hrms-unified-active' : ''
+              location.pathname.includes('/payroll') || location.pathname.includes('/benefits-management') || location.pathname.includes('/monetization-management') ? 'hrms-unified-active' : ''
             }`}
             onClick={togglePayrollDropdown}
           >
@@ -127,6 +127,13 @@ const Sidebar = () => {
               onClick={() => setIsPayrollDropdownOpen(false)}
             >
               <FaDollarSign /> <span>Benefits Management</span>
+            </NavLink>
+            <NavLink
+              to="monetization-management"
+              className={({ isActive }) => `hrms-dropdown-item ${isActive ? 'hrms-dropdown-active' : ''}`}
+              onClick={() => setIsPayrollDropdownOpen(false)}
+            >
+              <FaCoins /> <span>Monetization Management</span>
             </NavLink>
           </div>
         </div>

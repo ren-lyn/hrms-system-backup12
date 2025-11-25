@@ -1735,7 +1735,7 @@ function BenefitsManagement() {
                       <p className="mb-0 small text-muted">Date Filed</p>
                       <p className="mb-0 fw-semibold">
                         {claim.created_at 
-                          ? format(new Date(claim.created_at), 'MMM dd, yyyy HH:mm')
+                          ? format(new Date(claim.created_at), 'MMM dd, yyyy hh:mm a')
                           : 'N/A'}
                       </p>
                     </div>
@@ -1810,7 +1810,7 @@ function BenefitsManagement() {
                           <div className="mb-3">
                             <p className="text-muted small mb-1">Reviewed At</p>
                             <p className="mb-0 fw-semibold">
-                              {format(new Date(claim.reviewed_at), 'MMM dd, yyyy HH:mm')}
+                              {format(new Date(claim.reviewed_at), 'MMM dd, yyyy hh:mm a')}
                             </p>
                           </div>
                         )}
@@ -2018,24 +2018,34 @@ function BenefitsManagement() {
                               setAllDocuments(documentsResponse.data.data);
                               setCurrentDocumentIndex(0);
                               
-                              // Load the first document
+                              // Load the first document for preview
                               const firstDoc = documentsResponse.data.data[0];
-                              const docResponse = await axios.get(firstDoc.download_url, {
-                                responseType: 'blob'
-                              });
-                              
-                              // Determine file type
-                              const contentType = docResponse.headers['content-type'] || '';
-                              const fileName = firstDoc.name;
-                              const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
-                              const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
-                              
-                              // Create object URL for viewing
-                              const url = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
-                              setDocumentViewerUrl(url);
-                              setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
-                              
-                              toast.success(`${documentsResponse.data.data.length} document(s) loaded successfully`);
+                              if (firstDoc.preview_url) {
+                                // Fetch document as blob using axios (includes auth headers)
+                                try {
+                                  const docResponse = await axios.get(firstDoc.preview_url, {
+                                    responseType: 'blob'
+                                  });
+                                  
+                                  // Determine file type
+                                  const contentType = docResponse.headers['content-type'] || '';
+                                  const fileName = firstDoc.name;
+                                  const isPdf = contentType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+                                  const isImage = contentType.includes('image') || /\.(jpg|jpeg|png|gif)$/i.test(fileName);
+                                  
+                                  // Create blob URL for preview (iframe/img can use this)
+                                  const blobUrl = window.URL.createObjectURL(new Blob([docResponse.data], { type: contentType }));
+                                  setDocumentViewerUrl(blobUrl);
+                                  setDocumentViewerType(isPdf ? 'pdf' : isImage ? 'image' : 'other');
+                                  
+                                  toast.success(`${documentsResponse.data.data.length} document(s) loaded successfully`);
+                                } catch (docError) {
+                                  console.error('Error loading document for preview:', docError);
+                                  toast.error('Failed to load document for preview');
+                                }
+                              } else {
+                                toast.error('Document preview URL not available');
+                              }
                             } else {
                               toast.error('No documents available');
                             }

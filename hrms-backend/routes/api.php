@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\JobPostingController;
 use App\Http\Controllers\Api\ApplicantController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\LeaveRequestController;
+use App\Http\Controllers\Api\LeaveMonetizationController;
 use App\Http\Controllers\Api\EmployeeEvaluationController;
 use App\Http\Controllers\Api\EvaluationAdministrationController;
 use App\Http\Controllers\API\ManagerEvaluationController;
@@ -300,6 +301,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leave-requests/check-eligibility', [LeaveRequestController::class, 'checkEligibility']); // Check if employee can submit new request
     Route::get('/leave-requests/{id}/download-pdf', [LeaveRequestController::class, 'downloadPdf']); // Download leave request as PDF
 
+    // Leave Monetization - Employee routes
+    Route::get('/leave-monetization/available-days', [LeaveMonetizationController::class, 'getAvailableUnusedDays']); // Get available unused leave days
+    Route::post('/leave-monetization', [LeaveMonetizationController::class, 'store']); // File monetization request
+    Route::get('/leave-monetization/my-requests', [LeaveMonetizationController::class, 'myRequests']); // Employee's own monetization requests
+
     
     // Benefit Claims - Employee routes
     Route::get('/benefit-claims/my-claims', [BenefitClaimController::class, 'myClaims']); // Employee's own claims
@@ -326,7 +332,13 @@ Route::get('/benefit-claims', [BenefitClaimController::class, 'index']); // hr a
 Route::get('/benefit-claims/{id}', [BenefitClaimController::class, 'show']); // view specific claim
 Route::put('/benefit-claims/{id}/approve', [BenefitClaimController::class, 'approve']); // hr approve
 Route::put('/benefit-claims/{id}/reject', [BenefitClaimController::class, 'reject']); // hr reject
-Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // download supporting document
+
+// Leave Monetization - HR routes
+Route::get('/leave-monetization', [LeaveMonetizationController::class, 'index']); // hr assistant - get all monetization requests
+Route::put('/leave-monetization/{id}/status', [LeaveMonetizationController::class, 'updateStatus']); // hr approve/reject request
+Route::get('/benefit-claims/{id}/documents', [BenefitClaimController::class, 'getDocuments']); // HR assistant view claim documents
+Route::get('/benefit-claims/{id}/document', [BenefitClaimController::class, 'downloadDocument']); // HR assistant download supporting document
+Route::get('/benefit-claims/{id}/preview', [BenefitClaimController::class, 'previewDocument']); // HR assistant preview document
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']); // employee
@@ -370,6 +382,10 @@ Route::middleware('auth:sanctum')->post('/notifications/verify-role-change', [No
         // Documents routes removed - handled by employee routes below, controller checks permissions
         Route::put('/employees/{employeeId}/benefits/terminate', [BenefitClaimController::class, 'terminateEnrollment']); // Terminate enrollment
         Route::get('/benefit-contributions/report', [BenefitClaimController::class, 'generateContributionReport']); // Generate report
+        
+        // Leave Monetization - HR routes
+        Route::get('/leave-monetization', [LeaveMonetizationController::class, 'index']); // Get all monetization requests
+        Route::put('/leave-monetization/{id}/status', [LeaveMonetizationController::class, 'updateStatus']); // Approve/reject request
     });
 
 

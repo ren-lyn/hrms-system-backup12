@@ -7,6 +7,7 @@ use App\Models\Payroll;
 use App\Models\EmployeeProfile;
 use App\Models\Attendance;
 use App\Models\LeaveRequest;
+use App\Models\LeaveMonetizationRequest;
 use App\Models\CashAdvanceRequest;
 use App\Models\TaxTitle;
 use App\Models\EmployeeTaxAssignment;
@@ -981,7 +982,7 @@ class PayrollController extends Controller
      */
     private function calculateLeaveWithPay($leaveRequests, $periodStart, $periodEnd): float
     {
-        $totalDays = 0;
+        $totalDays = 0.0;
 
         foreach ($leaveRequests as $leave) {
             if ($leave->terms === 'with PAY' || $leave->with_pay_days > 0) {
@@ -1000,7 +1001,9 @@ class PayrollController extends Controller
                         }
                         $current->addDay();
                     }
-                    $totalDays += min($days, $leave->with_pay_days);
+                    // Handle fractional days (e.g., 0.5 for half-day)
+                    $withPayDays = (float) ($leave->with_pay_days ?? 0);
+                    $totalDays += min((float) $days, $withPayDays);
                 }
             }
         }
@@ -1013,7 +1016,7 @@ class PayrollController extends Controller
      */
     private function calculateLeaveWithoutPay($leaveRequests, $periodStart, $periodEnd, $dailyRate): float
     {
-        $totalDays = 0;
+        $totalDays = 0.0;
 
         foreach ($leaveRequests as $leave) {
             if ($leave->terms === 'without PAY' || $leave->without_pay_days > 0) {
@@ -1032,7 +1035,9 @@ class PayrollController extends Controller
                         $current->addDay();
                     }
                     // Use the actual without_pay_days if specified, otherwise use all weekdays
-                    $daysToDeduct = $leave->without_pay_days > 0 ? min($weekdays, $leave->without_pay_days) : $weekdays;
+                    // Handle fractional days (e.g., 0.5 for half-day)
+                    $withoutPayDays = (float) ($leave->without_pay_days ?? 0);
+                    $daysToDeduct = $withoutPayDays > 0 ? min((float) $weekdays, $withoutPayDays) : (float) $weekdays;
                     $totalDays += $daysToDeduct;
                 }
             }
@@ -1258,11 +1263,13 @@ class PayrollController extends Controller
      * Only SIL can be converted to cash and added to 13th month pay.
      * Other leave types (Vacation, Personal, Bereavement, etc.) cannot be converted to cash.
      * 
+     * Supports fractional days (e.g., 0.5 for half-day leaves)
+     * 
      * @param EmployeeProfile $employee
      * @param int $year
-     * @return int Total unused SIL days with pay (0-8)
+     * @return float Total unused SIL days with pay (0-8, can be fractional like 0.5, 1.5, etc.)
      */
-    private function calculateUnusedLeaveDaysWithPay(EmployeeProfile $employee, int $year): int
+    private function calculateUnusedLeaveDaysWithPay(EmployeeProfile $employee, int $year): float
     {
         $userId = $employee->user_id;
         
@@ -1271,29 +1278,84 @@ class PayrollController extends Controller
         
         // Only employees with 1 year or more tenure are eligible for paid leave
         if ($tenureInMonths < 12) {
-            return 0;
+            return 0.0;
         }
         
-        // Calculate unused days for SIL (Sick Leave + Emergency Leave share 8 days)
+        // Calculate used days for SIL (Sick Leave + Emergency Leave share 8 days)
         // Only SIL can be converted to cash for 13th month pay
-        $usedSILDays = LeaveRequest::where('employee_id', $userId)
+        // Get all approved SIL leaves for recalculation if needed
+        $silLeaves = LeaveRequest::where('employee_id', $userId)
             ->whereIn('type', ['Sick Leave', 'Emergency Leave'])
             ->whereYear('from', $year)
             ->whereIn('status', ['approved'])
-            ->sum('with_pay_days');
+            ->get();
+        
+        // Calculate used days by summing with_pay_days
+        // Recalculate payment terms if with_pay_days doesn't match expected value based on total_days
+        // This handles cases where leaves were created before fractional support or have incorrect values
+        $usedSILDays = 0.0;
+        foreach ($silLeaves as $leave) {
+            $withPayDays = (float) ($leave->with_pay_days ?? 0);
+            $totalDays = (float) ($leave->total_days ?? 0);
+            
+            // Recalculate payment terms if:
+            // 1. with_pay_days is 0 but total_days > 0 (missing payment calculation)
+            // 2. with_pay_days doesn't match total_days when leave should be fully paid
+            //    (e.g., total_days = 3.5 but with_pay_days = 4.0, indicating incorrect calculation)
+            $needsRecalculation = false;
+            if ($totalDays > 0) {
+                if ($withPayDays == 0) {
+                    // Missing payment calculation
+                    $needsRecalculation = true;
+                } elseif ($leave->terms === 'with PAY' && abs($withPayDays - $totalDays) > 0.01) {
+                    // Payment terms say "with PAY" but with_pay_days doesn't match total_days
+                    // This indicates the leave might have been created with incorrect values
+                    $needsRecalculation = true;
+                } elseif ($leave->leave_duration === 'half_day' && $totalDays < 1 && $withPayDays >= 1) {
+                    // Half-day leave should have with_pay_days = 0.5, not 1.0 or more
+                    $needsRecalculation = true;
+                }
+            }
+            
+            if ($needsRecalculation) {
+                $paymentTerms = LeaveRequest::calculateAutomaticPaymentTerms(
+                    $userId,
+                    $leave->type,
+                    $totalDays,
+                    $year
+                );
+                $withPayDays = (float) ($paymentTerms['with_pay_days'] ?? 0);
+                
+                // Update the leave record with correct with_pay_days for future calculations
+                if (abs($withPayDays - ($leave->with_pay_days ?? 0)) > 0.01) {
+                    $leave->with_pay_days = $withPayDays;
+                    $leave->without_pay_days = $paymentTerms['without_pay_days'] ?? 0;
+                    $leave->terms = $paymentTerms['terms'];
+                    $leave->save();
+                }
+            }
+            
+            $usedSILDays += $withPayDays;
+        }
         
         // Ensure usedSILDays is never negative (in case of data issues)
-        $usedSILDays = max(0, (float) $usedSILDays);
+        // Keep as float to support fractional days (e.g., 3.5 days = 3 full days + 0.5 half-day)
+        $usedSILDays = max(0.0, $usedSILDays);
         
-        $silEntitled = 8; // SIL gets 8 days WITH PAY for employees with 1+ year tenure
+        // Round to 2 decimal places to handle any floating point precision issues
+        $usedSILDays = round($usedSILDays, 2);
+        
+        $silEntitled = 8.0; // SIL gets 8 days WITH PAY for employees with 1+ year tenure
         
         // Calculate unused SIL days
         // Formula: unused = entitled - used
         // Ensure unused is between 0 and entitled (cap at entitled amount)
+        // Support fractional values (e.g., if used 7.5 days, unused = 0.5 days)
         $unusedSIL = $silEntitled - $usedSILDays;
-        $unusedSIL = max(0, min($silEntitled, $unusedSIL));
+        $unusedSIL = max(0.0, min($silEntitled, $unusedSIL));
         
-        return (int) $unusedSIL;
+        // Return as float to preserve fractional days (e.g., 0.5, 1.5, 2.5, etc.)
+        return round($unusedSIL, 2);
     }
 
     /**
@@ -1376,14 +1438,30 @@ class PayrollController extends Controller
         // Calculate base 13th month pay: total salary earned / 12
         $baseThirteenthMonthPay = $totalSalaryEarned / 12;
         
-        // Calculate unused leave days with pay and convert to cash
-        $unusedLeaveDays = $this->calculateUnusedLeaveDaysWithPay($employee, $year);
+        // Calculate approved monetization requests for this year
+        // Only approved monetization requests should be added to 13th month pay
+        $approvedMonetizationRequests = LeaveMonetizationRequest::where('employee_id', $employee->user_id)
+            ->where('leave_year', $year)
+            ->where('status', 'approved')
+            ->get();
+        
+        // Sum up the approved requested days
+        $approvedMonetizationDays = $approvedMonetizationRequests->sum('requested_days');
+        $approvedMonetizationDays = (float) $approvedMonetizationDays;
         
         // Calculate daily rate (monthly salary / 26 working days)
         $dailyRate = $monthlyBasicSalary / 26;
         
-        // Convert unused leave days to cash
-        $unusedLeaveCash = $unusedLeaveDays * $dailyRate;
+        // Convert approved monetization days to cash
+        // Use the daily rate from the request if available, otherwise use current daily rate
+        $unusedLeaveCash = 0.0;
+        foreach ($approvedMonetizationRequests as $request) {
+            // Use the daily rate stored in the request (rate at time of request)
+            $unusedLeaveCash += (float) $request->requested_days * (float) $request->daily_rate;
+        }
+        
+        // For display purposes, use the approved days
+        $unusedLeaveDays = $approvedMonetizationDays;
         
         // Add unused leave cash to 13th month pay
         $thirteenthMonthPay = $baseThirteenthMonthPay + $unusedLeaveCash;
@@ -1398,11 +1476,47 @@ class PayrollController extends Controller
         ];
         
         if ($unusedLeaveDays > 0) {
-            $breakdown[] = [
-                'description' => 'Unused Leave Days (Converted to Cash)',
-                'calculation' => "{$unusedLeaveDays} days × ₱" . number_format($dailyRate, 2) . " (daily rate)",
-                'amount' => round($unusedLeaveCash, 2)
-            ];
+            // Format days display to show fractional days properly (e.g., "0.5 days" or "4.5 days")
+            // Check if the value is a whole number by comparing floor to the value
+            $floorValue = floor($unusedLeaveDays);
+            $isWholeNumber = abs($unusedLeaveDays - $floorValue) < 0.0001;
+            
+            if ($isWholeNumber) {
+                // Whole number: display as integer (e.g., "4 days")
+                $daysDisplay = (int) $floorValue . ' day' . ($floorValue > 1 ? 's' : '');
+            } else {
+                // Fractional number: display with 1 decimal place (e.g., "4.5 days" or "0.5 day")
+                // Use number_format to ensure exactly 1 decimal place is shown
+                $daysDisplay = number_format($unusedLeaveDays, 1, '.', '') . ' day' . ($unusedLeaveDays >= 1 ? 's' : '');
+            }
+            
+            // For approved monetization requests, show breakdown
+            if ($approvedMonetizationRequests->count() > 0) {
+                // Show individual requests if multiple, or single request
+                if ($approvedMonetizationRequests->count() === 1) {
+                    $request = $approvedMonetizationRequests->first();
+                    $breakdown[] = [
+                        'description' => 'Approved Leave Monetization',
+                        'calculation' => "{$daysDisplay} × ₱" . number_format($request->daily_rate, 2) . " (daily rate at time of request)",
+                        'amount' => round($unusedLeaveCash, 2)
+                    ];
+                } else {
+                    // Multiple requests - show total
+                    $breakdown[] = [
+                        'description' => 'Approved Leave Monetization',
+                        'calculation' => "{$daysDisplay} days (from {$approvedMonetizationRequests->count()} approved request" . 
+                            ($approvedMonetizationRequests->count() > 1 ? 's' : '') . ")",
+                        'amount' => round($unusedLeaveCash, 2)
+                    ];
+                }
+            } else {
+                // Fallback (shouldn't happen if logic is correct)
+                $breakdown[] = [
+                    'description' => 'Unused Leave Days (Converted to Cash)',
+                    'calculation' => "{$daysDisplay} × ₱" . number_format($dailyRate, 2) . " (daily rate)",
+                    'amount' => round($unusedLeaveCash, 2)
+                ];
+            }
         }
         
         // Always add the total row

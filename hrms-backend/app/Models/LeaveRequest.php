@@ -11,7 +11,7 @@ class LeaveRequest extends Model
 
     protected $fillable = [
         'employee_id', 'company', 'employee_name', 'department', 'type', 'terms', 'leave_category', 'from', 'to', 
-        'total_days', 'with_pay_days', 'without_pay_days', 'total_hours', 'date_filed', 'reason', 'attachment', 'signature_path', 'status', 
+        'leave_duration', 'half_day_period', 'total_days', 'with_pay_days', 'without_pay_days', 'total_hours', 'date_filed', 'reason', 'attachment', 'signature_path', 'status', 
         'admin_remarks', 'approved_at', 'rejected_at', 'approved_by',
         'manager_approved_at', 'manager_rejected_at', 'manager_approved_by', 'manager_remarks'
     ];
@@ -24,6 +24,7 @@ class LeaveRequest extends Model
         'rejected_at' => 'datetime',
         'manager_approved_at' => 'datetime',
         'manager_rejected_at' => 'datetime',
+        'total_days' => 'decimal:2',
         'total_hours' => 'decimal:2',
     ];
 
@@ -200,34 +201,38 @@ class LeaveRequest extends Model
         // Calculate remaining "with pay" days
         $remainingWithPayDays = max(0, $maxWithPayDays - $usedWithPayDays);
         
+        // Handle fractional days (e.g., 0.5 for half-day)
+        $requestedDaysFloat = (float) $requestedDays;
+        $remainingWithPayDaysFloat = (float) $remainingWithPayDays;
+        
         // Determine how many days will be with pay and without pay
-        if ($remainingWithPayDays >= $requestedDays) {
+        if ($remainingWithPayDaysFloat >= $requestedDaysFloat) {
             // All requested days can be with pay
             return [
-                'with_pay_days' => $requestedDays,
+                'with_pay_days' => $requestedDaysFloat,
                 'without_pay_days' => 0,
                 'terms' => 'with PAY',
                 'leave_category' => $leaveCategory,
-                'message' => "All {$requestedDays} days will be with pay. You have {$remainingWithPayDays} paid days remaining for {$leaveCategory}.",
+                'message' => "All {$requestedDaysFloat} day(s) will be with pay. You have {$remainingWithPayDaysFloat} paid days remaining for {$leaveCategory}.",
                 'max_with_pay' => $maxWithPayDays,
                 'used_with_pay' => $usedWithPayDays,
-                'remaining_with_pay' => $remainingWithPayDays,
+                'remaining_with_pay' => $remainingWithPayDaysFloat,
                 'tenure_months' => $tenureInMonths
             ];
-        } elseif ($remainingWithPayDays > 0) {
+        } elseif ($remainingWithPayDaysFloat > 0) {
             // Split: Some days with pay, some without pay
-            $withPayDays = $remainingWithPayDays;
-            $withoutPayDays = $requestedDays - $remainingWithPayDays;
+            $withPayDays = $remainingWithPayDaysFloat;
+            $withoutPayDays = $requestedDaysFloat - $remainingWithPayDaysFloat;
             
             return [
                 'with_pay_days' => $withPayDays,
                 'without_pay_days' => $withoutPayDays,
                 'terms' => 'with PAY', // Mark as with PAY since it includes some paid days
                 'leave_category' => $leaveCategory,
-                'message' => "Only {$withPayDays} days are with pay. The remaining {$withoutPayDays} days will be without pay. You have used {$usedWithPayDays} of {$maxWithPayDays} paid days for {$leaveCategory} this year.",
+                'message' => "Only {$withPayDays} day(s) are with pay. The remaining {$withoutPayDays} day(s) will be without pay. You have used {$usedWithPayDays} of {$maxWithPayDays} paid days for {$leaveCategory} this year.",
                 'max_with_pay' => $maxWithPayDays,
                 'used_with_pay' => $usedWithPayDays,
-                'remaining_with_pay' => $remainingWithPayDays,
+                'remaining_with_pay' => $remainingWithPayDaysFloat,
                 'is_split' => true,
                 'tenure_months' => $tenureInMonths
             ];
@@ -235,10 +240,10 @@ class LeaveRequest extends Model
             // No remaining "with pay" days - all without pay
             return [
                 'with_pay_days' => 0,
-                'without_pay_days' => $requestedDays,
+                'without_pay_days' => $requestedDaysFloat,
                 'terms' => 'without PAY',
                 'leave_category' => $leaveCategory,
-                'message' => "All {$requestedDays} days will be without pay. You have already used all {$maxWithPayDays} paid days for {$leaveCategory} this year.",
+                'message' => "All {$requestedDaysFloat} day(s) will be without pay. You have already used all {$maxWithPayDays} paid days for {$leaveCategory} this year.",
                 'max_with_pay' => $maxWithPayDays,
                 'used_with_pay' => $usedWithPayDays,
                 'remaining_with_pay' => 0,

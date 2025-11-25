@@ -1085,7 +1085,7 @@ const FileBenefitClaim = () => {
                       <p className="mb-0 small text-muted">Date Filed</p>
                       <p className="mb-0 fw-semibold">
                         {claim.created_at 
-                          ? format(new Date(claim.created_at), 'MMM dd, yyyy HH:mm')
+                          ? format(new Date(claim.created_at), 'MMM dd, yyyy hh:mm a')
                           : 'N/A'}
                       </p>
                     </div>
@@ -1117,7 +1117,7 @@ const FileBenefitClaim = () => {
                           <div className="mb-3">
                             <p className="text-muted small mb-1">Reviewed At</p>
                             <p className="mb-0 fw-semibold">
-                              {format(new Date(claim.reviewed_at), 'MMM dd, yyyy HH:mm')}
+                              {format(new Date(claim.reviewed_at), 'MMM dd, yyyy hh:mm a')}
                             </p>
                           </div>
                         )}
