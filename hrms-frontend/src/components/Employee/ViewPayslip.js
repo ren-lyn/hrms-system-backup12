@@ -229,6 +229,24 @@ const ViewPayslip = () => {
                       <td>Basic Salary:</td>
                       <td className="text-end">{formatCurrency(selectedPayroll.basic_salary)}</td>
                     </tr>
+                    {selectedPayroll.overtime_pay > 0 && (
+                      <tr>
+                        <td>Overtime Pay:</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.overtime_pay)}</td>
+                      </tr>
+                    )}
+                    {selectedPayroll.holiday_pay > 0 && (
+                      <tr>
+                        <td>Holiday Pay:</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.holiday_pay)}</td>
+                      </tr>
+                    )}
+                    {selectedPayroll.leave_with_pay > 0 && (
+                      <tr>
+                        <td>Leave with Pay:</td>
+                        <td className="text-end">{formatCurrency(selectedPayroll.leave_with_pay)}</td>
+                      </tr>
+                    )}
                     <tr className="fw-bold">
                       <td>Gross Pay:</td>
                       <td className="text-end text-success">{formatCurrency(selectedPayroll.gross_pay)}</td>

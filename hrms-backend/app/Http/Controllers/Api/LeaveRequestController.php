@@ -9,6 +9,7 @@ use App\Models\LeaveMonetizationRequest;
 use App\Models\User;
 use App\Models\EmployeeProfile;
 use App\Models\HrCalendarEvent;
+use App\Models\Attendance;
 use App\Notifications\LeaveRequestStatusChanged;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
@@ -490,6 +491,9 @@ class LeaveRequestController extends Controller
         $leave->rejected_at = null;
         $leave->save();
 
+        // Update attendance records: Change "Absent" to "On Leave" for dates covered by this approved leave
+        $this->updateAttendanceForApprovedLeave($leave);
+
         // Notify employee
         $leave->employee->notify(new LeaveRequestStatusChanged($leave));
 
@@ -497,6 +501,46 @@ class LeaveRequestController extends Controller
             'message' => 'Leave request approved by HR successfully',
             'data' => $leave->load(['employee', 'approvedBy', 'managerApprovedBy'])
         ]);
+    }
+
+    /**
+     * Update attendance records when a leave is approved
+     * Changes "Absent" status to "On Leave" for dates covered by the approved leave
+     */
+    private function updateAttendanceForApprovedLeave(LeaveRequest $leave)
+    {
+        try {
+            // Get employee profile ID from the user (leave.employee_id is the user_id)
+            $employeeProfile = EmployeeProfile::where('user_id', $leave->employee_id)->first();
+            
+            if (!$employeeProfile) {
+                // If no employee profile found, skip updating attendance
+                Log::warning("Employee profile not found for user ID {$leave->employee_id} when updating attendance for approved leave");
+                return;
+            }
+
+            // Get leave date range (format as Y-m-d strings for database comparison)
+            $fromDate = Carbon::parse($leave->from)->format('Y-m-d');
+            $toDate = Carbon::parse($leave->to)->format('Y-m-d');
+
+            // Update all attendance records for this employee within the leave date range
+            // Only update records that are currently marked as "Absent"
+            $updatedCount = Attendance::where('employee_id', $employeeProfile->id)
+                ->whereBetween('date', [$fromDate, $toDate])
+                ->where('status', 'Absent')
+                ->update(['status' => 'On Leave']);
+
+            if ($updatedCount > 0) {
+                Log::info("Updated {$updatedCount} attendance record(s) from Absent to On Leave for employee ID {$employeeProfile->id} (Leave ID: {$leave->id})");
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail the leave approval process
+            Log::error("Failed to update attendance records for approved leave: " . $e->getMessage(), [
+                'leave_id' => $leave->id,
+                'employee_id' => $leave->employee_id,
+                'error' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     /**

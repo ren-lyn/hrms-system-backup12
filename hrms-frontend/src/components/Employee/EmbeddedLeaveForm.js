@@ -825,17 +825,6 @@ const EmbeddedLeaveForm = () => {
       return;
     }
     
-    // Check if start date is not in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of today
-    const startDate = new Date(formData.startDate);
-    startDate.setHours(0, 0, 0, 0);
-    
-    if (startDate < today) {
-      showAlert('Leave start date cannot be in the past. Please select a future date.', 'danger');
-      return;
-    }
-    
     if (!formData.name.trim()) {
       showAlert('Please enter your name.', 'danger');
       return;
@@ -1701,7 +1690,6 @@ const EmbeddedLeaveForm = () => {
                         type="date"
                         value={formData.startDate ? formData.startDate.toISOString().split('T')[0] : ''}
                         onChange={(e) => handleStartDateChange(new Date(e.target.value))}
-                        min={new Date().toISOString().split('T')[0]}
                         className="form-input date-input responsive-form-control"
                         placeholder="mm/dd/yyyy"
                         required
@@ -1718,7 +1706,7 @@ const EmbeddedLeaveForm = () => {
                         type="date"
                         value={formData.endDate ? formData.endDate.toISOString().split('T')[0] : ''}
                         onChange={(e) => handleEndDateChange(new Date(e.target.value))}
-                        min={formData.startDate ? formData.startDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
+                        min={formData.startDate ? formData.startDate.toISOString().split('T')[0] : undefined}
                         className="form-input date-input responsive-form-control"
                         placeholder="mm/dd/yyyy"
                         required

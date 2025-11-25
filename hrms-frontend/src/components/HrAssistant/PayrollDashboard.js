@@ -2128,6 +2128,12 @@ const PayrollDashboard = () => {
                     <td>Holiday Pay</td>
                     <td className="text-end">{formatCurrency(selectedPayroll.holiday_pay || 0)}</td>
                   </tr>
+                  {(selectedPayroll.leave_with_pay ?? 0) > 0 && (
+                    <tr>
+                      <td>Leave with Pay</td>
+                      <td className="text-end">{formatCurrency(selectedPayroll.leave_with_pay || 0)}</td>
+                    </tr>
+                  )}
                   <tr>
                     <td>13th Month Pay</td>
                     <td className="text-end">{formatCurrency(selectedPayroll.thirteenth_month_pay || 0)}</td>

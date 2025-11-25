@@ -262,6 +262,7 @@ class PayrollController extends Controller
                         'overtime_pay' => 0,
                         'allowances' => 0,
                         'holiday_pay' => 0,
+                        'leave_with_pay' => 0,
                         'thirteenth_month_pay' => 0,
                         'gross_pay' => 0,
                         'sss_deduction' => 0,
@@ -358,6 +359,33 @@ class PayrollController extends Controller
 
         // Count leave days with pay (weekdays only)
         $leaveWithPayDays = $this->countLeaveWithPayDays($leaveRequests, $periodStart, $periodEnd, $attendances);
+        
+        // Debug logging for leave with pay calculation
+        $leaveRequestsWithPay = $leaveRequests->filter(function($leave) {
+            return $leave->terms === 'with PAY' || ($leave->with_pay_days ?? 0) > 0;
+        });
+        
+        if ($leaveRequestsWithPay->count() > 0) {
+            \Log::info("Payroll Calculation - Leave with Pay", [
+                'employee_id' => $employee->id,
+                'employee_name' => $employee->name ?? 'N/A',
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'calculated_leave_with_pay_days' => $leaveWithPayDays,
+                'leave_requests_with_pay_count' => $leaveRequestsWithPay->count(),
+                'leave_requests' => $leaveRequestsWithPay->map(function($leave) {
+                    return [
+                        'id' => $leave->id,
+                        'from' => $leave->from,
+                        'to' => $leave->to,
+                        'terms' => $leave->terms,
+                        'with_pay_days' => $leave->with_pay_days,
+                        'without_pay_days' => $leave->without_pay_days,
+                        'status' => $leave->status
+                    ];
+                })->toArray()
+            ]);
+        }
 
         // Calculate absences using the formula: Total Weekdays - Days Worked - Leave Days with Pay - Holidays = Absences
         // Also explicitly count days with "Absent" status in attendance records
@@ -508,9 +536,6 @@ class PayrollController extends Controller
         // Final absences count = unique absent dates
         $absences = count($allAbsentDates);
 
-        // Total payable days = actual days worked + approved leave days with pay
-        $totalPayableDays = $actualDaysWorked + $leaveWithPayDays;
-
         // Calculate daily rate
         $dailyRate = null;
         if ($employee->salary && $employee->salary > 0) {
@@ -520,11 +545,17 @@ class PayrollController extends Controller
             $dailyRate = self::DAILY_WAGE;
         }
 
-        // Calculate basic salary based on actual days worked (not all weekdays)
-        $basicSalary = $dailyRate * $totalPayableDays;
+        // Calculate basic salary based on actual days worked only (excluding leave with pay days)
+        // Leave with pay will be shown as a separate line item in earnings
+        $basicSalary = $dailyRate * $actualDaysWorked;
         
         // Update the payroll basic_salary if it was previously calculated incorrectly
         $payroll->basic_salary = round($basicSalary, 2);
+
+        // Calculate leave with pay amount separately
+        // This will be shown as a separate line item in the earnings table
+        $leaveWithPayAmount = $dailyRate * $leaveWithPayDays;
+        $payroll->leave_with_pay = round($leaveWithPayAmount, 2);
 
         // Calculate overtime from approved OT requests
         // Formula: OVERTIME_PAY_PER_HOUR (₱65.00) * approved_ot_hours
@@ -548,16 +579,17 @@ class PayrollController extends Controller
 
         // Calculate leave without pay (deduction)
         // Note: Using $dailyRate calculated above
-        // Note: Leave with pay is already included in basic salary calculation above
+        // Note: Leave with pay is now shown as a separate line item in earnings, not included in basic salary
         // Note: Leave without pay days are already excluded from basic salary, so this is just for tracking
         $leaveWithoutPayDeduction = $this->calculateLeaveWithoutPay($leaveRequests, $periodStart, $periodEnd, $dailyRate);
 
         // Gross pay
-        // Basic salary already includes days worked + approved leave with pay days
+        // Basic salary = actual days worked only
+        // Leave with pay is added separately as a line item
         // Holiday pay is additional (typically double pay for working on holidays)
         // Note: 13th month pay is NOT included in gross pay (it's shown separately and not in payslip)
         // Leave without pay is NOT subtracted from gross pay since those days are already excluded from basic salary
-        $grossPay = $basicSalary + $overtimePay + $holidayPay + ($payroll->allowances ?? 0);
+        $grossPay = $basicSalary + $leaveWithPayAmount + $overtimePay + $holidayPay + ($payroll->allowances ?? 0);
         
         // Ensure gross pay never goes negative
         $grossPay = max(0, $grossPay);
@@ -694,6 +726,7 @@ class PayrollController extends Controller
             'gross_pay' => round($grossPay, 2),
             'overtime_pay' => round($overtimePay, 2),
             'holiday_pay' => round($holidayPay, 2),
+            'leave_with_pay' => round($leaveWithPayAmount, 2),
             'thirteenth_month_pay' => round($thirteenthMonthPay, 2),
             'sss_deduction' => $sssDed,
             'sss_employer_contribution' => max(0, round($sssEmployerContribution, 2)),
@@ -1048,39 +1081,82 @@ class PayrollController extends Controller
 
     /**
      * Count leave days with pay (excluding days already worked)
+     * Returns float to handle fractional days (e.g., 0.5 for half-day leaves)
      */
-    private function countLeaveWithPayDays($leaveRequests, $periodStart, $periodEnd, $attendances): int
+    private function countLeaveWithPayDays($leaveRequests, $periodStart, $periodEnd, $attendances): float
     {
-        $totalDays = 0;
+        $totalDays = 0.0;
         
-        // Get all attendance dates to exclude from leave calculation
-        $attendanceDates = $attendances->pluck('date')->map(function($date) {
+        // Get dates where employee actually worked (not on leave)
+        // We need to exclude these from leave calculation
+        $workedDates = $attendances->filter(function($attendance) {
+            $status = $attendance->status ?? 'Absent';
+            // Only count as "worked" if status indicates actual work (not On Leave, not Absent without clock in/out)
+            $hasWorkRecord = !empty($attendance->clock_in) || !empty($attendance->clock_out);
+            $isWorkStatus = !in_array($status, ['Absent', 'Holiday (No Work)', 'On Leave', 'Holiday (Worked)']);
+            
+            return $isWorkStatus && $hasWorkRecord;
+        })->pluck('date')->map(function($date) {
             return Carbon::parse($date)->format('Y-m-d');
         })->toArray();
 
         foreach ($leaveRequests as $leave) {
-            if ($leave->terms === 'with PAY' || $leave->with_pay_days > 0) {
-                // Calculate overlapping days
-                $leaveStart = Carbon::parse(max($leave->from, $periodStart));
-                $leaveEnd = Carbon::parse(min($leave->to, $periodEnd));
+            if ($leave->terms === 'with PAY' || ($leave->with_pay_days ?? 0) > 0) {
+                // Calculate overlapping days between leave period and payroll period
+                $leaveStart = Carbon::parse($leave->from);
+                $leaveEnd = Carbon::parse($leave->to);
+                $periodStartCarbon = Carbon::parse($periodStart);
+                $periodEndCarbon = Carbon::parse($periodEnd);
                 
-                if ($leaveStart->lte($leaveEnd)) {
-                    // Count only weekdays that are NOT in attendance records
-                    $days = 0;
-                    $current = $leaveStart->copy();
-                    $maxDays = $leave->with_pay_days ?? 999; // Use high number if not specified
+                // Find the overlap
+                $overlapStart = $leaveStart->gt($periodStartCarbon) ? $leaveStart : $periodStartCarbon;
+                $overlapEnd = $leaveEnd->lt($periodEndCarbon) ? $leaveEnd : $periodEndCarbon;
+                
+                if ($overlapStart->lte($overlapEnd)) {
+                    // Count weekdays in the overlapping period that are NOT days where employee worked
+                    // Days marked as "On Leave" in attendance should be counted as leave days
+                    $weekdaysInOverlap = 0;
+                    $current = $overlapStart->copy();
                     
-                    while ($current->lte($leaveEnd) && $days < $maxDays) {
-                        // Only count weekdays that don't have attendance records
+                    while ($current->lte($overlapEnd)) {
+                        // Only count weekdays
                         if ($current->dayOfWeek !== 0 && $current->dayOfWeek !== 6) {
                             $dateString = $current->format('Y-m-d');
-                            if (!in_array($dateString, $attendanceDates)) {
-                                $days++;
+                            // Only exclude if employee actually worked on this day
+                            // Days with "On Leave" status should be included
+                            if (!in_array($dateString, $workedDates)) {
+                                $weekdaysInOverlap++;
                             }
                         }
                         $current->addDay();
                     }
-                    $totalDays += $days;
+                    
+                    // Calculate total weekdays in the entire leave period (for prorating)
+                    $totalLeaveWeekdays = 0;
+                    $current = $leaveStart->copy();
+                    while ($current->lte($leaveEnd)) {
+                        if ($current->dayOfWeek !== 0 && $current->dayOfWeek !== 6) {
+                            $totalLeaveWeekdays++;
+                        }
+                        $current->addDay();
+                    }
+                    
+                    // Prorate the with_pay_days based on how many days fall in this payroll period
+                    $withPayDays = (float) ($leave->with_pay_days ?? 0);
+                    if ($totalLeaveWeekdays > 0 && $weekdaysInOverlap > 0) {
+                        // Calculate the proportion of paid days that fall in this period
+                        $proportion = (float) $weekdaysInOverlap / (float) $totalLeaveWeekdays;
+                        $daysToAdd = $withPayDays * $proportion;
+                    } else if ($weekdaysInOverlap > 0) {
+                        // If we have overlap days but can't prorate, use the overlap count
+                        // This handles edge cases where the leave period has no weekdays
+                        $daysToAdd = min($withPayDays, (float) $weekdaysInOverlap);
+                    } else {
+                        // No overlap weekdays, so no days to add
+                        $daysToAdd = 0;
+                    }
+                    
+                    $totalDays += $daysToAdd;
                 }
             }
         }

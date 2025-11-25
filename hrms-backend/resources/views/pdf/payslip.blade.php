@@ -247,6 +247,24 @@
                         <td>Basic Salary</td>
                         <td>PHP {{ number_format($payroll->basic_salary ?? 0, 2) }}</td>
                     </tr>
+                    @if(($payroll->overtime_pay ?? 0) > 0)
+                    <tr>
+                        <td>Overtime Pay</td>
+                        <td>PHP {{ number_format($payroll->overtime_pay ?? 0, 2) }}</td>
+                    </tr>
+                    @endif
+                    @if(($payroll->holiday_pay ?? 0) > 0)
+                    <tr>
+                        <td>Holiday Pay</td>
+                        <td>PHP {{ number_format($payroll->holiday_pay ?? 0, 2) }}</td>
+                    </tr>
+                    @endif
+                    @if(($payroll->leave_with_pay ?? 0) > 0)
+                    <tr>
+                        <td>Leave with Pay</td>
+                        <td>PHP {{ number_format($payroll->leave_with_pay ?? 0, 2) }}</td>
+                    </tr>
+                    @endif
                     <tr class="total-row">
                         <td><strong>Gross Pay</strong></td>
                         <td><strong>PHP {{ number_format($payroll->gross_pay ?? 0, 2) }}</strong></td>
